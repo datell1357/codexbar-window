@@ -3,18 +3,6 @@ import Foundation
 
 typealias pid_t = Int32
 
-private enum WindowsTTYProcessRegistry {
-    private static let lock = NSCondition()
-    nonisolated(unsafe) private static var shuttingDown = false
-    nonisolated(unsafe) private static var launches = 0
-    nonisolated(unsafe) private static var processes: [pid_t: WindowsConPTYProcess] = [:]
-    static func beginLaunch() -> Bool { lock.lock(); defer { lock.unlock() }; guard !shuttingDown else { return false }; launches += 1; return true }
-    static func endLaunch() { lock.lock(); launches = max(0, launches - 1); lock.broadcast(); lock.unlock() }
-    static func register(_ process: WindowsConPTYProcess) -> Bool { lock.lock(); defer { lock.unlock() }; guard !shuttingDown else { return false }; processes[Int32(bitPattern: process.processID)] = process; return true }
-    static func unregister(_ pid: pid_t) { lock.lock(); processes.removeValue(forKey: pid); lock.unlock() }
-    static func shutdown() -> [WindowsConPTYProcess] { lock.lock(); shuttingDown = true; while launches > 0 { lock.wait() }; let value = Array(processes.values); processes.removeAll(); lock.unlock(); return value }
-}
-
 /// Windows counterpart for the POSIX PTY runner.
 ///
 /// ConPTY-backed runner preserving the POSIX runner's provider-facing contract.
@@ -102,16 +90,23 @@ public struct TTYCommandRunner {
         guard let resolved = WindowsCommandResolver.resolve(executable: binary, override: nil, environment: base) else { throw Error.binaryNotFound(binary) }
         let requestName = URL(fileURLWithPath: binary).lastPathComponent
         let descriptor = ProviderDescriptorRegistry.all.first { $0.cli.name.caseInsensitiveCompare(binary) == .orderedSame || $0.cli.name.caseInsensitiveCompare(requestName) == .orderedSame || $0.cli.name.caseInsensitiveCompare(URL(fileURLWithPath: resolved.sourcePath).lastPathComponent) == .orderedSame }
-        guard WindowsTTYProcessRegistry.beginLaunch() else { throw Error.launchFailed("App shutdown in progress") }
-        let process: WindowsConPTYProcess
+        let process: WindowsTrackedConPTYProcess
         let workingDirectory = options.workingDirectory ?? (options.useProviderProbeWorkingDirectory ? descriptor?.cli.ttyLaunch?.probeWorkingDirectory?() : nil)
-        do { process = try WindowsConPTYProcess.launch(target: resolved.target, arguments: options.extraArgs, environment: Self.enrichedEnvironment(baseEnv: base, home: base.first { $0.key.caseInsensitiveCompare("HOME") == .orderedSame }?.value ?? NSHomeDirectory()), currentDirectoryURL: workingDirectory, rows: options.rows, cols: options.cols) }
-        catch { WindowsTTYProcessRegistry.endLaunch(); throw Error.launchFailed(error.localizedDescription) }
-        guard WindowsTTYProcessRegistry.register(process) else { WindowsTTYProcessRegistry.endLaunch(); process.close(); throw Error.launchFailed("App shutdown in progress") }
-        WindowsTTYProcessRegistry.endLaunch()
+        do {
+            process = try WindowsTrackedConPTYProcess.launch(
+                target: resolved.target,
+                arguments: options.extraArgs,
+                environment: Self.enrichedEnvironment(baseEnv: base, home: base.first { $0.key.caseInsensitiveCompare("HOME") == .orderedSame }?.value ?? NSHomeDirectory()),
+                currentDirectoryURL: workingDirectory,
+                rows: options.rows,
+                cols: options.cols)
+        } catch is CancellationError {
+            throw Error.launchFailed("App shutdown in progress")
+        } catch {
+            throw Error.launchFailed(error.localizedDescription)
+        }
         var didExceedOutputLimit = false
         defer {
-            WindowsTTYProcessRegistry.unregister(Int32(bitPattern: process.processID))
             if !didExceedOutputLimit, process.isExited == false { try? process.write(Data("/exit\n".utf8), deadline: Date().addingTimeInterval(0.15), cancellationCheck: { false }) }
             process.close()
         }
@@ -127,10 +122,6 @@ public struct TTYCommandRunner {
             guard let data = text.data(using: .utf8), !data.isEmpty else { return }
             try write(data, until: limit)
         }
-        do { try process.resume() }
-        catch is CancellationError { throw CancellationError() }
-        catch let error as Error { throw error }
-        catch { throw Error.launchFailed(error.localizedDescription) }
         if options.initialDelay > 0 { Thread.sleep(forTimeInterval: min(options.initialDelay, max(0, deadline.timeIntervalSinceNow))) }; try check()
         let trimmed = script.trimmingCharacters(in: .whitespacesAndNewlines)
         let codexCommand = descriptor?.cli.ttyStatusCommand
@@ -297,19 +288,19 @@ public struct TTYCommandRunner {
         return Result(text: text, completion: completion)
     }
 
-    public static func terminateActiveProcessesForAppShutdown() { for process in WindowsTTYProcessRegistry.shutdown() { process.terminate(); process.close() } }
+    public static func terminateActiveProcessesForAppShutdown() { for process in WindowsTrackedConPTYProcess.drainForShutdown() { process.terminate(); process.close() } }
 
     @discardableResult
     static func registerActiveProcessForAppShutdown(pid: pid_t, binary: String) -> Bool {
         _ = pid; _ = binary; return false
     }
 
-    static func beginActiveProcessLaunchForAppShutdown() -> Bool { WindowsTTYProcessRegistry.beginLaunch() }
-    static func endActiveProcessLaunchForAppShutdown() { WindowsTTYProcessRegistry.endLaunch() }
+    static func beginActiveProcessLaunchForAppShutdown() -> Bool { false }
+    static func endActiveProcessLaunchForAppShutdown() {}
     static func updateActiveProcessGroupForAppShutdown(pid: pid_t, processGroup: pid_t?) {
         _ = pid; _ = processGroup
     }
-    static func unregisterActiveProcessForAppShutdown(pid: pid_t) { WindowsTTYProcessRegistry.unregister(pid) }
+    static func unregisterActiveProcessForAppShutdown(pid: pid_t) { _ = pid }
 
     public static func which(_ tool: String) -> String? {
         // Return a native image for typed WindowsLaunchTarget routing. The
