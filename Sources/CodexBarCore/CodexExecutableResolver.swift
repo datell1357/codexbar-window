@@ -5,9 +5,10 @@ struct CodexExecutableResolution: Sendable {
     let loginPATH: [String]?
 #if os(Windows)
     var argumentPrefix: [String] = []
+    var resolvedWindowsTarget: WindowsLaunchTarget? = nil
 
     var windowsLaunchTarget: WindowsLaunchTarget {
-        WindowsLaunchTarget(executable: self.executable, argumentPrefix: self.argumentPrefix)
+        self.resolvedWindowsTarget ?? WindowsLaunchTarget(executable: self.executable, argumentPrefix: self.argumentPrefix)
     }
 #endif
 }
@@ -28,11 +29,15 @@ func resolveCodexExecutableForRPC(
     captureLoginPATH: () -> [String]?) -> CodexExecutableResolution?
 {
 #if os(Windows)
-    return WindowsExecutableResolver.resolve(
+    return WindowsCommandResolver.resolve(
         executable: executable,
         override: CodexBarPlatformPaths.environmentValue("CODEX_CLI_PATH", environment: environment),
         environment: environment)
-        .map { CodexExecutableResolution(executable: $0, loginPATH: nil) }
+        .map { command in
+            var resolution = CodexExecutableResolution(executable: command.sourcePath, loginPATH: nil)
+            resolution.resolvedWindowsTarget = command.target
+            return resolution
+        }
 #else
     if let override = environment["CODEX_CLI_PATH"],
        FileManager.default.isExecutableFile(atPath: override)

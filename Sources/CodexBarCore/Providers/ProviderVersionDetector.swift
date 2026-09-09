@@ -302,11 +302,12 @@ public enum ProviderVersionDetector {
     public static func codexVersion() -> String? {
 #if os(Windows)
         let environment = ProcessInfo.processInfo.environment
-        guard let path = WindowsExecutableResolver.resolve(
+        guard let command = WindowsCommandResolver.resolve(
             executable: CodexProviderDescriptor.descriptor.cli.name,
             override: CodexBarPlatformPaths.environmentValue("CODEX_CLI_PATH", environment: environment),
             environment: environment)
         else { return nil }
+        let path = command.sourcePath
 #else
         guard let path = TTYCommandRunner.which(CodexProviderDescriptor.descriptor.cli.name) else { return nil }
 #endif
@@ -380,10 +381,13 @@ public enum ProviderVersionDetector {
         mergeStandardError: Bool = false) -> String?
     {
 #if os(Windows)
-        guard let process = try? WindowsProcess.launch(
-            executable: path,
+        let launchEnvironment = environment ?? ProcessInfo.processInfo.environment
+        guard let command = WindowsCommandResolver.resolve(
+            executable: path, override: path, environment: launchEnvironment),
+              let process = try? WindowsProcess.launch(
+            target: command.target,
             arguments: args,
-            environment: environment ?? ProcessInfo.processInfo.environment,
+            environment: launchEnvironment,
             currentDirectoryURL: nil,
             standardInput: nil,
             mergeStandardError: mergeStandardError)

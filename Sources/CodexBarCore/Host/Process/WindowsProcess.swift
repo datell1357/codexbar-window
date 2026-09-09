@@ -51,7 +51,7 @@ package final class WindowsProcess: @unchecked Sendable {
         try self.launch(
             executable: target.executable,
             arguments: target.argumentPrefix + arguments,
-            environment: environment,
+            environment: target.environment(from: environment),
             currentDirectoryURL: currentDirectoryURL,
             standardInput: standardInput,
             mergeStandardError: mergeStandardError)

@@ -330,13 +330,20 @@ struct CodexCLIUsageStrategy: ProviderFetchStrategy {
         fileManager: FileManager = .default,
         home: String = NSHomeDirectory()) -> String?
     {
-        BinaryLocator.resolveCodexBinary(
+#if os(Windows)
+        return WindowsCommandResolver.resolve(
+            executable: "codex",
+            override: CodexBarPlatformPaths.environmentValue("CODEX_CLI_PATH", environment: env),
+            environment: env)?.sourcePath
+#else
+        return BinaryLocator.resolveCodexBinary(
             env: env,
             loginPATH: loginPATH,
             commandV: commandV,
             aliasResolver: aliasResolver,
             fileManager: fileManager,
             home: home)
+#endif
     }
 }
 
