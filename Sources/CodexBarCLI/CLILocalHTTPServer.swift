@@ -5,6 +5,14 @@ import Darwin
 import Glibc
 #elseif canImport(Musl)
 import Musl
+#elseif os(Windows)
+import WinSDK
+#endif
+
+#if os(Windows)
+private typealias CLISocket = SOCKET
+#else
+private typealias CLISocket = Int32
 #endif
 
 private let requestReadTimeoutMilliseconds: Int32 = 5000
@@ -291,7 +299,7 @@ final class CLILocalHTTPServer: @unchecked Sendable {
     private let totalReadTimeout: Int64
     private let handler: Handler
     private let stateLock = NSLock()
-    private var listeningFD: Int32?
+    private var listeningFD: CLISocket?
     private var boundPort: UInt16?
     private var stopRequested = false
 
@@ -327,6 +335,13 @@ final class CLILocalHTTPServer: @unchecked Sendable {
 
     func run(onListening: @Sendable () -> Void = {}) async throws {
         ignoreSIGPIPE()
+
+        #if os(Windows)
+        try await runWindows(onListening: onListening)
+        return
+        #endif
+
+        #if !os(Windows)
 
         #if canImport(Darwin)
         let streamType = SOCK_STREAM
@@ -423,6 +438,7 @@ final class CLILocalHTTPServer: @unchecked Sendable {
                     handler: handler)
             }
         }
+        #endif
     }
 
     private var isStopRequested: Bool {
@@ -432,7 +448,7 @@ final class CLILocalHTTPServer: @unchecked Sendable {
         return value
     }
 
-    private func installListeningFD(_ fd: Int32, port: UInt16) -> Bool {
+    private func installListeningFD(_ fd: CLISocket, port: UInt16) -> Bool {
         self.stateLock.lock()
         defer { self.stateLock.unlock() }
         guard !self.stopRequested else { return false }
@@ -441,7 +457,18 @@ final class CLILocalHTTPServer: @unchecked Sendable {
         return true
     }
 
-    private static func resolvedPort(of fd: Int32) -> UInt16? {
+    private static func resolvedPort(of fd: CLISocket) -> UInt16? {
+        #if os(Windows)
+        var address = sockaddr_in()
+        var length = Int32(MemoryLayout<sockaddr_in>.size)
+        let result = withUnsafeMutablePointer(to: &address) { pointer in
+            pointer.withMemoryRebound(to: sockaddr.self, capacity: 1) { socketAddress in
+                getsockname(fd, socketAddress, &length)
+            }
+        }
+        guard result == 0 else { return nil }
+        return UInt16(bigEndian: address.sin_port)
+        #else
         var address = sockaddr_in()
         var length = socklen_t(MemoryLayout<sockaddr_in>.size)
         let result = withUnsafeMutablePointer(to: &address) { pointer in
@@ -451,9 +478,10 @@ final class CLILocalHTTPServer: @unchecked Sendable {
         }
         guard result == 0 else { return nil }
         return UInt16(bigEndian: address.sin_port)
+        #endif
     }
 
-    private func releaseListeningFD(_ fd: Int32) -> Bool {
+    private func releaseListeningFD(_ fd: CLISocket) -> Bool {
         self.stateLock.lock()
         defer { self.stateLock.unlock() }
         guard self.listeningFD == fd else { return false }
@@ -462,8 +490,88 @@ final class CLILocalHTTPServer: @unchecked Sendable {
     }
 }
 
+#if os(Windows)
+private final class WindowsWinsockRuntime: @unchecked Sendable {
+    init() throws {
+        var data = WSADATA()
+        let result = WSAStartup(WORD(0x0202), &data)
+        guard result == 0 else {
+            throw NSError(domain: "Winsock", code: Int(result), userInfo: nil)
+        }
+    }
+
+    deinit { _ = WSACleanup() }
+}
+
+private extension CLILocalHTTPServer {
+    func runWindows(onListening: @Sendable () -> Void) async throws {
+        let winsock = try WindowsWinsockRuntime()
+        defer { withExtendedLifetime(winsock) {} }
+        let serverFD = socket(AF_INET, Int32(SOCK_STREAM), IPPROTO_TCP)
+        guard serverFD != INVALID_SOCKET else { throw windowsSocketError() }
+        var ownsServerFD = true
+        defer { if ownsServerFD { closesocket(serverFD) } }
+
+        var exclusive: Int32 = 1
+        let optionResult = withUnsafePointer(to: &exclusive) { pointer in
+            setsockopt(
+                serverFD, Int32(SOL_SOCKET), Int32(SO_EXCLUSIVEADDRUSE),
+                UnsafeRawPointer(pointer).assumingMemoryBound(to: CChar.self),
+                Int32(MemoryLayout<Int32>.size))
+        }
+        guard optionResult == 0 else { throw windowsSocketError() }
+
+        var address = sockaddr_in()
+        address.sin_family = ADDRESS_FAMILY(AF_INET)
+        address.sin_port = self.port.bigEndian
+        guard inet_pton(AF_INET, self.host, &address.sin_addr) == 1 else {
+            throw NSError(domain: "Winsock", code: Int(WSAEINVAL), userInfo: nil)
+        }
+        let bound = withUnsafePointer(to: &address) { pointer in
+            pointer.withMemoryRebound(to: sockaddr.self, capacity: 1) { socketAddress in
+                bind(serverFD, socketAddress, Int32(MemoryLayout<sockaddr_in>.size))
+            }
+        }
+        guard bound == 0 else { throw windowsSocketError() }
+        guard listen(serverFD, 16) == 0 else { throw windowsSocketError() }
+        guard self.installListeningFD(serverFD, port: Self.resolvedPort(of: serverFD) ?? self.port) else { return }
+        ownsServerFD = false
+        defer { if self.releaseListeningFD(serverFD) { closesocket(serverFD) } }
+        onListening()
+
+        while !self.isStopRequested {
+            guard try waitForWindowsReadable(serverFD, timeoutMilliseconds: 250) else { continue }
+            var clientAddress = sockaddr()
+            var clientLength = Int32(MemoryLayout<sockaddr>.size)
+            let clientFD = accept(serverFD, &clientAddress, &clientLength)
+            guard clientFD != INVALID_SOCKET else {
+                if self.isStopRequested { return }
+                let error = WSAGetLastError()
+                if error == WSAEINTR || error == WSAEWOULDBLOCK || error == WSAECONNABORTED { continue }
+                throw windowsSocketError(code: error)
+            }
+            guard self.connectionGate.tryAcquire() else { closesocket(clientFD); continue }
+            let handler = self.handler
+            let allowedHosts = self.allowedHosts
+            let connectionGate = self.connectionGate
+            let clientRuntime = winsock
+            Task { [clientRuntime] in
+                // Capturing the runtime keeps Winsock initialized until this
+                // client's socket has been closed, even if the accept loop exits.
+                defer {
+                    closesocket(clientFD)
+                    connectionGate.release()
+                    withExtendedLifetime(clientRuntime) {}
+                }
+                await handleClient(clientFD, allowedHosts: allowedHosts, totalReadTimeoutMilliseconds: self.totalReadTimeout, handler: handler)
+            }
+        }
+    }
+}
+#endif
+
 private func handleClient(
-    _ clientFD: Int32,
+    _ clientFD: CLISocket,
     allowedHosts: CLILocalHTTPAllowedHosts,
     totalReadTimeoutMilliseconds: Int64,
     handler: @Sendable (CLILocalHTTPRequest) async -> CLILocalHTTPResponse) async
@@ -499,7 +607,7 @@ private func handleClient(
 }
 
 private func readRequest(
-    _ fd: Int32,
+    _ fd: CLISocket,
     allowedHosts: CLILocalHTTPAllowedHosts,
     totalReadTimeoutMilliseconds: Int64) -> Result<CLILocalHTTPRequest, CLILocalHTTPRequestParseError>
 {
@@ -523,10 +631,15 @@ private func readRequest(
             return .failure(.invalidRequest)
         }
         let count = buffer.withUnsafeMutableBytes { rawBuffer in
+            #if os(Windows)
+            let pointer = rawBuffer.baseAddress?.assumingMemoryBound(to: CChar.self)
+            return recv(fd, pointer, Int32(bufferSize), 0)
+            #else
             recv(fd, rawBuffer.baseAddress, bufferSize, 0)
+            #endif
         }
         guard count > 0 else { break }
-        data.append(buffer, count: count)
+        data.append(buffer, count: Int(count))
         if data.range(of: Data("\r\n\r\n".utf8)) != nil {
             sawHeaderEnd = true
             break
@@ -537,20 +650,28 @@ private func readRequest(
     return CLILocalHTTPRequest.parse(data, allowedHosts: allowedHosts)
 }
 
-private func sendResponse(_ response: CLILocalHTTPResponse, to fd: Int32) {
+private func sendResponse(_ response: CLILocalHTTPResponse, to fd: CLISocket) {
     let data = response.serialized
     data.withUnsafeBytes { rawBuffer in
         guard let base = rawBuffer.baseAddress else { return }
         var sent = 0
         while sent < data.count {
+            #if os(Windows)
+            let pointer = base.assumingMemoryBound(to: CChar.self).advanced(by: sent)
+            let count = send(fd, pointer, Int32(min(data.count - sent, Int(Int32.max))), 0)
+            #else
             let count = send(fd, base.advanced(by: sent), data.count - sent, sendNoSignalFlags())
+            #endif
             guard count > 0 else { break }
-            sent += count
+            sent += Int(count)
         }
     }
 }
 
-private func waitForReadable(_ fd: Int32, timeoutMilliseconds: Int32) -> Bool {
+private func waitForReadable(_ fd: CLISocket, timeoutMilliseconds: Int32) -> Bool {
+    #if os(Windows)
+    return (try? waitForWindowsReadable(fd, timeoutMilliseconds: timeoutMilliseconds)) ?? false
+    #else
     var pollFD = pollfd(fd: fd, events: Int16(POLLIN), revents: 0)
     while true {
         let result = poll(&pollFD, 1, timeoutMilliseconds)
@@ -562,15 +683,43 @@ private func waitForReadable(_ fd: Int32, timeoutMilliseconds: Int32) -> Bool {
         }
         return false
     }
+    #endif
 }
 
 private func sendNoSignalFlags() -> Int32 {
     #if canImport(Darwin)
     0
+    #elseif os(Windows)
+    0
     #else
     Int32(MSG_NOSIGNAL)
     #endif
 }
+
+#if os(Windows)
+private func waitForWindowsReadable(_ fd: CLISocket, timeoutMilliseconds: Int32) throws -> Bool {
+    let start = DispatchTime.now().uptimeNanoseconds
+    while true {
+        let elapsed = Int64((DispatchTime.now().uptimeNanoseconds &- start) / 1_000_000)
+        let remaining = max(0, Int64(timeoutMilliseconds) - elapsed)
+        var descriptor = WSAPOLLFD(fd: fd, events: SHORT(POLLRDNORM), revents: 0)
+        let result = WSAPoll(&descriptor, 1, Int32(remaining))
+        if result == SOCKET_ERROR {
+            let code = WSAGetLastError()
+            if code == WSAEINTR, remaining > 0 { continue }
+            throw windowsSocketError(code: code)
+        }
+        if result == 0 { return false }
+        if (descriptor.revents & SHORT(POLLNVAL)) != 0 { throw windowsSocketError(code: Int32(WSAENOTSOCK)) }
+        if (descriptor.revents & SHORT(POLLERR)) != 0 { throw windowsSocketError(code: Int32(WSAECONNABORTED)) }
+        return (descriptor.revents & SHORT(POLLRDNORM | POLLHUP)) != 0
+    }
+}
+
+private func windowsSocketError(code: Int32 = WSAGetLastError()) -> NSError {
+    NSError(domain: "Winsock", code: Int(code), userInfo: nil)
+}
+#endif
 
 private func ignoreSIGPIPE() {
     #if canImport(Darwin)
@@ -582,12 +731,14 @@ private func ignoreSIGPIPE() {
     #endif
 }
 
-private func closeSocket(_ fd: Int32) {
+private func closeSocket(_ fd: CLISocket) {
     #if canImport(Darwin)
     Darwin.close(fd)
     #elseif canImport(Glibc)
     Glibc.close(fd)
     #elseif canImport(Musl)
     Musl.close(fd)
+    #elseif os(Windows)
+    _ = closesocket(fd)
     #endif
 }

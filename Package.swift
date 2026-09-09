@@ -126,7 +126,9 @@ let package = Package(
                 swiftSettings: [
                     .enableUpcomingFeature("StrictConcurrency"),
                 ],
-                linkerSettings: sqlite3LinkerSettings),
+                linkerSettings: sqlite3LinkerSettings + [
+                    .linkedLibrary("Ws2_32", .when(platforms: [.custom("windows")])),
+                ]),
             // Crash-test subprocess: tests SIGKILL it mid-save to prove the cost store's
             // save cycle is atomic. Not shipped; built only as a test dependency.
             .executableTarget(
