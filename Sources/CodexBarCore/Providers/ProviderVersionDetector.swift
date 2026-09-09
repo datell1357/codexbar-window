@@ -138,8 +138,10 @@ public enum ProviderVersionDetector {
         }
         #endif
         let workingDirectory = ClaudeStatusProbe.preparedProbeWorkingDirectoryURL()
-        var launchEnvironment = environment.filter { $0.key.uppercased() != "PWD" }
-        launchEnvironment["PWD"] = workingDirectory.path
+        let launchEnvironment = WindowsProbeEnvironment.claudeVersion(
+            base: environment,
+            home: CodexBarPlatformPaths.environmentValue("HOME", environment: environment) ?? NSHomeDirectory(),
+            workingDirectory: workingDirectory)
         guard let process = try? WindowsProcess.launch(
             executable: path,
             arguments: ["--version"],
