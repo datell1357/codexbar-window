@@ -884,7 +884,8 @@ public enum CookieHeaderCache {
                     nil)
             }
             guard let handle, handle != INVALID_HANDLE_VALUE else {
-                throw CocoaError(.fileOpenUnknown)
+                throw NSError(domain: "Win32", code: Int(GetLastError()),
+                              userInfo: [NSFilePathErrorKey: lockURL.path])
             }
             defer { CloseHandle(handle) }
 
@@ -897,7 +898,8 @@ public enum CookieHeaderCache {
                 DWORD.max,
                 &overlapped) != 0
             else {
-                throw CocoaError(.fileLocking)
+                throw NSError(domain: "Win32", code: Int(GetLastError()),
+                              userInfo: [NSFilePathErrorKey: lockURL.path])
             }
             defer {
                 _ = UnlockFileEx(handle, 0, DWORD.max, DWORD.max, &overlapped)

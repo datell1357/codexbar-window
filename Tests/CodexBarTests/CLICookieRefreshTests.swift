@@ -42,6 +42,56 @@ struct CLICookieRefreshTests {
         #expect(called)
         #expect(results.first?.status == .refreshed)
     }
+
+    #if DEBUG
+    @Test
+    func `Windows staged commit rejects multiple replacements atomically`() async {
+        let provider = UsageProvider.amp
+        let accountScope = CookieHeaderCache.Scope.managedAccount(UUID())
+        let service = "com.steipete.codexbar.tests.cookie-refresh.\(UUID().uuidString)"
+        let syntheticLegacyBase = FileManager.default.temporaryDirectory
+            .appendingPathComponent("codexbar-windows-cookie-refresh-\(UUID().uuidString)", isDirectory: true)
+
+        await KeychainCacheStore.withServiceOverrideForTesting(service) {
+            await KeychainCacheStore.withImplicitTestStoreForTesting {
+                await CookieHeaderCache.withLegacyBaseURLOverrideForTesting(syntheticLegacyBase) {
+                    CookieHeaderCache.store(
+                        provider: provider,
+                        cookieHeader: "old-default-cookie",
+                        sourceLabel: "Test old default")
+                    CookieHeaderCache.store(
+                        provider: provider,
+                        scope: accountScope,
+                        cookieHeader: "old-account-cookie",
+                        sourceLabel: "Test old account")
+
+                    guard let gate = CookieHeaderCache.beginRefreshReadSuppression(provider: provider) else {
+                        Issue.record("Expected refresh gate")
+                        return
+                    }
+                    defer { CookieHeaderCache.endRefreshReadSuppression(gate) }
+                    CookieHeaderCache.store(
+                        provider: provider,
+                        cookieHeader: "new-default-cookie",
+                        sourceLabel: "Test new default")
+                    CookieHeaderCache.store(
+                        provider: provider,
+                        scope: accountScope,
+                        cookieHeader: "new-account-cookie",
+                        sourceLabel: "Test new account")
+
+                    let summary = CookieHeaderCache.commitRefreshReadSuppression(gate)
+                    #expect(summary.stagedCount == 2)
+                    #expect(summary.committedCount == 0)
+                    #expect(summary.failedCount == 2)
+                    #expect(CookieHeaderCache.load(provider: provider)?.cookieHeader == "old-default-cookie")
+                    #expect(CookieHeaderCache.load(provider: provider, scope: accountScope)?.cookieHeader ==
+                        "old-account-cookie")
+                }
+            }
+        }
+    }
+    #endif
     #endif
 
     #if os(macOS)
