@@ -2,6 +2,18 @@
 import SweetCookieKit
 
 public typealias BrowserCookieImportOrder = [Browser]
+#elseif os(Windows)
+/// Shared browser identities; an identity does not imply Windows import support.
+public enum Browser: Sendable, Hashable {
+    case safari, firefox, firefoxBeta, firefoxDeveloperEdition, firefoxNightly, zen
+    case chrome, chromeBeta, chromeCanary
+    case arc, arcBeta, arcCanary, chatgptAtlas, chromium
+    case brave, braveBeta, braveNightly
+    case edge, edgeBeta, edgeCanary
+    case helium, vivaldi, dia, yandex, comet
+}
+
+public typealias BrowserCookieImportOrder = [Browser]
 #else
 public struct Browser: Sendable, Hashable {
     public init() {}

@@ -1,9 +1,9 @@
 import Foundation
-import os.lock
 import Testing
 @testable import CodexBarCore
 
 #if os(macOS)
+import os.lock
 import SweetCookieKit
 
 @Suite(.serialized)
@@ -811,7 +811,7 @@ struct BrowserDetectionTests {
     }
 }
 
-#else
+#elseif !os(Windows)
 
 struct BrowserDetectionTests {
     @Test

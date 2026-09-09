@@ -399,6 +399,84 @@ public final class BrowserDetection: Sendable {
     }
 }
 
+#elseif os(Windows)
+
+/// Discovers profile directories without enabling cookie imports.
+public final class BrowserDetection: @unchecked Sendable {
+    public static let defaultCacheTTL: TimeInterval = 60 * 10
+
+    // All mutable cache state is protected by this lock.
+    private let lock = NSLock()
+    private var cache: [Browser: CachedResult] = [:]
+    private let homeDirectory: String
+    private let cacheTTL: TimeInterval
+    private let now: @Sendable () -> Date
+    private let fileExists: @Sendable (String) -> Bool
+    private let directoryContents: @Sendable (String) -> [String]?
+    private let environment: [String: String]
+
+    private struct CachedResult {
+        let value: Bool
+        let timestamp: Date
+    }
+
+    public init(
+        homeDirectory: String = FileManager.default.homeDirectoryForCurrentUser.path,
+        cacheTTL: TimeInterval = BrowserDetection.defaultCacheTTL,
+        now: @escaping @Sendable () -> Date = Date.init,
+        fileExists: @escaping @Sendable (String) -> Bool = { path in FileManager.default.fileExists(atPath: path) },
+        directoryContents: @escaping @Sendable (String) -> [String]? = { path in
+            try? FileManager.default.contentsOfDirectory(atPath: path)
+        },
+        environment: [String: String] = ProcessInfo.processInfo.environment)
+    {
+        self.homeDirectory = homeDirectory
+        self.cacheTTL = cacheTTL
+        self.now = now
+        self.fileExists = fileExists
+        self.directoryContents = directoryContents
+        self.environment = environment
+    }
+
+    public func isAppInstalled(_ browser: Browser) -> Bool {
+        // Installation detection is not implemented; profiles can survive uninstalling an app.
+        false
+    }
+
+    public func isCookieSourceAvailable(_ browser: Browser, applicationURL: URL? = nil) -> Bool {
+        // Profile presence cannot enable imports until a Windows cookie backend is available.
+        false
+    }
+
+    public func hasUsableProfileData(_ browser: Browser) -> Bool {
+        self.lock.lock()
+        defer { self.lock.unlock() }
+
+        let timestamp = self.now()
+        if let cached = self.cache[browser],
+           timestamp.timeIntervalSince(cached.timestamp) >= 0,
+           timestamp.timeIntervalSince(cached.timestamp) < self.cacheTTL
+        {
+            return cached.value
+        }
+
+        let value = !WindowsBrowserProfileLocator.profileDirectories(
+            for: browser,
+            home: URL(fileURLWithPath: self.homeDirectory, isDirectory: true),
+            environment: self.environment,
+            fileExists: self.fileExists,
+            directoryContents: self.directoryContents).isEmpty
+        self.cache[browser] = CachedResult(value: value, timestamp: timestamp)
+        return value
+    }
+
+    public func clearCache() {
+        self.lock.lock()
+        defer { self.lock.unlock() }
+        self.cache.removeAll()
+    }
+}
+
 #else
 
 // MARK: - Non-macOS stub

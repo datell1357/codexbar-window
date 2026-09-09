@@ -5,7 +5,7 @@
 | 계획 영역 | Windows 상태 | 남은 핵심 경계 |
 |---|---|---|
 | W01 공급자 | 부분 연결 | 69개 × 인증/조회 소스의 Windows 연결 및 오류 경로 |
-| W02 계정 | Credential Manager 일부 | 외부 CLI 계정 소유권·OAuth/browser·전환 |
+| W02 계정 | Credential Manager·기본 browser profile 탐색 일부 | 외부 CLI 계정 소유권·OAuth/browser·전환 |
 | W03 트레이 | 미구현 | native tray/popup 및 모든 표시 모드 |
 | W04 설정 | 경로 일부 | 전체 native UI·설정 상태·migration |
 | W05 사용량/예측 | 원본 보존, 대응 미판정 | Windows runtime과 소비자 연결 |

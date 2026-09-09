@@ -419,7 +419,12 @@ public enum BrowserCookieAccessGate {
     }
 
     public static func shouldAttempt(_ browser: Browser, now: Date = Date()) -> Bool {
+        #if os(Windows)
+        // Discovery alone cannot enable cookie reads without a Windows import backend.
+        false
+        #else
         true
+        #endif
     }
 
     public static func withExplicitRetry<T>(_ operation: () throws -> T) rethrows -> T {
