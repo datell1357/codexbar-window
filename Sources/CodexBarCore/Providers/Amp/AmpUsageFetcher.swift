@@ -36,9 +36,13 @@ public enum AmpUsageError: LocalizedError, Sendable {
     }
 }
 
+#if os(macOS) || os(Windows)
 #if os(macOS)
 private let ampCookieImportOrder: BrowserCookieImportOrder =
     ProviderDefaults.metadata[.amp]?.browserCookieOrder ?? Browser.defaultImportOrder
+#elseif os(Windows)
+private let ampCookieImportOrder: BrowserCookieImportOrder = [.firefox]
+#endif
 
 public enum AmpCookieImporter {
     private static let cookieClient = BrowserCookieClient()
@@ -90,7 +94,12 @@ public enum AmpCookieImporter {
                 }
             } catch {
                 BrowserCookieAccessGate.recordIfNeeded(error)
-                log("\(browserSource.displayName) cookie import failed: \(error.localizedDescription)")
+                #if os(macOS)
+                let browserLabel = browserSource.displayName
+                #else
+                let browserLabel = browserSource == .firefox ? "Firefox" : String(describing: browserSource)
+                #endif
+                log("\(browserLabel) cookie import failed: \(error.localizedDescription)")
             }
         }
 
@@ -251,7 +260,7 @@ public struct AmpUsageFetcher: Sendable {
             }
             throw AmpUsageError.noSessionCookie
         }
-        #if os(macOS)
+        #if os(macOS) || os(Windows)
         let session = try AmpCookieImporter.importSession(browserDetection: self.browserDetection, logger: logger)
         logger?("[amp] Using cookies from \(session.sourceLabel)")
         return session.cookieHeader

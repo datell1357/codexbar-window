@@ -150,6 +150,15 @@ struct AmpStatusFetchStrategy: ProviderFetchStrategy {
         guard context.sourceMode.usesWeb else { return false }
         #if os(macOS)
         let canImportBrowserCookies = true
+        #elseif os(Windows)
+        let canImportBrowserCookies: Bool
+        if let settings = context.settings?.amp, settings.cookieSource != .auto {
+            canImportBrowserCookies = false
+        } else {
+            canImportBrowserCookies = (![Browser.firefox]
+                .cookieImportCandidates(using: context.browserDetection)
+                .isEmpty)
+        }
         #else
         let canImportBrowserCookies = false
         #endif

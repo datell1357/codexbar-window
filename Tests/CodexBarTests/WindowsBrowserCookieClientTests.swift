@@ -7,6 +7,7 @@ struct WindowsBrowserCookieClientTests {
     private let home = URL(fileURLWithPath: "C:/SyntheticHome", isDirectory: true)
 
     private func client(
+        isRegularFile: (@Sendable (String) -> Bool)? = nil,
         reader: @escaping @Sendable (URL, BrowserCookieQuery) throws -> [BrowserCookieRecord]) -> BrowserCookieClient
     {
         let home = self.home
@@ -29,15 +30,30 @@ struct WindowsBrowserCookieClientTests {
         IsRelative=1
         Path=Profiles/c.missing
         """
+        let firstCompatibility = first.appendingPathComponent("compatibility.ini").path
+        let secondCompatibility = second.appendingPathComponent("compatibility.ini").path
+        let missingCompatibility = missing.appendingPathComponent("compatibility.ini").path
+        let compatibility = "LastPlatformDir=C:\\Program Files\\Mozilla Firefox\n"
         let files = Set([registry, first.appendingPathComponent("cookies.sqlite").path,
-                         second.appendingPathComponent("cookies.sqlite").path])
+                         second.appendingPathComponent("cookies.sqlite").path,
+                         firstCompatibility, secondCompatibility, missingCompatibility])
         let directories = Set([first.path, second.path, missing.path])
+        let regularFile = isRegularFile ?? { path in
+            files.contains(path) || path.hasSuffix("firefox.exe")
+        }
         return BrowserCookieClient(
             configuration: .init(homeDirectories: [home, home]),
             environment: [:],
             fileExists: { files.contains($0) },
+            isRegularFile: regularFile,
             directoryContents: { directories.contains($0) ? [] : nil },
-            readText: { $0 == registry ? text : nil },
+            readText: { path in
+                if path == registry { return text }
+                if path == firstCompatibility || path == secondCompatibility || path == missingCompatibility {
+                    return compatibility
+                }
+                return nil
+            },
             reader: reader)
     }
 
@@ -70,6 +86,19 @@ struct WindowsBrowserCookieClientTests {
         #expect(results.count == 1)
         #expect(results.first?.store.profile.name == "a.default-release")
         #expect(client.stores(for: .firefox).count == 2)
+    }
+
+    @Test
+    func `requires a regular Firefox executable and regular cookie database`() {
+        let noExecutable = self.client(isRegularFile: { path in
+            !path.hasSuffix("firefox.exe")
+        }) { _, _ in [] }
+        #expect(noExecutable.stores(for: .firefox).isEmpty)
+
+        let nonRegularDatabase = self.client(isRegularFile: { path in
+            path.hasSuffix("firefox.exe")
+        }) { _, _ in [] }
+        #expect(nonRegularDatabase.stores(for: .firefox).isEmpty)
     }
 
     @Test

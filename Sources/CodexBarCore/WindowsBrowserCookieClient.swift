@@ -20,6 +20,7 @@ public struct BrowserCookieClient: Sendable {
     private let environment: [String: String]
     private var environmentHome: URL?
     private let fileExists: @Sendable (String) -> Bool
+    private let isRegularFile: @Sendable (String) -> Bool
     private let directoryContents: @Sendable (String) -> [String]?
     private let readText: (@Sendable (String) -> String?)?
     private let reader: @Sendable (URL, BrowserCookieQuery) throws -> [BrowserCookieRecord]
@@ -29,6 +30,9 @@ public struct BrowserCookieClient: Sendable {
             configuration: configuration,
             environment: ProcessInfo.processInfo.environment,
             fileExists: { FileManager.default.fileExists(atPath: $0) },
+            isRegularFile: { path in
+                (try? FileManager.default.attributesOfItem(atPath: path)[.type]) as? FileAttributeType == .typeRegular
+            },
             directoryContents: { try? FileManager.default.contentsOfDirectory(atPath: $0) },
             readText: nil,
             reader: { try WindowsFirefoxCookieReader.read(from: $0, query: $1) })
@@ -41,6 +45,7 @@ public struct BrowserCookieClient: Sendable {
         configuration: Configuration,
         environment: [String: String],
         fileExists: @escaping @Sendable (String) -> Bool,
+        isRegularFile: @escaping @Sendable (String) -> Bool,
         directoryContents: @escaping @Sendable (String) -> [String]?,
         readText: (@Sendable (String) -> String?)?,
         reader: @escaping @Sendable (URL, BrowserCookieQuery) throws -> [BrowserCookieRecord])
@@ -49,6 +54,7 @@ public struct BrowserCookieClient: Sendable {
         self.environment = environment
         self.environmentHome = nil
         self.fileExists = fileExists
+        self.isRegularFile = isRegularFile
         self.directoryContents = directoryContents
         self.readText = readText
         self.reader = reader
@@ -73,7 +79,9 @@ public struct BrowserCookieClient: Sendable {
                 }.compactMap { directory in
                     let profileURL = directory.standardizedFileURL
                     let databaseURL = profileURL.appendingPathComponent("cookies.sqlite", isDirectory: false)
-                    guard self.fileExists(databaseURL.path),
+                    guard self.isRegularFile(databaseURL.path),
+                          WindowsFirefoxProfileSelection.hasInstalledApplication(
+                              profile: profileURL, readText: self.readText, isRegularFile: self.isRegularFile),
                           WindowsFirefoxProfileSelection.includes(profile: profileURL, readText: self.readText),
                           seen.insert(profileURL.path).inserted else { return nil }
                     let name = profileURL.lastPathComponent
@@ -85,6 +93,14 @@ public struct BrowserCookieClient: Sendable {
                         databaseURL: databaseURL)
                 }
         }
+    }
+
+    public func codexBarRecords(
+        matching query: BrowserCookieQuery, in browser: Browser,
+        logger: ((String) -> Void)? = nil) throws -> [BrowserCookieStoreRecords]
+    {
+        guard BrowserCookieAccessGate.shouldAttempt(browser) else { return [] }
+        return try self.records(matching: query, in: browser, logger: logger)
     }
 
     public func stores(in browsers: [Browser]) -> [BrowserCookieStore] {

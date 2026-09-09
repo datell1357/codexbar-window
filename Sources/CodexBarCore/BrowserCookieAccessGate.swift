@@ -420,8 +420,8 @@ public enum BrowserCookieAccessGate {
 
     public static func shouldAttempt(_ browser: Browser, now: Date = Date()) -> Bool {
         #if os(Windows)
-        // Discovery alone cannot enable cookie reads without a Windows import backend.
-        false
+        // Only the Firefox SQLite backend is connected; Chromium decryption remains unavailable.
+        browser == .firefox
         #else
         true
         #endif

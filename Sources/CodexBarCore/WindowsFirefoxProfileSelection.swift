@@ -28,6 +28,23 @@ enum WindowsFirefoxProfileSelection {
         return true
     }
 
+    static func hasInstalledApplication(
+        profile: URL, readText: ((String) -> String?)?, isRegularFile: (String) -> Bool,
+        applicationURL: URL? = nil) -> Bool
+    {
+        let read = readText ?? self.readMetadata
+        guard let compatibility = read(profile.appendingPathComponent("compatibility.ini").path),
+              let path = self.value(named: "LastPlatformDir", in: compatibility),
+              let directory = WindowsFirefoxProfiles.absoluteDirectory(path) else { return false }
+        let executable = directory.appendingPathComponent("firefox.exe")
+        if let applicationURL,
+           applicationURL.standardizedFileURL.path.lowercased() != executable.standardizedFileURL.path.lowercased()
+        {
+            return false
+        }
+        return isRegularFile(executable.path)
+    }
+
     private static func value(named name: String, in text: String) -> String? {
         let prefix = "\(name)="
         for line in text.split(whereSeparator: { $0.isNewline }) where line.hasPrefix(prefix) {

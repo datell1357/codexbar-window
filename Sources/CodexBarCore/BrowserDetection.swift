@@ -415,6 +415,7 @@ public final class BrowserDetection: @unchecked Sendable {
     private let directoryContents: @Sendable (String) -> [String]?
     private let environment: [String: String]
     private let readText: (@Sendable (String) -> String?)?
+    private let isRegularFile: @Sendable (String) -> Bool
 
     private struct CachedResult {
         let value: Bool
@@ -430,7 +431,10 @@ public final class BrowserDetection: @unchecked Sendable {
             try? FileManager.default.contentsOfDirectory(atPath: path)
         },
         environment: [String: String] = ProcessInfo.processInfo.environment,
-        readText: (@Sendable (String) -> String?)? = nil)
+        readText: (@Sendable (String) -> String?)? = nil,
+        isRegularFile: @escaping @Sendable (String) -> Bool = { path in
+            (try? FileManager.default.attributesOfItem(atPath: path)[.type]) as? FileAttributeType == .typeRegular
+        })
     {
         self.homeDirectory = homeDirectory
         self.cacheTTL = cacheTTL
@@ -439,16 +443,33 @@ public final class BrowserDetection: @unchecked Sendable {
         self.directoryContents = directoryContents
         self.environment = environment
         self.readText = readText
+        self.isRegularFile = isRegularFile
     }
 
     public func isAppInstalled(_ browser: Browser) -> Bool {
-        // Installation detection is not implemented; profiles can survive uninstalling an app.
-        false
+        guard browser == .firefox else { return false }
+        return self.firefoxProfiles().contains {
+            WindowsFirefoxProfileSelection.hasInstalledApplication(
+                profile: $0, readText: self.readText, isRegularFile: self.isRegularFile)
+        }
     }
 
     public func isCookieSourceAvailable(_ browser: Browser, applicationURL: URL? = nil) -> Bool {
-        // Profile presence cannot enable imports until a Windows cookie backend is available.
-        false
+        guard browser == .firefox, BrowserCookieAccessGate.shouldAttempt(browser) else { return false }
+        return self.firefoxProfiles().contains { profile in
+            WindowsFirefoxProfileSelection.hasInstalledApplication(
+                profile: profile, readText: self.readText, isRegularFile: self.isRegularFile,
+                applicationURL: applicationURL) &&
+                self.isRegularFile(profile.appendingPathComponent("cookies.sqlite").path)
+        }
+    }
+
+    private func firefoxProfiles() -> [URL] {
+        WindowsBrowserProfileLocator.profileDirectories(
+            for: .firefox, home: URL(fileURLWithPath: self.homeDirectory, isDirectory: true),
+            environment: self.environment, fileExists: self.fileExists,
+            directoryContents: self.directoryContents, readText: self.readText)
+            .filter { WindowsFirefoxProfileSelection.includes(profile: $0, readText: self.readText) }
     }
 
     public func hasUsableProfileData(_ browser: Browser) -> Bool {

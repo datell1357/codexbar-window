@@ -43,5 +43,28 @@ struct WindowsFirefoxProfileSelectionTests {
             return nil
         })
     }
+
+    @Test
+    func `installation evidence rejects absent executables and mismatched paths`() {
+        let compatibility = self.profile.appendingPathComponent("compatibility.ini").path
+        let executable = URL(fileURLWithPath: "C:\\Synthetic\\Firefox", isDirectory: true)
+            .appendingPathComponent("firefox.exe")
+        let read: (String) -> String? = { path in
+            path == compatibility ? "LastPlatformDir=C:\\Synthetic\\Firefox\n" : nil
+        }
+        #expect(WindowsFirefoxProfileSelection.hasInstalledApplication(
+            profile: self.profile, readText: read, isRegularFile: { $0 == executable.path }))
+        #expect(!WindowsFirefoxProfileSelection.hasInstalledApplication(
+            profile: self.profile, readText: read, isRegularFile: { _ in false }))
+        #expect(!WindowsFirefoxProfileSelection.hasInstalledApplication(
+            profile: self.profile, readText: { _ in nil }, isRegularFile: { _ in true }))
+        #expect(!WindowsFirefoxProfileSelection.hasInstalledApplication(
+            profile: self.profile, readText: read, isRegularFile: { _ in true },
+            applicationURL: URL(fileURLWithPath: "C:\\Other\\firefox.exe")))
+        #expect(WindowsFirefoxProfileSelection.hasInstalledApplication(
+            profile: self.profile, readText: read, isRegularFile: { $0 == executable.path },
+            applicationURL: URL(fileURLWithPath: executable.path.uppercased())))
+    }
+
 }
 #endif
