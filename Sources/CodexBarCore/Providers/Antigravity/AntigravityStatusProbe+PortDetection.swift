@@ -58,6 +58,12 @@ extension AntigravityStatusProbe {
             throw AntigravityStatusProbeError.portDetectionFailed("no listening ports found")
         }
         return ports
+        #elseif os(Windows)
+        let ports = try await WindowsListeningTCPPorts.ports(pid: pid, timeout: timeout)
+        if ports.isEmpty {
+            throw AntigravityStatusProbeError.portDetectionFailed("no listening ports found")
+        }
+        return ports
         #else
         let lsof = ["/usr/sbin/lsof", "/usr/bin/lsof"].first(where: {
             FileManager.default.isExecutableFile(atPath: $0)
