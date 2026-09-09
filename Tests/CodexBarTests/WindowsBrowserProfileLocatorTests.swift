@@ -36,7 +36,7 @@ struct WindowsBrowserProfileLocatorTests {
             directoryContents: { directories[$0] })
         #expect(profiles == [profile])
         let unsupported = WindowsBrowserProfileLocator.profileDirectories(
-            for: .firefox,
+            for: .zen,
             home: home,
             environment: [:],
             fileExists: { _ in Issue.record("Unsupported browser must not probe the filesystem"); return true },

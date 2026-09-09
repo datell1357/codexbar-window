@@ -1,15 +1,27 @@
 #if os(Windows)
 import Foundation
 
-/// Discovers default-location profile directories only; this does not establish cookie import capability.
+/// Discovers profile directories from default roots; this does not establish cookie import capability.
 enum WindowsBrowserProfileLocator {
     static func profileDirectories(
         for browser: Browser,
         home: URL,
         environment: [String: String],
         fileExists: (String) -> Bool,
-        directoryContents: (String) -> [String]?) -> [URL]
+        directoryContents: (String) -> [String]?,
+        readText: ((String) -> String?)? = nil) -> [URL]
     {
+        if browser == .firefox {
+            let root = CodexBarPlatformPaths.roamingAppDataURL(home: home, environment: environment)
+                .appendingPathComponent("Mozilla/Firefox", isDirectory: true)
+            let registry = root.appendingPathComponent("profiles.ini", isDirectory: false)
+            guard fileExists(registry.path),
+                  let contents = (readText ?? self.readProfileRegistry)(registry.path)
+            else { return [] }
+            return WindowsFirefoxProfiles.profileDirectories(in: contents, relativeTo: root)
+                .filter { directoryContents($0.path) != nil }
+        }
+
         guard let relativePath = self.defaultUserDataRelativePath(for: browser) else { return [] }
         let root = CodexBarPlatformPaths.localAppDataURL(home: home, environment: environment)
             .appendingPathComponent(relativePath, isDirectory: true)
@@ -25,6 +37,17 @@ enum WindowsBrowserProfileLocator {
             guard directoryContents(profile.path) != nil else { return nil }
             return profile
         }
+    }
+
+    private static func readProfileRegistry(at path: String) -> String? {
+        let maximumBytes = 1024 * 1024
+        guard let handle = try? FileHandle(forReadingFrom: URL(fileURLWithPath: path)) else { return nil }
+        defer { try? handle.close() }
+        guard let data = try? handle.read(upToCount: maximumBytes + 1), data.count <= maximumBytes else { return nil }
+        if data.starts(with: [0xFF, 0xFE]) {
+            return String(data: data.dropFirst(2), encoding: .utf16LittleEndian)
+        }
+        return String(data: data, encoding: .utf8)
     }
 
     // Vendor source links and intentionally unsupported identities are recorded in docs/windows-port/STATIC-QA-025.ko.md.

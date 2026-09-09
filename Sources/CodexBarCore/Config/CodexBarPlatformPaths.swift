@@ -2,6 +2,23 @@ import Foundation
 
 /// Platform-owned locations for CodexBar's user data and executable resources.
 enum CodexBarPlatformPaths {
+    static func roamingAppDataURL(
+        home: URL = FileManager.default.homeDirectoryForCurrentUser,
+        environment: [String: String] = ProcessInfo.processInfo.environment) -> URL
+    {
+        #if os(Windows)
+        if let raw = self.environmentValue("APPDATA", environment: environment)?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !raw.isEmpty,
+           (raw as NSString).isAbsolutePath
+        {
+            return URL(fileURLWithPath: (raw as NSString).expandingTildeInPath, isDirectory: true)
+        }
+        return home.appendingPathComponent("AppData/Roaming", isDirectory: true)
+        #else
+        return home
+        #endif
+    }
+
     static func localAppDataURL(
         home: URL = FileManager.default.homeDirectoryForCurrentUser,
         environment: [String: String] = ProcessInfo.processInfo.environment) -> URL

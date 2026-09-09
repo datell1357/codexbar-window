@@ -414,6 +414,7 @@ public final class BrowserDetection: @unchecked Sendable {
     private let fileExists: @Sendable (String) -> Bool
     private let directoryContents: @Sendable (String) -> [String]?
     private let environment: [String: String]
+    private let readText: (@Sendable (String) -> String?)?
 
     private struct CachedResult {
         let value: Bool
@@ -428,7 +429,8 @@ public final class BrowserDetection: @unchecked Sendable {
         directoryContents: @escaping @Sendable (String) -> [String]? = { path in
             try? FileManager.default.contentsOfDirectory(atPath: path)
         },
-        environment: [String: String] = ProcessInfo.processInfo.environment)
+        environment: [String: String] = ProcessInfo.processInfo.environment,
+        readText: (@Sendable (String) -> String?)? = nil)
     {
         self.homeDirectory = homeDirectory
         self.cacheTTL = cacheTTL
@@ -436,6 +438,7 @@ public final class BrowserDetection: @unchecked Sendable {
         self.fileExists = fileExists
         self.directoryContents = directoryContents
         self.environment = environment
+        self.readText = readText
     }
 
     public func isAppInstalled(_ browser: Browser) -> Bool {
@@ -465,7 +468,8 @@ public final class BrowserDetection: @unchecked Sendable {
             home: URL(fileURLWithPath: self.homeDirectory, isDirectory: true),
             environment: self.environment,
             fileExists: self.fileExists,
-            directoryContents: self.directoryContents).isEmpty
+            directoryContents: self.directoryContents,
+            readText: self.readText).isEmpty
         self.cache[browser] = CachedResult(value: value, timestamp: timestamp)
         return value
     }
