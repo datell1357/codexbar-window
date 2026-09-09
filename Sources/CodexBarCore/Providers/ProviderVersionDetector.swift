@@ -14,7 +14,17 @@ public enum ProviderVersionDetector {
         let fileSize: UInt64
         let inode: UInt64
         var volumeSerialNumber: UInt32 = 0
+#if os(Windows)
+        var dependencies: [WindowsDependencyFingerprint] = []
+#endif
     }
+
+#if os(Windows)
+    private struct WindowsDependencyFingerprint: Hashable {
+        let path: String
+        let metadata: WindowsFileIdentitySnapshot
+    }
+#endif
 
     private struct ClaudeVersionCacheEntry {
         let fingerprint: ClaudeExecutableFingerprint
@@ -76,7 +86,10 @@ public enum ProviderVersionDetector {
 #endif
     }
 
-    private static func getClaudeFingerprint(forPath path: String) -> ClaudeExecutableFingerprint? {
+    private static func getClaudeFingerprint(
+        forPath path: String,
+        environment: [String: String]) -> ClaudeExecutableFingerprint?
+    {
         let resolvedPath = self.resolveRealPath(path)
 #if os(Windows)
         #if DEBUG
@@ -85,13 +98,23 @@ public enum ProviderVersionDetector {
         let useNativeSnapshot = true
         #endif
         if useNativeSnapshot {
-            guard let snapshot = WindowsFileIdentity.snapshot(atPath: resolvedPath) else { return nil }
+            guard let snapshot = WindowsFileIdentity.snapshot(atPath: resolvedPath),
+                  let command = WindowsCommandResolver.resolve(
+                    executable: path, override: path, environment: environment)
+            else { return nil }
+            var dependencies: [WindowsDependencyFingerprint] = []
+            for dependency in [command.target.executable] + command.target.argumentPrefix {
+                let normalized = self.resolveRealPath(dependency)
+                guard let metadata = WindowsFileIdentity.snapshot(atPath: normalized) else { return nil }
+                dependencies.append(WindowsDependencyFingerprint(path: normalized, metadata: metadata))
+            }
             return ClaudeExecutableFingerprint(
                 realPath: resolvedPath,
                 modificationDate: snapshot.lastWriteTime,
                 fileSize: snapshot.fileSize,
                 inode: snapshot.fileIndex,
-                volumeSerialNumber: snapshot.volumeSerialNumber)
+                volumeSerialNumber: snapshot.volumeSerialNumber,
+                dependencies: dependencies)
         }
 #endif
         #if DEBUG
@@ -142,8 +165,10 @@ public enum ProviderVersionDetector {
             base: environment,
             home: CodexBarPlatformPaths.environmentValue("HOME", environment: environment) ?? NSHomeDirectory(),
             workingDirectory: workingDirectory)
-        guard let process = try? WindowsProcess.launch(
-            executable: path,
+        guard let command = WindowsCommandResolver.resolve(
+            executable: path, override: path, environment: environment),
+              let process = try? WindowsProcess.launch(
+            target: command.target,
             arguments: ["--version"],
             environment: launchEnvironment,
             currentDirectoryURL: workingDirectory,
@@ -204,12 +229,10 @@ public enum ProviderVersionDetector {
         environment: [String: String]) -> String?
     {
 #if os(Windows)
-        // Resolve only native .exe/.com images. `.cmd`/`.bat` wrappers remain
-        // unresolved because WindowsProcess intentionally does not invoke cmd.exe.
-        return WindowsExecutableResolver.resolve(
+        return WindowsCommandResolver.resolve(
             executable: "claude",
             override: CodexBarPlatformPaths.environmentValue("CLAUDE_CLI_PATH", environment: environment),
-            environment: environment)
+            environment: environment)?.sourcePath
 #else
         return ClaudeCLIResolver.resolvedBinaryPath(environment: environment)
 #endif
@@ -238,7 +261,7 @@ public enum ProviderVersionDetector {
         #endif
         guard let path = pathOpt else { return nil }
 
-        guard let fingerprint = getClaudeFingerprint(forPath: path) else {
+        guard let fingerprint = getClaudeFingerprint(forPath: path, environment: environment) else {
             guard ClaudeCLIBackgroundAvailability.allowsOpaqueChildExecution(
                 binary: path,
                 environment: environment)
