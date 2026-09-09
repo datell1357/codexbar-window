@@ -107,6 +107,11 @@ enum CLICardsRenderer {
         return 80
     }
 
+    #if os(Windows)
+    private static func terminalColumnCountFromTTY() -> Int? {
+        WindowsConsole.visibleWidth()
+    }
+    #else
     private static func terminalColumnCountFromTTY(fileDescriptor: Int32 = STDOUT_FILENO) -> Int? {
         guard isatty(fileDescriptor) == 1 else { return nil }
         var windowSize = winsize(ws_row: 0, ws_col: 0, ws_xpixel: 0, ws_ypixel: 0)
@@ -114,6 +119,7 @@ enum CLICardsRenderer {
         let columns = Int(windowSize.ws_col)
         return columns > 0 ? columns : nil
     }
+    #endif
 
     static func columnCount(terminalWidth: Int, minCardWidth: Int = Self.minCardWidth) -> Int {
         let usable = max(minCardWidth, terminalWidth)

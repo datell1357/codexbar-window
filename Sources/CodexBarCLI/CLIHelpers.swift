@@ -65,7 +65,11 @@ extension CodexBarCLI {
         if env["TERM"]?.lowercased() == "dumb" {
             return false
         }
+        #if os(Windows)
+        return WindowsConsole.supportsANSIOutput()
+        #else
         return isatty(STDOUT_FILENO) == 1
+        #endif
     }
 
     static func detectVersion(for provider: UsageProvider, browserDetection: BrowserDetection) -> String? {
