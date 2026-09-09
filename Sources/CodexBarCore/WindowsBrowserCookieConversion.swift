@@ -6,8 +6,7 @@ import Foundation
 import FoundationNetworking
 #endif
 
-/// Cookie conversion only. Store discovery and loading are separate adapters, not enabled by this type.
-public enum BrowserCookieClient {
+extension BrowserCookieClient {
     public static func makeHTTPCookies(
         _ records: [BrowserCookieRecord],
         origin: BrowserCookieOriginStrategy = .domainBased) -> [HTTPCookie]
