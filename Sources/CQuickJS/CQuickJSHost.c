@@ -2,6 +2,9 @@
 
 #include <stdatomic.h>
 #include <stdlib.h>
+#ifdef _WIN32
+#include <windows.h>
+#endif
 #include <time.h>
 
 struct CQJSWatchdog {
@@ -12,11 +15,15 @@ struct CQJSWatchdog {
 };
 
 static uint64_t CQJSMonotonicNanoseconds(void) {
+#ifdef _WIN32
+    return (uint64_t)GetTickCount64() * UINT64_C(1000000);
+#else
     struct timespec value;
     if (clock_gettime(CLOCK_MONOTONIC, &value) != 0) {
         return 0;
     }
     return (uint64_t)value.tv_sec * UINT64_C(1000000000) + (uint64_t)value.tv_nsec;
+#endif
 }
 
 static int CQJSInterruptHandler(JSRuntime *runtime, void *opaque) {

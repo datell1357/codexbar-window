@@ -1,6 +1,9 @@
 #if canImport(Darwin)
 import Darwin
 #endif
+#if os(Windows)
+import WinSDK
+#endif
 import Foundation
 
 /// Safe resolver for CodexBarCore's SwiftPM resource bundle.
@@ -85,6 +88,23 @@ public enum CodexBarCoreResources {
         let path = "/proc/self/exe"
         guard FileManager.default.fileExists(atPath: path) else { return nil }
         return URL(fileURLWithPath: path)
+        #elseif os(Windows)
+        let maximumCapacity: DWORD = 32_768
+        var capacity: DWORD = 260
+        while capacity <= maximumCapacity {
+            var buffer = [WCHAR](repeating: 0, count: Int(capacity))
+            let length = buffer.withUnsafeMutableBufferPointer { pointer in
+                GetModuleFileNameW(nil, pointer.baseAddress, capacity)
+            }
+            guard length > 0 else { return nil }
+            if length < capacity {
+                let path = String(decoding: buffer.prefix(Int(length)), as: UTF16.self)
+                return URL(fileURLWithPath: path)
+            }
+            guard capacity < maximumCapacity else { return nil }
+            capacity = min(capacity * 2, maximumCapacity)
+        }
+        return nil
         #else
         return nil
         #endif

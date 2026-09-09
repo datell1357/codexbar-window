@@ -84,8 +84,13 @@ public final class ProviderPluginApprovalStore: @unchecked Sendable {
     }
 
     public static var defaultURL: URL {
+        #if os(Windows)
+        return CodexBarPlatformPaths.codexBarDataDirectory()
+            .appendingPathComponent("plugin-approvals.json")
+        #else
         FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent("Library/Application Support/CodexBar/plugin-approvals.json")
+        #endif
     }
 
     private let fileURL: URL
@@ -225,13 +230,21 @@ public final class UserProviderPluginLoader: @unchecked Sendable {
     public static let sucraseVersion = "3.35.1"
 
     public static var defaultProvidersDirectory: URL {
+        #if os(Windows)
+        return CodexBarPlatformPaths.codexBarDataDirectory().appendingPathComponent("providers", isDirectory: true)
+        #else
         FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent(".config/codexbar/providers", isDirectory: true)
+        #endif
     }
 
     public static var defaultCacheDirectory: URL {
+        #if os(Windows)
+        return CodexBarPlatformPaths.codexBarDataDirectory().appendingPathComponent("plugins", isDirectory: true)
+        #else
         FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent("Library/Caches/CodexBar/plugins", isDirectory: true)
+        #endif
     }
 
     private let providersDirectory: URL

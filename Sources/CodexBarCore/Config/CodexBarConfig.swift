@@ -52,12 +52,12 @@ public struct CodexBarConfig: Codable, Sendable {
         self.hooks = try container.decodeIfPresent(HooksConfig.self, forKey: .hooks)
     }
 
-    /// User plugins exist only where JavaScriptCore does; other platforms drop their config entries.
+    /// User plugins exist only where a supported plugin engine does; other platforms drop their config entries.
     private static func isKnownProviderInstance(_ instanceID: ProviderInstanceID) -> Bool {
         if instanceID.firstPartyProvider != nil {
             return true
         }
-        #if canImport(JavaScriptCore)
+        #if canImport(JavaScriptCore) || canImport(CQuickJS)
         return UserProviderPluginRegistry.plugin(for: instanceID) != nil
         #else
         return false

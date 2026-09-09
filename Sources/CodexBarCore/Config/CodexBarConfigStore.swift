@@ -85,14 +85,14 @@ public struct CodexBarConfigStore: @unchecked Sendable {
         environment: [String: String] = ProcessInfo.processInfo.environment,
         fileManager: FileManager = .default) -> URL
     {
-        if let override = environment[pathEnvironmentKey]?.trimmingCharacters(in: .whitespacesAndNewlines),
+        if let override = CodexBarPlatformPaths.environmentValue(pathEnvironmentKey, environment: environment)?.trimmingCharacters(in: .whitespacesAndNewlines),
            !override.isEmpty
         {
             let expanded = (override as NSString).expandingTildeInPath
             return URL(fileURLWithPath: expanded)
         }
 
-        if let xdgConfigHome = environment[xdgConfigHomeEnvironmentKey]?
+        if let xdgConfigHome = CodexBarPlatformPaths.environmentValue(xdgConfigHomeEnvironmentKey, environment: environment)?
             .trimmingCharacters(in: .whitespacesAndNewlines),
             !xdgConfigHome.isEmpty
         {
@@ -103,6 +103,11 @@ public struct CodexBarConfigStore: @unchecked Sendable {
                     .appendingPathComponent("config.json")
             }
         }
+
+        #if os(Windows)
+        return CodexBarPlatformPaths.codexBarDataDirectory(home: home, environment: environment)
+            .appendingPathComponent("config.json")
+        #else
 
         let xdgDefault = home
             .appendingPathComponent(".config", isDirectory: true)
@@ -120,6 +125,7 @@ public struct CodexBarConfigStore: @unchecked Sendable {
         }
 
         return xdgDefault
+        #endif
     }
 
     private func applySecurePermissionsIfNeeded() throws {
