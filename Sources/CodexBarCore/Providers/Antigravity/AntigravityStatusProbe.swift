@@ -1056,6 +1056,22 @@ public struct AntigravityStatusProbe: Sendable {
         let pid: Int
         let command: String
         var executablePath: String?
+        var owner: ProcessOwnerIdentity?
+        var creationTime: Date?
+
+        init(
+            pid: Int,
+            command: String,
+            executablePath: String? = nil,
+            owner: ProcessOwnerIdentity? = nil,
+            creationTime: Date? = nil)
+        {
+            self.pid = pid
+            self.command = command
+            self.executablePath = executablePath
+            self.owner = owner
+            self.creationTime = creationTime
+        }
     }
 
     struct ProcessInfoResult {
@@ -1065,6 +1081,28 @@ public struct AntigravityStatusProbe: Sendable {
         let csrfToken: String
         let commandLine: String
         var executablePath: String?
+        var owner: ProcessOwnerIdentity?
+        var creationTime: Date?
+
+        init(
+            pid: Int,
+            extensionPort: Int?,
+            extensionServerCSRFToken: String?,
+            csrfToken: String,
+            commandLine: String,
+            executablePath: String? = nil,
+            owner: ProcessOwnerIdentity? = nil,
+            creationTime: Date? = nil)
+        {
+            self.pid = pid
+            self.extensionPort = extensionPort
+            self.extensionServerCSRFToken = extensionServerCSRFToken
+            self.csrfToken = csrfToken
+            self.commandLine = commandLine
+            self.executablePath = executablePath
+            self.owner = owner
+            self.creationTime = creationTime
+        }
     }
 
     struct AntigravityConnectionEndpoint: Equatable {
@@ -1110,7 +1148,29 @@ public struct AntigravityStatusProbe: Sendable {
         timeout: TimeInterval,
         scope: ProcessScope = .ideAndCLI) async throws -> [ProcessInfoResult]
     {
-        #if canImport(Darwin)
+#if os(Windows)
+        let deadline = Date().addingTimeInterval(timeout)
+        let snapshots: [WindowsProcessSnapshot]
+        do {
+            snapshots = try await WindowsProcessEnumerator.snapshots(deadline: deadline)
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch WindowsProcessEnumerator.ProcessEnumeratorError.timedOut {
+            throw AntigravityStatusProbeError.timedOut
+        } catch {
+            throw error
+        }
+        let entries = snapshots.compactMap { snapshot -> ProcessEntry? in
+            guard let pid = Int(exactly: snapshot.pid) else { return nil }
+            return ProcessEntry(
+                pid: pid,
+                command: snapshot.commandLine.isEmpty ? snapshot.imagePath : snapshot.commandLine,
+                executablePath: snapshot.imagePath,
+                owner: snapshot.owner,
+                creationTime: snapshot.creationTime)
+        }
+        return try self.processInfos(fromEntries: entries, scope: scope)
+#elseif canImport(Darwin)
         let entries = DarwinProcessEnumerator.allPIDs().compactMap { pid -> ProcessEntry? in
             guard let executablePath = DarwinProcessEnumerator.executablePath(pid: pid),
                   DarwinProcessEnumerator.isAntigravityCandidatePath(executablePath)
@@ -1119,7 +1179,7 @@ public struct AntigravityStatusProbe: Sendable {
             return ProcessEntry(pid: Int(pid), command: command, executablePath: executablePath)
         }
         return try self.processInfos(fromEntries: entries, scope: scope)
-        #else
+#else
         let env = ProcessInfo.processInfo.environment
         let result = try await SubprocessRunner.run(
             binary: "/bin/ps",
@@ -1129,7 +1189,7 @@ public struct AntigravityStatusProbe: Sendable {
             label: "antigravity-ps")
 
         return try Self.processInfos(fromProcessListOutput: result.stdout, scope: scope)
-        #endif
+#endif
     }
 
     static func processInfo(
@@ -1180,7 +1240,9 @@ public struct AntigravityStatusProbe: Sendable {
                 extensionServerCSRFToken: extensionServerCSRFToken,
                 csrfToken: token,
                 commandLine: entry.command,
-                executablePath: entry.executablePath))
+                executablePath: entry.executablePath,
+                owner: entry.owner,
+                creationTime: entry.creationTime))
         }
 
         if !results.isEmpty {

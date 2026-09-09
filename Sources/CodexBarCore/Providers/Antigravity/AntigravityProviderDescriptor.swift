@@ -411,7 +411,7 @@ struct AntigravityCLIHTTPSFetchStrategy: ProviderFetchStrategy {
         // here would bypass session lifecycle accounting (see `ownedPID`).
         let cliProcesses = processInfos.filter { info in
             info.pid != ownedPID &&
-                dependencies.processOwnerIdentity(info.pid) == currentOwnerIdentity &&
+                (info.owner ?? dependencies.processOwnerIdentity(info.pid)) == currentOwnerIdentity &&
                 AntigravityStatusProbe.antigravityProcessKind(info.commandLine) == .cli
         }
         guard !cliProcesses.isEmpty else { return nil }
