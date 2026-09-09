@@ -73,7 +73,9 @@ public struct BrowserCookieClient: Sendable {
                 }.compactMap { directory in
                     let profileURL = directory.standardizedFileURL
                     let databaseURL = profileURL.appendingPathComponent("cookies.sqlite", isDirectory: false)
-                    guard self.fileExists(databaseURL.path), seen.insert(profileURL.path).inserted else { return nil }
+                    guard self.fileExists(databaseURL.path),
+                          WindowsFirefoxProfileSelection.includes(profile: profileURL, readText: self.readText),
+                          seen.insert(profileURL.path).inserted else { return nil }
                     let name = profileURL.lastPathComponent
                     return BrowserCookieStore(
                         browser: browser,

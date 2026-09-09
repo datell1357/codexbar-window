@@ -41,7 +41,7 @@ enum WindowsFirefoxProfiles {
             if isRelative == "1" {
                 profile = self.relativeProfile(path, root: root)
             } else {
-                profile = self.absoluteProfile(path)
+                profile = self.absoluteDirectory(path)
             }
             if let profile, !profiles.contains(profile) { profiles.append(profile) }
         }
@@ -70,7 +70,7 @@ enum WindowsFirefoxProfiles {
         return result.standardizedFileURL
     }
 
-    private static func absoluteProfile(_ path: String) -> URL? {
+    static func absoluteDirectory(_ path: String) -> URL? {
         guard !path.contains("/"), !path.contains(where: { "<>\"|?*".contains($0) }),
               !path.hasPrefix("\\\\.\\") else { return nil }
         let bytes = Array(path.utf8.prefix(3))
