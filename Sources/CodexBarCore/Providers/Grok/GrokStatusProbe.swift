@@ -84,7 +84,15 @@ public struct GrokStatusProbe: Sendable {
     public static func detectVersion(env: [String: String] = ProcessInfo.processInfo.environment)
         -> String?
     {
-        guard let binary = BinaryLocator.resolveGrokBinary(env: env) else { return nil }
+        #if os(Windows)
+        let resolvedBinary = WindowsExecutableResolver.resolve(
+            executable: "grok",
+            override: CodexBarPlatformPaths.environmentValue("GROK_CLI_PATH", environment: env),
+            environment: env)
+        #else
+        let resolvedBinary = BinaryLocator.resolveGrokBinary(env: env)
+        #endif
+        guard let binary = resolvedBinary else { return nil }
         guard
             let output = ProviderVersionDetector.run(
                 path: binary,

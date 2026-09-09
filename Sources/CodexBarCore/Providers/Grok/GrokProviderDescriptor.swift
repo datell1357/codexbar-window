@@ -1,5 +1,7 @@
 import Foundation
+#if os(macOS)
 import SweetCookieKit
+#endif
 
 public enum GrokProviderDescriptor {
     public static let descriptor: ProviderDescriptor = Self.makeDescriptor()
@@ -183,7 +185,14 @@ struct GrokCLIFetchStrategy: ProviderFetchStrategy {
     let kind: ProviderFetchKind = .cli
 
     func isAvailable(_ context: ProviderFetchContext) async -> Bool {
+        #if os(Windows)
+        WindowsExecutableResolver.resolve(
+            executable: "grok",
+            override: CodexBarPlatformPaths.environmentValue("GROK_CLI_PATH", environment: context.env),
+            environment: context.env) != nil
+        #else
         BinaryLocator.resolveGrokBinary(env: context.env) != nil
+        #endif
     }
 
     func fetch(_ context: ProviderFetchContext) async throws -> ProviderFetchResult {

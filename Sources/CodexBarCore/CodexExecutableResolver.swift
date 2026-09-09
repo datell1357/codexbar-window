@@ -20,6 +20,13 @@ func resolveCodexExecutableForRPC(
     executable: String,
     captureLoginPATH: () -> [String]?) -> CodexExecutableResolution?
 {
+#if os(Windows)
+    return WindowsExecutableResolver.resolve(
+        executable: executable,
+        override: CodexBarPlatformPaths.environmentValue("CODEX_CLI_PATH", environment: environment),
+        environment: environment)
+        .map { CodexExecutableResolution(executable: $0, loginPATH: nil) }
+#else
     if let override = environment["CODEX_CLI_PATH"],
        FileManager.default.isExecutableFile(atPath: override)
     {
@@ -36,6 +43,7 @@ func resolveCodexExecutableForRPC(
         ?? TTYCommandRunner.which(executable)
     else { return nil }
     return CodexExecutableResolution(executable: resolved, loginPATH: loginPATH)
+#endif
 }
 
 let defaultCodexExecutableResolver: CodexExecutableResolver = { environment, executable in

@@ -13,6 +13,7 @@ public enum ProviderVersionDetector {
         let modificationDate: Date
         let fileSize: UInt64
         let inode: UInt64
+        var volumeSerialNumber: UInt32 = 0
     }
 
     private struct ClaudeVersionCacheEntry {
@@ -59,6 +60,11 @@ public enum ProviderVersionDetector {
     }
 
     private static func resolveRealPath(_ path: String) -> String {
+#if os(Windows)
+        // Foundation provides the platform path normalization here; `realpath`/PATH_MAX
+        // are POSIX-only and are unavailable on native Windows builds.
+        return URL(fileURLWithPath: path).resolvingSymlinksInPath().standardizedFileURL.path
+#else
         var buffer = [CChar](repeating: 0, count: Int(PATH_MAX))
         if realpath(path, &buffer) != nil {
             return buffer.withUnsafeBufferPointer { rawBuffer in
@@ -67,10 +73,27 @@ public enum ProviderVersionDetector {
             }
         }
         return URL(fileURLWithPath: path).resolvingSymlinksInPath().path
+#endif
     }
 
     private static func getClaudeFingerprint(forPath path: String) -> ClaudeExecutableFingerprint? {
         let resolvedPath = self.resolveRealPath(path)
+#if os(Windows)
+        #if DEBUG
+        let useNativeSnapshot = self.attributesHook == nil
+        #else
+        let useNativeSnapshot = true
+        #endif
+        if useNativeSnapshot {
+            guard let snapshot = WindowsFileIdentity.snapshot(atPath: resolvedPath) else { return nil }
+            return ClaudeExecutableFingerprint(
+                realPath: resolvedPath,
+                modificationDate: snapshot.lastWriteTime,
+                fileSize: snapshot.fileSize,
+                inode: snapshot.fileIndex,
+                volumeSerialNumber: snapshot.volumeSerialNumber)
+        }
+#endif
         #if DEBUG
         let attributesOpt = self.attributesHook != nil ? self.attributesHook?(resolvedPath) : try? FileManager.default
             .attributesOfItem(atPath: resolvedPath)
@@ -81,9 +104,11 @@ public enum ProviderVersionDetector {
             return nil
         }
         guard let modificationDate = attributes[.modificationDate] as? Date,
-              let fileSize = (attributes[.size] as? NSNumber)?.uint64Value,
-              let inode = (attributes[.systemFileNumber] as? NSNumber)?.uint64Value
+              let fileSize = (attributes[.size] as? NSNumber)?.uint64Value
         else {
+            return nil
+        }
+        guard let inode = (attributes[.systemFileNumber] as? NSNumber)?.uint64Value else {
             return nil
         }
         return ClaudeExecutableFingerprint(
@@ -93,7 +118,40 @@ public enum ProviderVersionDetector {
             inode: inode)
     }
 
-    private static func runClaudeVersionCommand(path: String) -> String? {
+    private static func runClaudeVersionCommand(
+        path: String,
+        environment: [String: String] = ProcessInfo.processInfo.environment) -> String?
+    {
+#if os(Windows)
+        #if DEBUG
+        if let hook = runClaudeVersionHook {
+            do {
+                guard let result = try hook(path),
+                      result.completion == .processExited(status: 0)
+                else { return nil }
+                let trimmed = TextParsing.stripANSICodes(result.text)
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                return trimmed.isEmpty ? nil : trimmed
+            } catch {
+                return nil
+            }
+        }
+        #endif
+        let workingDirectory = ClaudeStatusProbe.preparedProbeWorkingDirectoryURL()
+        var launchEnvironment = environment.filter { $0.key.uppercased() != "PWD" }
+        launchEnvironment["PWD"] = workingDirectory.path
+        guard let process = try? WindowsProcess.launch(
+            executable: path,
+            arguments: ["--version"],
+            environment: launchEnvironment,
+            currentDirectoryURL: workingDirectory,
+            standardInput: nil,
+            mergeStandardError: true)
+        else { return nil }
+        guard let output = process.captureVersionSynchronously(timeout: 5.0, fullOutput: true) else { return nil }
+        let trimmed = TextParsing.stripANSICodes(output).trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+#else
         let commandResult: TTYCommandRunner.Result?
         #if DEBUG
         if let hook = runClaudeVersionHook {
@@ -137,6 +195,22 @@ public enum ProviderVersionDetector {
         let trimmed = TextParsing.stripANSICodes(commandResult.text)
             .trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.isEmpty ? nil : trimmed
+#endif
+    }
+
+    private static func resolvedClaudeBinaryPath(
+        environment: [String: String]) -> String?
+    {
+#if os(Windows)
+        // Resolve only native .exe/.com images. `.cmd`/`.bat` wrappers remain
+        // unresolved because WindowsProcess intentionally does not invoke cmd.exe.
+        return WindowsExecutableResolver.resolve(
+            executable: "claude",
+            override: CodexBarPlatformPaths.environmentValue("CLAUDE_CLI_PATH", environment: environment),
+            environment: environment)
+#else
+        return ClaudeCLIResolver.resolvedBinaryPath(environment: environment)
+#endif
     }
 
     public static func claudeBinaryResolvable(
@@ -147,7 +221,7 @@ public enum ProviderVersionDetector {
             return whichHook("claude") != nil
         }
         #endif
-        return ClaudeCLIResolver.resolvedBinaryPath(environment: environment) != nil
+        return self.resolvedClaudeBinaryPath(environment: environment) != nil
     }
 
     public static func claudeVersion(
@@ -156,9 +230,9 @@ public enum ProviderVersionDetector {
         #if DEBUG
         let pathOpt = self.whichHook != nil
             ? self.whichHook!("claude")
-            : ClaudeCLIResolver.resolvedBinaryPath(environment: environment)
+            : self.resolvedClaudeBinaryPath(environment: environment)
         #else
-        let pathOpt = ClaudeCLIResolver.resolvedBinaryPath(environment: environment)
+        let pathOpt = self.resolvedClaudeBinaryPath(environment: environment)
         #endif
         guard let path = pathOpt else { return nil }
 
@@ -167,7 +241,7 @@ public enum ProviderVersionDetector {
                 binary: path,
                 environment: environment)
             else { return nil }
-            return self.runClaudeVersionCommand(path: path)
+            return self.runClaudeVersionCommand(path: path, environment: environment)
         }
         self.lock.lock()
         let now = self.currentDate()
@@ -205,7 +279,7 @@ public enum ProviderVersionDetector {
         self.claudePendingDetections[fingerprint] = pending
         self.lock.unlock()
 
-        let result = self.runClaudeVersionCommand(path: path)
+        let result = self.runClaudeVersionCommand(path: path, environment: environment)
         let completedAt = self.currentDate()
 
         self.lock.lock()
@@ -286,6 +360,17 @@ public enum ProviderVersionDetector {
         environment: [String: String]? = nil,
         mergeStandardError: Bool = false) -> String?
     {
+#if os(Windows)
+        guard let process = try? WindowsProcess.launch(
+            executable: path,
+            arguments: args,
+            environment: environment ?? ProcessInfo.processInfo.environment,
+            currentDirectoryURL: nil,
+            standardInput: nil,
+            mergeStandardError: mergeStandardError)
+        else { return nil }
+        return process.captureVersionSynchronously(timeout: timeout)
+#else
         let proc = Process()
         proc.executableURL = URL(fileURLWithPath: path)
         proc.arguments = args
@@ -322,8 +407,10 @@ public enum ProviderVersionDetector {
         else { return nil }
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.isEmpty ? nil : trimmed
+#endif
     }
 
+#if !os(Windows)
     private static func forceExit(_ proc: Process, exitSemaphore: DispatchSemaphore) -> Bool {
         guard proc.isRunning else { return true }
 
@@ -336,4 +423,5 @@ public enum ProviderVersionDetector {
         kill(proc.processIdentifier, SIGKILL)
         return exitSemaphore.wait(timeout: .now() + 1.0) == .success
     }
+#endif
 }

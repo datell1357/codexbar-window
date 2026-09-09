@@ -28,7 +28,23 @@ public enum HookRunner {
         event: HookEvent,
         baseEnvironment: [String: String] = ProcessInfo.processInfo.environment) async throws -> SubprocessResult
     {
+        #if os(Windows)
+        // Windows environment names are case-insensitive. Keep a narrow allowlist:
+        // SystemRoot is needed by Windows child processes; never forward the entire environment.
+        let windowsKeys: Set<String> = [
+            "SYSTEMROOT", "WINDIR", "PATH", "PATHEXT", "TEMP", "TMP",
+            "USERPROFILE", "HOMEDRIVE", "HOMEPATH", "USERNAME", "COMSPEC",
+        ]
+        var environment: [String: String] = [:]
+        for key in baseEnvironment.keys.sorted() {
+            let canonical = key.uppercased()
+            if windowsKeys.contains(canonical) || Self.forwardedEnvironmentKeys.contains(canonical) {
+                environment[canonical] = baseEnvironment[key]
+            }
+        }
+        #else
         var environment = baseEnvironment.filter { Self.forwardedEnvironmentKeys.contains($0.key) }
+        #endif
         for (key, value) in event.environmentVariables() {
             environment[key] = value
         }

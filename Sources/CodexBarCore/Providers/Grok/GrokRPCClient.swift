@@ -8,10 +8,27 @@ import Foundation
 final class GrokRPCClient: @unchecked Sendable {
     private static let log = CodexBarLog.logger(LogCategories.provider(.grok))
 
+#if os(Windows)
+    private final class StreamFailure: @unchecked Sendable {
+        private let lock = NSLock()
+        private var message: String?
+        func record(_ error: Error) {
+            self.lock.withLock {
+                if self.message == nil { self.message = error.localizedDescription }
+            }
+        }
+        var value: String? { self.lock.withLock { self.message } }
+    }
+
+    private let streamFailure = StreamFailure()
+    private let windowsProcess: WindowsProcess
+    private let streamTask: Task<Void, Never>
+#else
     private let process = Process()
-    private let stdin = RPCChildProcessInput()
     private let stdoutPipe = Pipe()
     private let stderrPipe = Pipe()
+#endif
+    private let stdin = RPCChildProcessInput()
     private let initializeTimeoutSeconds: TimeInterval
     private let requestTimeoutSeconds: TimeInterval
     private var nextID: Int = 1
@@ -33,8 +50,15 @@ final class GrokRPCClient: @unchecked Sendable {
         }
         self.stdoutLineContinuation = stdoutContinuation
 
+#if os(Windows)
+        let resolvedExec = WindowsExecutableResolver.resolve(
+            executable: executable,
+            override: CodexBarPlatformPaths.environmentValue("GROK_CLI_PATH", environment: environment),
+            environment: environment)
+#else
         let resolvedExec = BinaryLocator.resolveGrokBinary(env: environment)
             ?? TTYCommandRunner.which(executable)
+#endif
 
         guard let resolvedExec else {
             Self.log.warning("Grok RPC binary not found", metadata: ["binary": executable])
@@ -42,8 +66,72 @@ final class GrokRPCClient: @unchecked Sendable {
         }
 
         var env = environment
+#if os(Windows)
+        let path = CodexBarPlatformPaths.environmentValue("PATH", environment: env)
+        env = env.filter { $0.key.uppercased() != "PATH" }
+        if let path, !path.isEmpty {
+            env["PATH"] = path
+        }
+#else
         env["PATH"] = PathBuilder.effectivePATH(purposes: [.rpc], env: env)
+#endif
 
+#if os(Windows)
+        do {
+            self.windowsProcess = try WindowsProcess.launch(
+                executable: resolvedExec,
+                arguments: arguments,
+                environment: env,
+                currentDirectoryURL: nil,
+                standardInput: self.stdin.pipe)
+            Self.log.debug("Grok RPC started", metadata: ["binary": resolvedExec])
+        } catch {
+            Self.log.warning("Grok RPC failed to start", metadata: ["error": error.localizedDescription])
+            throw GrokRPCError.startFailed(error.localizedDescription)
+        }
+
+        let stdoutLineContinuation = self.stdoutLineContinuation
+        let stdoutBuffer = BoundedLineBuffer()
+        let stderrBuffer = BoundedLineBuffer()
+        let windowsProcess = self.windowsProcess
+        let stdin = self.stdin
+        let streamFailure = self.streamFailure
+        self.streamTask = Task {
+            do {
+                _ = try await windowsProcess.stream(
+                    onStdout: { data in
+                        let result = stdoutBuffer.appendAndDrainLines(data)
+                        if result.didExceedLimit {
+                            Self.log.warning("Grok RPC line exceeded memory limit; terminating process")
+                            windowsProcess.terminate()
+                            throw GrokRPCError.malformed("grok agent stdout line exceeded memory limit")
+                        }
+                        for lineData in result.lines { stdoutLineContinuation.yield(lineData) }
+                    },
+                    onStderr: { data in
+                        let result = stderrBuffer.appendAndDrainLines(data)
+                        for line in result.lines {
+                            if let text = String(data: line, encoding: .utf8), !text.isEmpty {
+                                Self.log.debug("[grok stderr] \(text)")
+                            }
+                        }
+                    },
+                    onStdoutEnd: { termination in
+                        if case .drainTimeout = termination {
+                            streamFailure.record(GrokRPCError.requestFailed("stdout drain timed out after process exit"))
+                        }
+                        // Preserve independent stdout EOF; do not wait for a descendant holding stderr.
+                        stdoutLineContinuation.finish()
+                    })
+            } catch {
+                if !(error is CancellationError) { streamFailure.record(error) }
+                stdoutLineContinuation.finish()
+                stdin.close()
+                windowsProcess.terminate()
+                Self.log.debug("Grok RPC stream ended", metadata: ["error": error.localizedDescription])
+            }
+        }
+#else
         self.process.environment = env
         self.process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
         self.process.arguments = [resolvedExec] + arguments
@@ -100,6 +188,7 @@ final class GrokRPCClient: @unchecked Sendable {
                 #endif
             }
         }
+#endif
     }
 
     deinit {
@@ -128,7 +217,13 @@ final class GrokRPCClient: @unchecked Sendable {
 
     func shutdown() {
         Self.log.debug("Grok RPC stopping")
+#if os(Windows)
+        self.stdin.close()
+        self.windowsProcess.terminate()
+        self.streamTask.cancel()
+#else
         RPCChildProcessTeardown.terminate(process: self.process, stdin: self.stdin)
+#endif
     }
 
     // MARK: - JSON-RPC plumbing (mirrors CodexRPCClient)
@@ -189,6 +284,15 @@ final class GrokRPCClient: @unchecked Sendable {
     }
 
     private func terminateProcessForTimeout(method: String) {
+#if os(Windows)
+        Self.log.warning("Grok RPC timed out on `\(method)`; terminating process")
+        let process = self.windowsProcess
+        let stdin = self.stdin
+        DispatchQueue.global(qos: .userInitiated).async {
+            stdin.close()
+            process.terminate()
+        }
+#else
         if self.process.isRunning {
             Self.log.warning("Grok RPC timed out on `\(method)`; terminating process")
         }
@@ -199,6 +303,7 @@ final class GrokRPCClient: @unchecked Sendable {
         DispatchQueue.global(qos: .userInitiated).async {
             RPCChildProcessTeardown.terminate(process: process, stdin: stdin)
         }
+#endif
     }
 
     private func sendRequest(id: Int, method: String, params: [String: Any]?) throws {
@@ -243,6 +348,11 @@ final class GrokRPCClient: @unchecked Sendable {
                 return json
             }
         }
+#if os(Windows)
+        if let failure = self.streamFailure.value {
+            throw GrokRPCError.requestFailed(failure)
+        }
+#endif
         throw GrokRPCError.malformed("grok agent stdio closed stdout")
     }
 

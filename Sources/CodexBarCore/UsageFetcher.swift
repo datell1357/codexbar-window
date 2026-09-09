@@ -867,10 +867,29 @@ private enum RPCRequestRaceResult<Value: Sendable>: Sendable {
 private final class CodexRPCClient: @unchecked Sendable {
     // Provider-specific by design: Codex RPC owns its dedicated subprocess log category.
     private static let log = CodexBarLog.logger(LogCategories.provider(.codex, scope: "rpc"))
+#if os(Windows)
+    private final class StreamFailure: @unchecked Sendable {
+        private let lock = NSLock()
+        private var message: String?
+
+        func record(_ error: Error) {
+            self.lock.withLock {
+                if self.message == nil { self.message = error.localizedDescription }
+            }
+        }
+
+        var value: String? { self.lock.withLock { self.message } }
+    }
+
+    private let streamFailure = StreamFailure()
+    private let windowsProcess: WindowsProcess
+    private let streamTask: Task<Void, Never>
+#else
     private let process = Process()
-    private let stdin = RPCChildProcessInput()
     private let stdoutPipe = Pipe()
     private let stderrPipe = Pipe()
+#endif
+    private let stdin = RPCChildProcessInput()
     private let stdoutLineStream: AsyncStream<Data>
     private let stdoutLineContinuation: AsyncStream<Data>.Continuation
     private var nextID = 1
@@ -901,23 +920,88 @@ private final class CodexRPCClient: @unchecked Sendable {
         }
         let resolvedExec = resolution.executable
         var env = environment
+#if os(Windows)
+        let path = CodexBarPlatformPaths.environmentValue("PATH", environment: env)
+        env = env.filter { $0.key.uppercased() != "PATH" }
+        if let path, !path.isEmpty {
+            env["PATH"] = path
+        }
+#else
         let loginPATH = resolution.loginPATH ?? LoginShellPathCache.shared.current
         env["PATH"] = PathBuilder.effectivePATH(
             purposes: [.rpc, .nodeTooling],
             env: env,
             loginPATH: loginPATH)
+#endif
 
+        if let message = CodexCLILaunchGate.shared.backgroundSkipMessage(binary: resolvedExec) {
+            Self.log.warning("Codex RPC launch skipped after recent launch failure", metadata: ["binary": resolvedExec])
+            throw RPCWireError.startFailed(message)
+        }
+
+#if os(Windows)
+        do {
+            self.windowsProcess = try WindowsProcess.launch(
+                executable: resolvedExec,
+                arguments: arguments,
+                environment: env,
+                currentDirectoryURL: nil,
+                standardInput: self.stdin.pipe)
+            Self.log.debug("Codex RPC started", metadata: ["binary": resolvedExec])
+        } catch {
+            let message = error.localizedDescription
+            let throttled = CodexCLILaunchGate.shared.recordLaunchFailure(binary: resolvedExec, message: message)
+            Self.log.warning("Codex RPC failed to start", metadata: ["error": message])
+            throw RPCWireError.startFailed(throttled ?? message)
+        }
+
+        let stdoutLineContinuation = self.stdoutLineContinuation
+        let stdoutBuffer = BoundedLineBuffer()
+        let stderrBuffer = BoundedLineBuffer()
+        let windowsProcess = self.windowsProcess
+        let stdin = self.stdin
+        let streamFailure = self.streamFailure
+        self.streamTask = Task {
+            do {
+                _ = try await windowsProcess.stream(
+                    onStdout: { data in
+                        let result = stdoutBuffer.appendAndDrainLines(data)
+                        if result.didExceedLimit {
+                            Self.log.warning("Codex RPC line exceeded memory limit; terminating process")
+                            windowsProcess.terminate()
+                            throw RPCWireError.malformed("codex app-server stdout line exceeded memory limit")
+                        }
+                        for lineData in result.lines { stdoutLineContinuation.yield(lineData) }
+                    },
+                    onStderr: { data in
+                        let result = stderrBuffer.appendAndDrainLines(data)
+                        for line in result.lines {
+                            if let text = String(data: line, encoding: .utf8), !text.isEmpty {
+                                Self.log.debug("[codex stderr] \(text)")
+                            }
+                        }
+                    },
+                    onStdoutEnd: { termination in
+                        if case .drainTimeout = termination {
+                            streamFailure.record(RPCWireError.requestFailed("stdout drain timed out after process exit"))
+                        }
+                        stdoutLineContinuation.finish()
+                    })
+            } catch {
+                if !(error is CancellationError) { streamFailure.record(error) }
+                stdoutLineContinuation.finish()
+                stdin.close()
+                windowsProcess.terminate()
+                Self.log.debug("Codex RPC stream ended", metadata: ["error": error.localizedDescription])
+            }
+        }
+#else
         self.process.environment = env
         self.process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
         self.process.arguments = [resolvedExec] + arguments
         self.process.standardInput = self.stdin.pipe
         self.process.standardOutput = self.stdoutPipe
         self.process.standardError = self.stderrPipe
-
-        if let message = CodexCLILaunchGate.shared.backgroundSkipMessage(binary: resolvedExec) {
-            Self.log.warning("Codex RPC launch skipped after recent launch failure", metadata: ["binary": resolvedExec])
-            throw RPCWireError.startFailed(message)
-        }
 
         do {
             try self.process.run()
@@ -972,6 +1056,11 @@ private final class CodexRPCClient: @unchecked Sendable {
                 Self.log.debug("[codex stderr] \(line)")
             }
         }
+#endif
+    }
+
+    deinit {
+        self.shutdown()
     }
 
     func initialize(clientName: String, clientVersion: String) async throws {
@@ -994,7 +1083,13 @@ private final class CodexRPCClient: @unchecked Sendable {
 
     func shutdown() {
         Self.log.debug("Codex RPC stopping")
+#if os(Windows)
+        self.stdin.close()
+        self.windowsProcess.terminate()
+        self.streamTask.cancel()
+#else
         RPCChildProcessTeardown.terminate(process: self.process, stdin: self.stdin)
+#endif
     }
 
     // MARK: - JSON-RPC helpers
@@ -1067,6 +1162,15 @@ private final class CodexRPCClient: @unchecked Sendable {
     }
 
     private func terminateProcessForTimeout(method: String) {
+#if os(Windows)
+        Self.log.warning("Codex RPC timed out on `\(method)`; terminating process")
+        let process = self.windowsProcess
+        let stdin = self.stdin
+        DispatchQueue.global(qos: .userInitiated).async {
+            stdin.close()
+            process.terminate()
+        }
+#else
         if self.process.isRunning {
             Self.log.warning("Codex RPC timed out on `\(method)`; terminating process")
         }
@@ -1077,6 +1181,7 @@ private final class CodexRPCClient: @unchecked Sendable {
         DispatchQueue.global(qos: .userInitiated).async {
             RPCChildProcessTeardown.terminate(process: process, stdin: stdin)
         }
+#endif
     }
 
     private func sendNotification(method: String, params: [String: Any]? = nil) throws {
@@ -1109,6 +1214,11 @@ private final class CodexRPCClient: @unchecked Sendable {
                 return json
             }
         }
+#if os(Windows)
+        if let failure = self.streamFailure.value {
+            throw RPCWireError.requestFailed(failure)
+        }
+#endif
         throw RPCWireError.malformed("codex app-server closed stdout")
     }
 

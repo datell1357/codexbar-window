@@ -80,6 +80,7 @@ public enum SubprocessRunner {
         return .nanoseconds(Int(exactly: nanoseconds) ?? Int.max)
     }
 
+#if !os(Windows)
     /// Terminates a process and its process group, escalating from SIGTERM to SIGKILL.
     /// Returns `true` if the process was actually killed, `false` if it had already exited.
     @discardableResult
@@ -116,6 +117,7 @@ public enum SubprocessRunner {
         }
         return true
     }
+#endif
 
     // MARK: - Public API
 
@@ -155,6 +157,18 @@ public enum SubprocessRunner {
         acceptsNonZeroExit: Bool = false,
         label: String) async throws -> SubprocessResult
     {
+#if os(Windows)
+        return try await WindowsSubprocessRunner.run(
+            binary: binary,
+            arguments: arguments,
+            environment: environment,
+            timeout: timeout,
+            maxOutputBytes: maxOutputBytes,
+            standardInput: standardInput,
+            currentDirectoryURL: currentDirectoryURL,
+            acceptsNonZeroExit: acceptsNonZeroExit,
+            label: label)
+#else
         guard FileManager.default.isExecutableFile(atPath: binary) else {
             throw SubprocessRunnerError.binaryNotFound(binary)
         }
@@ -305,5 +319,6 @@ public enum SubprocessRunner {
             stderrCapture.stop()
             throw error
         }
+#endif
     }
 }
