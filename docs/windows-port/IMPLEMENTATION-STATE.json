@@ -18,12 +18,14 @@
   ],
   "automation_id": "codexbar-windows-qa",
   "interval_minutes": 10,
-  "current_lanes": [],
-  "static_qa_status": "TCP_PORTS_048_SCOPED_STATIC_APPROVE_CLAUDE047_PENDING_APPROVAL",
+  "current_lanes": [
+    "agy_session_049"
+  ],
+  "static_qa_status": "OWNER050_051_SCOPED_APPROVE_AGY049_INCOMPLETE",
   "windows_runtime_status": "NOT_RUN_BY_USER_INSTRUCTION",
   "completion_claim": false,
-  "next": "Commit/push scoped048 only. Claude047 remains uncommitted awaiting informed approval for rejected cleaner source patch; never retry without approval. Next implement Antigravity Windows process/session ownership and enumeration from contract048, preserving warm lookup and PID ownership. No runtime.",
-  "last_batch": "windows-tcp-048",
+  "next": "Publish scoped SID foundation+descriptor wiring only. 049 still needs functional propagation of ConPTY failure (logging insufficient), safe native PID representation and review. Claude047 approval remains pending; no rejected patch retry. Windows warm process discovery/path matching still missing. Static only.",
+  "last_batch": "owner-050-051",
   "completed_source_changes": [
     "Windows package dependency wiring (partial)",
     "QuickJS watchdog Windows monotonic clock",

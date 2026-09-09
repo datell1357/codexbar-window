@@ -23,7 +23,9 @@ struct AntigravityWarmAgyReuseTests {
                     fetchSnapshotCallCount.increment()
                     #expect(ports == [56789])
                     return Self.usableSnapshot(email: "warm@example.com")
-                }))
+                },
+                processOwnerIdentity: { _ in .posixUID(0) },
+                currentOwnerIdentity: { .posixUID(0) }))
 
         #expect(result?.accountEmail == "warm@example.com")
         #expect(result?.modelQuotas.first?.modelId == "gemini-pro")
@@ -81,7 +83,9 @@ struct AntigravityWarmAgyReuseTests {
                 fetchSnapshot: { _, _ in
                     fetchSnapshotCallCount.increment()
                     throw AntigravityStatusProbeError.portDetectionFailed("endpoint not ready")
-                }))
+                },
+                processOwnerIdentity: { _ in .posixUID(0) },
+                currentOwnerIdentity: { .posixUID(0) }))
 
         // Fetch fails → warm reuse returns nil → caller falls back to spawn
         #expect(result == nil)
@@ -110,7 +114,9 @@ struct AntigravityWarmAgyReuseTests {
                 fetchSnapshot: { _, _ in
                     fetchSnapshotCallCount.increment()
                     return Self.usableSnapshot(email: "ide@example.com")
-                }))
+                },
+                processOwnerIdentity: { _ in .posixUID(0) },
+                currentOwnerIdentity: { .posixUID(0) }))
 
         #expect(result == nil)
         #expect(fetchSnapshotCallCount.value == 0)
@@ -135,6 +141,8 @@ struct AntigravityWarmAgyReuseTests {
                     fetchSnapshotCallCount.increment()
                     return Self.usableSnapshot(email: "owned@example.com")
                 },
+                processOwnerIdentity: { _ in .posixUID(0) },
+                currentOwnerIdentity: { .posixUID(0) },
                 ownedPID: { 4242 }))
 
         #expect(result == nil)
@@ -157,6 +165,8 @@ struct AntigravityWarmAgyReuseTests {
                     return [50050]
                 },
                 fetchSnapshot: { _, _ in Self.usableSnapshot(email: "external@example.com") },
+                processOwnerIdentity: { _ in .posixUID(0) },
+                currentOwnerIdentity: { .posixUID(0) },
                 ownedPID: { 4242 }))
 
         #expect(result?.accountEmail == "external@example.com")
@@ -176,11 +186,42 @@ struct AntigravityWarmAgyReuseTests {
                     return [pid]
                 },
                 fetchSnapshot: { _, _ in Self.usableSnapshot(email: "same-user@example.com") },
-                processOwnerUserID: { pid in pid == 6001 ? 502 : 501 },
-                currentUserID: { 501 }))
+                processOwnerIdentity: { pid in .posixUID(pid == 6001 ? 502 : 501) },
+                currentOwnerIdentity: { .posixUID(501) }))
 
         #expect(result?.accountEmail == "same-user@example.com")
         #expect(listeningPIDs.value == [6002])
+    }
+
+    @Test
+    func `warm reuse compares opaque owner bytes and fails closed when unknown`() async throws {
+        let sid = ProcessOwnerIdentity.windowsSID(Data([1, 2, 3, 4, 5]))
+        let listeningPIDs = AntigravityWarmLockedValues<Int>()
+        let result = try await AntigravityCLIHTTPSFetchStrategy.tryWarmAgyFetch(
+            timeout: 2,
+            dependencies: .init(
+                processInfos: { _ in [Self.cliProcessInfo(pid: 6010), Self.cliProcessInfo(pid: 6011)] },
+                listeningPorts: { pid, _ in
+                    listeningPIDs.append(pid)
+                    return [pid]
+                },
+                fetchSnapshot: { _, _ in Self.usableSnapshot(email: "sid@example.com") },
+                processOwnerIdentity: { pid in pid == 6010 ? .windowsSID(Data([1, 2, 3, 4, 6])) : sid },
+                currentOwnerIdentity: { sid }))
+
+        #expect(result?.accountEmail == "sid@example.com")
+        #expect(listeningPIDs.value == [6011])
+
+        let unknown = try await AntigravityCLIHTTPSFetchStrategy.tryWarmAgyFetch(
+            timeout: 2,
+            dependencies: .init(
+                processInfos: { _ in [Self.cliProcessInfo(pid: 6012)] },
+                listeningPorts: { _, _ in
+                    Issue.record("unknown owner must fail closed")
+                    return []
+                },
+                fetchSnapshot: { _, _ in Self.usableSnapshot(email: "unknown@example.com") }))
+        #expect(unknown == nil)
     }
 
     @Test
@@ -199,7 +240,9 @@ struct AntigravityWarmAgyReuseTests {
                 fetchSnapshot: { ports, _ in
                     let email = ports == [6101] ? "other@example.com" : "SELECTED@example.com"
                     return Self.usableSnapshot(email: email)
-                }))
+                },
+                processOwnerIdentity: { _ in .posixUID(0) },
+                currentOwnerIdentity: { .posixUID(0) }))
 
         #expect(result?.accountEmail == "SELECTED@example.com")
         #expect(listeningPIDs.value == [6101, 6102])
@@ -223,7 +266,9 @@ struct AntigravityWarmAgyReuseTests {
                     listeningPIDs.append(pid)
                     return [pid]
                 },
-                fetchSnapshot: { _, _ in Self.usableSnapshot(email: "selected@example.com") }))
+                fetchSnapshot: { _, _ in Self.usableSnapshot(email: "selected@example.com") },
+                processOwnerIdentity: { _ in .posixUID(0) },
+                currentOwnerIdentity: { .posixUID(0) }))
 
         #expect(result?.accountEmail == "selected@example.com")
         #expect(listeningPIDs.value == [6152])
@@ -297,7 +342,9 @@ struct AntigravityWarmAgyReuseTests {
             dependencies: .init(
                 processInfos: { _ in processes },
                 listeningPorts: { _, _ in [56789] },
-                fetchSnapshot: { _, _ in Self.usableSnapshot(email: "selected@example.com") }))
+                fetchSnapshot: { _, _ in Self.usableSnapshot(email: "selected@example.com") },
+                processOwnerIdentity: { _ in .posixUID(0) },
+                currentOwnerIdentity: { .posixUID(0) }))
 
         #expect(result?.accountEmail == "selected@example.com")
     }
@@ -326,6 +373,8 @@ struct AntigravityWarmAgyReuseTests {
                     fetchSnapshotCallCount.increment()
                     return Self.usableSnapshot(email: "late@example.com")
                 },
+                processOwnerIdentity: { _ in .posixUID(0) },
+                currentOwnerIdentity: { .posixUID(0) },
                 now: { clock.now() }))
 
         #expect(result == nil)
@@ -347,7 +396,9 @@ struct AntigravityWarmAgyReuseTests {
             warmDependencies: AntigravityCLIHTTPSFetchStrategy.WarmAgyDependencies(
                 processInfos: { _ in [Self.cliProcessInfo(pid: 1234)] },
                 listeningPorts: { _, _ in [40000] },
-                fetchSnapshot: { _, _ in Self.usableSnapshot(email: "warm@example.com") }),
+                fetchSnapshot: { _, _ in Self.usableSnapshot(email: "warm@example.com") },
+                processOwnerIdentity: { _ in .posixUID(0) },
+                currentOwnerIdentity: { .posixUID(0) })),
             spawnFetch: { _, _, _ in
                 spawnCallCount.increment()
                 Issue.record("spawn path must not run when a warm agy is reused")
@@ -429,7 +480,9 @@ struct AntigravityWarmAgyReuseTests {
             warmDependencies: AntigravityCLIHTTPSFetchStrategy.WarmAgyDependencies(
                 processInfos: { _ in [Self.cliProcessInfo(pid: 6301)] },
                 listeningPorts: { _, _ in [50080] },
-                fetchSnapshot: { _, _ in Self.usableSnapshot(email: "terminal@example.com") }),
+                fetchSnapshot: { _, _ in Self.usableSnapshot(email: "terminal@example.com") },
+                processOwnerIdentity: { _ in .posixUID(0) },
+                currentOwnerIdentity: { .posixUID(0) })),
             spawnFetch: { _, _, _ in
                 spawnCallCount.increment()
                 Issue.record("persistent hosts must reuse an authenticated user-owned agy")
@@ -453,7 +506,9 @@ struct AntigravityWarmAgyReuseTests {
             warmDependencies: AntigravityCLIHTTPSFetchStrategy.WarmAgyDependencies(
                 processInfos: { _ in [Self.cliProcessInfo(pid: 6301)] },
                 listeningPorts: { _, _ in [50080] },
-                fetchSnapshot: { _, _ in Self.usableSnapshot(email: "other@example.com") }),
+                fetchSnapshot: { _, _ in Self.usableSnapshot(email: "other@example.com") },
+                processOwnerIdentity: { _ in .posixUID(0) },
+                currentOwnerIdentity: { .posixUID(0) })),
             spawnFetch: { _, idleWindow, resetAfterFetch in
                 spawnCallCount.increment()
                 #expect(idleWindow == 60)

@@ -1,4 +1,7 @@
 import Foundation
+#if os(Windows)
+import WinSDK
+#endif
 
 public enum AntigravityProviderDescriptor {
     public static let descriptor: ProviderDescriptor = Self.makeDescriptor()
@@ -335,8 +338,8 @@ struct AntigravityCLIHTTPSFetchStrategy: ProviderFetchStrategy {
         let processInfos: @Sendable (TimeInterval) async throws -> [AntigravityStatusProbe.ProcessInfoResult]
         let listeningPorts: @Sendable (Int, TimeInterval) async throws -> [Int]
         let fetchSnapshot: @Sendable ([Int], TimeInterval) async throws -> AntigravityStatusSnapshot
-        let processOwnerUserID: @Sendable (Int) -> UInt32?
-        let currentUserID: @Sendable () -> UInt32
+        let processOwnerIdentity: @Sendable (Int) -> ProcessOwnerIdentity?
+        let currentOwnerIdentity: @Sendable () -> ProcessOwnerIdentity?
         /// The pid of an ``agy`` that CodexBar itself spawned and manages through
         /// ``AntigravityCLISession`` (if any). Such a process must NOT be reused
         /// through the warm path: doing so bypasses `beginProbe`/`finishProbe`, so
@@ -351,16 +354,16 @@ struct AntigravityCLIHTTPSFetchStrategy: ProviderFetchStrategy {
                 -> [AntigravityStatusProbe.ProcessInfoResult],
             listeningPorts: @escaping @Sendable (Int, TimeInterval) async throws -> [Int],
             fetchSnapshot: @escaping @Sendable ([Int], TimeInterval) async throws -> AntigravityStatusSnapshot,
-            processOwnerUserID: @escaping @Sendable (Int) -> UInt32? = { _ in 0 },
-            currentUserID: @escaping @Sendable () -> UInt32 = { 0 },
+            processOwnerIdentity: @escaping @Sendable (Int) -> ProcessOwnerIdentity? = { _ in nil },
+            currentOwnerIdentity: @escaping @Sendable () -> ProcessOwnerIdentity? = { nil },
             ownedPID: @escaping @Sendable () async -> Int? = { nil },
             now: @escaping @Sendable () -> Date = Date.init)
         {
             self.processInfos = processInfos
             self.listeningPorts = listeningPorts
             self.fetchSnapshot = fetchSnapshot
-            self.processOwnerUserID = processOwnerUserID
-            self.currentUserID = currentUserID
+            self.processOwnerIdentity = processOwnerIdentity
+            self.currentOwnerIdentity = currentOwnerIdentity
             self.ownedPID = ownedPID
             self.now = now
         }
@@ -401,14 +404,14 @@ struct AntigravityCLIHTTPSFetchStrategy: ProviderFetchStrategy {
         try Task.checkCancellation()
         let ownedPID = await dependencies.ownedPID()
         try Task.checkCancellation()
-        let currentUserID = dependencies.currentUserID()
+        guard let currentOwnerIdentity = dependencies.currentOwnerIdentity() else { return nil }
         // Only the CLI's language server needs no CSRF token; the IDE/app servers
         // require one and must not be reused through this token-less fast path.
         // Also exclude any `agy` CodexBar itself spawned and manages: reusing it
         // here would bypass session lifecycle accounting (see `ownedPID`).
         let cliProcesses = processInfos.filter { info in
             info.pid != ownedPID &&
-                dependencies.processOwnerUserID(info.pid) == currentUserID &&
+                dependencies.processOwnerIdentity(info.pid) == currentOwnerIdentity &&
                 AntigravityStatusProbe.antigravityProcessKind(info.commandLine) == .cli
         }
         guard !cliProcesses.isEmpty else { return nil }
@@ -507,11 +510,27 @@ struct AntigravityCLIHTTPSFetchStrategy: ProviderFetchStrategy {
                 return try await AntigravityStatusProbe(timeout: timeout)
                     .fetchFromPorts(ports, deadline: deadline)
             },
-            processOwnerUserID: { pid in
-                AntigravityProcessIdentityProvider().ownerUserID(for: pid_t(pid))
+            processOwnerIdentity: { pid in
+                #if os(Windows)
+                guard pid > 0, let nativePID = DWORD(exactly: pid),
+                      let handle = OpenProcess(DWORD(PROCESS_QUERY_LIMITED_INFORMATION), 0, nativePID)
+                else {
+                    return nil
+                }
+                defer { CloseHandle(handle) }
+                return try? WindowsProcessOwnerIdentity.identity(forProcessHandle: handle)
+                #else
+                return AntigravityProcessIdentityProvider()
+                    .ownerUserID(for: pid_t(pid))
+                    .map(ProcessOwnerIdentity.posixUID)
+                #endif
             },
-            currentUserID: {
-                AntigravityProcessIdentityProvider.currentUserID
+            currentOwnerIdentity: {
+                #if os(Windows)
+                return try? ProcessOwnerIdentity.current()
+                #else
+                return .posixUID(AntigravityProcessIdentityProvider.currentUserID)
+                #endif
             },
             ownedPID: {
                 // The pid of the `agy` CodexBar manages through the shared
