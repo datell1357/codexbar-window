@@ -26,6 +26,11 @@ actor CodexCLISession {
         }
     }
 
+    #if os(Windows)
+    private var windowsSession: WindowsCodexCLISession?
+    private var windowsCaptureInFlight = false
+    private var windowsCaptureGeneration: UInt64 = 0
+    #else
     private var process: Process?
     private var primaryFD: Int32 = -1
     private var primaryHandle: FileHandle?
@@ -38,6 +43,7 @@ actor CodexCLISession {
     private var sessionEnvironment: [String: String]?
     private var sessionArguments: [String] = []
     private var sessionWorkingDirectory: URL?
+    #endif
 
     struct CaptureOptions {
         let timeout: TimeInterval
@@ -101,6 +107,18 @@ actor CodexCLISession {
         binary: String,
         options: CaptureOptions) async throws -> String
     {
+        #if os(Windows)
+        while self.windowsCaptureInFlight {
+            try await Task.sleep(nanoseconds: 20_000_000)
+        }
+        self.windowsCaptureInFlight = true
+        let generation = self.windowsCaptureGeneration
+        defer { self.windowsCaptureInFlight = false }
+        if self.windowsSession == nil { self.windowsSession = WindowsCodexCLISession(generation: generation) }
+        let result = try await self.windowsSession!.captureStatus(binary: binary, options: options, generation: generation)
+        guard self.windowsCaptureGeneration == generation else { throw SessionError.processExited }
+        return result
+        #else
         try self.ensureStarted(binary: binary, options: options)
         if let startedAt {
             let sinceStart = Date().timeIntervalSince(startedAt)
@@ -260,14 +278,23 @@ actor CodexCLISession {
             throw SessionError.timedOut
         }
         return text
+        #endif
     }
 
     // swiftlint:enable cyclomatic_complexity
 
-    func reset() {
+    func reset() async {
+        #if os(Windows)
+        self.windowsCaptureGeneration &+= 1
+        let session = self.windowsSession
+        self.windowsSession = nil
+        await session?.reset()
+        #else
         self.cleanup()
+        #endif
     }
 
+    #if !os(Windows)
     private func ensureStarted(
         binary: String,
         options: CaptureOptions) throws
@@ -432,4 +459,5 @@ actor CodexCLISession {
         guard let handle = self.primaryHandle else { throw SessionError.processExited }
         try handle.write(contentsOf: data)
     }
+    #endif
 }

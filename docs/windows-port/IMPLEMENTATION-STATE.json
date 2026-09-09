@@ -18,15 +18,12 @@
   ],
   "automation_id": "codexbar-windows-qa",
   "interval_minutes": 10,
-  "current_lanes": [
-    "codex_session_046",
-    "codex_review_046"
-  ],
-  "static_qa_status": "LEASE_045_SCOPED_STATIC_APPROVED",
+  "current_lanes": [],
+  "static_qa_status": "CODEX_SESSION_046_SCOPED_STATIC_APPROVE",
   "windows_runtime_status": "NOT_RUN_BY_USER_INSTRUCTION",
   "completion_claim": false,
-  "next": "045 lease+one-shot integration independently approved statically; Codex Windows persistent session046 draft under codex_review_046. Keep Codex files out of045 commit. Remaining persistent providers and Windows execution/ABI unverified.",
-  "last_batch": "tracked-lease-045",
+  "next": "Commit/push stage046 to windows/main. Next implement Claude persistent session Windows adapter from original operation gate, account identity, output normalization and lifecycle contracts. No runtime validation.",
+  "last_batch": "codex-session-046",
   "completed_source_changes": [
     "Windows package dependency wiring (partial)",
     "QuickJS watchdog Windows monotonic clock",
