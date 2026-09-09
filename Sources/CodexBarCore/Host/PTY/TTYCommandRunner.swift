@@ -1,3 +1,4 @@
+#if !os(Windows)
 #if canImport(Darwin)
 import Darwin
 #elseif canImport(Glibc)
@@ -1324,7 +1325,6 @@ extension TTYCommandRunner {
         return env
     }
 }
-
 extension TTYCommandRunner {
     @discardableResult
     static func registerActiveProcessForAppShutdown(pid: pid_t, binary: String) -> Bool {
@@ -1397,3 +1397,4 @@ extension TTYCommandRunner {
         self.resolveShutdownTargets(targets, hostProcessGroup: hostProcessGroup, groupResolver: groupResolver)
     }
 }
+#endif

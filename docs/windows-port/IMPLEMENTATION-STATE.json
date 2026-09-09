@@ -19,13 +19,13 @@
   "automation_id": "codexbar-windows-qa",
   "interval_minutes": 10,
   "current_lanes": [
-    "tty_windows_039"
+    "tracked_lease_045"
   ],
-  "static_qa_status": "WINDOWS_PATH_PARTIAL_REVIEWED_STATIC_ONLY",
+  "static_qa_status": "ONESHOT_CONPTY_SCOPED_STATIC_CLEAR",
   "windows_runtime_status": "NOT_RUN_BY_USER_INSTRUCTION",
   "completion_claim": false,
-  "next": "Continue tty_windows_039 shared TTY API and Windows compile boundaries. Native PATH partial reviewed; npm shim consumers, aliases and install discovery remain incomplete. No build/test/runtime.",
-  "last_batch": "path-038",
+  "next": "One-shot ConPTY lifecycle and generic/Codex runner independently reviewed static CLEAR. Full parity remains incomplete: near-deadline exit observation timestamp, external persistent session registration, Windows build/ABI unverified. tracked_lease_045 implementing new owned lease file only; migrate runner then sessions in next stage.",
+  "last_batch": "conpty-039-043",
   "completed_source_changes": [
     "Windows package dependency wiring (partial)",
     "QuickJS watchdog Windows monotonic clock",
