@@ -275,12 +275,13 @@ extension CodexBarCLI {
         return .file(raw)
     }
 
-    /// Atomically publish the snapshot: stage a temp file in the destination
-    /// directory, fsync, then `rename(2)` over the target so readers (e.g. a
-    /// static webroot) never observe a partial document. The file is world-
-    /// readable (`0644`) — dashboard snapshots are meant to be served. The
-    /// parent directory must already exist; it is deliberately not created.
+    /// Atomically publish the snapshot in the destination directory. On POSIX,
+    /// the staged file is forced to `0644`; on Windows it inherits the parent
+    /// directory ACL. The parent directory must already exist.
     static func writeDashboardSnapshotAtomically(_ data: Data, toPath path: String) throws {
+        #if os(Windows)
+        try WindowsDashboardFileWriter.write(data, toPath: path)
+        #else
         let url = URL(fileURLWithPath: path)
         let directory = url.deletingLastPathComponent()
         var isDirectory: ObjCBool = false
@@ -325,8 +326,10 @@ extension CodexBarCLI {
             try? FileManager.default.removeItem(at: staged)
             throw error
         }
+        #endif
     }
 
+    #if !os(Windows)
     private static func dashboardOutputPOSIXError(_ code: Int32, path: String) -> Error {
         NSError(
             domain: NSPOSIXErrorDomain,
@@ -336,6 +339,7 @@ extension CodexBarCLI {
                 NSLocalizedDescriptionKey: "Could not write --output file \(path): \(String(cString: strerror(code)))",
             ])
     }
+    #endif
 
     /// `.none` is deliberately not accepted: the flag chooses between full
     /// identity by default and opt-in email redaction; suppressing identity

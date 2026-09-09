@@ -208,8 +208,10 @@ final class CLIEntryTests: XCTestCase {
         try CodexBarCLI.writeDashboardSnapshotAtomically(Data("new".utf8), toPath: target.path)
 
         XCTAssertEqual(try Data(contentsOf: target), Data("new".utf8))
+        #if !os(Windows)
         let attributes = try FileManager.default.attributesOfItem(atPath: target.path)
         XCTAssertEqual((attributes[.posixPermissions] as? NSNumber)?.uint16Value, 0o644)
+        #endif
         XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: root.path), ["snapshot.json"])
     }
 
