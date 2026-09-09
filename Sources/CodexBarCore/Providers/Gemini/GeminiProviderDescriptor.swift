@@ -60,7 +60,17 @@ public enum GeminiProviderDescriptor {
                 pipeline: ProviderFetchPipeline(resolveStrategies: { _ in [GeminiStatusFetchStrategy()] })),
             cli: ProviderCLIConfig(
                 name: "gemini",
-                binaryLocator: { BinaryLocator.resolveGeminiBinary() },
+                binaryLocator: {
+                    #if os(Windows)
+                    let environment = ProcessInfo.processInfo.environment
+                    return WindowsCommandResolver.resolve(
+                        executable: "gemini",
+                        override: CodexBarPlatformPaths.environmentValue("GEMINI_CLI_PATH", environment: environment),
+                        environment: environment)?.sourcePath
+                    #else
+                    return BinaryLocator.resolveGeminiBinary()
+                    #endif
+                },
                 versionDetector: { _ in ProviderVersionDetector.geminiVersion() }))
     }
 }

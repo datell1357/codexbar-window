@@ -85,10 +85,11 @@ public struct GrokStatusProbe: Sendable {
         -> String?
     {
         #if os(Windows)
-        let resolvedBinary = WindowsExecutableResolver.resolve(
+        let resolvedBinary = WindowsCommandResolver.resolve(
             executable: "grok",
             override: CodexBarPlatformPaths.environmentValue("GROK_CLI_PATH", environment: env),
             environment: env)
+            ?.sourcePath
         #else
         let resolvedBinary = BinaryLocator.resolveGrokBinary(env: env)
         #endif

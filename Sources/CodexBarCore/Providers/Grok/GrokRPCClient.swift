@@ -51,7 +51,7 @@ final class GrokRPCClient: @unchecked Sendable {
         self.stdoutLineContinuation = stdoutContinuation
 
 #if os(Windows)
-        let resolvedExec = WindowsExecutableResolver.resolve(
+        let resolvedCommand = WindowsCommandResolver.resolve(
             executable: executable,
             override: CodexBarPlatformPaths.environmentValue("GROK_CLI_PATH", environment: environment),
             environment: environment)
@@ -60,10 +60,17 @@ final class GrokRPCClient: @unchecked Sendable {
             ?? TTYCommandRunner.which(executable)
 #endif
 
+#if os(Windows)
+        guard let resolvedCommand else {
+            Self.log.warning("Grok RPC binary not found", metadata: ["binary": executable])
+            throw GrokRPCError.binaryNotFound
+        }
+#else
         guard let resolvedExec else {
             Self.log.warning("Grok RPC binary not found", metadata: ["binary": executable])
             throw GrokRPCError.binaryNotFound
         }
+#endif
 
         var env = environment
 #if os(Windows)
@@ -79,12 +86,12 @@ final class GrokRPCClient: @unchecked Sendable {
 #if os(Windows)
         do {
             self.windowsProcess = try WindowsProcess.launch(
-                executable: resolvedExec,
+                target: resolvedCommand.target,
                 arguments: arguments,
                 environment: env,
                 currentDirectoryURL: nil,
                 standardInput: self.stdin.pipe)
-            Self.log.debug("Grok RPC started", metadata: ["binary": resolvedExec])
+            Self.log.debug("Grok RPC started", metadata: ["binary": resolvedCommand.sourcePath])
         } catch {
             Self.log.warning("Grok RPC failed to start", metadata: ["error": error.localizedDescription])
             throw GrokRPCError.startFailed(error.localizedDescription)

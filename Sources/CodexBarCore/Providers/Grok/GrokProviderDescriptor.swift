@@ -186,7 +186,7 @@ struct GrokCLIFetchStrategy: ProviderFetchStrategy {
 
     func isAvailable(_ context: ProviderFetchContext) async -> Bool {
         #if os(Windows)
-        WindowsExecutableResolver.resolve(
+        WindowsCommandResolver.resolve(
             executable: "grok",
             override: CodexBarPlatformPaths.environmentValue("GROK_CLI_PATH", environment: context.env),
             environment: context.env) != nil

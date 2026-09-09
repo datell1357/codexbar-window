@@ -327,11 +327,12 @@ public enum ProviderVersionDetector {
     public static func geminiVersion() -> String? {
         let env = ProcessInfo.processInfo.environment
 #if os(Windows)
-        guard let path = WindowsExecutableResolver.resolve(
+        guard let command = WindowsCommandResolver.resolve(
             executable: GeminiProviderDescriptor.descriptor.cli.name,
             override: CodexBarPlatformPaths.environmentValue("GEMINI_CLI_PATH", environment: env),
             environment: env)
         else { return nil }
+        let path = command.sourcePath
 #else
         guard let path = BinaryLocator.resolveGeminiBinary(env: env, loginPATH: nil)
             ?? TTYCommandRunner.which(GeminiProviderDescriptor.descriptor.cli.name) else { return nil }
