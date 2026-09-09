@@ -228,14 +228,7 @@ public enum ProviderVersionDetector {
     private static func resolvedClaudeBinaryPath(
         environment: [String: String]) -> String?
     {
-#if os(Windows)
-        return WindowsCommandResolver.resolve(
-            executable: "claude",
-            override: CodexBarPlatformPaths.environmentValue("CLAUDE_CLI_PATH", environment: environment),
-            environment: environment)?.sourcePath
-#else
         return ClaudeCLIResolver.resolvedBinaryPath(environment: environment)
-#endif
     }
 
     public static func claudeBinaryResolvable(

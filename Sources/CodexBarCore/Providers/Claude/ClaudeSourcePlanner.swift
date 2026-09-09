@@ -144,6 +144,12 @@ public enum ClaudeCLIResolver {
         }
         #endif
 
+        #if os(Windows)
+        let override = CodexBarPlatformPaths.environmentValue("CLAUDE_CLI_PATH", environment: environment)?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return WindowsCommandResolver.resolve(
+            executable: "claude", override: override, environment: environment)?.sourcePath
+        #else
         var normalizedEnvironment = environment
         if let override = environment["CLAUDE_CLI_PATH"]?.trimmingCharacters(in: .whitespacesAndNewlines) {
             if override.isEmpty {
@@ -159,6 +165,7 @@ public enum ClaudeCLIResolver {
         return BinaryLocator.resolveClaudeBinary(
             env: normalizedEnvironment,
             loginPATH: loginPATH)
+        #endif
     }
 
     public static func isAvailable(environment: [String: String] = ProcessInfo.processInfo.environment) -> Bool {
