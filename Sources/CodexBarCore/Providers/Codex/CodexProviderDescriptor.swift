@@ -1,5 +1,7 @@
 import Foundation
+#if os(macOS)
 import SweetCookieKit
+#endif
 
 extension ProviderFetchContext {
     /// The managed Codex workspace identity is app metadata, not a mutation of Codex's auth file.

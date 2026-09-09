@@ -1,5 +1,7 @@
 import Foundation
+#if os(macOS)
 import SweetCookieKit
+#endif
 
 public enum MistralProviderDescriptor {
     public static let descriptor: ProviderDescriptor = Self.makeDescriptor()

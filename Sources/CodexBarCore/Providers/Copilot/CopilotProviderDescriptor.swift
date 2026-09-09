@@ -1,5 +1,7 @@
 import Foundation
+#if os(macOS)
 import SweetCookieKit
+#endif
 
 public enum CopilotProviderDescriptor {
     public static let descriptor: ProviderDescriptor = Self.makeDescriptor()

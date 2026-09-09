@@ -1,5 +1,7 @@
 import Foundation
+#if os(macOS)
 import SweetCookieKit
+#endif
 
 public enum NotionProviderDescriptor {
     /// Notion reports the rolling allowance as a `6h` window — session-shaped, but wider than the

@@ -164,6 +164,18 @@ public enum KeychainCacheStore {
         default:
             return self.loadResultForKeychainReadFailure(status: status, key: key)
         }
+        #elseif os(Windows)
+        switch WindowsCredentialCacheStore.load(service: self.serviceName, account: key.account) {
+        case let .found(data):
+            guard let decoded = try? Self.makeDecoder().decode(Entry.self, from: data) else { return .invalid }
+            return .found(decoded)
+        case .missing:
+            return .missing
+        case .temporarilyUnavailable:
+            return .temporarilyUnavailable
+        case .invalid:
+            return .invalid
+        }
         #else
         return .missing
         #endif
@@ -264,6 +276,15 @@ public enum KeychainCacheStore {
             self.log.error("Keychain cache add failed (\(key.account)): \(addStatus)")
         }
         return addStatus == errSecSuccess
+        #elseif os(Windows)
+        let encoder = Self.makeEncoder()
+        guard let data = try? encoder.encode(entry) else {
+            self.log.error("Failed to encode Windows credential cache (\(key.account))")
+            return false
+        }
+        let stored = WindowsCredentialCacheStore.store(service: self.serviceName, account: key.account, data: data)
+        if !stored { self.log.error("Windows credential cache store failed (\(key.account))") }
+        return stored
         #else
         return false
         #endif
@@ -321,6 +342,15 @@ public enum KeychainCacheStore {
         ]
         KeychainNoUIQuery.apply(to: &query)
         return self.clearResultForKeychainDeleteStatus(KeychainSecurity.delete(query as CFDictionary), key: key)
+        #elseif os(Windows)
+        switch WindowsCredentialCacheStore.clear(service: self.serviceName, account: key.account) {
+        case .removed:
+            return .removed
+        case .missing:
+            return .missing
+        case .failed:
+            return .failed
+        }
         #else
         return .failed
         #endif
@@ -363,6 +393,15 @@ public enum KeychainCacheStore {
         var result: AnyObject?
         let status = KeychainSecurity.copyMatching(query as CFDictionary, &result)
         return self.keysResultForKeychainStatus(status, category: category, result: result)
+        #elseif os(Windows)
+        switch WindowsCredentialCacheStore.keys(service: self.serviceName, category: category) {
+        case let .found(identifiers):
+            return .found(identifiers.map { Key(category: category, identifier: $0) })
+        case .temporarilyUnavailable:
+            return .temporarilyUnavailable
+        case .failed:
+            return .failed
+        }
         #else
         return .failed
         #endif
@@ -579,9 +618,13 @@ public enum KeychainCacheStore {
             return false
         }
         return true
+        #elseif os(Windows)
+        // Windows Credential Manager is available to both packaged and unbundled
+        // executables; the access gate still controls whether it may be used.
+        return false
         #else
-        // No app bundles (or real keychain) exist off macOS; the memory store is
-        // the only sensible backing there anyway.
+        // No app bundles (or real keychain) exist on other platforms; the memory
+        // store is the only sensible backing there anyway.
         return true
         #endif
     }()

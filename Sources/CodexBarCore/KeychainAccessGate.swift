@@ -1,5 +1,5 @@
 import Foundation
-#if canImport(SweetCookieKit)
+#if os(macOS) && canImport(SweetCookieKit)
 import SweetCookieKit
 #endif
 

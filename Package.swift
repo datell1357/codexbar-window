@@ -5,15 +5,41 @@ import PackageDescription
 let sweetCookieKitPath = "../SweetCookieKit"
 let useLocalSweetCookieKit =
     ProcessInfo.processInfo.environment["CODEXBAR_USE_LOCAL_SWEETCOOKIEKIT"] == "1"
+#if os(Windows)
+let sweetCookieKitDependencies: [Package.Dependency] = []
+#else
 let sweetCookieKitDependency: Package.Dependency =
     useLocalSweetCookieKit && FileManager.default.fileExists(atPath: sweetCookieKitPath)
     ? .package(path: sweetCookieKitPath)
     : .package(url: "https://github.com/steipete/SweetCookieKit", from: "0.5.2")
+let sweetCookieKitDependencies: [Package.Dependency] = [sweetCookieKitDependency]
+#endif
+
+#if os(Windows)
+let sweetCookieKitTargetDependencies: [Target.Dependency] = []
+#else
+let sweetCookieKitTargetDependencies: [Target.Dependency] = [
+    .product(name: "SweetCookieKit", package: "SweetCookieKit"),
+]
+#endif
+
+// AppKit-only packages are kept out of non-macOS dependency resolution. The
+// corresponding executable targets remain macOS-gated below. Linux and Windows
+// avoid these UI dependencies; shared dependencies still require porting.
+#if os(macOS)
+let macOSDependencies: [Package.Dependency] = [
+    .package(url: "https://github.com/sparkle-project/Sparkle", from: "2.9.6"),
+    .package(url: "https://github.com/sindresorhus/KeyboardShortcuts", from: "2.4.0"),
+    .package(url: "https://github.com/zats/Vortex", revision: "ef5392088d4aeb255c4eee83157dbdafcd31bf07"),
+]
+#else
+let macOSDependencies: [Package.Dependency] = []
+#endif
 
 let sqlite3LibDir = ProcessInfo.processInfo.environment["CODEXBAR_SQLITE3_LIB_DIR"]?
     .trimmingCharacters(in: .whitespacesAndNewlines)
 let sqlite3LinkerSettings: [LinkerSetting] = if let sqlite3LibDir, !sqlite3LibDir.isEmpty {
-    [.unsafeFlags(["-L\(sqlite3LibDir)"], .when(platforms: [.linux]))]
+    [.unsafeFlags(["-L\(sqlite3LibDir)"], .when(platforms: [.linux, .custom("windows")]))]
 } else {
     []
 }
@@ -23,6 +49,9 @@ let package = Package(
     defaultLocalization: "en",
     platforms: [
         .macOS(.v14),
+        // PackageDescription has no first-class Windows case; custom keeps the
+        // target platform explicit for SwiftPM manifests evaluated on Windows.
+        .custom("windows", versionString: "10"),
     ],
     products: {
         var products: [Product] = [
@@ -44,14 +73,10 @@ let package = Package(
         return products
     }(),
     dependencies: [
-        .package(url: "https://github.com/sparkle-project/Sparkle", from: "2.9.6"),
         .package(url: "https://github.com/steipete/Commander", from: "0.2.4"),
         .package(url: "https://github.com/apple/swift-crypto.git", from: "3.0.0"),
         .package(url: "https://github.com/apple/swift-log", from: "1.15.0"),
-        .package(url: "https://github.com/sindresorhus/KeyboardShortcuts", from: "2.4.0"),
-        .package(url: "https://github.com/zats/Vortex", revision: "ef5392088d4aeb255c4eee83157dbdafcd31bf07"),
-        sweetCookieKitDependency,
-    ],
+    ] + sweetCookieKitDependencies + macOSDependencies,
     targets: {
         var targets: [Target] = [
             .target(
@@ -76,11 +101,10 @@ let package = Package(
                 name: "CodexBarCore",
                 dependencies: [
                     "CQuickJS",
-                    .target(name: "CSQLite3", condition: .when(platforms: [.linux])),
+                    .target(name: "CSQLite3", condition: .when(platforms: [.linux, .custom("windows")])),
                     .product(name: "Crypto", package: "swift-crypto"),
                     .product(name: "Logging", package: "swift-log"),
-                    .product(name: "SweetCookieKit", package: "SweetCookieKit"),
-                ],
+                ] + sweetCookieKitTargetDependencies,
                 resources: [
                     .process("Resources"),
                 ],
@@ -88,6 +112,7 @@ let package = Package(
                     .enableUpcomingFeature("StrictConcurrency"),
                 ],
                 linkerSettings: sqlite3LinkerSettings + [
+                    .linkedLibrary("Advapi32", .when(platforms: [.custom("windows")])),
                     .linkedFramework("JavaScriptCore", .when(platforms: [.macOS])),
                 ]),
             .executableTarget(
@@ -167,7 +192,7 @@ let package = Package(
                 dependencies: [
                     "CodexBarCore",
                     "CodexBarCLI",
-                    .target(name: "CSQLite3", condition: .when(platforms: [.linux])),
+                    .target(name: "CSQLite3", condition: .when(platforms: [.linux, .custom("windows")])),
                 ],
                 path: "TestsLinux",
                 swiftSettings: [

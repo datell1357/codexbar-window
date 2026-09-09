@@ -1,6 +1,8 @@
 import CodexBarCore
 import Foundation
+#if os(macOS)
 import SweetCookieKit
+#endif
 
 @MainActor
 extension UsageStore {

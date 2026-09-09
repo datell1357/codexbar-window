@@ -2,7 +2,9 @@ import AppKit
 import CodexBarCore
 import Foundation
 import Observation
+#if os(macOS)
 import SweetCookieKit
+#endif
 
 // MARK: - Observation helpers
 

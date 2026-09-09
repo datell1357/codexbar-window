@@ -1,6 +1,8 @@
 import AppKit
 import CodexBarCore
+#if os(macOS)
 import SweetCookieKit
+#endif
 
 private enum KeychainPromptMessage {
     static let browserCookie =

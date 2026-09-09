@@ -1,5 +1,7 @@
 import Foundation
+#if os(macOS)
 import SweetCookieKit
+#endif
 
 public enum QoderProviderDescriptor {
     public static let descriptor: ProviderDescriptor = Self.makeDescriptor()

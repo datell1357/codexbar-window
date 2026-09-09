@@ -1,5 +1,7 @@
 import Foundation
+#if os(macOS)
 import SweetCookieKit
+#endif
 
 public struct ProviderDebugPaneCapabilities: Sendable {
     public let probeLogOrder: Int?
