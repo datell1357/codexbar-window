@@ -516,7 +516,12 @@ public struct GeminiStatusProbe: Sendable {
     }
 
     private static func isLikelyFnmManagedPath(_ path: String) -> Bool {
-        let normalized = path.replacingOccurrences(of: "\\", with: "/")
+        let normalizedPath = path.replacingOccurrences(of: "\\", with: "/")
+        #if os(Windows)
+        let normalized = normalizedPath.lowercased()
+        #else
+        let normalized = normalizedPath
+        #endif
         return normalized.contains("/fnm_multishells/")
             || (normalized.contains("/node-versions/") && normalized.contains("/fnm/"))
     }
@@ -525,6 +530,9 @@ public struct GeminiStatusProbe: Sendable {
         named executable: String,
         environment: [String: String]) -> String?
     {
+#if os(Windows)
+        return WindowsExecutableResolver.resolve(executable: executable, override: nil, environment: environment)
+#else
         guard let path = environment["PATH"] else { return nil }
         for directory in path.split(separator: ":") where !directory.isEmpty {
             let candidate = URL(fileURLWithPath: String(directory), isDirectory: true)
@@ -535,6 +543,7 @@ public struct GeminiStatusProbe: Sendable {
             }
         }
         return nil
+#endif
     }
 
     private static func resolveGeminiPackageRootViaFnm(
@@ -1227,6 +1236,15 @@ extension GeminiStatusProbe {
     fileprivate static func discoverOAuthCredentialsFromInstalledCLI() -> GeminiOAuthConfig.ClientCredentials? {
         let env = ProcessInfo.processInfo.environment
 
+#if os(Windows)
+        guard let command = WindowsCommandResolver.resolve(
+            executable: "gemini",
+            override: CodexBarPlatformPaths.environmentValue("GEMINI_CLI_PATH", environment: env),
+            environment: env)
+        else { return nil }
+        // npm shims launch node.exe; package metadata belongs to the JavaScript entry, not the runtime.
+        let geminiPath = command.target.argumentPrefix.first ?? command.sourcePath
+#else
         guard let geminiPath = BinaryLocator.resolveGeminiBinary(
             env: env,
             loginPATH: LoginShellPathCache.shared.current)
@@ -1234,6 +1252,7 @@ extension GeminiStatusProbe {
         else {
             return nil
         }
+#endif
 
         let resolvedGeminiPath = URL(fileURLWithPath: geminiPath).resolvingSymlinksInPath().path
 
@@ -1243,9 +1262,16 @@ extension GeminiStatusProbe {
                 clientSecret: credentials.clientSecret)
         }
 
+        let resolveFnm = { () -> String? in
+            #if os(Windows)
+            return Self.resolveExecutableOnEnvironmentPath(named: "fnm", environment: env)
+            #else
+            return Self.resolveExecutableOnEnvironmentPath(named: "fnm", environment: env)
+                ?? TTYCommandRunner.which("fnm")
+            #endif
+        }
         if Self.isLikelyFnmManagedPath(geminiPath) || Self.isLikelyFnmManagedPath(resolvedGeminiPath),
-           let fnmPath = Self.resolveExecutableOnEnvironmentPath(named: "fnm", environment: env)
-           ?? TTYCommandRunner.which("fnm"),
+           let fnmPath = resolveFnm(),
            let packageRoot = Self.resolveGeminiPackageRootViaFnm(fnmPath: fnmPath, environment: env),
            let credentials = Self.extractOAuthCredentials(fromGeminiPackageRoot: packageRoot)
         {
@@ -1432,6 +1458,17 @@ extension GeminiStatusProbe {
         environment: [String: String],
         timeout: TimeInterval) -> String?
     {
+#if os(Windows)
+        guard let path = WindowsExecutableResolver.resolve(
+            executable: executable, override: nil, environment: environment),
+              let process = try? WindowsProcess.launch(
+                  executable: path,
+                  arguments: arguments,
+                  environment: environment,
+                  currentDirectoryURL: nil)
+        else { return nil }
+        return process.captureVersionSynchronously(timeout: timeout, drainTimeout: 1)
+#else
         let process = Process()
         process.executableURL = URL(fileURLWithPath: executable)
         process.arguments = arguments
@@ -1500,6 +1537,7 @@ extension GeminiStatusProbe {
 
         return output.components(separatedBy: .newlines).first?
             .trimmingCharacters(in: .whitespacesAndNewlines)
+#endif
     }
 }
 
