@@ -3,6 +3,13 @@ import Foundation
 struct CodexExecutableResolution: Sendable {
     let executable: String
     let loginPATH: [String]?
+#if os(Windows)
+    var argumentPrefix: [String] = []
+
+    var windowsLaunchTarget: WindowsLaunchTarget {
+        WindowsLaunchTarget(executable: self.executable, argumentPrefix: self.argumentPrefix)
+    }
+#endif
 }
 
 typealias CodexExecutableResolver = @Sendable (

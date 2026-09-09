@@ -942,7 +942,7 @@ private final class CodexRPCClient: @unchecked Sendable {
 #if os(Windows)
         do {
             self.windowsProcess = try WindowsProcess.launch(
-                executable: resolvedExec,
+                target: resolution.windowsLaunchTarget,
                 arguments: arguments,
                 environment: env,
                 currentDirectoryURL: nil,

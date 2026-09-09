@@ -41,6 +41,23 @@ package final class WindowsProcess: @unchecked Sendable {
     }
 
     static func launch(
+        target: WindowsLaunchTarget,
+        arguments: [String],
+        environment: [String: String],
+        currentDirectoryURL: URL?,
+        standardInput: Any? = nil,
+        mergeStandardError: Bool = false) throws -> WindowsProcess
+    {
+        try self.launch(
+            executable: target.executable,
+            arguments: target.argumentPrefix + arguments,
+            environment: environment,
+            currentDirectoryURL: currentDirectoryURL,
+            standardInput: standardInput,
+            mergeStandardError: mergeStandardError)
+    }
+
+    static func launch(
         executable: String,
         arguments: [String],
         environment: [String: String],
