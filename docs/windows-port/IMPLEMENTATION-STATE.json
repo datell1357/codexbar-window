@@ -1,0 +1,54 @@
+{
+  "phase": "IMPLEMENTING",
+  "repository": "/Users/yeoreum/Documents/codexbar-window/fork",
+  "baseline": "928166f899471bbdcb72210641cdec91324d0154",
+  "authorization": "User explicitly authorized implementation and recurring code-comparison QA on 2026-09-09",
+  "verification_policy": "STATIC_CODE_COMPARISON_ONLY",
+  "forbidden_validation": [
+    "build",
+    "test execution",
+    "application execution",
+    "provider probes",
+    "keychain access",
+    "performance measurement",
+    "remote Windows execution",
+    "swift package dump-package",
+    "swiftc -parse",
+    "all compiler/manifest evaluation commands"
+  ],
+  "automation_id": "codexbar-windows-qa",
+  "interval_minutes": 10,
+  "current_lanes": [],
+  "static_qa_status": "PROCESS_015_SCOPED_REVIEW_COMPLETE_PARITY_GAPS_OPEN",
+  "windows_runtime_status": "NOT_RUN_BY_USER_INSTRUCTION",
+  "completion_claim": false,
+  "next": "Continue cmd/bat wrapper, ConPTY, environment enrichment, no-console launch policy; whole-source parity incomplete. Commit/push each bounded step to windows main with limitations documented. STATIC ONLY.",
+  "last_batch": "process-015",
+  "completed_source_changes": [
+    "Windows package dependency wiring (partial)",
+    "QuickJS watchdog Windows monotonic clock",
+    "QuickJS user config recognition",
+    "Windows config/plugin data paths",
+    "Windows executable resource lookup",
+    "Windows Credential Manager cache adapter",
+    "Windows SweetCookieKit package/product exclusion and macOS import guards (static comparison only)",
+    "Credential enumeration excludes non-generic entries"
+  ],
+  "remaining_blockers": [
+    "Windows native browser/cookie implementation; SweetCookieKit exclusion reviewed statically only",
+    "SQLite Windows distribution",
+    "process tree/PTY/socket Windows adapters",
+    "provider-specific credentials/browser imports",
+    "app runtime extraction and native Windows UI",
+    "widgets/iCloud/service access and installation/update",
+    "whole-source feature contract coverage"
+  ],
+  "process_candidate": "CONNECTED_PARTIAL_STATIC_ONLY",
+  "publication": {
+    "remote": "windows",
+    "url": "https://github.com/datell1357/codexbar-window",
+    "branch": "main",
+    "authorization": "User authorized per-step commit and push",
+    "actions": "disabled to preserve static-only validation"
+  }
+}
