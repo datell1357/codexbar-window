@@ -51,6 +51,10 @@ package final class WindowsProcess: @unchecked Sendable {
         guard currentDirectoryURL?.path.contains("\0") != true else {
             throw SubprocessRunnerError.launchFailed("Working directory contains NUL")
         }
+        // This backend serves background pipe-based probes/RPC, never an interactive
+        // terminal. Keep console-subsystem children from creating a visible console.
+        let creationFlags = DWORD(
+            CREATE_SUSPENDED | EXTENDED_STARTUPINFO_PRESENT | CREATE_UNICODE_ENVIRONMENT | CREATE_NO_WINDOW)
         var commandLine = try WindowsCommandLine.make(executable: executable, arguments: arguments)
         let environmentBlock = try WindowsCommandLine.environmentBlock(environment)
 
@@ -218,14 +222,14 @@ package final class WindowsProcess: @unchecked Sendable {
                                 nil,
                                 nil,
                                 1,
-                                DWORD(CREATE_SUSPENDED | EXTENDED_STARTUPINFO_PRESENT | CREATE_UNICODE_ENVIRONMENT),
+                                creationFlags,
                                 UnsafeMutableRawPointer(mutating: env.baseAddress),
                                 cwd.baseAddress,
                                 &startup.StartupInfo,
                                 &processInfo)
                         } ?? CreateProcessW(
                             executableBuffer.baseAddress, command.baseAddress, nil, nil, 1,
-                            DWORD(CREATE_SUSPENDED | EXTENDED_STARTUPINFO_PRESENT | CREATE_UNICODE_ENVIRONMENT),
+                            creationFlags,
                             UnsafeMutableRawPointer(mutating: env.baseAddress), nil,
                             &startup.StartupInfo, &processInfo)
                     }

@@ -298,7 +298,16 @@ public enum ProviderVersionDetector {
     }
 
     public static func codexVersion() -> String? {
+#if os(Windows)
+        let environment = ProcessInfo.processInfo.environment
+        guard let path = WindowsExecutableResolver.resolve(
+            executable: CodexProviderDescriptor.descriptor.cli.name,
+            override: CodexBarPlatformPaths.environmentValue("CODEX_CLI_PATH", environment: environment),
+            environment: environment)
+        else { return nil }
+#else
         guard let path = TTYCommandRunner.which(CodexProviderDescriptor.descriptor.cli.name) else { return nil }
+#endif
         let candidates = [
             ["--version"],
             ["version"],
@@ -314,8 +323,16 @@ public enum ProviderVersionDetector {
 
     public static func geminiVersion() -> String? {
         let env = ProcessInfo.processInfo.environment
+#if os(Windows)
+        guard let path = WindowsExecutableResolver.resolve(
+            executable: GeminiProviderDescriptor.descriptor.cli.name,
+            override: CodexBarPlatformPaths.environmentValue("GEMINI_CLI_PATH", environment: env),
+            environment: env)
+        else { return nil }
+#else
         guard let path = BinaryLocator.resolveGeminiBinary(env: env, loginPATH: nil)
             ?? TTYCommandRunner.which(GeminiProviderDescriptor.descriptor.cli.name) else { return nil }
+#endif
         let candidates = [
             ["--version"],
             ["-v"],
