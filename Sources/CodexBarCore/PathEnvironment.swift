@@ -362,6 +362,22 @@ public enum BinaryLocator {
         home: String) -> String?
     {
         // swiftlint:enable function_parameter_count
+#if os(Windows)
+        // Windows does not have login shells or POSIX fallback directories. Resolve
+        // directly against the caller-provided environment and only return native
+        // CreateProcess images (.exe/.com); script shims require an explicit runner.
+        let override = CodexBarPlatformPaths.environmentValue(overrideKey, environment: env)
+        if let windowsHit = self.resolveWindowsBinary(
+            name: name,
+            override: override,
+            environment: env,
+            fileManager: fileManager,
+            launchCandidateFilter: launchCandidateFilter)
+        {
+            return windowsHit
+        }
+        return nil
+#else
         // 1) Explicit override
         if let override = env[overrideKey], fileManager.isExecutableFile(atPath: override) {
             return override
@@ -425,7 +441,66 @@ public enum BinaryLocator {
         }
 
         return nil
+#endif
     }
+
+#if os(Windows)
+    private static func resolveWindowsBinary(
+        name: String,
+        override: String?,
+        environment: [String: String],
+        fileManager: FileManager,
+        launchCandidateFilter: (String, FileManager) -> Bool) -> String?
+    {
+        func isNativeImage(_ path: String) -> Bool {
+            let suffix = (path as NSString).pathExtension.lowercased()
+            guard suffix == "exe" || suffix == "com",
+                  fileManager.fileExists(atPath: path)
+            else { return false }
+            guard let attributes = try? fileManager.attributesOfItem(atPath: path),
+                  (attributes[.type] as? FileAttributeType) == .typeRegular
+            else { return false }
+            return launchCandidateFilter(path, fileManager)
+        }
+
+        if let override, isNativeImage(override) { return override }
+        guard !name.isEmpty, !name.contains("\0") else { return nil }
+
+        let hasPathSyntax = name.contains("/") || name.contains("\\") ||
+            (name.count > 1 && name[name.index(name.startIndex, offsetBy: 1)] == ":")
+        if hasPathSyntax { return isNativeImage(name) ? name : nil }
+
+        guard let rawPATH = CodexBarPlatformPaths.environmentValue("PATH", environment: environment),
+              !rawPATH.contains("\0")
+        else { return nil }
+        let suppliedSuffix = (name as NSString).pathExtension.lowercased()
+        let extensions: [String]
+        if suppliedSuffix == "exe" || suppliedSuffix == "com" {
+            extensions = [""]
+        } else {
+            let rawExtensions = CodexBarPlatformPaths.environmentValue("PATHEXT", environment: environment)
+                ?? ".COM;.EXE"
+            extensions = rawExtensions
+                .split(separator: ";", omittingEmptySubsequences: true)
+                .map { String($0).trimmingCharacters(in: .whitespacesAndNewlines).lowercased() }
+                .filter { $0 == ".exe" || $0 == ".com" }
+        }
+        guard !extensions.isEmpty else { return nil }
+
+        for rawDirectory in rawPATH.split(separator: ";", omittingEmptySubsequences: false) {
+            let trimmed = String(rawDirectory).trimmingCharacters(in: .whitespacesAndNewlines)
+            let directory = trimmed.count >= 2 && trimmed.first == "\"" && trimmed.last == "\""
+                ? String(trimmed.dropFirst().dropLast()) : trimmed
+            guard !directory.isEmpty, !directory.contains("\0") else { continue }
+            for suffix in extensions {
+                let candidate = URL(fileURLWithPath: directory, isDirectory: true)
+                    .appendingPathComponent(name + suffix).path
+                if isNativeImage(candidate) { return candidate }
+            }
+        }
+        return nil
+    }
+#endif
 
     private static func find(
         _ binary: String,
@@ -807,6 +882,9 @@ public enum ShellCommandLocator {
     }
 
     private static func makeCloseOnExecPipe() -> (read: Int32, write: Int32)? {
+#if os(Windows)
+        return nil
+#else
         var fds: (read: Int32, write: Int32) = (-1, -1)
         #if os(Linux)
         // Glibc and Musl export pipe2, but their Swift modules do not consistently declare it.
@@ -828,6 +906,7 @@ public enum ShellCommandLocator {
         }
         #endif
         return fds
+#endif
     }
 
     // swiftlint:disable cyclomatic_complexity
@@ -842,6 +921,10 @@ public enum ShellCommandLocator {
         arguments: [String],
         timeout: TimeInterval) -> Data?
     {
+#if os(Windows)
+        _ = shell; _ = arguments; _ = timeout
+        return nil
+#else
         // Darwin needs a lock around raw descriptor creation, close-on-exec flagging,
         // and spawn. Linux creates close-on-exec descriptors atomically with pipe2.
         self.shellSpawnLock.lock()
@@ -1029,11 +1112,16 @@ public enum ShellCommandLocator {
             }
         }
         return stdoutCollector.drain()
+#endif
     }
 
     // swiftlint:enable cyclomatic_complexity
 
     private static func runShellCapture(_ shell: String?, _ timeout: TimeInterval, _ command: String) -> String? {
+#if os(Windows)
+        _ = shell; _ = timeout; _ = command
+        return nil
+#else
         let shellPath = (shell?.isEmpty == false) ? shell! : "/bin/zsh"
         let isCI = ["1", "true"].contains(ProcessInfo.processInfo.environment["CI"]?.lowercased())
         // Interactive login shell to pick up PATH mutations from shell init (nvm/fnm/mise).
@@ -1043,6 +1131,7 @@ public enum ShellCommandLocator {
             return nil
         }
         return String(data: data, encoding: .utf8)
+#endif
     }
 
     private static func parseAliasPath(
@@ -1111,8 +1200,21 @@ public enum PathBuilder {
         purposes _: Set<PathPurpose>,
         env: [String: String] = ProcessInfo.processInfo.environment,
         loginPATH: [String]? = LoginShellPathCache.shared.current,
-        home _: String = NSHomeDirectory()) -> String
+        home: String = NSHomeDirectory()) -> String
     {
+#if os(Windows)
+        _ = purposes
+        _ = loginPATH
+        _ = home
+        guard let existing = CodexBarPlatformPaths.environmentValue("PATH", environment: env),
+              !existing.isEmpty
+        else { return "" }
+        return existing
+            .split(separator: ";", omittingEmptySubsequences: true)
+            .map { String($0).trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+            .joined(separator: ";")
+#else
         var parts: [String] = []
 
         if let loginPATH, !loginPATH.isEmpty {
@@ -1137,6 +1239,7 @@ public enum PathBuilder {
         }
 
         return deduped.joined(separator: ":")
+#endif
     }
 
     public static func debugSnapshot(
@@ -1180,6 +1283,10 @@ enum LoginShellPathCapturer {
         shell: String? = ProcessInfo.processInfo.environment["SHELL"],
         timeout: TimeInterval = Self.defaultTimeout) -> [String]?
     {
+#if os(Windows)
+        _ = shell; _ = timeout
+        return nil
+#else
         let shellPath = (shell?.isEmpty == false) ? shell! : "/bin/zsh"
         let isCI = ["1", "true"].contains(ProcessInfo.processInfo.environment["CI"]?.lowercased())
         let marker = "__CODEXBAR_PATH__"
@@ -1208,6 +1315,7 @@ enum LoginShellPathCapturer {
         let value = extracted.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !value.isEmpty else { return nil }
         return value.split(separator: ":").map(String.init)
+#endif
     }
 }
 

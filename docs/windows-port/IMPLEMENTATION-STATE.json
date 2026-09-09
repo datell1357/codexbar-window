@@ -18,12 +18,14 @@
   ],
   "automation_id": "codexbar-windows-qa",
   "interval_minutes": 10,
-  "current_lanes": [],
-  "static_qa_status": "WINSOCK_SCOPED_REVIEWED",
+  "current_lanes": [
+    "tty_windows_039"
+  ],
+  "static_qa_status": "WINDOWS_PATH_PARTIAL_REVIEWED_STATIC_ONLY",
   "windows_runtime_status": "NOT_RUN_BY_USER_INSTRUCTION",
   "completion_claim": false,
-  "next": "Port PathEnvironment POSIX process paths. Winsock server static connection reviewed, raw socket tests remain POSIX and response writes lack inherited deadline. Full Windows feature parity incomplete; no runtime validation.",
-  "last_batch": "winsock-037",
+  "next": "Continue tty_windows_039 shared TTY API and Windows compile boundaries. Native PATH partial reviewed; npm shim consumers, aliases and install discovery remain incomplete. No build/test/runtime.",
+  "last_batch": "path-038",
   "completed_source_changes": [
     "Windows package dependency wiring (partial)",
     "QuickJS watchdog Windows monotonic clock",
