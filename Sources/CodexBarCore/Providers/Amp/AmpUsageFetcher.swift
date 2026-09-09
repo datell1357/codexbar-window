@@ -141,7 +141,8 @@ public struct AmpUsageFetcher: Sendable {
         now: Date = Date()) async throws -> AmpUsageSnapshot
     {
         let log: (String) -> Void = { msg in logger?("[amp] \(msg)") }
-        let cookieHeader = try await self.resolveCookieHeader(override: cookieHeaderOverride, logger: log)
+        let resolvedCookie = try await self.resolveCookieHeader(override: cookieHeaderOverride, logger: log)
+        let cookieHeader = resolvedCookie.header
 
         if let logger {
             let names = self.cookieNames(from: cookieHeader)
@@ -154,7 +155,9 @@ public struct AmpUsageFetcher: Sendable {
                     cookieHeader: cookieHeader,
                     diagnostics: diagnostics)
                 self.logDiagnostics(responseInfo: responseInfo, diagnostics: diagnostics, logger: logger)
-                return try AmpUsageParser.parse(html: html, now: now)
+                let snapshot = try AmpUsageParser.parse(html: html, now: now)
+                self.cacheImportedCookieIfNeeded(resolvedCookie)
+                return snapshot
             } catch {
                 self.logDiagnostics(responseInfo: nil, diagnostics: diagnostics, logger: logger)
                 logger("[amp] Fetch failed: \(error.localizedDescription)")
@@ -166,7 +169,9 @@ public struct AmpUsageFetcher: Sendable {
         let (html, _) = try await self.fetchLegacyHTMLWithDiagnostics(
             cookieHeader: cookieHeader,
             diagnostics: diagnostics)
-        return try AmpUsageParser.parse(html: html, now: now)
+        let snapshot = try AmpUsageParser.parse(html: html, now: now)
+        self.cacheImportedCookieIfNeeded(resolvedCookie)
+        return snapshot
     }
 
     public func fetch(
@@ -195,9 +200,10 @@ public struct AmpUsageFetcher: Sendable {
         lines.append("")
 
         do {
-            let cookieHeader = try await self.resolveCookieHeader(
+            let resolvedCookie = try await self.resolveCookieHeader(
                 override: cookieHeaderOverride,
                 logger: { msg in lines.append("[cookie] \(msg)") })
+            let cookieHeader = resolvedCookie.header
             let diagnostics = RedirectDiagnostics(cookieHeader: cookieHeader, logger: nil)
             let cookieNames = CookieHeaderNormalizer.pairs(from: cookieHeader).map(\.name)
             lines.append("Cookie names: \(cookieNames.joined(separator: ", "))")
@@ -251,21 +257,36 @@ public struct AmpUsageFetcher: Sendable {
 
     private func resolveCookieHeader(
         override: String?,
-        logger: ((String) -> Void)?) async throws -> String
+        logger: ((String) -> Void)?) async throws -> ResolvedCookie
     {
         if let override = CookieHeaderNormalizer.normalize(override) {
             if let sessionHeader = self.sessionCookieHeader(from: override) {
                 logger?("[amp] Using manual session cookie")
-                return sessionHeader
+                return ResolvedCookie(header: sessionHeader, sourceLabel: nil)
             }
             throw AmpUsageError.noSessionCookie
         }
         #if os(macOS) || os(Windows)
         let session = try AmpCookieImporter.importSession(browserDetection: self.browserDetection, logger: logger)
         logger?("[amp] Using cookies from \(session.sourceLabel)")
-        return session.cookieHeader
+        return ResolvedCookie(header: session.cookieHeader, sourceLabel: session.sourceLabel)
         #else
         throw AmpUsageError.noSessionCookie
+        #endif
+    }
+
+    private struct ResolvedCookie: Sendable {
+        let header: String
+        let sourceLabel: String?
+    }
+
+    private func cacheImportedCookieIfNeeded(_ resolved: ResolvedCookie) {
+        #if os(Windows)
+        guard let sourceLabel = resolved.sourceLabel else { return }
+        CookieHeaderCache.store(
+            provider: .amp,
+            cookieHeader: resolved.header,
+            sourceLabel: sourceLabel)
         #endif
     }
 

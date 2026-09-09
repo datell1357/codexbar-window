@@ -16,7 +16,7 @@ extension CodexBarCLI {
                 kind: .args)
         }
 
-        #if os(macOS)
+        #if os(macOS) || os(Windows)
         let targets: [ProviderDescriptor]
         do {
             targets = try Self.cookieRefreshTargets(rawProvider: rawProvider, refreshAll: refreshAll)
@@ -65,20 +65,26 @@ extension CodexBarCLI {
         #else
         Self.exit(
             code: .failure,
-            message: "Cookie refresh is only supported on macOS.",
+            message: "Cookie refresh is not supported on this platform.",
             output: output,
             kind: .args)
         #endif
     }
 
-    #if os(macOS)
+    #if os(macOS) || os(Windows)
     static func cookieRefreshTargets(
         rawProvider: String?,
         refreshAll: Bool,
         descriptors: [ProviderDescriptor] = ProviderDescriptorRegistry.all) throws -> [ProviderDescriptor]
     {
         let supported = descriptors.filter { descriptor in
+            #if os(Windows)
+            // The Windows backend currently has one connected browser-cookie path: Amp via Firefox.
+            descriptor.id == .amp && descriptor.metadata.browserCookieOrder != nil &&
+                descriptor.fetchPlan.sourceModes.contains(.web)
+            #else
             descriptor.metadata.browserCookieOrder != nil && descriptor.fetchPlan.sourceModes.contains(.web)
+            #endif
         }
         if refreshAll {
             guard !supported.isEmpty else { throw CookieRefreshCommandError.noSupportedProviders }
@@ -138,6 +144,7 @@ extension CodexBarCLI {
 
     static func cookieRefreshFailure(provider: UsageProvider, error _: any Error) -> CookieRefreshResult {
         let descriptor = ProviderDescriptorRegistry.descriptor(for: provider)
+        #if os(macOS)
         let promptCapableBrowsers = (descriptor.metadata.browserCookieOrder ?? [])
             .filter { BrowserCookieAccessGate.requiresKeychainPromptAcknowledgement(for: [$0]) }
         if let browser = promptCapableBrowsers.first, KeychainAccessGate.isDisabled {
@@ -154,6 +161,7 @@ extension CodexBarCLI {
                 message: "\(browser.displayName) cookie decryption was declined in Keychain; " +
                     "rerun with --allow-keychain-prompt to request Keychain access again.")
         }
+        #endif
         return CookieRefreshResult(
             provider: descriptor.cli.name,
             status: .failed,
@@ -172,14 +180,23 @@ extension CodexBarCLI {
         }.joined(separator: "\n")
     }
 
+    #if os(macOS)
     private static let keychainPromptAcknowledgementHint =
         "Browser cookie decryption may open a macOS Keychain prompt. " +
         "Retry interactively with --allow-keychain-prompt to acknowledge it."
-
     private static let browserCookieAccessFailureHint =
         "No browser session cookie was refreshed. Sign in in a configured browser and retry. " +
         "If Keychain access was declined, CodexBar keeps the six-hour denial cooldown; " +
         "use --allow-keychain-prompt only for an explicit interactive retry."
+    #elseif os(Windows)
+    private static let keychainPromptAcknowledgementHint =
+        "Windows Firefox cookie access does not require a Keychain prompt."
+    private static let browserCookieAccessFailureHint =
+        "No Firefox session cookie was refreshed for Amp. Sign in to Amp in Firefox and retry."
+    #else
+    private static let keychainPromptAcknowledgementHint = "Browser cookie access is unavailable on this platform."
+    private static let browserCookieAccessFailureHint = "No browser session cookie was refreshed."
+    #endif
 
     private static func refreshCookie(
         descriptor: ProviderDescriptor,

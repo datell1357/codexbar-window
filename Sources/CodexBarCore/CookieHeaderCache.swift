@@ -1,4 +1,7 @@
 import Foundation
+#if os(Windows)
+import WinSDK
+#endif
 #if canImport(CryptoKit)
 import CryptoKit
 #endif
@@ -868,6 +871,39 @@ public enum CookieHeaderCache {
             try FileManager.default.createDirectory(
                 at: lockURL.deletingLastPathComponent(),
                 withIntermediateDirectories: true)
+            #if os(Windows)
+            let utf16Path = Array(lockURL.path.utf16) + [0]
+            let handle: HANDLE? = utf16Path.withUnsafeBufferPointer { buffer in
+                CreateFileW(
+                    buffer.baseAddress,
+                    DWORD(GENERIC_READ | GENERIC_WRITE),
+                    DWORD(FILE_SHARE_READ | FILE_SHARE_WRITE),
+                    nil,
+                    DWORD(OPEN_ALWAYS),
+                    DWORD(FILE_ATTRIBUTE_NORMAL),
+                    nil)
+            }
+            guard let handle, handle != INVALID_HANDLE_VALUE else {
+                throw CocoaError(.fileOpenUnknown)
+            }
+            defer { CloseHandle(handle) }
+
+            var overlapped = OVERLAPPED()
+            guard LockFileEx(
+                handle,
+                DWORD(LOCKFILE_EXCLUSIVE_LOCK),
+                0,
+                DWORD.max,
+                DWORD.max,
+                &overlapped) != 0
+            else {
+                throw CocoaError(.fileLocking)
+            }
+            defer {
+                _ = UnlockFileEx(handle, 0, DWORD.max, DWORD.max, &overlapped)
+            }
+            return try operation()
+            #else
             let fd = open(lockURL.path, O_CREAT | O_RDWR | O_CLOEXEC, S_IRUSR | S_IWUSR)
             guard fd >= 0 else {
                 throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
@@ -882,6 +918,7 @@ public enum CookieHeaderCache {
                 }
             }
             return try operation()
+            #endif
         }
     }
 

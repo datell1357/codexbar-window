@@ -18,6 +18,32 @@ struct CLICookieRefreshTests {
         #expect(parsed.flags.contains("jsonShortcut"))
     }
 
+    #if os(Windows)
+    @Test
+    func `Windows refresh selects only connected Amp provider`() throws {
+        let targets = try CodexBarCLI.cookieRefreshTargets(rawProvider: nil, refreshAll: true)
+        #expect(targets.map(\.id) == [.amp])
+        let explicit = try CodexBarCLI.cookieRefreshTargets(rawProvider: "amp", refreshAll: false)
+        #expect(explicit.map(\.id) == [.amp])
+        #expect(throws: (any Error).self) {
+            try CodexBarCLI.cookieRefreshTargets(rawProvider: "claude", refreshAll: false)
+        }
+    }
+
+    @Test
+    func `Windows Firefox refresh does not require Keychain acknowledgement`() async {
+        var called = false
+        let results = await CodexBarCLI.performCookieRefreshes(
+            targets: [ProviderDescriptorRegistry.descriptor(for: .amp)], allowKeychainPrompt: false)
+        { _ in
+            called = true
+            return CookieRefreshResult(provider: "amp", status: .refreshed, message: "synthetic")
+        }
+        #expect(called)
+        #expect(results.first?.status == .refreshed)
+    }
+    #endif
+
     #if os(macOS)
     @Test
     func `all provider selection is descriptor driven`() throws {
