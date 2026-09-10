@@ -551,6 +551,15 @@ public actor WindowsUsageRuntime {
         return signals.lowPowerModeEnabled ? max(interval, 1800) : interval
     }
 
+    /// Keeps persistent CLI sessions alive for one normal refresh interval,
+    /// with the same floor used by ProviderRegistry on other platforms.
+    /// Manual and unavailable agent-aware cadences retain the 180-second floor,
+    /// while adaptive/low-power policies follow their current effective cadence.
+    private func persistentCLISessionIdleWindow(now: Date, signals: RefreshSignals) -> TimeInterval {
+        let normalInterval = self.normalRefreshIntervalForHeuristics(now: now, signals: signals)
+        return max(180, (normalInterval ?? 120) + 60)
+    }
+
     private func currentSnapshots(
         from entries: [RenderEntry]) -> [ProviderInstanceID: UsageSnapshot]
     {
@@ -604,7 +613,9 @@ public actor WindowsUsageRuntime {
                 tokenAccountTokenUpdater: context.tokenUpdater(for: account),
                 providerManualTokenUpdater: context.manualTokenUpdater(),
                 persistsCLISessions: true,
-                persistentCLISessionIdleWindow: 900)
+                persistentCLISessionIdleWindow: self.persistentCLISessionIdleWindow(
+                    now: Date(),
+                    signals: self.signalProvider()))
             let outcome = await ProviderDescriptorRegistry.descriptor(for: provider).fetchOutcome(context: fetchContext)
             switch outcome.result {
             case let .success(result):
