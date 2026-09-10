@@ -26,6 +26,11 @@ public final class WindowsTrayHost: @unchecked Sendable {
     private static let lowPowerModeOnCommand = UINT_PTR(0x7021)
     private static let lowPowerModeAutomaticCommand = UINT_PTR(0x7022)
     private static let className = Array("CodexBar.WindowsTrayHost".utf16) + [0]
+    private static let powerSavingStatusGUID = GUID(
+        Data1: 0xE00958C0,
+        Data2: 0xC213,
+        Data3: 0x4ACE,
+        Data4: (0xAC, 0x77, 0xFE, 0xCC, 0xED, 0x2E, 0xEE, 0xA5))
     private static let taskbarCreated: UINT = {
         "TaskbarCreated".withCString(encodedAs: UTF16.self) { RegisterWindowMessageW($0) }
     }()
@@ -102,12 +107,31 @@ public final class WindowsTrayHost: @unchecked Sendable {
         self.mailboxLock.lock()
         self.window = hwnd
         self.mailboxLock.unlock()
+        var powerNotification: HPOWERNOTIFY?
         defer {
             self.removeIcon(hwnd)
+            if let powerNotification {
+                if UnregisterPowerSettingNotification(powerNotification) == 0 {
+                    let error = GetLastError()
+                    FileHandle.standardError.write(
+                        Data("CodexBar: failed to unregister Battery Saver notification (Win32 error \(error))\n".utf8))
+                }
+            }
             if IsWindow(hwnd) != 0 { DestroyWindow(hwnd) }
             self.mailboxLock.lock()
             self.window = nil
             self.mailboxLock.unlock()
+        }
+
+        var powerSetting = Self.powerSavingStatusGUID
+        powerNotification = withUnsafePointer(to: &powerSetting) { setting in
+            RegisterPowerSettingNotification(hwnd, setting, 0)
+        }
+        guard powerNotification != nil else {
+            let error = GetLastError()
+            FileHandle.standardError.write(
+                Data("CodexBar: failed to register Battery Saver notification (Win32 error \(error))\n".utf8))
+            throw TrayError.win32(error)
         }
 
         try self.installIcon(hwnd)
@@ -342,16 +366,17 @@ public final class WindowsTrayHost: @unchecked Sendable {
         // callback nonblocking: the application schedules its refresh work.
         // PBT_APMPOWERSTATUSCHANGE covers AC/battery transitions and
         // PBT_APMRESUMEAUTOMATIC covers resume from suspend/hibernate.
-        // Battery-saver setting notifications still require explicit
-        // RegisterPowerSettingNotification registration, which is not wired yet.
+        // The registered Battery Saver GUID arrives as PBT_POWERSETTINGCHANGE;
+        // the runtime re-reads its current power snapshot in the callback.
         if message == UINT(WM_POWERBROADCAST),
            wParam == WPARAM(PBT_APMPOWERSTATUSCHANGE)
             || wParam == WPARAM(PBT_APMRESUMEAUTOMATIC)
+            || wParam == WPARAM(PBT_POWERSETTINGCHANGE)
         {
             host.onPowerChanged()
             return 1
         }
-        if message == UINT(WM_CLOSE) { host.invokeQuit(); DestroyWindow(hwnd); return 0 }
+        if message == UINT(WM_CLOSE) { host.invokeQuit(); return 0 }
         if message == UINT(WM_COMMAND) {
             switch UINT_PTR(wParam & 0xffff) {
             case Self.refreshCommand: host.onRefresh()
