@@ -11,7 +11,7 @@
 | W05 사용량/예측 | 원본 보존, 대응 미판정 | Windows runtime과 소비자 연결 |
 | W06 비용 | 원본 보존, 대응 미판정 | 파일/증분/회전/계정별 경로 |
 | W07 대시보드 | 미구현 | native 표시·집계·export 연결 |
-| W08 갱신 | fixed/adaptive timer·전력 snapshot·AC/resume·Battery Saver 알림·reset boundary 일부 | agent-aware·전체 정책 |
+| W08 갱신 | fixed/adaptive timer·전력 snapshot·AC/resume·Battery Saver 알림·reset boundary·시작 연결 재시도 일부 | agent-aware·전체 정책 |
 | W09 알림 | 미구현 | Windows 알림과 전이별 중복 방지 |
 | W10 위젯 | 미구현 | Windows 표면과 snapshot 연결 |
 | W11 세션 | Codex/Claude/Antigravity OS 연결 일부 | 프로세스/터미널/원격 탐색 |

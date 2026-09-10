@@ -52,6 +52,10 @@ public actor WindowsUsageRuntime {
     private let pluginApprovalStore: ProviderPluginApprovalStore
     private var publisher: RowPublisher
     private var refreshTask: Task<Void, Never>?
+    private var refreshCompletionWaiters: [CheckedContinuation<Void, Never>] = []
+    private var startupConnectivityRetryTask: Task<Void, Never>?
+    private var startupConnectivityRetryActive = false
+    private var startupConnectivityRetryNeeded = false
     private var queuedOptionalRefresh = false
     private var scheduleTask: Task<Void, Never>?
     private var sleepTask: Task<Void, Never>?
@@ -164,7 +168,7 @@ public actor WindowsUsageRuntime {
         let generation = self.scheduleGeneration
         self.scheduleTask = Task { [weak self] in
             guard let self else { return }
-            await self.refresh()
+            await self.runStartupConnectivityRefresh(attempt: 0)
             await self.runRefreshSchedule(generation: generation)
         }
     }
@@ -238,6 +242,7 @@ public actor WindowsUsageRuntime {
             self.queuedOptionalRefresh = false
         }
         while !self.shuttingDown
+        self.resumeRefreshCompletionWaiters()
     }
 
     private func performRefresh() async {
@@ -312,6 +317,7 @@ public actor WindowsUsageRuntime {
         } catch is CancellationError {
             return
         } catch {
+            self.recordStartupConnectivityRetryableFailure(error)
             let message = "CodexBar: \(error.localizedDescription)"
             guard !self.shuttingDown else { return }
             let latestOptionalUsage = WindowsUsagePresentationSettings.load().showOptionalCreditsAndExtraUsage
@@ -353,6 +359,7 @@ public actor WindowsUsageRuntime {
         self.queuedOptionalRefresh = false
         let task = self.refreshTask
         task?.cancel()
+        self.startupConnectivityRetryTask?.cancel()
         self.sleepTask?.cancel()
         self.resetBoundaryRefreshTask?.cancel()
         let schedule = self.scheduleTask
@@ -364,6 +371,10 @@ public actor WindowsUsageRuntime {
         self.scheduledResetBoundaryRefreshAt = nil
         if let task { await task.value }
         self.refreshTask = nil
+        self.resumeRefreshCompletionWaiters()
+        self.startupConnectivityRetryTask = nil
+        self.startupConnectivityRetryActive = false
+        self.startupConnectivityRetryNeeded = false
         await CLIProbeSessionResetter.resetAll()
     }
 
@@ -611,11 +622,13 @@ public actor WindowsUsageRuntime {
                 self.presentations[provider.instanceID] = presentation
                 return presentation.rows()
             case let .failure(error):
+                self.recordStartupConnectivityRetryableFailure(error)
                 return ["\(provider.rawValue): \(error.localizedDescription)"]
             }
         } catch is CancellationError {
             return []
         } catch {
+            self.recordStartupConnectivityRetryableFailure(error)
             return ["\(provider.rawValue): \(error.localizedDescription)"]
         }
     }
@@ -647,6 +660,86 @@ public actor WindowsUsageRuntime {
         } catch {
             return ["\(plugin.manifest.name): \(error.localizedDescription)"]
         }
+    }
+
+    private func runStartupConnectivityRefresh(attempt: Int) async {
+        guard !self.shuttingDown else { return }
+        while self.refreshTask != nil, !Task.isCancelled, !self.shuttingDown {
+            await self.waitForRefreshCompletion()
+        }
+        guard !Task.isCancelled, !self.shuttingDown else { return }
+        self.startupConnectivityRetryActive = true
+        self.startupConnectivityRetryNeeded = false
+        await self.refresh()
+        self.startupConnectivityRetryActive = false
+        guard !Task.isCancelled, !self.shuttingDown else { return }
+        self.completeStartupConnectivityRetryPass(currentAttempt: attempt)
+    }
+
+    private func waitForRefreshCompletion() async {
+        guard self.refreshTask != nil, !self.shuttingDown else { return }
+        await withCheckedContinuation { continuation in
+            self.refreshCompletionWaiters.append(continuation)
+        }
+    }
+
+    private func resumeRefreshCompletionWaiters() {
+        let waiters = self.refreshCompletionWaiters
+        self.refreshCompletionWaiters.removeAll(keepingCapacity: true)
+        for waiter in waiters { waiter.resume() }
+    }
+
+    private func completeStartupConnectivityRetryPass(currentAttempt: Int) {
+        guard !self.shuttingDown, !Task.isCancelled, self.startupConnectivityRetryNeeded else {
+            self.startupConnectivityRetryTask = nil
+            return
+        }
+        let delays: [TimeInterval] = [15, 45, 120, 300]
+        let nextAttempt = currentAttempt + 1
+        guard nextAttempt <= delays.count else {
+            self.startupConnectivityRetryTask = nil
+            return
+        }
+        self.startupConnectivityRetryTask?.cancel()
+        let delay = delays[nextAttempt - 1]
+        self.startupConnectivityRetryTask = Task { [weak self] in
+            do { try await Task.sleep(for: .seconds(delay)) } catch { return }
+            guard let self, !Task.isCancelled else { return }
+            await self.runStartupConnectivityRefresh(attempt: nextAttempt)
+        }
+    }
+
+    private func recordStartupConnectivityRetryableFailure(_ error: Error) {
+        guard self.startupConnectivityRetryActive,
+              Self.isStartupConnectivityRetryableError(error)
+        else { return }
+        self.startupConnectivityRetryNeeded = true
+    }
+
+    private static func isStartupConnectivityRetryableError(_ error: Error) -> Bool {
+        if error is CancellationError { return false }
+        let nsError = error as NSError
+        if nsError.domain == NSURLErrorDomain {
+            switch nsError.code {
+            case NSURLErrorTimedOut,
+                 NSURLErrorNetworkConnectionLost,
+                 NSURLErrorNotConnectedToInternet,
+                 NSURLErrorCannotFindHost,
+                 NSURLErrorCannotConnectToHost,
+                 NSURLErrorDNSLookupFailed:
+                return true
+            default:
+                return false
+            }
+        }
+        let message = error.localizedDescription.lowercased()
+        return message.contains("timed out") ||
+            message.contains("timeout") ||
+            message.contains("network connection was lost") ||
+            message.contains("not connected to the internet") ||
+            message.contains("cannot find host") ||
+            message.contains("cannot connect to host") ||
+            message.contains("dns lookup")
     }
 }
 #endif
