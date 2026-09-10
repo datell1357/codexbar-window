@@ -29,6 +29,7 @@ public struct WindowsUsagePresentationSettings: Sendable {
 public actor WindowsUsageRuntime {
     public typealias RowPublisher = @Sendable ([String]) -> Void
     public typealias CombinedPublisher = @Sendable ([String], [WindowsTrayMenuEntry]) -> Void
+    public typealias NotificationPublisher = @Sendable (WindowsSessionQuotaNotification) -> Void
     public struct RefreshSignals: Sendable {
         public var lowPowerModeEnabled: Bool
         /// Nil means the native power snapshot succeeded. A non-nil value is
@@ -58,6 +59,7 @@ public actor WindowsUsageRuntime {
     private let pluginApprovalStore: ProviderPluginApprovalStore
     private var publisher: RowPublisher
     private var combinedPublisher: CombinedPublisher
+    private var notificationPublisher: NotificationPublisher
     private var refreshTask: Task<Void, Never>?
     private var refreshCompletionWaiters: [CheckedContinuation<Void, Never>] = []
     private var startupConnectivityRetryTask: Task<Void, Never>?
@@ -102,11 +104,14 @@ public actor WindowsUsageRuntime {
         let zaiUsageScope: ZaiUsageScope?
     }
     private var dashboardContextCache: [ProviderInstanceID: DashboardContext] = [:]
+    private var sessionQuotaStates: [ProviderInstanceID: SessionQuotaTransitionCore.State] = [:]
+    private var codexSessionQuotaBaselineWatermark: Date?
 
     public init(
         configStore: CodexBarConfigStore = CodexBarConfigStore(),
         publisher: @escaping RowPublisher = { _ in },
         combinedPublisher: @escaping CombinedPublisher = { _, _ in },
+        notificationPublisher: @escaping NotificationPublisher = { _ in },
         signalProvider: @escaping RefreshSignalProvider = {
             let settings = WindowsRefreshSettings.load()
             let power = WindowsPowerState.read()
@@ -124,6 +129,7 @@ public actor WindowsUsageRuntime {
         self.pluginApprovalStore = ProviderPluginApprovalStore()
         self.publisher = publisher
         self.combinedPublisher = combinedPublisher
+        self.notificationPublisher = notificationPublisher
         self.signalProvider = signalProvider
         self.refreshSettings = WindowsRefreshSettings.load()
     }
@@ -136,6 +142,17 @@ public actor WindowsUsageRuntime {
         self.combinedPublisher = publisher
         guard !self.shuttingDown else { return }
         self.publishRenderEntries(settings: WindowsUsagePresentationSettings.load())
+    }
+
+    public func setNotificationPublisher(_ publisher: @escaping NotificationPublisher) {
+        self.notificationPublisher = publisher
+    }
+
+    public func sessionQuotaNotificationSettingsDidChange() async {
+        guard !self.shuttingDown else { return }
+        if !self.sessionQuotaNotificationsEnabled() {
+            self.codexSessionQuotaBaselineWatermark = max(self.codexSessionQuotaBaselineWatermark ?? .distantPast, self.sessionQuotaStates[UsageProvider.codex.instanceID]?.observedAt ?? .distantPast)
+        }
     }
 
     /// Re-renders retained snapshots after display-only preferences change.
@@ -291,6 +308,8 @@ public actor WindowsUsageRuntime {
                 self.pluginDiscoveryInitialized = true
             }
             let config = try self.configStore.loadOrCreateDefault()
+            let enabledIDs = Set(config.enabledProviders())
+            self.sessionQuotaStates = self.sessionQuotaStates.filter { enabledIDs.contains($0.key) }
             for instanceID in config.enabledProviders() {
                 guard let provider = instanceID.firstPartyProvider else { continue }
                 let accounts = config.providerConfig(for: instanceID)?.tokenAccounts?.accounts ?? []
@@ -495,7 +514,120 @@ public actor WindowsUsageRuntime {
         self.startupConnectivityRetryTask = nil
         self.startupConnectivityRetryActive = false
         self.startupConnectivityRetryNeeded = false
+        self.sessionQuotaStates.removeAll(keepingCapacity: false)
+        self.codexSessionQuotaBaselineWatermark = nil
         await CLIProbeSessionResetter.resetAll()
+    }
+
+    private func sessionQuotaNotificationsEnabled() -> Bool {
+        UserDefaults(suiteName: WindowsRefreshSettings.suiteName)?.object(forKey: "sessionQuotaNotificationsEnabled") as? Bool ?? true
+    }
+
+    private func evaluateSessionQuota(
+        provider: UsageProvider,
+        snapshot: UsageSnapshot,
+        codexVisibleAccount: CodexVisibleAccount?,
+        tokenAccount: ProviderTokenAccount?)
+    {
+        guard !self.shuttingDown else { return }
+        let enabled = self.sessionQuotaNotificationsEnabled()
+        let ownerKey = provider == .codex
+            ? self.codexSessionOwnerKey(snapshot: snapshot, visibleAccount: codexVisibleAccount, tokenAccount: tokenAccount)
+            : nil
+        if provider == .codex, !enabled {
+            self.codexSessionQuotaBaselineWatermark = max(
+                max(
+                    self.codexSessionQuotaBaselineWatermark ?? .distantPast,
+                    self.sessionQuotaStates[UsageProvider.codex.instanceID]?.observedAt ?? .distantPast),
+                snapshot.updatedAt)
+            self.sessionQuotaStates.removeValue(forKey: provider.instanceID)
+            return
+        }
+        guard provider != .codex || ownerKey != nil else {
+            self.codexSessionQuotaBaselineWatermark = max(
+                max(self.codexSessionQuotaBaselineWatermark ?? .distantPast,
+                    self.sessionQuotaStates[provider.instanceID]?.observedAt ?? .distantPast),
+                snapshot.updatedAt)
+            self.sessionQuotaStates.removeValue(forKey: provider.instanceID)
+            return
+        }
+        if provider == .codex,
+           let watermark = self.codexSessionQuotaBaselineWatermark,
+           snapshot.updatedAt <= watermark
+        {
+            return
+        }
+        guard let selected = SessionQuotaTransitionCore.sessionWindow(provider: provider, snapshot: snapshot) else {
+            if provider == .codex {
+                if let previous = self.sessionQuotaStates[provider.instanceID], previous.codexOwnerKey != ownerKey {
+                    self.codexSessionQuotaBaselineWatermark = max(
+                        max(self.codexSessionQuotaBaselineWatermark ?? .distantPast, previous.observedAt),
+                        snapshot.updatedAt)
+                    self.sessionQuotaStates.removeValue(forKey: provider.instanceID)
+                } else if let previous = self.sessionQuotaStates[provider.instanceID] {
+                    self.sessionQuotaStates[provider.instanceID] = previous.advancingObservationWatermark(
+                        to: snapshot.updatedAt)
+                } else if let watermark = self.codexSessionQuotaBaselineWatermark {
+                    self.codexSessionQuotaBaselineWatermark = max(watermark, snapshot.updatedAt)
+                }
+            } else {
+                self.sessionQuotaStates.removeValue(forKey: provider.instanceID)
+            }
+            return
+        }
+        guard !selected.window.isSyntheticPlaceholder else { return }
+        let forceBaseline = provider == .codex && self.codexSessionQuotaBaselineWatermark != nil
+        if forceBaseline { self.codexSessionQuotaBaselineWatermark = nil }
+        let evaluation = SessionQuotaTransitionCore.evaluate(
+            previous: self.sessionQuotaStates[provider.instanceID],
+            observation: .init(provider: provider, remaining: selected.window.remainingPercent, source: selected.source, resetBoundary: selected.window.resetsAt, observedAt: snapshot.updatedAt, evaluationTime: Date(), codexOwnerKey: ownerKey),
+            notificationsEnabled: enabled,
+            forceBaseline: forceBaseline)
+        self.sessionQuotaStates[provider.instanceID] = evaluation.state
+        guard enabled, !forceBaseline, evaluation.outcome.transition != .none else { return }
+        let restored = evaluation.outcome.transition == .restored
+        let providerName = ProviderDescriptorRegistry.descriptor(for: provider).metadata.displayName
+        self.notificationPublisher(.init(
+            title: "\(providerName) session \(restored ? "restored" : "depleted")",
+            body: restored ? "Session quota is available again." : "0% left. Will notify when it's available again."))
+    }
+
+    private func codexSessionOwnerKey(
+        snapshot: UsageSnapshot,
+        visibleAccount: CodexVisibleAccount?,
+        tokenAccount: ProviderTokenAccount?) -> String?
+    {
+        let email = CodexIdentityResolver.normalizeEmail(visibleAccount?.email ?? snapshot.accountEmail(for: .codex))
+        let accountID = CodexOpenAIWorkspaceResolver.normalizeWorkspaceAccountID(visibleAccount?.workspaceAccountID ?? snapshot.identity?.accountID)
+        let identity = CodexIdentityResolver.resolve(accountId: accountID, email: email)
+        let sourceKey: String?
+        let fingerprint: String?
+        if let visibleAccount {
+            fingerprint = CodexAuthFingerprint.normalize(visibleAccount.authFingerprint)
+            switch visibleAccount.selectionSource {
+            case .liveSystem: sourceKey = "live-system"
+            case let .managedAccount(id): sourceKey = "managed:\(id.uuidString.lowercased())"
+            case let .profileHome(path):
+                sourceKey = CodexHomeScope.normalizedHomePath(path).map { "profile:\($0)" }
+            }
+        } else if let tokenAccount {
+            sourceKey = "token:\(tokenAccount.id.uuidString.lowercased())"
+            fingerprint = CodexAuthFingerprint.fingerprint(data: Data(tokenAccount.token.utf8))
+        } else {
+            sourceKey = nil
+            fingerprint = nil
+        }
+        let raw: String
+        switch identity {
+        case let .providerAccount(id):
+            guard let email else { return nil }
+            raw = "codex-session-quota-owner:v1\0provider\0\(id)\0\(email)"
+        case let .emailOnly(email):
+            guard let sourceKey, let fingerprint else { return nil }
+            raw = "codex-session-quota-owner:v1\0email\0\(sourceKey)\0\(email)\0\(fingerprint)"
+        case .unresolved: return nil
+        }
+        return CodexAuthFingerprint.fingerprint(data: Data(raw.utf8))
     }
 
     private func runRefreshSchedule(generation: UInt64) async {
@@ -751,6 +883,7 @@ public actor WindowsUsageRuntime {
                 let title = accountLabel.map { "\(metadata.displayName) [\($0)]" } ?? metadata.displayName
                 let presentation = WindowsUsagePresentation(instanceID: provider.instanceID, provider: provider, title: title, privacyTitle: metadata.displayName, result: result, snapshot: labeledUsage, hidePersonalInfo: presentationSettings.hidePersonalInfo, showOptionalUsage: presentationSettings.showOptionalCreditsAndExtraUsage, usageBarsShowUsed: presentationSettings.usageBarsShowUsed, resetTimesShowAbsolute: presentationSettings.resetTimesShowAbsolute)
                 self.presentations[provider.instanceID] = presentation
+                self.evaluateSessionQuota(provider: provider, snapshot: result.usage, codexVisibleAccount: codexVisibleAccount, tokenAccount: account)
                 return presentation.rows()
             case let .failure(error):
                 self.recordStartupConnectivityRetryableFailure(error)

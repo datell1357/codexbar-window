@@ -37,6 +37,10 @@ private final class WindowsTrayApplication: @unchecked Sendable {
         onRefreshSettingsChanged: { [weak self] in
             guard let self else { return }
             Task { await self.runtime.refreshSettingsDidChange() }
+        },
+        onSessionQuotaNotificationSettingsChanged: { [weak self] in
+            guard let self else { return }
+            Task { await self.runtime.sessionQuotaNotificationSettingsDidChange() }
         })
 
     init() {
@@ -48,6 +52,9 @@ private final class WindowsTrayApplication: @unchecked Sendable {
         Task { [runtime] in
             await runtime.setCombinedPublisher { [weak host] rows, entries in
                 host?.postRows(rows, menuEntries: entries)
+            }
+            await runtime.setNotificationPublisher { [weak host] event in
+                host?.postSessionQuotaNotification(event)
             }
             await runtime.start()
         }

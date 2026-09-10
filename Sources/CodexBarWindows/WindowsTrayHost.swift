@@ -12,6 +12,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
     public typealias PresentationSettingsChangedHandler = @Sendable () -> Void
     public typealias OptionalUsageSettingsChangedHandler = @Sendable () -> Void
     public typealias RefreshSettingsChangedHandler = @Sendable () -> Void
+    public typealias SessionQuotaNotificationSettingsChangedHandler = @Sendable () -> Void
     public typealias QuitHandler = @Sendable () -> Void
 
     private static let wakeMessage = UINT(WM_APP) + 1
@@ -21,6 +22,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
     private static let resetTimesShowAbsoluteCommand = UINT_PTR(0x7004)
     private static let hidePersonalInfoCommand = UINT_PTR(0x7005)
     private static let showOptionalCreditsAndExtraUsageCommand = UINT_PTR(0x7006)
+    private static let sessionQuotaNotificationsCommand = UINT_PTR(0x7007)
     private static let refreshFrequencyCommandBase = UINT_PTR(0x7010)
     private static let lowPowerModeOffCommand = UINT_PTR(0x7020)
     private static let lowPowerModeOnCommand = UINT_PTR(0x7021)
@@ -44,11 +46,13 @@ public final class WindowsTrayHost: @unchecked Sendable {
     private let onPresentationSettingsChanged: PresentationSettingsChangedHandler
     private let onOptionalUsageSettingsChanged: OptionalUsageSettingsChangedHandler
     private let onRefreshSettingsChanged: RefreshSettingsChangedHandler
+    private let onSessionQuotaNotificationSettingsChanged: SessionQuotaNotificationSettingsChangedHandler
     private let onQuit: QuitHandler
     private let presentationDefaults: UserDefaults
     private let mailboxLock = NSLock()
     private var mailboxRows: [String] = []
     private var mailboxMenuEntries: [WindowsTrayMenuEntry] = []
+    private var mailboxSessionQuotaNotifications: [WindowsSessionQuotaNotification] = []
     private var popupStatusCommands: [UINT_PTR: String] = [:]
     private var popupDashboardCommands: [UINT_PTR: String] = [:]
     private var popupChangelogCommands: [UINT_PTR: String] = [:]
@@ -64,7 +68,8 @@ public final class WindowsTrayHost: @unchecked Sendable {
         onMenuOpen: @escaping @Sendable () -> Void = {},
         onPresentationSettingsChanged: @escaping PresentationSettingsChangedHandler = {},
         onOptionalUsageSettingsChanged: @escaping OptionalUsageSettingsChangedHandler = {},
-        onRefreshSettingsChanged: @escaping RefreshSettingsChangedHandler = {})
+        onRefreshSettingsChanged: @escaping RefreshSettingsChangedHandler = {},
+        onSessionQuotaNotificationSettingsChanged: @escaping SessionQuotaNotificationSettingsChangedHandler = {})
     {
         self.onRefresh = onRefresh
         self.onQuit = onQuit
@@ -73,6 +78,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
         self.onPresentationSettingsChanged = onPresentationSettingsChanged
         self.onOptionalUsageSettingsChanged = onOptionalUsageSettingsChanged
         self.onRefreshSettingsChanged = onRefreshSettingsChanged
+        self.onSessionQuotaNotificationSettingsChanged = onSessionQuotaNotificationSettingsChanged
         self.presentationDefaults = UserDefaults(suiteName: WindowsRefreshSettings.suiteName) ?? .standard
     }
 
@@ -116,6 +122,9 @@ public final class WindowsTrayHost: @unchecked Sendable {
         self.mailboxLock.unlock()
         var powerNotification: HPOWERNOTIFY?
         defer {
+            self.mailboxLock.lock()
+            self.mailboxSessionQuotaNotifications.removeAll(keepingCapacity: false)
+            self.mailboxLock.unlock()
             self.removeIcon(hwnd)
             if let powerNotification {
                 if UnregisterPowerSettingNotification(powerNotification) == 0 {
@@ -169,6 +178,23 @@ public final class WindowsTrayHost: @unchecked Sendable {
         if let hwnd { PostMessageW(hwnd, Self.wakeMessage, 0, 0) }
     }
 
+    /// Queues a session quota event from any thread. Delivery is bounded and
+    /// performed only by the tray UI thread once the icon exists.
+    public func postSessionQuotaNotification(_ notification: WindowsSessionQuotaNotification) {
+        self.mailboxLock.lock()
+        guard !self.quitInvoked else {
+            self.mailboxLock.unlock()
+            return
+        }
+        if self.mailboxSessionQuotaNotifications.count >= 16 {
+            self.mailboxSessionQuotaNotifications.removeFirst()
+        }
+        self.mailboxSessionQuotaNotifications.append(notification)
+        let hwnd = self.window
+        self.mailboxLock.unlock()
+        if let hwnd { PostMessageW(hwnd, Self.wakeMessage, 0, 0) }
+    }
+
     private func installIcon(_ hwnd: HWND) throws {
         var data = NOTIFYICONDATAW()
         data.cbSize = DWORD(MemoryLayout<NOTIFYICONDATAW>.size)
@@ -181,6 +207,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
             throw TrayError.win32(GetLastError())
         }
         self.iconInstalled = true
+        self.drainSessionQuotaNotifications()
     }
 
     private func removeIcon(_ hwnd: HWND) {
@@ -279,11 +306,15 @@ public final class WindowsTrayHost: @unchecked Sendable {
         let hidePersonalInfo = self.presentationDefaults.object(forKey: "hidePersonalInfo") as? Bool ?? false
         let showOptionalCreditsAndExtraUsage = self.presentationDefaults
             .object(forKey: "showOptionalCreditsAndExtraUsage") as? Bool ?? true
+        let sessionQuotaNotificationsEnabled = self.presentationDefaults
+            .object(forKey: "sessionQuotaNotificationsEnabled") as? Bool ?? true
         let showUsedFlags = UINT(MF_STRING) | (showUsed ? UINT(MF_CHECKED) : 0)
         let showAbsoluteFlags = UINT(MF_STRING) | (showAbsolute ? UINT(MF_CHECKED) : 0)
         let hidePersonalInfoFlags = UINT(MF_STRING) | (hidePersonalInfo ? UINT(MF_CHECKED) : 0)
         let showOptionalCreditsAndExtraUsageFlags = UINT(MF_STRING)
             | (showOptionalCreditsAndExtraUsage ? UINT(MF_CHECKED) : 0)
+        let sessionQuotaNotificationsFlags = UINT(MF_STRING)
+            | (sessionQuotaNotificationsEnabled ? UINT(MF_CHECKED) : 0)
         "Show used usage".withCString(encodedAs: UTF16.self) {
             _ = AppendMenuW(menu, showUsedFlags, Self.usageBarsShowUsedCommand, $0)
         }
@@ -296,6 +327,9 @@ public final class WindowsTrayHost: @unchecked Sendable {
         "Show credits + extra usage".withCString(encodedAs: UTF16.self) {
             _ = AppendMenuW(
                 menu, showOptionalCreditsAndExtraUsageFlags, Self.showOptionalCreditsAndExtraUsageCommand, $0)
+        }
+        "Session quota notifications".withCString(encodedAs: UTF16.self) {
+            _ = AppendMenuW(menu, sessionQuotaNotificationsFlags, Self.sessionQuotaNotificationsCommand, $0)
         }
         let changelogFlags = UINT(MF_STRING) | (changelogEnabled ? UINT(MF_CHECKED) : 0)
         "Show provider changelog links".withCString(encodedAs: UTF16.self) {
@@ -325,8 +359,14 @@ public final class WindowsTrayHost: @unchecked Sendable {
     }
 
     private func invokeQuit() {
-        guard !self.quitInvoked else { return }
+        self.mailboxLock.lock()
+        guard !self.quitInvoked else {
+            self.mailboxLock.unlock()
+            return
+        }
         self.quitInvoked = true
+        self.mailboxSessionQuotaNotifications.removeAll(keepingCapacity: false)
+        self.mailboxLock.unlock()
         self.onQuit()
         PostQuitMessage(0)
     }
@@ -341,6 +381,17 @@ public final class WindowsTrayHost: @unchecked Sendable {
         let current = self.presentationDefaults.object(forKey: "showOptionalCreditsAndExtraUsage") as? Bool ?? true
         self.presentationDefaults.set(!current, forKey: "showOptionalCreditsAndExtraUsage")
         self.onOptionalUsageSettingsChanged()
+    }
+
+    private func toggleSessionQuotaNotificationsSetting() {
+        let current = self.presentationDefaults.object(forKey: "sessionQuotaNotificationsEnabled") as? Bool ?? true
+        self.presentationDefaults.set(!current, forKey: "sessionQuotaNotificationsEnabled")
+        if current {
+            self.mailboxLock.lock()
+            self.mailboxSessionQuotaNotifications.removeAll(keepingCapacity: false)
+            self.mailboxLock.unlock()
+        }
+        self.onSessionQuotaNotificationSettingsChanged()
     }
 
     private func toggleChangelogSetting() {
@@ -467,6 +518,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
         case Self.resetTimesShowAbsoluteCommand: self.togglePresentationSetting(forKey: "resetTimesShowAbsolute")
         case Self.hidePersonalInfoCommand: self.togglePresentationSetting(forKey: "hidePersonalInfo")
         case Self.showOptionalCreditsAndExtraUsageCommand: self.toggleOptionalUsageSetting()
+        case Self.sessionQuotaNotificationsCommand: self.toggleSessionQuotaNotificationsSetting()
         case Self.changelogCommandBase - 1: self.toggleChangelogSetting()
         case Self.lowPowerModeOffCommand: self.selectLowPowerModePreference(.off)
         case Self.lowPowerModeOnCommand: self.selectLowPowerModePreference(.on)
@@ -512,7 +564,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
             return DefWindowProcW(hwnd, message, wParam, lParam)
         }
         let host = Unmanaged<WindowsTrayHost>.fromOpaque(UnsafeRawPointer(bitPattern: UInt(pointer))!).takeUnretainedValue()
-        if message == Self.wakeMessage { return 0 }
+        if message == Self.wakeMessage { host.drainSessionQuotaNotifications(); return 0 }
         if message == Self.taskbarCreated {
             if (try? host.installIcon(hwnd)) == nil { host.invokeQuit() }
             return 0
@@ -545,6 +597,57 @@ public final class WindowsTrayHost: @unchecked Sendable {
             return DefWindowProcW(hwnd, message, wParam, lParam)
         }
         return DefWindowProcW(hwnd, message, wParam, lParam)
+    }
+
+    private func drainSessionQuotaNotifications() {
+        guard self.iconInstalled,
+              self.presentationDefaults.object(forKey: "sessionQuotaNotificationsEnabled") as? Bool ?? true
+        else {
+            self.mailboxLock.lock()
+            self.mailboxSessionQuotaNotifications.removeAll(keepingCapacity: false)
+            self.mailboxLock.unlock()
+            return
+        }
+        self.mailboxLock.lock()
+        let notifications = self.mailboxSessionQuotaNotifications
+        self.mailboxSessionQuotaNotifications.removeAll(keepingCapacity: false)
+        self.mailboxLock.unlock()
+        for notification in notifications {
+            self.deliverSessionQuotaNotification(notification)
+        }
+    }
+
+    private func deliverSessionQuotaNotification(_ notification: WindowsSessionQuotaNotification) {
+        guard self.presentationDefaults.object(forKey: "sessionQuotaNotificationsEnabled") as? Bool ?? true,
+              self.iconInstalled,
+              let hwnd = self.window
+        else { return }
+        var data = NOTIFYICONDATAW()
+        data.cbSize = DWORD(MemoryLayout<NOTIFYICONDATAW>.size)
+        data.hWnd = hwnd
+        data.uID = 1
+        data.uFlags = UINT(NIF_INFO)
+        data.dwInfoFlags = DWORD(NIIF_INFO)
+        Self.copyUTF16(notification.title, into: &data.szInfoTitle)
+        Self.copyUTF16(notification.body, into: &data.szInfo)
+        guard Shell_NotifyIconW(DWORD(NIM_MODIFY), &data) != 0 else {
+            let error = GetLastError()
+            FileHandle.standardError.write(
+                Data("CodexBar: failed to deliver session quota notification (Win32 error \(error))\n".utf8))
+            return
+        }
+    }
+
+    private static func copyUTF16<T>(_ value: String, into destination: inout T) {
+        let capacity = MemoryLayout<T>.size / MemoryLayout<UInt16>.stride
+        guard capacity > 0 else { return }
+        var units = Array(value.utf16.prefix(max(0, capacity - 1)))
+        if let last = units.last, (0xD800...0xDBFF).contains(last) { units.removeLast() }
+        units.append(0)
+        withUnsafeMutableBytes(of: &destination) { raw in
+            let output = raw.bindMemory(to: UInt16.self)
+            for (index, unit) in units.prefix(output.count).enumerated() { output[index] = unit }
+        }
     }
 
     public enum TrayError: Error, Sendable { case alreadyRunning; case win32(UInt32) }
