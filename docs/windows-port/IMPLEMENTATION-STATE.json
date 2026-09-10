@@ -18,12 +18,14 @@
   ],
   "automation_id": "codexbar-windows-qa",
   "interval_minutes": 10,
-  "current_lanes": [],
-  "static_qa_status": "ENUM052_053_SCOPED_APPROVE_AGY049_INCOMPLETE",
+  "current_lanes": [
+    "agy_session_049"
+  ],
+  "static_qa_status": "WARM054_055_SCOPED_APPROVE_AGY049_INCOMPLETE",
   "windows_runtime_status": "NOT_RUN_BY_USER_INSTRUCTION",
   "completion_claim": false,
-  "next": "Implement Windows executable and script path matching; review 049 session lifecycle and records. Claude artifact cleanup approval remains pending; do not retry. Static source comparison only.",
-  "last_batch": "process-enumerator-052-053",
+  "next": "054/055 reviewed statically for native image/script identity and agy npm shim discovery. 049 graceful wait cancellation fix present; persistence diagnostic being added. Stale/corrupt record parity and full session review remain; no runtime validation.",
+  "last_batch": "warm-process-054-055",
   "completed_source_changes": [
     "Windows package dependency wiring (partial)",
     "QuickJS watchdog Windows monotonic clock",

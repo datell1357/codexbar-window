@@ -365,8 +365,18 @@ public enum BinaryLocator {
 #if os(Windows)
         // Windows does not have login shells or POSIX fallback directories. Resolve
         // directly against the caller-provided environment and only return native
-        // CreateProcess images (.exe/.com); script shims require an explicit runner.
+        // CreateProcess images (.exe/.com). Provider-specific npm shims are handled
+        // by their launch resolver so the returned source path remains compatible
+        // with callers that only need to report the selected CLI.
         let override = CodexBarPlatformPaths.environmentValue(overrideKey, environment: env)
+        if name == "agy",
+           let command = WindowsCommandResolver.resolve(
+               executable: name,
+               override: override,
+               environment: env)
+        {
+            return command.sourcePath
+        }
         if let windowsHit = self.resolveWindowsBinary(
             name: name,
             override: override,

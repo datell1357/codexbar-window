@@ -477,6 +477,13 @@ struct AntigravityCLIHTTPSFetchStrategy: ProviderFetchStrategy {
         _ info: AntigravityStatusProbe.ProcessInfoResult,
         matchesBinaryPath binaryPath: String) -> Bool
     {
+#if os(Windows)
+        guard let executablePath = info.executablePath else { return false }
+        return WindowsWarmProcessMatcher.matches(
+            imagePath: executablePath,
+            commandLine: info.commandLine,
+            expectedBinaryPath: binaryPath)
+#else
         let candidates = [
             URL(fileURLWithPath: binaryPath).standardizedFileURL.path,
             URL(fileURLWithPath: binaryPath).resolvingSymlinksInPath().standardizedFileURL.path,
@@ -489,6 +496,7 @@ struct AntigravityCLIHTTPSFetchStrategy: ProviderFetchStrategy {
         return candidates.contains { candidate in
             info.commandLine == candidate || info.commandLine.hasPrefix("\(candidate) ")
         }
+#endif
     }
 
     /// Production wiring for ``tryWarmAgyFetch``: list processes via `ps`, find
