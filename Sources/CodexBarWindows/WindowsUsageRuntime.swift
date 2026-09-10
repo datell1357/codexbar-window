@@ -305,6 +305,8 @@ public actor WindowsUsageRuntime {
                     title: metadata.displayName,
                     statusURL: metadata.statusPageURL ?? metadata.statusLinkURL,
                     dashboardVisible: metadata.dashboardURL != nil,
+                    changelogURL: metadata.changelogURL,
+                    changelogVisible: metadata.changelogURL != nil,
                     disabledText: metadata.statusPageURL == nil && metadata.statusLinkURL == nil ? "unavailable" : nil)
             }
             let accountContext = try TokenAccountCLIContext(
@@ -411,6 +413,8 @@ public actor WindowsUsageRuntime {
                     statusURL: metadata.statusPageURL ?? metadata.statusLinkURL,
                     dashboardURL: dashboardURL?.absoluteString,
                     dashboardVisible: metadata.dashboardURL != nil,
+                    changelogURL: metadata.changelogURL,
+                    changelogVisible: metadata.changelogURL != nil,
                     disabledText: metadata.statusPageURL == nil && metadata.statusLinkURL == nil ? "unavailable" : nil)
             }
             if self.refreshSettings.frequency == .adaptiveAgentAware

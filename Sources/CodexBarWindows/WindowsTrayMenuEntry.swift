@@ -15,6 +15,10 @@ public struct WindowsTrayMenuEntry: Sendable, Equatable {
     /// independent from status availability because some providers expose a
     /// status page without a dashboard action.
     public let dashboardVisible: Bool
+    /// Provider release notes URL. It is shown only when the corresponding
+    /// preference is enabled by the tray host.
+    public let changelogURL: String?
+    public let changelogVisible: Bool
     public let disabledText: String?
 
     public init(
@@ -23,6 +27,8 @@ public struct WindowsTrayMenuEntry: Sendable, Equatable {
         statusURL: String?,
         dashboardURL: String? = nil,
         dashboardVisible: Bool = true,
+        changelogURL: String? = nil,
+        changelogVisible: Bool = false,
         disabledText: String? = "unavailable")
     {
         self.providerID = providerID
@@ -30,6 +36,8 @@ public struct WindowsTrayMenuEntry: Sendable, Equatable {
         self.statusURL = statusURL
         self.dashboardURL = dashboardURL
         self.dashboardVisible = dashboardVisible
+        self.changelogURL = changelogURL
+        self.changelogVisible = changelogVisible
         self.disabledText = disabledText
     }
 

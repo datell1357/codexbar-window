@@ -27,6 +27,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
     private static let lowPowerModeAutomaticCommand = UINT_PTR(0x7022)
     private static let statusCommandBase = UINT_PTR(0x7100)
     private static let dashboardCommandBase = UINT_PTR(0x7200)
+    private static let changelogCommandBase = UINT_PTR(0x7300)
     private static let className = Array("CodexBar.WindowsTrayHost".utf16) + [0]
     private static let powerSavingStatusGUID = GUID(
         Data1: 0xE00958C0,
@@ -50,6 +51,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
     private var mailboxMenuEntries: [WindowsTrayMenuEntry] = []
     private var popupStatusCommands: [UINT_PTR: String] = [:]
     private var popupDashboardCommands: [UINT_PTR: String] = [:]
+    private var popupChangelogCommands: [UINT_PTR: String] = [:]
     private var window: HWND?
     private var runReserved = false
     private var iconInstalled = false
@@ -200,6 +202,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
         self.mailboxLock.unlock()
         self.popupStatusCommands.removeAll(keepingCapacity: true)
         self.popupDashboardCommands.removeAll(keepingCapacity: true)
+        self.popupChangelogCommands.removeAll(keepingCapacity: true)
         for (index, row) in rows.enumerated() {
             let title = Array(row.utf16) + [0]
             title.withUnsafeBufferPointer { text in
@@ -247,6 +250,30 @@ public final class WindowsTrayHost: @unchecked Sendable {
                 menu, UINT(MF_STRING | MF_POPUP), UINT_PTR(UInt(bitPattern: dashboardMenu)), title) != 0
             if !attached { _ = DestroyMenu(dashboardMenu) }
         }
+        let changelogEnabled = self.presentationDefaults.object(forKey: "providerChangelogLinksEnabled") as? Bool ?? false
+        // The Win32 tray has no selected provider target while its popup is
+        // open. Preserve the preference by exposing the eligible first-party
+        // links together in one submenu; each URL remains metadata-driven.
+        let changelogEntries = changelogEnabled ? menuEntries.filter { $0.changelogVisible } : []
+        if !changelogEntries.isEmpty, let changelogMenu = CreatePopupMenu() {
+            var itemsAppended = true
+            for (index, entry) in changelogEntries.enumerated() {
+                let command = Self.changelogCommandBase + UINT_PTR(index)
+                if let changelogURL = entry.changelogURL {
+                    self.popupChangelogCommands[command] = changelogURL
+                }
+                let flags = UINT(MF_STRING) | (entry.changelogURL == nil ? UINT(MF_GRAYED) : 0)
+                let title = Array((entry.title + " changelog").utf16) + [0]
+                let appended = title.withUnsafeBufferPointer { text in
+                    AppendMenuW(changelogMenu, flags, command, text.baseAddress)
+                }
+                if appended == 0 { itemsAppended = false; break }
+            }
+            let title = Array("Provider changelogs".utf16) + [0]
+            let attached = itemsAppended && AppendMenuW(
+                menu, UINT(MF_STRING | MF_POPUP), UINT_PTR(UInt(bitPattern: changelogMenu)), title) != 0
+            if !attached { _ = DestroyMenu(changelogMenu) }
+        }
         let showUsed = self.presentationDefaults.object(forKey: "usageBarsShowUsed") as? Bool ?? false
         let showAbsolute = self.presentationDefaults.object(forKey: "resetTimesShowAbsolute") as? Bool ?? false
         let hidePersonalInfo = self.presentationDefaults.object(forKey: "hidePersonalInfo") as? Bool ?? false
@@ -270,6 +297,10 @@ public final class WindowsTrayHost: @unchecked Sendable {
             _ = AppendMenuW(
                 menu, showOptionalCreditsAndExtraUsageFlags, Self.showOptionalCreditsAndExtraUsageCommand, $0)
         }
+        let changelogFlags = UINT(MF_STRING) | (changelogEnabled ? UINT(MF_CHECKED) : 0)
+        "Show provider changelog links".withCString(encodedAs: UTF16.self) {
+            _ = AppendMenuW(menu, changelogFlags, Self.changelogCommandBase - 1, $0)
+        }
         self.appendRefreshFrequencyMenu(to: menu)
         self.appendLowPowerModeMenu(to: menu)
         _ = AppendMenuW(menu, UINT(MF_SEPARATOR), 0, nil)
@@ -281,6 +312,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
             _ = DestroyMenu(menu)
             self.popupStatusCommands.removeAll(keepingCapacity: true)
             self.popupDashboardCommands.removeAll(keepingCapacity: true)
+            self.popupChangelogCommands.removeAll(keepingCapacity: true)
             return
         }
         let command = TrackPopupMenu(menu, UINT(TPM_RIGHTBUTTON | TPM_RETURNCMD), point.x, point.y, 0, hwnd, nil)
@@ -288,6 +320,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
         if command != 0 { self.dispatchCommand(UINT_PTR(command)) }
         self.popupStatusCommands.removeAll(keepingCapacity: true)
         self.popupDashboardCommands.removeAll(keepingCapacity: true)
+        self.popupChangelogCommands.removeAll(keepingCapacity: true)
         _ = PostMessageW(hwnd, WM_NULL, 0, 0)
     }
 
@@ -308,6 +341,12 @@ public final class WindowsTrayHost: @unchecked Sendable {
         let current = self.presentationDefaults.object(forKey: "showOptionalCreditsAndExtraUsage") as? Bool ?? true
         self.presentationDefaults.set(!current, forKey: "showOptionalCreditsAndExtraUsage")
         self.onOptionalUsageSettingsChanged()
+    }
+
+    private func toggleChangelogSetting() {
+        let current = self.presentationDefaults.object(forKey: "providerChangelogLinksEnabled") as? Bool ?? false
+        self.presentationDefaults.set(!current, forKey: "providerChangelogLinksEnabled")
+        self.onPresentationSettingsChanged()
     }
 
     private static func frequencyCommand(for frequency: WindowsRefreshSettings.Frequency) -> UINT_PTR {
@@ -417,6 +456,10 @@ public final class WindowsTrayHost: @unchecked Sendable {
             self.openStatusPage(url)
             return
         }
+        if let url = self.popupChangelogCommands[command] {
+            self.openStatusPage(url)
+            return
+        }
         switch command {
         case Self.refreshCommand: self.onRefresh()
         case Self.quitCommand: self.invokeQuit()
@@ -424,6 +467,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
         case Self.resetTimesShowAbsoluteCommand: self.togglePresentationSetting(forKey: "resetTimesShowAbsolute")
         case Self.hidePersonalInfoCommand: self.togglePresentationSetting(forKey: "hidePersonalInfo")
         case Self.showOptionalCreditsAndExtraUsageCommand: self.toggleOptionalUsageSetting()
+        case Self.changelogCommandBase - 1: self.toggleChangelogSetting()
         case Self.lowPowerModeOffCommand: self.selectLowPowerModePreference(.off)
         case Self.lowPowerModeOnCommand: self.selectLowPowerModePreference(.on)
         case Self.lowPowerModeAutomaticCommand: self.selectLowPowerModePreference(.automatic)
