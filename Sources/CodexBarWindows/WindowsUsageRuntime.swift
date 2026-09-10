@@ -30,6 +30,7 @@ public actor WindowsUsageRuntime {
     public typealias RowPublisher = @Sendable ([String]) -> Void
     public typealias CombinedPublisher = @Sendable ([String], [WindowsTrayMenuEntry]) -> Void
     public typealias NotificationPublisher = @Sendable (WindowsSessionQuotaNotification) -> Void
+    public typealias QuotaWarningPublisher = @Sendable (WindowsQuotaWarningNotification) -> Void
     public struct RefreshSignals: Sendable {
         public var lowPowerModeEnabled: Bool
         /// Nil means the native power snapshot succeeded. A non-nil value is
@@ -60,6 +61,7 @@ public actor WindowsUsageRuntime {
     private var publisher: RowPublisher
     private var combinedPublisher: CombinedPublisher
     private var notificationPublisher: NotificationPublisher
+    private var quotaWarningPublisher: QuotaWarningPublisher
     private var refreshTask: Task<Void, Never>?
     private var refreshCompletionWaiters: [CheckedContinuation<Void, Never>] = []
     private var startupConnectivityRetryTask: Task<Void, Never>?
@@ -106,12 +108,14 @@ public actor WindowsUsageRuntime {
     private var dashboardContextCache: [ProviderInstanceID: DashboardContext] = [:]
     private var sessionQuotaStates: [ProviderInstanceID: SessionQuotaTransitionCore.State] = [:]
     private var codexSessionQuotaBaselineWatermark: Date?
+    private var quotaWarningStates: [QuotaWarningTransitionCore.Key: QuotaWarningTransitionCore.State] = [:]
 
     public init(
         configStore: CodexBarConfigStore = CodexBarConfigStore(),
         publisher: @escaping RowPublisher = { _ in },
         combinedPublisher: @escaping CombinedPublisher = { _, _ in },
         notificationPublisher: @escaping NotificationPublisher = { _ in },
+        quotaWarningPublisher: @escaping QuotaWarningPublisher = { _ in },
         signalProvider: @escaping RefreshSignalProvider = {
             let settings = WindowsRefreshSettings.load()
             let power = WindowsPowerState.read()
@@ -130,6 +134,7 @@ public actor WindowsUsageRuntime {
         self.publisher = publisher
         self.combinedPublisher = combinedPublisher
         self.notificationPublisher = notificationPublisher
+        self.quotaWarningPublisher = quotaWarningPublisher
         self.signalProvider = signalProvider
         self.refreshSettings = WindowsRefreshSettings.load()
     }
@@ -142,6 +147,10 @@ public actor WindowsUsageRuntime {
         self.combinedPublisher = publisher
         guard !self.shuttingDown else { return }
         self.publishRenderEntries(settings: WindowsUsagePresentationSettings.load())
+    }
+
+    public func setQuotaWarningPublisher(_ publisher: @escaping QuotaWarningPublisher) {
+        self.quotaWarningPublisher = publisher
     }
 
     public func setNotificationPublisher(_ publisher: @escaping NotificationPublisher) {
@@ -310,6 +319,7 @@ public actor WindowsUsageRuntime {
             let config = try self.configStore.loadOrCreateDefault()
             let enabledIDs = Set(config.enabledProviders())
             self.sessionQuotaStates = self.sessionQuotaStates.filter { enabledIDs.contains($0.key) }
+            self.quotaWarningStates = self.quotaWarningStates.filter { enabledIDs.contains($0.key.provider.instanceID) }
             for instanceID in config.enabledProviders() {
                 guard let provider = instanceID.firstPartyProvider else { continue }
                 let accounts = config.providerConfig(for: instanceID)?.tokenAccounts?.accounts ?? []
@@ -351,7 +361,7 @@ public actor WindowsUsageRuntime {
                 if provider == .codex {
                     let configuredAccounts = try? accountContext.resolvedAccounts(for: provider)
                     if let configuredAccounts, !configuredAccounts.isEmpty {
-                        let fetched = await self.fetchRows(provider: provider, context: accountContext, presentationSettings: presentationSettings)
+                        let fetched = await self.fetchRows(provider: provider, context: accountContext, config: config, presentationSettings: presentationSettings)
                         if let presentation = self.presentations[provider.instanceID] { entries.append(.presentation(presentation)) }
                         else { entries.append(contentsOf: fetched.map(RenderEntry.row)) }
                     } else {
@@ -362,13 +372,14 @@ public actor WindowsUsageRuntime {
                         let fetched = await self.fetchRows(
                             provider: provider,
                             context: accountContext,
+                            config: config,
                             codexVisibleAccount: active,
                             presentationSettings: presentationSettings)
                         if let presentation = self.presentations[provider.instanceID] { entries.append(.presentation(presentation)) }
                         else { entries.append(contentsOf: fetched.map(RenderEntry.row)) }
                     }
                 } else {
-                    let fetched = await self.fetchRows(provider: provider, context: accountContext, presentationSettings: presentationSettings)
+                    let fetched = await self.fetchRows(provider: provider, context: accountContext, config: config, presentationSettings: presentationSettings)
                     if let presentation = self.presentations[provider.instanceID] { entries.append(.presentation(presentation)) }
                     else { entries.append(contentsOf: fetched.map(RenderEntry.row)) }
                 }
@@ -516,6 +527,7 @@ public actor WindowsUsageRuntime {
         self.startupConnectivityRetryNeeded = false
         self.sessionQuotaStates.removeAll(keepingCapacity: false)
         self.codexSessionQuotaBaselineWatermark = nil
+        self.quotaWarningStates.removeAll(keepingCapacity: false)
         await CLIProbeSessionResetter.resetAll()
     }
 
@@ -590,6 +602,88 @@ public actor WindowsUsageRuntime {
         self.notificationPublisher(.init(
             title: "\(providerName) session \(restored ? "restored" : "depleted")",
             body: restored ? "Session quota is available again." : "0% left. Will notify when it's available again."))
+    }
+
+    private func evaluateQuotaWarnings(
+        provider: UsageProvider,
+        snapshot: UsageSnapshot,
+        codexVisibleAccount: CodexVisibleAccount?,
+        tokenAccount: ProviderTokenAccount?,
+        environment: [String: String],
+        config: CodexBarConfig,
+        claudeAccountUUIDBefore: String?,
+        claudeAccountUUIDAfter: String?,
+        strategyKind: ProviderFetchKind? = nil,
+        oauthHistoryOwnerIdentifier: String? = nil)
+    {
+        guard !self.shuttingDown else { return }
+        let globalSettings = WindowsQuotaWarningSettings.load()
+        let settings = config.providerConfig(for: provider.instanceID).map {
+            globalSettings.resolved(providerConfig: $0)
+        } ?? globalSettings
+        guard settings.notificationsEnabled else { return }
+        let accountDiscriminator = self.quotaAccountDiscriminator(provider: provider, snapshot: snapshot,
+            codexVisibleAccount: codexVisibleAccount, tokenAccount: tokenAccount, environment: environment,
+            strategyKind: strategyKind, oauthHistoryOwnerIdentifier: oauthHistoryOwnerIdentifier,
+            claudeAccountUUIDBefore: claudeAccountUUIDBefore, claudeAccountUUIDAfter: claudeAccountUUIDAfter)
+        let selection = QuotaWarningTransitionCore.candidates(provider: provider, snapshot: snapshot,
+            accountDiscriminator: accountDiscriminator)
+        for window in QuotaWarningWindow.allCases {
+            guard settings.isEnabled(for: window) else {
+                self.quotaWarningStates = self.quotaWarningStates.filter { $0.key.provider != provider || $0.key.lane != window }
+                continue
+            }
+            let candidate = selection.candidates.first { $0.key.lane == window && $0.key.windowID == nil }
+            if let candidate {
+                self.evaluateCandidate(candidate, settings: settings, accountDisplayName: WindowsUsagePresentationSettings.load().hidePersonalInfo ? nil : snapshot.accountEmail(for: provider))
+            } else {
+                self.quotaWarningStates.removeValue(forKey: .init(provider: provider, lane: window, accountDiscriminator: accountDiscriminator))
+            }
+        }
+        for candidate in selection.candidates where candidate.key.windowID != nil && settings.isEnabled(for: candidate.key.lane) {
+            self.evaluateCandidate(candidate, settings: settings, accountDisplayName: WindowsUsagePresentationSettings.load().hidePersonalInfo ? nil : snapshot.accountEmail(for: provider))
+        }
+        if selection.reconciliation.authoritative {
+            self.quotaWarningStates = self.quotaWarningStates.filter { key, _ in
+                key.provider != provider || key.accountDiscriminator != accountDiscriminator || key.windowID == nil || selection.reconciliation.recognizedExtraWindowIDs.contains(key.windowID!)
+            }
+        }
+    }
+
+    private func evaluateCandidate(_ candidate: QuotaWarningTransitionCore.Candidate?, settings: WindowsQuotaWarningSettings, accountDisplayName: String?) {
+        guard let candidate else { return }
+        let key = candidate.key
+        let evaluation = QuotaWarningTransitionCore.evaluate(previous: self.quotaWarningStates[key], current: candidate.window,
+            source: candidate.source, thresholds: settings.thresholds(for: key.lane), enabled: true)
+        if let state = evaluation.state { self.quotaWarningStates[key] = state }
+        if case let .warning(threshold) = evaluation.outcome {
+            let providerName = ProviderDescriptorRegistry.descriptor(for: key.provider).metadata.displayName
+            self.quotaWarningPublisher(.init(providerName: providerName, window: key.lane, threshold: threshold,
+                currentRemaining: candidate.window.remainingPercent, accountDisplayName: accountDisplayName, windowDisplayLabel: candidate.displayLabel))
+        }
+    }
+
+    private func quotaAccountDiscriminator(provider: UsageProvider, snapshot: UsageSnapshot,
+        codexVisibleAccount: CodexVisibleAccount?, tokenAccount: ProviderTokenAccount?, environment: [String: String],
+        strategyKind: ProviderFetchKind?, oauthHistoryOwnerIdentifier: String?,
+        claudeAccountUUIDBefore: String?, claudeAccountUUIDAfter: String?) -> String? {
+        if let tokenAccount { return "token-account:\(tokenAccount.id.uuidString.lowercased())" }
+        if provider == .codex { return self.codexSessionOwnerKey(snapshot: snapshot, visibleAccount: codexVisibleAccount, tokenAccount: nil) }
+        if provider == .claude, (strategyKind == .cli || strategyKind == .oauth),
+           let uuid = claudeAccountUUIDBefore?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased(),
+           !uuid.isEmpty,
+           uuid == claudeAccountUUIDAfter?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        {
+            let profile = ClaudeOAuthCredentialsStore.credentialsProfileIdentifier(environment: environment)
+            let raw = "claude:active-account:v3:\(profile):\(uuid.trimmingCharacters(in: .whitespacesAndNewlines).lowercased())"
+            let digest = SHA256.hash(data: Data(raw.utf8)).map { String(format: "%02x", $0) }.joined()
+            return "claude-account:\(digest)"
+        }
+        if provider == .claude, strategyKind == .oauth,
+           let owner = oauthHistoryOwnerIdentifier?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased(), !owner.isEmpty {
+            return "claude-oauth-owner:\(owner)"
+        }
+        return nil
     }
 
     private func codexSessionOwnerKey(
@@ -824,6 +918,7 @@ public actor WindowsUsageRuntime {
     private func fetchRows(
         provider: UsageProvider,
         context: TokenAccountCLIContext,
+        config: CodexBarConfig,
         codexVisibleAccount: CodexVisibleAccount? = nil,
         presentationSettings: WindowsUsagePresentationSettings) async -> [String]
     {
@@ -868,6 +963,8 @@ public actor WindowsUsageRuntime {
                 persistentCLISessionIdleWindow: self.persistentCLISessionIdleWindow(
                     now: Date(),
                     signals: self.signalProvider()))
+            let claudeAccountUUIDBefore = provider == .claude
+                ? ClaudeAccountProfile.accountUuid(environment: env) : nil
             let outcome = await ProviderDescriptorRegistry.descriptor(for: provider).fetchOutcome(context: fetchContext)
             switch outcome.result {
             case let .success(result):
@@ -884,6 +981,12 @@ public actor WindowsUsageRuntime {
                 let presentation = WindowsUsagePresentation(instanceID: provider.instanceID, provider: provider, title: title, privacyTitle: metadata.displayName, result: result, snapshot: labeledUsage, hidePersonalInfo: presentationSettings.hidePersonalInfo, showOptionalUsage: presentationSettings.showOptionalCreditsAndExtraUsage, usageBarsShowUsed: presentationSettings.usageBarsShowUsed, resetTimesShowAbsolute: presentationSettings.resetTimesShowAbsolute)
                 self.presentations[provider.instanceID] = presentation
                 self.evaluateSessionQuota(provider: provider, snapshot: result.usage, codexVisibleAccount: codexVisibleAccount, tokenAccount: account)
+                self.evaluateQuotaWarnings(provider: provider, snapshot: result.usage,
+                    codexVisibleAccount: codexVisibleAccount, tokenAccount: account, environment: env, config: config,
+                    claudeAccountUUIDBefore: claudeAccountUUIDBefore,
+                    claudeAccountUUIDAfter: provider == .claude
+                        ? ClaudeAccountProfile.accountUuid(environment: env) : nil,
+                    strategyKind: result.strategyKind, oauthHistoryOwnerIdentifier: result.claudeOAuthHistoryOwnerIdentifier)
                 return presentation.rows()
             case let .failure(error):
                 self.recordStartupConnectivityRetryableFailure(error)

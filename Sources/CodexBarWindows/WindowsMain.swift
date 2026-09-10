@@ -56,6 +56,9 @@ private final class WindowsTrayApplication: @unchecked Sendable {
             await runtime.setNotificationPublisher { [weak host] event in
                 host?.postSessionQuotaNotification(event)
             }
+            await runtime.setQuotaWarningPublisher { [weak host] event in
+                host?.postQuotaWarningNotification(event)
+            }
             await runtime.start()
         }
         do {
