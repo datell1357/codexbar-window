@@ -5,6 +5,9 @@ import Foundation
 /// separate from the macOS defaults database so roaming or stale values cannot
 /// silently alter the Windows scheduler.
 public struct WindowsRefreshSettings: Sendable, Equatable {
+    public enum LowPowerModePreference: String, Sendable, CaseIterable {
+        case off, on, automatic
+    }
     public enum Frequency: String, Sendable, CaseIterable {
         case manual, oneMinute, twoMinutes, fiveMinutes, fifteenMinutes, thirtyMinutes
         case adaptive, adaptiveAgentAware
@@ -32,13 +35,16 @@ public struct WindowsRefreshSettings: Sendable, Equatable {
     public static let suiteName = "CodexBar.Windows"
     public let frequency: Frequency
     public let activityConsent: ActivityConsent
+    public let lowPowerModePreference: LowPowerModePreference
 
     public init(
         frequency: Frequency,
-        activityConsent: ActivityConsent = .undecided)
+        activityConsent: ActivityConsent = .undecided,
+        lowPowerModePreference: LowPowerModePreference = .off)
     {
         self.frequency = frequency
         self.activityConsent = activityConsent
+        self.lowPowerModePreference = lowPowerModePreference
     }
 
     public var agentAwareRefreshAvailable: Bool {
@@ -69,7 +75,25 @@ public struct WindowsRefreshSettings: Sendable, Equatable {
             consent = .undecided
             defaults.set(consent.rawValue, forKey: "adaptiveActivityScanConsent")
         }
-        return Self(frequency: frequency, activityConsent: consent)
+        let powerPreference: LowPowerModePreference
+        if let raw = defaults.string(forKey: "backgroundWorkLowPowerModePreference"),
+           let stored = LowPowerModePreference(rawValue: raw)
+        {
+            powerPreference = stored
+        } else {
+            // Match the source SettingsStore migration: legacy bool, default off.
+            let legacyEnabled = defaults.object(forKey: "backgroundWorkLowPowerModeEnabled") as? Bool ?? false
+            powerPreference = legacyEnabled ? .on : .off
+            defaults.set(powerPreference.rawValue, forKey: "backgroundWorkLowPowerModePreference")
+        }
+        return Self(
+            frequency: frequency,
+            activityConsent: consent,
+            lowPowerModePreference: powerPreference)
+    }
+
+    public func resolvedLowPowerModeEnabled(state: WindowsPowerState = .read()) -> Bool {
+        state.lowPowerModeEnabled(for: self.lowPowerModePreference)
     }
 }
 #endif

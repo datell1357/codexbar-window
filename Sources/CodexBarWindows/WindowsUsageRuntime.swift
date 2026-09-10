@@ -9,6 +9,9 @@ public actor WindowsUsageRuntime {
     public typealias RowPublisher = @Sendable ([String]) -> Void
     public struct RefreshSignals: Sendable {
         public var lowPowerModeEnabled: Bool
+        /// Nil means the native power snapshot succeeded. A non-nil value is
+        /// the GetLastError code from an unavailable snapshot.
+        public var powerStateError: UInt32?
         /// Windows adapters may report thermal pressure once available. Until
         /// then this remains a public boolean to avoid exposing core package
         /// implementation types across the executable boundary.
@@ -16,10 +19,12 @@ public actor WindowsUsageRuntime {
 
         public init(
             lowPowerModeEnabled: Bool = false,
-            thermalConstrained: Bool = false)
+            thermalConstrained: Bool = false,
+            powerStateError: UInt32? = nil)
         {
             self.lowPowerModeEnabled = lowPowerModeEnabled
             self.thermalConstrained = thermalConstrained
+            self.powerStateError = powerStateError
         }
     }
     public typealias RefreshSignalProvider = @Sendable () -> RefreshSignals
@@ -43,7 +48,14 @@ public actor WindowsUsageRuntime {
     public init(
         configStore: CodexBarConfigStore = CodexBarConfigStore(),
         publisher: @escaping RowPublisher = { _ in },
-        signalProvider: @escaping RefreshSignalProvider = { RefreshSignals() })
+        signalProvider: @escaping RefreshSignalProvider = {
+            let settings = WindowsRefreshSettings.load()
+            let power = WindowsPowerState.read()
+            let errorCode: UInt32? = if case let .unavailable(code) = power.availability { code } else { nil }
+            return RefreshSignals(
+                lowPowerModeEnabled: settings.resolvedLowPowerModeEnabled(state: power),
+                powerStateError: errorCode)
+        })
     {
         let browserDetection = BrowserDetection()
         self.configStore = configStore
@@ -90,6 +102,27 @@ public actor WindowsUsageRuntime {
         }
     }
 
+    public func notePowerChanged() {
+        guard !self.shuttingDown,
+              self.refreshSettings.frequency != .manual,
+              self.refreshSettings.frequency != .adaptiveAgentAware,
+              self.sleepTask != nil
+        else { return }
+        let signals = self.signalProvider()
+        let delay: Duration
+        if let baseSeconds = self.refreshSettings.frequency.seconds {
+            delay = .seconds(signals.lowPowerModeEnabled ? max(baseSeconds, 1800) : baseSeconds)
+        } else {
+            delay = AdaptiveRefreshPolicyCore().nextDelay(for: .init(
+                now: Date(),
+                lastMenuOpenAt: self.lastMenuOpenedAt,
+                lowPowerModeEnabled: signals.lowPowerModeEnabled,
+                thermalPressure: signals.thermalConstrained ? .constrained : .nominal)).delay
+        }
+        self.scheduledDeadline = ContinuousClock.now + delay
+        self.sleepTask?.cancel()
+    }
+
     /// Refreshes enabled providers once. A second request while a
     /// refresh is in flight is intentionally coalesced instead of overlapping
     /// credential and warm-session work.
@@ -116,6 +149,9 @@ public actor WindowsUsageRuntime {
                 config: config,
                 verbose: false)
             var rows: [String] = []
+            if let errorCode = self.signalProvider().powerStateError {
+                rows.append("Windows power status unavailable (error \(errorCode))")
+            }
             for instanceID in config.enabledProviders() {
                 try Task.checkCancellation()
                 guard let provider = instanceID.firstPartyProvider else {
@@ -216,6 +252,9 @@ public actor WindowsUsageRuntime {
             guard !Task.isCancelled else { return }
             await self.refresh()
             if !frequency.usesAdaptivePolicy {
+                let latestSignals = self.signalProvider()
+                let base = Duration.seconds(frequency.seconds ?? 0)
+                fixedInterval = latestSignals.lowPowerModeEnabled ? max(base, .seconds(1800)) : base
                 let completedAt = clock.now
                 repeat { scheduledAt += fixedInterval }
                 while scheduledAt <= completedAt

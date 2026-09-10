@@ -18,6 +18,10 @@ private final class WindowsTrayApplication: @unchecked Sendable {
             Task { await self.runtime.refresh() }
         },
         onQuit: {},
+        onPowerChanged: { [weak self] in
+            guard let self else { return }
+            Task { await self.runtime.notePowerChanged() }
+        },
         onMenuOpen: { [weak self] in
             guard let self else { return }
             Task { await self.runtime.noteMenuOpened() }

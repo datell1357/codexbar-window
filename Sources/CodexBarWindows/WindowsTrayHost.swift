@@ -8,6 +8,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
     /// Callbacks run on the tray UI thread and must only enqueue work; provider
     /// fetches or other blocking operations should be scheduled asynchronously.
     public typealias RefreshHandler = @Sendable () -> Void
+    public typealias PowerChangedHandler = @Sendable () -> Void
     public typealias QuitHandler = @Sendable () -> Void
 
     private static let wakeMessage = UINT(WM_APP) + 1
@@ -19,6 +20,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
     }()
 
     private let onRefresh: RefreshHandler
+    private let onPowerChanged: PowerChangedHandler
     private let onMenuOpen: @Sendable () -> Void
     private let onQuit: QuitHandler
     private let mailboxLock = NSLock()
@@ -31,10 +33,12 @@ public final class WindowsTrayHost: @unchecked Sendable {
     public init(
         onRefresh: @escaping RefreshHandler,
         onQuit: @escaping QuitHandler,
+        onPowerChanged: @escaping PowerChangedHandler = {},
         onMenuOpen: @escaping @Sendable () -> Void = {})
     {
         self.onRefresh = onRefresh
         self.onQuit = onQuit
+        self.onPowerChanged = onPowerChanged
         self.onMenuOpen = onMenuOpen
     }
 
@@ -175,6 +179,19 @@ public final class WindowsTrayHost: @unchecked Sendable {
         if message == Self.taskbarCreated {
             if (try? host.installIcon(hwnd)) == nil { host.invokeQuit() }
             return 0
+        }
+        // WM_POWERBROADCAST is delivered on this window's UI thread. Keep the
+        // callback nonblocking: the application schedules its refresh work.
+        // PBT_APMPOWERSTATUSCHANGE covers AC/battery transitions and
+        // PBT_APMRESUMEAUTOMATIC covers resume from suspend/hibernate.
+        // Battery-saver setting notifications still require explicit
+        // RegisterPowerSettingNotification registration, which is not wired yet.
+        if message == UINT(WM_POWERBROADCAST),
+           wParam == WPARAM(PBT_APMPOWERSTATUSCHANGE)
+            || wParam == WPARAM(PBT_APMRESUMEAUTOMATIC)
+        {
+            host.onPowerChanged()
+            return 1
         }
         if message == UINT(WM_CLOSE) { host.invokeQuit(); DestroyWindow(hwnd); return 0 }
         if message == UINT(WM_COMMAND) {
