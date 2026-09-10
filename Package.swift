@@ -70,6 +70,10 @@ let package = Package(
         ])
         #endif
 
+        #if os(Windows)
+        products.append(.executable(name: "CodexBarWindows", targets: ["CodexBarWindows"]))
+        #endif
+
         return products
     }(),
     dependencies: [
@@ -266,6 +270,19 @@ let package = Package(
             swiftSettings: [
                 .enableUpcomingFeature("StrictConcurrency"),
                 .enableExperimentalFeature("SwiftTesting"),
+            ]))
+        #endif
+
+        #if os(Windows)
+        targets.append(.executableTarget(
+            name: "CodexBarWindows",
+            dependencies: ["CodexBarCore"],
+            path: "Sources/CodexBarWindows",
+            swiftSettings: [.enableUpcomingFeature("StrictConcurrency")],
+            linkerSettings: sqlite3LinkerSettings + [
+                .linkedLibrary("User32"),
+                .linkedLibrary("Shell32"),
+                .linkedLibrary("Ws2_32"),
             ]))
         #endif
 
