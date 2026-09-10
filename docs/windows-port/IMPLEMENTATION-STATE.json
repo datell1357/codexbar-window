@@ -20,16 +20,16 @@
   "interval_minutes": 10,
   "current_lanes": [
     {
-      "id": "quota_threshold_contract_117",
+      "id": "threshold_integration_design_121",
       "status": "READ_ONLY_CONTRACT_IN_PROGRESS",
-      "scope": "Threshold notification account/lane/window dedupe and settings mapping"
+      "scope": "Threshold runtime/account/privacy and delivery interfaces"
     }
   ],
-  "static_qa_status": "SCOPED_REVIEW_116_APPROVED_FULL_PARITY_INCOMPLETE",
+  "static_qa_status": "SCOPED_REVIEW_120_APPROVED_FULL_PARITY_INCOMPLETE",
   "windows_runtime_status": "NOT_RUN_BY_USER_INSTRUCTION",
   "completion_claim": false,
-  "next": "Publish scoped session integration114/115 approved116;117 maps threshold warning implementation.",
-  "last_batch": "session-notification-integration-114-116",
+  "next": "121 integration design then wire threshold runtime/delivery; core/settings only approved120.",
+  "last_batch": "threshold-core-settings-118-120",
   "completed_source_changes": [
     "Windows package dependency wiring (partial)",
     "QuickJS watchdog Windows monotonic clock",
