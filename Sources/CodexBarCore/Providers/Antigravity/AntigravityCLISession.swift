@@ -6,6 +6,9 @@ import Glibc
 import Musl
 #endif
 import Foundation
+#if os(Windows)
+import WinSDK
+#endif
 
 // MARK: - Antigravity CLI Process Abstractions
 
@@ -23,6 +26,13 @@ protocol AntigravityCLIProcessHandle: AnyObject, Sendable {
     func terminateTree(signal: Int32, knownDescendants: [pid_t])
     func killDescendants(_ descendants: [pid_t])
     func drainOutput() -> Data
+    var outputFailureDescription: String? { get }
+}
+
+extension AntigravityCLIProcessHandle {
+    /// Non-POSIX PTY backends can report a terminal I/O failure without
+    /// changing the long-standing non-throwing drain API.
+    var outputFailureDescription: String? { nil }
 }
 
 protocol AntigravityCLIProcessLaunching: Sendable {
@@ -53,13 +63,28 @@ enum AntigravityCLIAuthenticationPrompt {
     }
 }
 
-struct AntigravityCLIProcessIdentity: Equatable {
+struct AntigravityCLIProcessIdentity: Equatable, Sendable {
     let executablePath: String
     let startEpoch: TimeInterval
 }
 
+enum AntigravityCLIProcessLookupResult: Equatable, Sendable {
+    case running(AntigravityCLIProcessIdentity)
+    case notRunning
+    case inaccessible(UInt32)
+    case indeterminate(UInt32)
+}
+
 protocol AntigravityCLIProcessIdentityProviding: Sendable {
     func identity(for pid: pid_t) -> AntigravityCLIProcessIdentity?
+    func lookup(pid: pid_t) -> AntigravityCLIProcessLookupResult
+}
+
+extension AntigravityCLIProcessIdentityProviding {
+    func lookup(pid: pid_t) -> AntigravityCLIProcessLookupResult {
+        guard let identity = identity(for: pid) else { return .indeterminate(0) }
+        return .running(identity)
+    }
 }
 
 struct AntigravityCLISessionRecord: Codable, Equatable {
@@ -162,6 +187,26 @@ actor AntigravityCLISession {
         var terminationGracePeriod: TimeInterval
 
         static func live() -> Self {
+            #if os(Windows)
+            return Self(
+                launcher: AntigravityPTYProcessLauncher(),
+                identityProvider: AntigravityProcessIdentityProvider(),
+                recordStore: AntigravityFileCLISessionRecordStore(),
+                launchLock: AntigravityFileCLISessionLaunchLock(),
+                beginAppShutdownTrackedLaunch: { true },
+                endAppShutdownTrackedLaunch: {},
+                registerForAppShutdown: { _, _ in true },
+                updateAppShutdownProcessGroup: { _, _ in },
+                unregisterForAppShutdown: { _ in },
+                descendantPIDs: { _ in [] },
+                terminateProcessTree: { _, _, _, _ in },
+                currentProcessID: { pid_t(Int32(GetCurrentProcessId())) },
+                now: Date.init,
+                sleep: { nanoseconds in try await Task.sleep(nanoseconds: nanoseconds) },
+                idleWindow: 180,
+                failureRelaunchThreshold: 2,
+                terminationGracePeriod: 1)
+            #else
             Self(
                 launcher: AntigravityPTYProcessLauncher(),
                 identityProvider: AntigravityProcessIdentityProvider(),
@@ -200,6 +245,7 @@ actor AntigravityCLISession {
                 idleWindow: 180,
                 failureRelaunchThreshold: 2,
                 terminationGracePeriod: 1)
+            #endif
         }
     }
 
@@ -414,8 +460,21 @@ actor AntigravityCLISession {
 
     /// Drain PTY output into one rolling buffer shared by concurrent probes.
     func drainOutput() -> Data {
+        if let failure = self.process?.outputFailureDescription {
+            Self.log.warning("Antigravity CLI PTY output failed", metadata: ["error": failure])
+        }
         var searchableOutput = self.recentOutput
-        if let output = self.process?.drainOutput(), !output.isEmpty {
+        let output = self.process?.drainOutput() ?? Data()
+        if let proc = self.process, let outputFailure = proc.outputFailureDescription {
+            // Defer teardown to finishProbe/reset so active-probe accounting and
+            // persisted-record cleanup remain serialized by the actor lifecycle.
+            Self.log.warning("Antigravity CLI PTY output failed", metadata: ["error": outputFailure])
+            self.resetRequestedWhenIdle = true
+            self.hardResetRequestedWhenIdle = true
+            self.pendingResetCause = .unhealthy
+            self.consecutiveProbeFailures = max(self.consecutiveProbeFailures, self.dependencies.failureRelaunchThreshold)
+        }
+        if !output.isEmpty {
             searchableOutput.append(output)
             self.recentOutput = Data(searchableOutput.suffix(4096))
         }
@@ -706,6 +765,23 @@ actor AntigravityCLISession {
         _ proc: any AntigravityCLIProcessHandle,
         graceful: Bool = true) async
     {
+        #if os(Windows)
+        if graceful { try? proc.sendExit() }
+        let gracePeriod = self.dependencies.terminationGracePeriod
+        if graceful, gracePeriod > 0 {
+            let deadline = self.dependencies.now().addingTimeInterval(gracePeriod)
+            while proc.isRunning, self.dependencies.now() < deadline {
+                do {
+                    try await self.dependencies.sleep(100_000_000)
+                } catch {
+                    break
+                }
+            }
+        }
+        if proc.isRunning { proc.terminateRoot() }
+        proc.closePTY()
+        return
+        #else
         if graceful {
             try? proc.sendExit()
         }
@@ -731,6 +807,7 @@ actor AntigravityCLISession {
         } else {
             proc.killDescendants(descendants)
         }
+        #endif
     }
 
     private func waitUntilProcessExits(_ proc: any AntigravityCLIProcessHandle, timeout: TimeInterval) async {
@@ -763,12 +840,40 @@ actor AntigravityCLISession {
             self.persistedProcessIdentity = identity
             return true
         } catch {
+            Self.log.warning("Antigravity CLI session record persistence failed", metadata: ["error": String(describing: type(of: error))])
             self.persistedProcessIdentity = nil
             return false
         }
     }
 
     private func reapRecordedSessionsIfNeeded() {
+        #if os(Windows)
+        do {
+            let records = try self.dependencies.recordStore.load()
+            for record in records {
+                switch self.dependencies.identityProvider.lookup(pid: record.pid) {
+                case .running(let liveIdentity):
+                    guard liveIdentity.executablePath == record.executablePath,
+                          abs(liveIdentity.startEpoch - record.startEpoch) < 0.001
+                    else {
+                        do { try self.dependencies.recordStore.remove(record) }
+                        catch { Self.log.warning("Antigravity CLI session record removal failed", metadata: ["error": String(describing: type(of: error))]) }
+                        continue
+                    }
+                    if let proc = self.process, proc.pid == record.pid {
+                        self.persistedProcessIdentity = liveIdentity
+                    }
+                case .notRunning:
+                    do { try self.dependencies.recordStore.remove(record) }
+                    catch { Self.log.warning("Antigravity CLI session record removal failed", metadata: ["error": String(describing: type(of: error))]) }
+                case .inaccessible, .indeterminate:
+                    continue
+                }
+            }
+        } catch {
+            Self.log.warning("Antigravity CLI session record load failed", metadata: ["error": String(describing: type(of: error))])
+        }
+        #else
         guard let records = try? self.dependencies.recordStore.load() else { return }
         for record in records {
             guard let liveIdentity = self.dependencies.identityProvider.identity(for: record.pid),
@@ -799,6 +904,7 @@ actor AntigravityCLISession {
             self.dependencies.terminateProcessTree(record.pid, record.processGroup, SIGKILL, knownDescendants)
             try? self.dependencies.recordStore.remove(record)
         }
+        #endif
     }
 
     private func removeRecordIfMatches(pid: pid_t, identity: AntigravityCLIProcessIdentity?) {
@@ -824,6 +930,8 @@ actor AntigravityCLISession {
 }
 
 // MARK: - Production Process Implementation
+
+#if !os(Windows)
 
 struct AntigravityPTYProcessLauncher: AntigravityCLIProcessLaunching {
     static func defaultSignalsForSpawn() -> sigset_t {
@@ -1118,6 +1226,9 @@ struct AntigravityProcessIdentityProvider: AntigravityCLIProcessIdentityProvidin
     }
 
     func ownerUserID(for pid: pid_t) -> UInt32? {
+        #if os(Windows)
+        return nil
+        #else
         #if canImport(Darwin)
         var info = proc_bsdinfo()
         let size = proc_pidinfo(
@@ -1138,10 +1249,13 @@ struct AntigravityProcessIdentityProvider: AntigravityCLIProcessIdentityProvidin
         }
         return userID
         #endif
+        #endif
     }
 
     func identity(for pid: pid_t) -> AntigravityCLIProcessIdentity? {
-        #if canImport(Darwin)
+        #if os(Windows)
+        return AntigravityWindowsProcessIdentity.identity(for: pid)
+        #elseif canImport(Darwin)
         var pathBuffer = [CChar](repeating: 0, count: 4096)
         let pathLength = proc_pidpath(pid, &pathBuffer, UInt32(pathBuffer.count))
         guard pathLength > 0 else { return nil }
@@ -1303,3 +1417,4 @@ final class AntigravityFileCLISessionLaunchLock: AntigravityCLISessionLaunchLock
         return try operation()
     }
 }
+#endif

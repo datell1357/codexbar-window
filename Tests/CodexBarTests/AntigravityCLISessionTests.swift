@@ -178,6 +178,7 @@ private final class FakeAntigravityProcessLauncher: AntigravityCLIProcessLaunchi
 private final class FakeAntigravityIdentityProvider: AntigravityCLIProcessIdentityProviding, @unchecked Sendable {
     private let lock = NSLock()
     private var identities: [pid_t: AntigravityCLIProcessIdentity] = [:]
+    private var lookupOverrides: [pid_t: AntigravityCLIProcessLookupResult] = [:]
 
     func setIdentity(pid: pid_t, executablePath: String, startEpoch: TimeInterval) {
         self.lock.lock()
@@ -191,11 +192,29 @@ private final class FakeAntigravityIdentityProvider: AntigravityCLIProcessIdenti
         self.lock.unlock()
     }
 
+    func setLookup(pid: pid_t, result: AntigravityCLIProcessLookupResult) {
+        self.lock.lock()
+        self.lookupOverrides[pid] = result
+        self.lock.unlock()
+    }
+
     func identity(for pid: pid_t) -> AntigravityCLIProcessIdentity? {
         self.lock.lock()
         let value = self.identities[pid]
         self.lock.unlock()
         return value
+    }
+
+    func lookup(pid: pid_t) -> AntigravityCLIProcessLookupResult {
+        self.lock.lock()
+        if let result = self.lookupOverrides[pid] {
+            self.lock.unlock()
+            return result
+        }
+        let identity = self.identities[pid]
+        self.lock.unlock()
+        guard let identity else { return .indeterminate(0) }
+        return .running(identity)
     }
 }
 
@@ -1134,9 +1153,24 @@ extension AntigravityCLISessionTests {
         try store.remove(legacy)
         #expect(try store.load() == [second])
 
-        try Data("{".utf8).write(to: fileURL)
+        let corruptData = Data("{".utf8)
+        try corruptData.write(to: fileURL)
+        #if os(Windows)
         try store.save(legacy)
         #expect(try store.load() == [legacy])
+        let backups = try FileManager.default.contentsOfDirectory(
+            at: directory,
+            includingPropertiesForKeys: nil,
+            options: .skipsHiddenFiles)
+            .filter { $0.lastPathComponent.hasPrefix("agy-session.corrupt-") && $0.pathExtension == "json" }
+        #expect(backups.count == 1)
+        if let backup = backups.first {
+            #expect(try Data(contentsOf: backup) == corruptData)
+        }
+        #else
+        try store.save(legacy)
+        #expect(try store.load() == [legacy])
+        #endif
     }
 
     @Test
@@ -1467,6 +1501,134 @@ extension AntigravityCLISessionTests {
 
         #expect(fixture.terminations.snapshot().isEmpty)
     }
+
+    #if os(Windows)
+    @Test
+    func `windows removes persisted record when process is not running`() async throws {
+        let stale = AntigravityCLISessionRecord(
+            pid: 777,
+            requestedBinaryPath: "/bin/agy",
+            executablePath: "/bin/agy",
+            startEpoch: 42,
+            processGroup: nil)
+        let store = MemoryAntigravitySessionRecordStore(record: stale)
+        let fixture = self.makeFixture(store: store)
+        fixture.identity.setLookup(pid: 777, result: .notRunning)
+        fixture.identity.setIdentity(pid: 10, executablePath: "/bin/agy", startEpoch: 100)
+
+        _ = try await fixture.session.beginProbe(binary: "/bin/agy")
+        await fixture.session.finishProbe(success: true, resetAfterFetch: false)
+
+        #expect(fixture.terminations.snapshot().isEmpty)
+        #expect(!fixture.store.snapshots().contains(stale))
+    }
+
+    @Test
+    func `windows removes persisted record when executable path changed`() async throws {
+        let stale = AntigravityCLISessionRecord(
+            pid: 777,
+            requestedBinaryPath: "/bin/agy",
+            executablePath: "/bin/agy",
+            startEpoch: 42,
+            processGroup: nil)
+        let store = MemoryAntigravitySessionRecordStore(record: stale)
+        let fixture = self.makeFixture(store: store)
+        fixture.identity.setLookup(
+            pid: 777,
+            result: .running(AntigravityCLIProcessIdentity(executablePath: "/usr/bin/other", startEpoch: 42)))
+        fixture.identity.setIdentity(pid: 10, executablePath: "/bin/agy", startEpoch: 100)
+
+        _ = try await fixture.session.beginProbe(binary: "/bin/agy")
+        await fixture.session.finishProbe(success: true, resetAfterFetch: false)
+
+        #expect(fixture.terminations.snapshot().isEmpty)
+        #expect(!fixture.store.snapshots().contains(stale))
+    }
+
+    @Test
+    func `windows removes persisted record when process creation time changed`() async throws {
+        let stale = AntigravityCLISessionRecord(
+            pid: 777,
+            requestedBinaryPath: "/bin/agy",
+            executablePath: "/bin/agy",
+            startEpoch: 42,
+            processGroup: nil)
+        let store = MemoryAntigravitySessionRecordStore(record: stale)
+        let fixture = self.makeFixture(store: store)
+        fixture.identity.setLookup(
+            pid: 777,
+            result: .running(AntigravityCLIProcessIdentity(executablePath: "/bin/agy", startEpoch: 43)))
+        fixture.identity.setIdentity(pid: 10, executablePath: "/bin/agy", startEpoch: 100)
+
+        _ = try await fixture.session.beginProbe(binary: "/bin/agy")
+        await fixture.session.finishProbe(success: true, resetAfterFetch: false)
+
+        #expect(fixture.terminations.snapshot().isEmpty)
+        #expect(!fixture.store.snapshots().contains(stale))
+    }
+
+    @Test
+    func `windows preserves persisted record for matching live process`() async throws {
+        let existing = AntigravityCLISessionRecord(
+            pid: 777,
+            requestedBinaryPath: "/bin/agy",
+            executablePath: "/bin/agy",
+            startEpoch: 42,
+            processGroup: nil)
+        let store = MemoryAntigravitySessionRecordStore(record: existing)
+        let fixture = self.makeFixture(store: store)
+        fixture.identity.setLookup(
+            pid: 777,
+            result: .running(AntigravityCLIProcessIdentity(executablePath: "/bin/agy", startEpoch: 42)))
+        fixture.identity.setIdentity(pid: 10, executablePath: "/bin/agy", startEpoch: 100)
+
+        _ = try await fixture.session.beginProbe(binary: "/bin/agy")
+        await fixture.session.finishProbe(success: true, resetAfterFetch: false)
+
+        #expect(fixture.terminations.snapshot().isEmpty)
+        #expect(fixture.store.snapshots().contains(existing))
+    }
+
+    @Test
+    func `windows preserves persisted record when process access is denied`() async throws {
+        let stale = AntigravityCLISessionRecord(
+            pid: 777,
+            requestedBinaryPath: "/bin/agy",
+            executablePath: "/bin/agy",
+            startEpoch: 42,
+            processGroup: nil)
+        let store = MemoryAntigravitySessionRecordStore(record: stale)
+        let fixture = self.makeFixture(store: store)
+        fixture.identity.setLookup(pid: 777, result: .inaccessible(5))
+        fixture.identity.setIdentity(pid: 10, executablePath: "/bin/agy", startEpoch: 100)
+
+        _ = try await fixture.session.beginProbe(binary: "/bin/agy")
+        await fixture.session.finishProbe(success: true, resetAfterFetch: false)
+
+        #expect(fixture.terminations.snapshot().isEmpty)
+        #expect(fixture.store.snapshots().contains(stale))
+    }
+
+    @Test
+    func `windows preserves persisted record when process lookup is indeterminate`() async throws {
+        let stale = AntigravityCLISessionRecord(
+            pid: 777,
+            requestedBinaryPath: "/bin/agy",
+            executablePath: "/bin/agy",
+            startEpoch: 42,
+            processGroup: nil)
+        let store = MemoryAntigravitySessionRecordStore(record: stale)
+        let fixture = self.makeFixture(store: store)
+        fixture.identity.setLookup(pid: 777, result: .indeterminate(123))
+        fixture.identity.setIdentity(pid: 10, executablePath: "/bin/agy", startEpoch: 100)
+
+        _ = try await fixture.session.beginProbe(binary: "/bin/agy")
+        await fixture.session.finishProbe(success: true, resetAfterFetch: false)
+
+        #expect(fixture.terminations.snapshot().isEmpty)
+        #expect(fixture.store.snapshots().contains(stale))
+    }
+    #endif
 
     private func waitForLaunches(_ launcher: FakeAntigravityProcessLauncher, count: Int) async -> Bool {
         for _ in 0..<200 {

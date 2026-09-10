@@ -18,14 +18,12 @@
   ],
   "automation_id": "codexbar-windows-qa",
   "interval_minutes": 10,
-  "current_lanes": [
-    "agy_session_049"
-  ],
-  "static_qa_status": "WARM054_055_SCOPED_APPROVE_AGY049_INCOMPLETE",
+  "current_lanes": [],
+  "static_qa_status": "AGY049_056_057_SCOPED_APPROVE_FULL_PARITY_INCOMPLETE",
   "windows_runtime_status": "NOT_RUN_BY_USER_INSTRUCTION",
   "completion_claim": false,
-  "next": "054/055 reviewed statically for native image/script identity and agy npm shim discovery. 049 graceful wait cancellation fix present; persistence diagnostic being added. Stale/corrupt record parity and full session review remain; no runtime validation.",
-  "last_batch": "warm-process-054-055",
+  "next": "Publish scoped Antigravity session changes. Next reconcile feature ledger with reviewed implementation evidence; all569 candidates remain revalidation-only, not product denominator. Full UI/provider/platform parity remains unfinished. Static only.",
+  "last_batch": "antigravity-session-049-056-057",
   "completed_source_changes": [
     "Windows package dependency wiring (partial)",
     "QuickJS watchdog Windows monotonic clock",
