@@ -109,6 +109,8 @@ public actor WindowsUsageRuntime {
     private var sessionQuotaStates: [ProviderInstanceID: SessionQuotaTransitionCore.State] = [:]
     private var codexSessionQuotaBaselineWatermark: Date?
     private var quotaWarningStates: [QuotaWarningTransitionCore.Key: QuotaWarningTransitionCore.State] = [:]
+    private var latestProviderConfigs: [ProviderInstanceID: ProviderConfig] = [:]
+    private var latestEnabledProviderIDs: Set<ProviderInstanceID>?
 
     public init(
         configStore: CodexBarConfigStore = CodexBarConfigStore(),
@@ -155,6 +157,21 @@ public actor WindowsUsageRuntime {
 
     public func setNotificationPublisher(_ publisher: @escaping NotificationPublisher) {
         self.notificationPublisher = publisher
+    }
+
+    /// Applies a global threshold edit without refreshing providers. Existing
+    /// episodes remain intact; only lanes that are now effectively disabled are
+    /// removed from the transition state cache.
+    public func quotaWarningSettingsDidChange(_ settings: WindowsQuotaWarningSettings) async {
+        guard !self.shuttingDown else { return }
+        guard let enabledProviders = self.latestEnabledProviderIDs else { return }
+        self.quotaWarningStates = self.quotaWarningStates.filter { key, _ in
+            guard enabledProviders.contains(key.provider.instanceID) else { return false }
+            let providerSettings = self.latestProviderConfigs[key.provider.instanceID].map {
+                settings.resolved(providerConfig: $0)
+            } ?? settings
+            return providerSettings.isEnabled(for: key.lane)
+        }
     }
 
     public func sessionQuotaNotificationSettingsDidChange() async {
@@ -318,6 +335,12 @@ public actor WindowsUsageRuntime {
             }
             let config = try self.configStore.loadOrCreateDefault()
             let enabledIDs = Set(config.enabledProviders())
+            self.latestEnabledProviderIDs = enabledIDs
+            self.latestProviderConfigs = enabledIDs.reduce(into: [:]) { result, id in
+                if result[id] == nil, let providerConfig = config.providerConfig(for: id) {
+                    result[id] = providerConfig
+                }
+            }
             self.sessionQuotaStates = self.sessionQuotaStates.filter { enabledIDs.contains($0.key) }
             self.quotaWarningStates = self.quotaWarningStates.filter { enabledIDs.contains($0.key.provider.instanceID) }
             for instanceID in config.enabledProviders() {
@@ -528,6 +551,8 @@ public actor WindowsUsageRuntime {
         self.sessionQuotaStates.removeAll(keepingCapacity: false)
         self.codexSessionQuotaBaselineWatermark = nil
         self.quotaWarningStates.removeAll(keepingCapacity: false)
+        self.latestProviderConfigs.removeAll(keepingCapacity: false)
+        self.latestEnabledProviderIDs = nil
         await CLIProbeSessionResetter.resetAll()
     }
 

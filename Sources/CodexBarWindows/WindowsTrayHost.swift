@@ -13,6 +13,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
     public typealias OptionalUsageSettingsChangedHandler = @Sendable () -> Void
     public typealias RefreshSettingsChangedHandler = @Sendable () -> Void
     public typealias SessionQuotaNotificationSettingsChangedHandler = @Sendable () -> Void
+    public typealias QuotaWarningSettingsChangedHandler = @Sendable (WindowsQuotaWarningSettings) -> Void
     public typealias QuitHandler = @Sendable () -> Void
 
     private static let wakeMessage = UINT(WM_APP) + 1
@@ -25,6 +26,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
     private static let sessionQuotaNotificationsCommand = UINT_PTR(0x7007)
     private static let quotaWarningNotificationsCommand = UINT_PTR(0x7008)
     private static let quotaWarningSoundCommand = UINT_PTR(0x7009)
+    private static let quotaWarningSettingsCommand = UINT_PTR(0x700A)
     private static let refreshFrequencyCommandBase = UINT_PTR(0x7010)
     private static let lowPowerModeOffCommand = UINT_PTR(0x7020)
     private static let lowPowerModeOnCommand = UINT_PTR(0x7021)
@@ -49,6 +51,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
     private let onOptionalUsageSettingsChanged: OptionalUsageSettingsChangedHandler
     private let onRefreshSettingsChanged: RefreshSettingsChangedHandler
     private let onSessionQuotaNotificationSettingsChanged: SessionQuotaNotificationSettingsChangedHandler
+    private let onQuotaWarningSettingsChanged: QuotaWarningSettingsChangedHandler
     private let onQuit: QuitHandler
     private let presentationDefaults: UserDefaults
     private let mailboxLock = NSLock()
@@ -72,7 +75,8 @@ public final class WindowsTrayHost: @unchecked Sendable {
         onPresentationSettingsChanged: @escaping PresentationSettingsChangedHandler = {},
         onOptionalUsageSettingsChanged: @escaping OptionalUsageSettingsChangedHandler = {},
         onRefreshSettingsChanged: @escaping RefreshSettingsChangedHandler = {},
-        onSessionQuotaNotificationSettingsChanged: @escaping SessionQuotaNotificationSettingsChangedHandler = {})
+        onSessionQuotaNotificationSettingsChanged: @escaping SessionQuotaNotificationSettingsChangedHandler = {},
+        onQuotaWarningSettingsChanged: @escaping QuotaWarningSettingsChangedHandler = {})
     {
         self.onRefresh = onRefresh
         self.onQuit = onQuit
@@ -82,6 +86,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
         self.onOptionalUsageSettingsChanged = onOptionalUsageSettingsChanged
         self.onRefreshSettingsChanged = onRefreshSettingsChanged
         self.onSessionQuotaNotificationSettingsChanged = onSessionQuotaNotificationSettingsChanged
+        self.onQuotaWarningSettingsChanged = onQuotaWarningSettingsChanged
         self.presentationDefaults = UserDefaults(suiteName: WindowsRefreshSettings.suiteName) ?? .standard
     }
 
@@ -367,6 +372,9 @@ public final class WindowsTrayHost: @unchecked Sendable {
         "Quota threshold notification sound".withCString(encodedAs: UTF16.self) {
             _ = AppendMenuW(menu, quotaWarningSoundFlags, Self.quotaWarningSoundCommand, $0)
         }
+        "Quota threshold settings...".withCString(encodedAs: UTF16.self) {
+            _ = AppendMenuW(menu, UINT(MF_STRING), Self.quotaWarningSettingsCommand, $0)
+        }
         let changelogFlags = UINT(MF_STRING) | (changelogEnabled ? UINT(MF_CHECKED) : 0)
         "Show provider changelog links".withCString(encodedAs: UTF16.self) {
             _ = AppendMenuW(menu, changelogFlags, Self.changelogCommandBase - 1, $0)
@@ -444,6 +452,20 @@ public final class WindowsTrayHost: @unchecked Sendable {
     private func toggleQuotaWarningSoundSetting() {
         let current = self.presentationDefaults.object(forKey: "quotaWarningSoundEnabled") as? Bool ?? true
         self.presentationDefaults.set(!current, forKey: "quotaWarningSoundEnabled")
+    }
+
+    private func editQuotaWarningSettings() {
+        guard let hwnd = self.window else { return }
+        let current = WindowsQuotaWarningSettings.load(userDefaults: self.presentationDefaults)
+        guard let updated = WindowsQuotaWarningSettingsDialog.show(owner: hwnd, settings: current) else { return }
+        self.presentationDefaults.set(updated.sessionThresholds, forKey: "quotaWarningSessionThresholds")
+        self.presentationDefaults.set(updated.weeklyThresholds, forKey: "quotaWarningWeeklyThresholds")
+        self.presentationDefaults.set(updated.sessionEnabled, forKey: "quotaWarningSessionEnabled")
+        self.presentationDefaults.set(updated.weeklyEnabled, forKey: "quotaWarningWeeklyEnabled")
+        self.mailboxLock.lock()
+        self.mailboxQuotaWarningNotifications.removeAll(keepingCapacity: false)
+        self.mailboxLock.unlock()
+        self.onQuotaWarningSettingsChanged(updated)
     }
 
     private func toggleChangelogSetting() {
@@ -573,6 +595,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
         case Self.sessionQuotaNotificationsCommand: self.toggleSessionQuotaNotificationsSetting()
         case Self.quotaWarningNotificationsCommand: self.toggleQuotaWarningNotificationsSetting()
         case Self.quotaWarningSoundCommand: self.toggleQuotaWarningSoundSetting()
+        case Self.quotaWarningSettingsCommand: self.editQuotaWarningSettings()
         case Self.changelogCommandBase - 1: self.toggleChangelogSetting()
         case Self.lowPowerModeOffCommand: self.selectLowPowerModePreference(.off)
         case Self.lowPowerModeOnCommand: self.selectLowPowerModePreference(.on)

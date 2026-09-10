@@ -20,16 +20,16 @@
   "interval_minutes": 10,
   "current_lanes": [
     {
-      "id": "threshold_menu_127",
+      "id": "provider_threshold_design_131",
       "status": "READ_ONLY_CONTRACT_IN_PROGRESS",
-      "scope": "Native global lane and arbitrary threshold settings UI"
+      "scope": "Provider Global/Custom/Off overrides and config-safe saving"
     }
   ],
-  "static_qa_status": "SCOPED_REVIEW_125_126_APPROVED_FULL_PARITY_INCOMPLETE",
+  "static_qa_status": "SCOPED_REVIEW_130_APPROVED_FULL_PARITY_INCOMPLETE",
   "windows_runtime_status": "NOT_RUN_BY_USER_INSTRUCTION",
   "completion_claim": false,
-  "next": "Publish threshold runtime/host after125/126 approval;127 maps missing lane/threshold UI.",
-  "last_batch": "threshold-integration-122-126",
+  "next": "Publish approved global UI128/129;131 maps provider override editor.",
+  "last_batch": "global-threshold-editor-128-130",
   "completed_source_changes": [
     "Windows package dependency wiring (partial)",
     "QuickJS watchdog Windows monotonic clock",

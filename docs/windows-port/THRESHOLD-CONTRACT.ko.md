@@ -15,3 +15,7 @@ master 기본 false, session/weekly 기본 true, threshold 기본[50,20]. Core �
 122는 runtime과 semantic notification payload,123은 host/main만 소유한다. threshold는 session gate와 별도 publisher/FIFO를 사용한다. 전달 직전 master/privacy/sound를 읽고 copy를 생성한다. sound off는 NIIF_NOSOUND, on은 Windows 기본 알림음으로 플랫폼 적응한다. token UUID 우선, Codex owner 다음, Claude는 fetch 전후 안정 profile/account identity와 OAuth 결과 owner fallback을 원본대로 구분한다. CLI identity가 불안정할 때 임의 ID를 만들지 않는다.
 
 전역 off는 episode 보존, lane off는 provider/lane 전 계정 정리, ordinary missing은 현재 계정 exact key만 정리, recognized Claude extras가 비어 있으면 보존한다. 사용자 지정 임계값/lane 편집 UI·overlay·predictive·hooks·현지화는 미완료로 남는다. 실행 검증 없이 코드 연결과 독립 정적 검토만 한다.
+
+## 전역 편집 UI127 → 구현128/129
+
+별도 native modal dialog가 Session/Weekly enabled와 Warning/Critical 0..99 숫자 입력을 제공한다. Core 정규화를 사용하고 provider override 우선순위를 명시한다.128은 dialog만,129는 host/main/runtime 연결만 소유한다. Save는 네 lane별 키만 저장하고 legacy shared key는 유지한다. threshold 큐를 정리하고 runtime은 provider override 적용 후 꺼진 lane만 전 계정에서 정리한다. 전역 off 또는 threshold 편집만으로 episode를 초기화하지 않는다. provider별 override 편집 UI는 후속이다. 실행 검증 없이 코드 비교만 진행한다.

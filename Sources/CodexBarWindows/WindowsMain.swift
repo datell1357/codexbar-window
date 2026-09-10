@@ -41,6 +41,10 @@ private final class WindowsTrayApplication: @unchecked Sendable {
         onSessionQuotaNotificationSettingsChanged: { [weak self] in
             guard let self else { return }
             Task { await self.runtime.sessionQuotaNotificationSettingsDidChange() }
+        },
+        onQuotaWarningSettingsChanged: { [weak self] settings in
+            guard let self else { return }
+            Task { await self.runtime.quotaWarningSettingsDidChange(settings) }
         })
 
     init() {
