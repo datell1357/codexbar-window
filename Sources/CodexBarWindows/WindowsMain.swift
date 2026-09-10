@@ -33,6 +33,10 @@ private final class WindowsTrayApplication: @unchecked Sendable {
         onOptionalUsageSettingsChanged: { [weak self] in
             guard let self else { return }
             Task { await self.runtime.optionalUsageSettingsDidChange() }
+        },
+        onRefreshSettingsChanged: { [weak self] in
+            guard let self else { return }
+            Task { await self.runtime.refreshSettingsDidChange() }
         })
 
     init() {

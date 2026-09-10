@@ -55,10 +55,12 @@ public actor WindowsUsageRuntime {
     private var queuedOptionalRefresh = false
     private var scheduleTask: Task<Void, Never>?
     private var sleepTask: Task<Void, Never>?
+    private var scheduleGeneration: UInt64 = 0
     private var scheduledDeadline: ContinuousClock.Instant?
     private let signalProvider: RefreshSignalProvider
     private var lastMenuOpenedAt: Date?
     private var refreshSettings: WindowsRefreshSettings
+    private var started = false
     private var pluginDiscoveryInitialized = false
     private var shuttingDown = false
     private var presentations: [ProviderInstanceID: WindowsUsagePresentation] = [:]
@@ -118,14 +120,45 @@ public actor WindowsUsageRuntime {
         await self.refresh()
     }
 
+    /// Re-reads the persisted cadence and replaces the automatic scheduler.
+    /// The active provider refresh is left untouched; changing frequency does
+    /// not trigger an additional network request.
+    public func refreshSettingsDidChange() async {
+        guard !self.shuttingDown else { return }
+        let settings = WindowsRefreshSettings.load()
+        self.refreshSettings = settings
+        guard self.started else { return }
+        self.scheduleGeneration &+= 1
+        let generation = self.scheduleGeneration
+        let oldSchedule = self.scheduleTask
+        self.scheduleTask = nil
+        self.sleepTask?.cancel()
+        self.sleepTask = nil
+        self.scheduledDeadline = nil
+        oldSchedule?.cancel()
+        if let oldSchedule { await oldSchedule.value }
+
+        guard !self.shuttingDown, generation == self.scheduleGeneration,
+              settings.frequency != .manual,
+              settings.frequency != .adaptiveAgentAware
+        else { return }
+        self.scheduleTask = Task { [weak self] in
+            guard let self else { return }
+            await self.runRefreshSchedule(generation: generation)
+        }
+    }
+
     /// Performs the initial refresh and starts the selected cadence exactly once.
     public func start() async {
-        guard !self.shuttingDown, self.scheduleTask == nil else { return }
+        guard !self.shuttingDown, !self.started else { return }
+        self.started = true
         self.refreshSettings = WindowsRefreshSettings.load()
+        self.scheduleGeneration &+= 1
+        let generation = self.scheduleGeneration
         self.scheduleTask = Task { [weak self] in
             guard let self else { return }
             await self.refresh()
-            await self.runRefreshSchedule()
+            await self.runRefreshSchedule(generation: generation)
         }
     }
 
@@ -299,6 +332,7 @@ public actor WindowsUsageRuntime {
     public func shutdown() async {
         guard !self.shuttingDown else { return }
         self.shuttingDown = true
+        self.scheduleGeneration &+= 1
         self.queuedOptionalRefresh = false
         let task = self.refreshTask
         task?.cancel()
@@ -313,7 +347,8 @@ public actor WindowsUsageRuntime {
         await CLIProbeSessionResetter.resetAll()
     }
 
-    private func runRefreshSchedule() async {
+    private func runRefreshSchedule(generation: UInt64) async {
+        guard generation == self.scheduleGeneration else { return }
         let frequency = self.refreshSettings.frequency
         guard frequency != .manual else { return }
         // No Windows activity scanner exists yet. Agent-aware mode remains
@@ -326,7 +361,7 @@ public actor WindowsUsageRuntime {
         if initialSignals.lowPowerModeEnabled { fixedInterval = max(fixedInterval, .seconds(1800)) }
         var scheduledAt = clock.now + fixedInterval
         self.scheduledDeadline = frequency.usesAdaptivePolicy ? nil : scheduledAt
-        while !Task.isCancelled {
+        while !Task.isCancelled, generation == self.scheduleGeneration {
             if frequency.usesAdaptivePolicy {
                 let signals = self.signalProvider()
                 let decision = AdaptiveRefreshPolicyCore().nextDelay(for: .init(
@@ -352,11 +387,13 @@ public actor WindowsUsageRuntime {
             }
             self.sleepTask = sleeper
             await sleeper.value
+            guard generation == self.scheduleGeneration else { return }
             self.sleepTask = nil
             if Task.isCancelled { return }
             if self.scheduledDeadline != deadline { continue }
             guard !Task.isCancelled else { return }
             await self.refresh()
+            guard generation == self.scheduleGeneration else { return }
             if !frequency.usesAdaptivePolicy {
                 let latestSignals = self.signalProvider()
                 let base = Duration.seconds(frequency.seconds ?? 0)

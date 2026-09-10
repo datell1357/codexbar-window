@@ -11,6 +11,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
     public typealias PowerChangedHandler = @Sendable () -> Void
     public typealias PresentationSettingsChangedHandler = @Sendable () -> Void
     public typealias OptionalUsageSettingsChangedHandler = @Sendable () -> Void
+    public typealias RefreshSettingsChangedHandler = @Sendable () -> Void
     public typealias QuitHandler = @Sendable () -> Void
 
     private static let wakeMessage = UINT(WM_APP) + 1
@@ -20,6 +21,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
     private static let resetTimesShowAbsoluteCommand = UINT_PTR(0x7004)
     private static let hidePersonalInfoCommand = UINT_PTR(0x7005)
     private static let showOptionalCreditsAndExtraUsageCommand = UINT_PTR(0x7006)
+    private static let refreshFrequencyCommandBase = UINT_PTR(0x7010)
     private static let className = Array("CodexBar.WindowsTrayHost".utf16) + [0]
     private static let taskbarCreated: UINT = {
         "TaskbarCreated".withCString(encodedAs: UTF16.self) { RegisterWindowMessageW($0) }
@@ -30,6 +32,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
     private let onMenuOpen: @Sendable () -> Void
     private let onPresentationSettingsChanged: PresentationSettingsChangedHandler
     private let onOptionalUsageSettingsChanged: OptionalUsageSettingsChangedHandler
+    private let onRefreshSettingsChanged: RefreshSettingsChangedHandler
     private let onQuit: QuitHandler
     private let presentationDefaults: UserDefaults
     private let mailboxLock = NSLock()
@@ -45,7 +48,8 @@ public final class WindowsTrayHost: @unchecked Sendable {
         onPowerChanged: @escaping PowerChangedHandler = {},
         onMenuOpen: @escaping @Sendable () -> Void = {},
         onPresentationSettingsChanged: @escaping PresentationSettingsChangedHandler = {},
-        onOptionalUsageSettingsChanged: @escaping OptionalUsageSettingsChangedHandler = {})
+        onOptionalUsageSettingsChanged: @escaping OptionalUsageSettingsChangedHandler = {},
+        onRefreshSettingsChanged: @escaping RefreshSettingsChangedHandler = {})
     {
         self.onRefresh = onRefresh
         self.onQuit = onQuit
@@ -53,6 +57,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
         self.onMenuOpen = onMenuOpen
         self.onPresentationSettingsChanged = onPresentationSettingsChanged
         self.onOptionalUsageSettingsChanged = onOptionalUsageSettingsChanged
+        self.onRefreshSettingsChanged = onRefreshSettingsChanged
         self.presentationDefaults = UserDefaults(suiteName: WindowsRefreshSettings.suiteName) ?? .standard
     }
 
@@ -182,6 +187,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
             _ = AppendMenuW(
                 menu, showOptionalCreditsAndExtraUsageFlags, Self.showOptionalCreditsAndExtraUsageCommand, $0)
         }
+        self.appendRefreshFrequencyMenu(to: menu)
         _ = AppendMenuW(menu, UINT(MF_SEPARATOR), 0, nil)
         "Refresh".withCString(encodedAs: UTF16.self) { _ = AppendMenuW(menu, UINT(MF_STRING), Self.refreshCommand, $0) }
         "Quit".withCString(encodedAs: UTF16.self) { _ = AppendMenuW(menu, UINT(MF_STRING), Self.quitCommand, $0) }
@@ -213,6 +219,60 @@ public final class WindowsTrayHost: @unchecked Sendable {
         let current = self.presentationDefaults.object(forKey: "showOptionalCreditsAndExtraUsage") as? Bool ?? true
         self.presentationDefaults.set(!current, forKey: "showOptionalCreditsAndExtraUsage")
         self.onOptionalUsageSettingsChanged()
+    }
+
+    private static func frequencyCommand(for frequency: WindowsRefreshSettings.Frequency) -> UINT_PTR {
+        switch frequency {
+        case .manual: Self.refreshFrequencyCommandBase + 0
+        case .oneMinute: Self.refreshFrequencyCommandBase + 1
+        case .twoMinutes: Self.refreshFrequencyCommandBase + 2
+        case .fiveMinutes: Self.refreshFrequencyCommandBase + 3
+        case .fifteenMinutes: Self.refreshFrequencyCommandBase + 4
+        case .thirtyMinutes: Self.refreshFrequencyCommandBase + 5
+        case .adaptive: Self.refreshFrequencyCommandBase + 6
+        case .adaptiveAgentAware: Self.refreshFrequencyCommandBase + 7
+        }
+    }
+
+    private func appendRefreshFrequencyMenu(to menu: HMENU) {
+        guard let submenu = CreatePopupMenu() else { return }
+        let settings = WindowsRefreshSettings.load(userDefaults: self.presentationDefaults)
+        let frequencies: [(WindowsRefreshSettings.Frequency, String, Bool)] = [
+            (.manual, "Manual", true),
+            (.oneMinute, "1 minute", true),
+            (.twoMinutes, "2 minutes", true),
+            (.fiveMinutes, "5 minutes", true),
+            (.fifteenMinutes, "15 minutes", true),
+            (.thirtyMinutes, "30 minutes", true),
+            (.adaptive, "Adaptive", true)
+        ] + (settings.frequency == .adaptiveAgentAware
+            ? [(.adaptiveAgentAware, "Adaptive (agent-aware unavailable)", false)]
+            : [])
+        for (frequency, label, selectable) in frequencies {
+            let checked = settings.frequency == frequency ? UINT(MF_CHECKED) : 0
+            let disabled = selectable ? 0 : UINT(MF_GRAYED)
+            let flags = UINT(MF_STRING) | checked | disabled
+            let appended = label.withCString(encodedAs: UTF16.self) {
+                AppendMenuW(submenu, flags, Self.frequencyCommand(for: frequency), $0)
+            }
+            guard appended != 0 else {
+                _ = DestroyMenu(submenu)
+                return
+            }
+        }
+        let title = Array("Refresh frequency".utf16) + [0]
+        let attached = title.withUnsafeBufferPointer { text in
+            AppendMenuW(menu, UINT(MF_STRING | MF_POPUP), UINT_PTR(UInt(bitPattern: submenu)), text.baseAddress)
+        }
+        if attached == 0 { _ = DestroyMenu(submenu) }
+    }
+
+    private func selectRefreshFrequency(_ frequency: WindowsRefreshSettings.Frequency) {
+        guard frequency != .adaptiveAgentAware else { return }
+        let current = WindowsRefreshSettings.load(userDefaults: self.presentationDefaults).frequency
+        guard current != frequency else { return }
+        self.presentationDefaults.set(frequency.rawValue, forKey: "refreshFrequency")
+        self.onRefreshSettingsChanged()
     }
 
     private static let windowProc: WNDPROC = { hwnd, message, wParam, lParam in
@@ -252,6 +312,11 @@ public final class WindowsTrayHost: @unchecked Sendable {
             case Self.resetTimesShowAbsoluteCommand: host.togglePresentationSetting(forKey: "resetTimesShowAbsolute")
             case Self.hidePersonalInfoCommand: host.togglePresentationSetting(forKey: "hidePersonalInfo")
             case Self.showOptionalCreditsAndExtraUsageCommand: host.toggleOptionalUsageSetting()
+            case let command where command >= Self.refreshFrequencyCommandBase
+                                  && command <= Self.refreshFrequencyCommandBase + 7:
+                let index = command - Self.refreshFrequencyCommandBase
+                let frequency = WindowsRefreshSettings.Frequency.allCases[Int(index)]
+                host.selectRefreshFrequency(frequency)
             default: break
             }
             return 0
