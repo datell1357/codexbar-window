@@ -10,12 +10,26 @@ public struct WindowsTrayMenuEntry: Sendable, Equatable {
     public let providerID: String
     public let title: String
     public let statusURL: String?
+    public let dashboardURL: String?
+    /// Whether this provider should appear in the dashboard submenu. This is
+    /// independent from status availability because some providers expose a
+    /// status page without a dashboard action.
+    public let dashboardVisible: Bool
     public let disabledText: String?
 
-    public init(providerID: String, title: String, statusURL: String?, disabledText: String? = "unavailable") {
+    public init(
+        providerID: String,
+        title: String,
+        statusURL: String?,
+        dashboardURL: String? = nil,
+        dashboardVisible: Bool = true,
+        disabledText: String? = "unavailable")
+    {
         self.providerID = providerID
         self.title = title
         self.statusURL = statusURL
+        self.dashboardURL = dashboardURL
+        self.dashboardVisible = dashboardVisible
         self.disabledText = disabledText
     }
 

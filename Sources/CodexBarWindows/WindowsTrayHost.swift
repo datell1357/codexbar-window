@@ -26,6 +26,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
     private static let lowPowerModeOnCommand = UINT_PTR(0x7021)
     private static let lowPowerModeAutomaticCommand = UINT_PTR(0x7022)
     private static let statusCommandBase = UINT_PTR(0x7100)
+    private static let dashboardCommandBase = UINT_PTR(0x7200)
     private static let className = Array("CodexBar.WindowsTrayHost".utf16) + [0]
     private static let powerSavingStatusGUID = GUID(
         Data1: 0xE00958C0,
@@ -48,6 +49,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
     private var mailboxRows: [String] = []
     private var mailboxMenuEntries: [WindowsTrayMenuEntry] = []
     private var popupStatusCommands: [UINT_PTR: String] = [:]
+    private var popupDashboardCommands: [UINT_PTR: String] = [:]
     private var window: HWND?
     private var runReserved = false
     private var iconInstalled = false
@@ -197,6 +199,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
         let menuEntries = self.mailboxMenuEntries
         self.mailboxLock.unlock()
         self.popupStatusCommands.removeAll(keepingCapacity: true)
+        self.popupDashboardCommands.removeAll(keepingCapacity: true)
         for (index, row) in rows.enumerated() {
             let title = Array(row.utf16) + [0]
             title.withUnsafeBufferPointer { text in
@@ -222,6 +225,27 @@ public final class WindowsTrayHost: @unchecked Sendable {
             if !attached {
                 _ = DestroyMenu(statusMenu)
             }
+        }
+        let dashboardEntries = menuEntries.filter(\.dashboardVisible)
+        if !dashboardEntries.isEmpty, let dashboardMenu = CreatePopupMenu() {
+            var itemsAppended = true
+            for (index, entry) in dashboardEntries.enumerated() {
+                let command = Self.dashboardCommandBase + UINT_PTR(index)
+                if let dashboardURL = entry.dashboardURL {
+                    self.popupDashboardCommands[command] = dashboardURL
+                }
+                let flags = UINT(MF_STRING) | (entry.dashboardURL == nil ? UINT(MF_GRAYED) : 0)
+                let suffix = entry.dashboardURL == nil ? " dashboard (unavailable)" : " dashboard"
+                let title = Array((entry.title + suffix).utf16) + [0]
+                let appended = title.withUnsafeBufferPointer { text in
+                    AppendMenuW(dashboardMenu, flags, command, text.baseAddress)
+                }
+                if appended == 0 { itemsAppended = false; break }
+            }
+            let title = Array("Provider dashboards".utf16) + [0]
+            let attached = itemsAppended && AppendMenuW(
+                menu, UINT(MF_STRING | MF_POPUP), UINT_PTR(UInt(bitPattern: dashboardMenu)), title) != 0
+            if !attached { _ = DestroyMenu(dashboardMenu) }
         }
         let showUsed = self.presentationDefaults.object(forKey: "usageBarsShowUsed") as? Bool ?? false
         let showAbsolute = self.presentationDefaults.object(forKey: "resetTimesShowAbsolute") as? Bool ?? false
@@ -256,12 +280,14 @@ public final class WindowsTrayHost: @unchecked Sendable {
         guard GetCursorPos(&point) != 0 else {
             _ = DestroyMenu(menu)
             self.popupStatusCommands.removeAll(keepingCapacity: true)
+            self.popupDashboardCommands.removeAll(keepingCapacity: true)
             return
         }
         let command = TrackPopupMenu(menu, UINT(TPM_RIGHTBUTTON | TPM_RETURNCMD), point.x, point.y, 0, hwnd, nil)
         _ = DestroyMenu(menu)
         if command != 0 { self.dispatchCommand(UINT_PTR(command)) }
         self.popupStatusCommands.removeAll(keepingCapacity: true)
+        self.popupDashboardCommands.removeAll(keepingCapacity: true)
         _ = PostMessageW(hwnd, WM_NULL, 0, 0)
     }
 
@@ -384,6 +410,10 @@ public final class WindowsTrayHost: @unchecked Sendable {
 
     private func dispatchCommand(_ command: UINT_PTR) {
         if let url = self.popupStatusCommands[command] {
+            self.openStatusPage(url)
+            return
+        }
+        if let url = self.popupDashboardCommands[command] {
             self.openStatusPage(url)
             return
         }

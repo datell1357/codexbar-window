@@ -2,6 +2,11 @@
 import CodexBarCore
 import AdaptiveRefreshCore
 import Foundation
+#if canImport(CryptoKit)
+import CryptoKit
+#else
+import Crypto
+#endif
 
 public struct WindowsUsagePresentationSettings: Sendable {
     public let hidePersonalInfo: Bool
@@ -76,6 +81,27 @@ public actor WindowsUsageRuntime {
     private enum RenderEntry { case presentation(WindowsUsagePresentation); case row(String) }
     private var renderEntries: [RenderEntry] = []
     private var statusMenuEntries: [WindowsTrayMenuEntry] = []
+    private struct DashboardContextKey: Equatable {
+        let accountID: UUID?
+        let accountScope: String?
+        let accountOrganization: String?
+        let accountWorkspace: String?
+        let accountTokenDigest: String?
+        let region: String?
+        let workspaceID: String?
+        let cookieSource: ProviderCookieSource?
+        let cookieDigest: String?
+        let apiKeyDigest: String?
+        let secretKeyDigest: String?
+        let source: ProviderSourceMode?
+    }
+    private struct DashboardContext {
+        let key: DashboardContextKey
+        let sourceLabel: String?
+        let claudeLoginMethod: String?
+        let zaiUsageScope: ZaiUsageScope?
+    }
+    private var dashboardContextCache: [ProviderInstanceID: DashboardContext] = [:]
 
     public init(
         configStore: CodexBarConfigStore = CodexBarConfigStore(),
@@ -265,15 +291,21 @@ public actor WindowsUsageRuntime {
                 self.pluginDiscoveryInitialized = true
             }
             let config = try self.configStore.loadOrCreateDefault()
+            for instanceID in config.enabledProviders() {
+                guard let provider = instanceID.firstPartyProvider else { continue }
+                let accounts = config.providerConfig(for: instanceID)?.tokenAccounts?.accounts ?? []
+                if accounts.isEmpty { self.dashboardContextCache.removeValue(forKey: instanceID) }
+            }
+            // Publish the current config's status rows before account resolution can fail.
             self.statusMenuEntries = config.enabledProviders().compactMap { instanceID in
                 guard let provider = instanceID.firstPartyProvider else { return nil }
                 let metadata = ProviderDescriptorRegistry.descriptor(for: provider).metadata
-                let statusURL = metadata.statusPageURL ?? metadata.statusLinkURL
                 return WindowsTrayMenuEntry(
                     providerID: provider.rawValue,
                     title: metadata.displayName,
-                    statusURL: statusURL,
-                    disabledText: statusURL == nil ? "unavailable" : nil)
+                    statusURL: metadata.statusPageURL ?? metadata.statusLinkURL,
+                    dashboardVisible: metadata.dashboardURL != nil,
+                    disabledText: metadata.statusPageURL == nil && metadata.statusLinkURL == nil ? "unavailable" : nil)
             }
             let accountContext = try TokenAccountCLIContext(
                 selection: TokenAccountCLISelection(label: nil, index: nil, allAccounts: false),
@@ -319,6 +351,67 @@ public actor WindowsUsageRuntime {
                     if let presentation = self.presentations[provider.instanceID] { entries.append(.presentation(presentation)) }
                     else { entries.append(contentsOf: fetched.map(RenderEntry.row)) }
                 }
+            }
+            let zaiUsageScope: ZaiUsageScope? = (try? accountContext.resolvedAccounts(for: .zai).first)
+                .flatMap { $0.sanitizedUsageScope.flatMap(ZaiUsageScope.init(rawValue:)) }
+            self.statusMenuEntries = config.enabledProviders().compactMap { instanceID in
+                guard let provider = instanceID.firstPartyProvider else { return nil }
+                let metadata = ProviderDescriptorRegistry.descriptor(for: provider).metadata
+                let account = (try? accountContext.resolvedAccounts(for: provider).first) ?? nil
+                if account == nil { self.dashboardContextCache.removeValue(forKey: instanceID) }
+                let environment = accountContext.environment(
+                    base: ProcessInfo.processInfo.environment,
+                    provider: provider,
+                    account: account)
+                let presentation = self.presentations[instanceID]
+                let providerConfig = config.providerConfig(for: instanceID)
+                let digest: (String?) -> String? = { value in
+                    guard let value else { return nil }
+                    return SHA256.hash(data: Data(value.utf8)).map { String(format: "%02x", $0) }.joined()
+                }
+                let key = DashboardContextKey(
+                    accountID: account?.id,
+                    accountScope: account?.sanitizedUsageScope,
+                    accountOrganization: account?.sanitizedOrganizationID,
+                    accountWorkspace: account?.sanitizedWorkspaceID,
+                    accountTokenDigest: digest(account?.token),
+                    region: providerConfig?.region,
+                    workspaceID: providerConfig?.workspaceID,
+                    cookieSource: providerConfig?.cookieSource,
+                    cookieDigest: digest(providerConfig?.cookieHeader),
+                    apiKeyDigest: digest(providerConfig?.apiKey),
+                    secretKeyDigest: digest(providerConfig?.secretKey),
+                    source: providerConfig?.source)
+                let cached = key.accountID == nil ? nil : self.dashboardContextCache[instanceID]
+                let cachedMatches = cached?.key == key
+                let sourceLabel = presentation?.result?.sourceLabel ?? (cachedMatches ? cached?.sourceLabel : nil)
+                let claudeLoginMethod = presentation?.snapshot.identity?.loginMethod ?? (cachedMatches ? cached?.claudeLoginMethod : nil)
+                let cachedScope = cachedMatches ? cached?.zaiUsageScope : nil
+                let dashboardURL = WindowsDashboardResolver.resolve(
+                    provider: provider,
+                    config: config,
+                    sourceLabel: sourceLabel,
+                    claudeLoginMethod: claudeLoginMethod,
+                    zaiUsageScope: provider == .zai ? (zaiUsageScope ?? cachedScope) : nil,
+                    environment: environment)
+                if presentation != nil {
+                    if key.accountID != nil {
+                        self.dashboardContextCache[instanceID] = DashboardContext(
+                            key: key,
+                            sourceLabel: presentation?.result?.sourceLabel,
+                            claudeLoginMethod: presentation?.snapshot.identity?.loginMethod,
+                            zaiUsageScope: provider == .zai ? zaiUsageScope : nil)
+                    } else {
+                        self.dashboardContextCache.removeValue(forKey: instanceID)
+                    }
+                }
+                return WindowsTrayMenuEntry(
+                    providerID: provider.rawValue,
+                    title: metadata.displayName,
+                    statusURL: metadata.statusPageURL ?? metadata.statusLinkURL,
+                    dashboardURL: dashboardURL?.absoluteString,
+                    dashboardVisible: metadata.dashboardURL != nil,
+                    disabledText: metadata.statusPageURL == nil && metadata.statusLinkURL == nil ? "unavailable" : nil)
             }
             if self.refreshSettings.frequency == .adaptiveAgentAware
             {

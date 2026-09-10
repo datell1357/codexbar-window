@@ -276,7 +276,11 @@ let package = Package(
         #if os(Windows)
         targets.append(.executableTarget(
             name: "CodexBarWindows",
-            dependencies: ["CodexBarCore", "AdaptiveRefreshCore"],
+            dependencies: [
+                "CodexBarCore",
+                "AdaptiveRefreshCore",
+                .product(name: "Crypto", package: "swift-crypto"),
+            ],
             path: "Sources/CodexBarWindows",
             swiftSettings: [.enableUpcomingFeature("StrictConcurrency")],
             linkerSettings: sqlite3LinkerSettings + [
