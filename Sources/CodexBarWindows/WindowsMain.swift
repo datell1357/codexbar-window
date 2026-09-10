@@ -25,6 +25,10 @@ private final class WindowsTrayApplication: @unchecked Sendable {
         onMenuOpen: { [weak self] in
             guard let self else { return }
             Task { await self.runtime.noteMenuOpened() }
+        },
+        onPresentationSettingsChanged: { [weak self] in
+            guard let self else { return }
+            Task { await self.runtime.presentationSettingsDidChange() }
         })
 
     init() {

@@ -6,12 +6,16 @@ import Foundation
 public struct WindowsUsagePresentationSettings: Sendable {
     public let hidePersonalInfo: Bool
     public let showOptionalCreditsAndExtraUsage: Bool
+    public let usageBarsShowUsed: Bool
+    public let resetTimesShowAbsolute: Bool
 
     public static func load(from defaults: UserDefaults? = nil) -> Self {
         let defaults = defaults ?? UserDefaults(suiteName: WindowsRefreshSettings.suiteName) ?? .standard
         return Self(
             hidePersonalInfo: defaults.object(forKey: "hidePersonalInfo") as? Bool ?? false,
-            showOptionalCreditsAndExtraUsage: defaults.object(forKey: "showOptionalCreditsAndExtraUsage") as? Bool ?? true)
+            showOptionalCreditsAndExtraUsage: defaults.object(forKey: "showOptionalCreditsAndExtraUsage") as? Bool ?? true,
+            usageBarsShowUsed: defaults.object(forKey: "usageBarsShowUsed") as? Bool ?? false,
+            resetTimesShowAbsolute: defaults.object(forKey: "resetTimesShowAbsolute") as? Bool ?? false)
     }
 }
 
@@ -57,6 +61,8 @@ public actor WindowsUsageRuntime {
     private var pluginDiscoveryInitialized = false
     private var shuttingDown = false
     private var presentations: [ProviderInstanceID: WindowsUsagePresentation] = [:]
+    private enum RenderEntry { case presentation(WindowsUsagePresentation); case row(String) }
+    private var renderEntries: [RenderEntry] = []
 
     public init(
         configStore: CodexBarConfigStore = CodexBarConfigStore(),
@@ -83,6 +89,13 @@ public actor WindowsUsageRuntime {
 
     public func setPublisher(_ publisher: @escaping RowPublisher) {
         self.publisher = publisher
+    }
+
+    /// Re-renders retained snapshots after display-only preferences change.
+    /// No provider network request is performed.
+    public func presentationSettingsDidChange() async {
+        guard !self.shuttingDown, !self.renderEntries.isEmpty else { return }
+        self.publishRenderEntries(settings: WindowsUsagePresentationSettings.load())
     }
 
     /// Performs the initial refresh and starts the selected cadence exactly once.
@@ -162,52 +175,83 @@ public actor WindowsUsageRuntime {
                 selection: TokenAccountCLISelection(label: nil, index: nil, allAccounts: false),
                 config: config,
                 verbose: false)
-            var rows: [String] = []
+            var entries: [RenderEntry] = []
             self.presentations.removeAll(keepingCapacity: true)
             if let errorCode = self.signalProvider().powerStateError {
-                rows.append("Windows power status unavailable (error \(errorCode))")
+                entries.append(.row("Windows power status unavailable (error \(errorCode))"))
             }
             for instanceID in config.enabledProviders() {
                 try Task.checkCancellation()
                 guard let provider = instanceID.firstPartyProvider else {
-                    rows.append(contentsOf: await self.fetchPluginRows(
+                    let fetched = await self.fetchPluginRows(
                         instanceID: instanceID,
                         config: config,
-                        presentationSettings: presentationSettings))
+                        presentationSettings: presentationSettings)
+                    if let presentation = self.presentations[instanceID] { entries.append(.presentation(presentation)) }
+                    else { entries.append(contentsOf: fetched.map(RenderEntry.row)) }
                     continue
                 }
                 if provider == .codex {
                     let configuredAccounts = try? accountContext.resolvedAccounts(for: provider)
                     if let configuredAccounts, !configuredAccounts.isEmpty {
-                        rows.append(contentsOf: await self.fetchRows(provider: provider, context: accountContext, presentationSettings: presentationSettings))
+                        let fetched = await self.fetchRows(provider: provider, context: accountContext, presentationSettings: presentationSettings)
+                        if let presentation = self.presentations[provider.instanceID] { entries.append(.presentation(presentation)) }
+                        else { entries.append(contentsOf: fetched.map(RenderEntry.row)) }
                     } else {
                         let projection = accountContext.visibleCodexAccounts()
                         let active = projection.visibleAccounts.first {
                             $0.id == projection.activeVisibleAccountID
                         }
-                        rows.append(contentsOf: await self.fetchRows(
+                        let fetched = await self.fetchRows(
                             provider: provider,
                             context: accountContext,
                             codexVisibleAccount: active,
-                            presentationSettings: presentationSettings))
+                            presentationSettings: presentationSettings)
+                        if let presentation = self.presentations[provider.instanceID] { entries.append(.presentation(presentation)) }
+                        else { entries.append(contentsOf: fetched.map(RenderEntry.row)) }
                     }
                 } else {
-                    rows.append(contentsOf: await self.fetchRows(provider: provider, context: accountContext, presentationSettings: presentationSettings))
+                    let fetched = await self.fetchRows(provider: provider, context: accountContext, presentationSettings: presentationSettings)
+                    if let presentation = self.presentations[provider.instanceID] { entries.append(.presentation(presentation)) }
+                    else { entries.append(contentsOf: fetched.map(RenderEntry.row)) }
                 }
             }
             if self.refreshSettings.frequency == .adaptiveAgentAware
             {
-                rows.append("Windows activity scanner unavailable; automatic refresh disabled")
+                entries.append(.row("Windows activity scanner unavailable; automatic refresh disabled"))
             }
             guard !self.shuttingDown else { return }
-            let displayRows = rows.isEmpty ? ["No providers are enabled"] : rows
-            self.publisher(presentationSettings.hidePersonalInfo ? displayRows.map { LogRedactor.redact($0) } : displayRows)
+            self.renderEntries = entries
+            self.publishRenderEntries(settings: WindowsUsagePresentationSettings.load())
         } catch is CancellationError {
             return
         } catch {
             let message = "CodexBar: \(error.localizedDescription)"
-            self.publisher(presentationSettings.hidePersonalInfo ? [LogRedactor.redact(message)] : [message])
+            guard !self.shuttingDown else { return }
+            self.renderEntries = [.row(message)]
+            self.publishRenderEntries(settings: WindowsUsagePresentationSettings.load())
         }
+    }
+
+    private func publishRenderEntries(settings: WindowsUsagePresentationSettings) {
+        guard !self.shuttingDown else { return }
+        let rendered = self.renderEntries.flatMap { entry -> [String] in
+            switch entry {
+            case let .presentation(presentation):
+                let updated = WindowsUsagePresentation(
+                    instanceID: presentation.instanceID, provider: presentation.provider,
+                    title: presentation.title, privacyTitle: presentation.privacyTitle,
+                    result: presentation.result, snapshot: presentation.snapshot,
+                    hidePersonalInfo: settings.hidePersonalInfo,
+                    showOptionalUsage: settings.showOptionalCreditsAndExtraUsage,
+                    usageBarsShowUsed: settings.usageBarsShowUsed,
+                    resetTimesShowAbsolute: settings.resetTimesShowAbsolute)
+                return updated.rows()
+            case let .row(row): return [row]
+            }
+        }
+        let displayRows = rendered.isEmpty ? ["No providers are enabled"] : rendered
+        self.publisher(settings.hidePersonalInfo ? displayRows.map { LogRedactor.redact($0) } : displayRows)
     }
 
     public func shutdown() async {
@@ -341,8 +385,8 @@ public actor WindowsUsageRuntime {
                     result.usage
                 }
                 let accountLabel = labeledUsage.accountEmail(for: provider)
-                let title = presentationSettings.hidePersonalInfo ? metadata.displayName : accountLabel.map { "\(metadata.displayName) [\($0)]" } ?? metadata.displayName
-                let presentation = WindowsUsagePresentation(instanceID: provider.instanceID, provider: provider, title: title, result: result, snapshot: labeledUsage, hidePersonalInfo: presentationSettings.hidePersonalInfo, showOptionalUsage: presentationSettings.showOptionalCreditsAndExtraUsage)
+                let title = accountLabel.map { "\(metadata.displayName) [\($0)]" } ?? metadata.displayName
+                let presentation = WindowsUsagePresentation(instanceID: provider.instanceID, provider: provider, title: title, privacyTitle: metadata.displayName, result: result, snapshot: labeledUsage, hidePersonalInfo: presentationSettings.hidePersonalInfo, showOptionalUsage: presentationSettings.showOptionalCreditsAndExtraUsage, usageBarsShowUsed: presentationSettings.usageBarsShowUsed, resetTimesShowAbsolute: presentationSettings.resetTimesShowAbsolute)
                 self.presentations[provider.instanceID] = presentation
                 return presentation.rows()
             case let .failure(error):
@@ -373,8 +417,8 @@ public actor WindowsUsageRuntime {
                     browserDetection: self.browserDetection))
             try Task.checkCancellation()
             let accountLabel = snapshot.identity(for: instanceID)?.accountEmail
-            let title = presentationSettings.hidePersonalInfo ? plugin.manifest.name : accountLabel.map { "\(plugin.manifest.name) [\($0)]" } ?? plugin.manifest.name
-            let presentation = WindowsUsagePresentation(instanceID: instanceID, provider: nil, title: title, result: nil, snapshot: snapshot, hidePersonalInfo: presentationSettings.hidePersonalInfo, showOptionalUsage: presentationSettings.showOptionalCreditsAndExtraUsage)
+            let title = accountLabel.map { "\(plugin.manifest.name) [\($0)]" } ?? plugin.manifest.name
+            let presentation = WindowsUsagePresentation(instanceID: instanceID, provider: nil, title: title, privacyTitle: plugin.manifest.name, result: nil, snapshot: snapshot, hidePersonalInfo: presentationSettings.hidePersonalInfo, showOptionalUsage: presentationSettings.showOptionalCreditsAndExtraUsage, usageBarsShowUsed: presentationSettings.usageBarsShowUsed, resetTimesShowAbsolute: presentationSettings.resetTimesShowAbsolute)
             self.presentations[instanceID] = presentation
             return presentation.rows()
         } catch is CancellationError {

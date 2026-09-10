@@ -18,14 +18,12 @@
   ],
   "automation_id": "codexbar-windows-qa",
   "interval_minutes": 10,
-  "current_lanes": [
-    "tray_preferences_081"
-  ],
-  "static_qa_status": "SCOPED_REVIEWS_THROUGH_080_FULL_PARITY_INCOMPLETE",
+  "current_lanes": [],
+  "static_qa_status": "SCOPED_REVIEWS_THROUGH_084_FULL_PARITY_INCOMPLETE",
   "windows_runtime_status": "NOT_RUN_BY_USER_INSTRUCTION",
   "completion_claim": false,
-  "next": "078-080 text presentation partial slice independently approved statically. Publish scoped files; 081 mapping display preferences and native menu controls. Whole parity incomplete.",
-  "last_batch": "presentation-078-080",
+  "next": "082-084 independently approved statically: native display toggles, cached ordered rerender, error replacement and safe privacy titles. Publish scoped step, then implement remaining native settings controls. Whole parity incomplete.",
+  "last_batch": "display-settings-082-084",
   "completed_source_changes": [
     "Windows package dependency wiring (partial)",
     "QuickJS watchdog Windows monotonic clock",

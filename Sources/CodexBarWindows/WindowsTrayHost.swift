@@ -9,11 +9,14 @@ public final class WindowsTrayHost: @unchecked Sendable {
     /// fetches or other blocking operations should be scheduled asynchronously.
     public typealias RefreshHandler = @Sendable () -> Void
     public typealias PowerChangedHandler = @Sendable () -> Void
+    public typealias PresentationSettingsChangedHandler = @Sendable () -> Void
     public typealias QuitHandler = @Sendable () -> Void
 
     private static let wakeMessage = UINT(WM_APP) + 1
     private static let refreshCommand = UINT_PTR(0x7001)
     private static let quitCommand = UINT_PTR(0x7002)
+    private static let usageBarsShowUsedCommand = UINT_PTR(0x7003)
+    private static let resetTimesShowAbsoluteCommand = UINT_PTR(0x7004)
     private static let className = Array("CodexBar.WindowsTrayHost".utf16) + [0]
     private static let taskbarCreated: UINT = {
         "TaskbarCreated".withCString(encodedAs: UTF16.self) { RegisterWindowMessageW($0) }
@@ -22,7 +25,9 @@ public final class WindowsTrayHost: @unchecked Sendable {
     private let onRefresh: RefreshHandler
     private let onPowerChanged: PowerChangedHandler
     private let onMenuOpen: @Sendable () -> Void
+    private let onPresentationSettingsChanged: PresentationSettingsChangedHandler
     private let onQuit: QuitHandler
+    private let presentationDefaults: UserDefaults
     private let mailboxLock = NSLock()
     private var mailboxRows: [String] = []
     private var window: HWND?
@@ -34,12 +39,15 @@ public final class WindowsTrayHost: @unchecked Sendable {
         onRefresh: @escaping RefreshHandler,
         onQuit: @escaping QuitHandler,
         onPowerChanged: @escaping PowerChangedHandler = {},
-        onMenuOpen: @escaping @Sendable () -> Void = {})
+        onMenuOpen: @escaping @Sendable () -> Void = {},
+        onPresentationSettingsChanged: @escaping PresentationSettingsChangedHandler = {})
     {
         self.onRefresh = onRefresh
         self.onQuit = onQuit
         self.onPowerChanged = onPowerChanged
         self.onMenuOpen = onMenuOpen
+        self.onPresentationSettingsChanged = onPresentationSettingsChanged
+        self.presentationDefaults = UserDefaults(suiteName: WindowsRefreshSettings.suiteName) ?? .standard
     }
 
     /// Blocks on the Win32 message loop until the host receives WM_CLOSE or Quit.
@@ -145,6 +153,17 @@ public final class WindowsTrayHost: @unchecked Sendable {
             }
         }
         if !rows.isEmpty { _ = AppendMenuW(menu, UINT(MF_SEPARATOR), 0, nil) }
+        let showUsed = self.presentationDefaults.object(forKey: "usageBarsShowUsed") as? Bool ?? false
+        let showAbsolute = self.presentationDefaults.object(forKey: "resetTimesShowAbsolute") as? Bool ?? false
+        let showUsedFlags = UINT(MF_STRING) | (showUsed ? UINT(MF_CHECKED) : 0)
+        let showAbsoluteFlags = UINT(MF_STRING) | (showAbsolute ? UINT(MF_CHECKED) : 0)
+        "Show used usage".withCString(encodedAs: UTF16.self) {
+            _ = AppendMenuW(menu, showUsedFlags, Self.usageBarsShowUsedCommand, $0)
+        }
+        "Show reset times as clock".withCString(encodedAs: UTF16.self) {
+            _ = AppendMenuW(menu, showAbsoluteFlags, Self.resetTimesShowAbsoluteCommand, $0)
+        }
+        _ = AppendMenuW(menu, UINT(MF_SEPARATOR), 0, nil)
         "Refresh".withCString(encodedAs: UTF16.self) { _ = AppendMenuW(menu, UINT(MF_STRING), Self.refreshCommand, $0) }
         "Quit".withCString(encodedAs: UTF16.self) { _ = AppendMenuW(menu, UINT(MF_STRING), Self.quitCommand, $0) }
         _ = SetForegroundWindow(hwnd)
@@ -163,6 +182,12 @@ public final class WindowsTrayHost: @unchecked Sendable {
         self.quitInvoked = true
         self.onQuit()
         PostQuitMessage(0)
+    }
+
+    private func togglePresentationSetting(forKey key: String) {
+        let current = self.presentationDefaults.object(forKey: key) as? Bool ?? false
+        self.presentationDefaults.set(!current, forKey: key)
+        self.onPresentationSettingsChanged()
     }
 
     private static let windowProc: WNDPROC = { hwnd, message, wParam, lParam in
@@ -198,6 +223,8 @@ public final class WindowsTrayHost: @unchecked Sendable {
             switch UINT_PTR(wParam & 0xffff) {
             case Self.refreshCommand: host.onRefresh()
             case Self.quitCommand: host.invokeQuit()
+            case Self.usageBarsShowUsedCommand: host.togglePresentationSetting(forKey: "usageBarsShowUsed")
+            case Self.resetTimesShowAbsoluteCommand: host.togglePresentationSetting(forKey: "resetTimesShowAbsolute")
             default: break
             }
             return 0
