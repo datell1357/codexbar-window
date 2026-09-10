@@ -6,6 +6,9 @@ import Glibc
 import Musl
 #endif
 import Foundation
+#if os(Windows)
+import WinSDK
+#endif
 
 private actor ClaudeCLISessionOperationGate {
     private struct Waiter {
@@ -112,13 +115,24 @@ actor ClaudeCLISession {
         let sendEnterEvery: TimeInterval?
     }
 
+    #if os(Windows)
+    private var windowsProcess: WindowsTrackedConPTYProcess?
+    #else
     private var process: Process?
+    #endif
+    #if !os(Windows)
     private var primaryFD: Int32 = -1
     private var primaryHandle: FileHandle?
     private var secondaryHandle: FileHandle?
+    #endif
+    #if !os(Windows)
     private var processGroup: pid_t?
+    #endif
     private var sessionIdentity: SessionIdentity?
     private var startedAt: Date?
+    #if os(Windows)
+    private var ioError: SessionError?
+    #endif
     private let operationGate = ClaudeCLISessionOperationGate()
 
     private let promptSends: [String: String] = [
@@ -222,6 +236,11 @@ actor ClaudeCLISession {
     }
 
     private func captureExclusive(request: CaptureRequest) async throws -> String {
+        #if os(Windows)
+        defer {
+            if Task<Never, Never>.isCancelled { self.cleanup() }
+        }
+        #endif
         let subcommand = request.subcommand
         let binary = request.binary
         let accountScope = request.accountScope
@@ -243,7 +262,14 @@ actor ClaudeCLISession {
                 try await Task.sleep(nanoseconds: delay)
             }
         }
+        try Task.checkCancellation()
         self.drainOutput()
+        #if os(Windows)
+        if let ioError = self.ioError {
+            self.cleanup()
+            throw ioError
+        }
+        #endif
 
         let trimmed = subcommand.trimmingCharacters(in: .whitespacesAndNewlines)
         if !trimmed.isEmpty {
@@ -307,6 +333,13 @@ actor ClaudeCLISession {
                     }
                 }
 
+                #if os(Windows)
+                if let ioError = self.ioError {
+                    self.cleanup()
+                    throw ioError
+                }
+                #endif
+
                 if stopNeedles
                     .contains(where: normalizedScan.contains) || (stopWhenNormalized?(normalizedScan) == true)
                 {
@@ -314,6 +347,13 @@ actor ClaudeCLISession {
                     break
                 }
             }
+
+            #if os(Windows)
+            if let ioError = self.ioError {
+                self.cleanup()
+                throw ioError
+            }
+            #endif
 
             if self.shouldStopForIdleTimeout(
                 idleTimeout: idleTimeout,
@@ -326,9 +366,16 @@ actor ClaudeCLISession {
 
             self.sendPeriodicEnterIfNeeded(every: effectiveEnterEvery, lastEnterAt: &lastEnterAt)
 
+            #if os(Windows)
+            if self.windowsProcess?.isExited == true {
+                self.cleanup()
+                throw SessionError.processExited
+            }
+            #else
             if let proc = self.process, !proc.isRunning {
                 throw SessionError.processExited
             }
+            #endif
 
             try await Task.sleep(nanoseconds: 60_000_000)
         }
@@ -339,6 +386,12 @@ actor ClaudeCLISession {
                 let settleDeadline = Date().addingTimeInterval(settle)
                 while Date() < settleDeadline {
                     let newData = self.readChunk()
+                    #if os(Windows)
+                    if let ioError = self.ioError {
+                        self.cleanup()
+                        throw ioError
+                    }
+                    #endif
                     if !newData.isEmpty {
                         try appendOutput(newData)
                     }
@@ -347,6 +400,13 @@ actor ClaudeCLISession {
             }
         }
 
+        try Task.checkCancellation()
+        #if os(Windows)
+        if let ioError = self.ioError {
+            self.cleanup()
+            throw ioError
+        }
+        #endif
         guard !buffer.data.isEmpty, let text = String(data: buffer.data, encoding: .utf8) else {
             throw SessionError.timedOut
         }
@@ -396,11 +456,46 @@ actor ClaudeCLISession {
             binaryPath: binary,
             accountScope: accountScope,
             environment: Self.launchEnvironment(baseEnv: environment))
-        if let proc = self.process, proc.isRunning, self.sessionIdentity == sessionIdentity {
+        #if os(Windows)
+        if let proc = self.windowsProcess, !proc.isExited, self.sessionIdentity == sessionIdentity {
             Self.log.debug("Claude CLI session reused")
             return
         }
+        #else
+        if let proc = self.process, proc.isRunning, self.sessionIdentity == sessionIdentity {
+        Self.log.debug("Claude CLI session reused")
+        return
+        }
+        #endif
         self.cleanup()
+
+        #if os(Windows)
+        let launchEnvironment = Self.launchEnvironment(baseEnv: environment)
+        let workingDirectory = ClaudeStatusProbe.preparedProbeWorkingDirectoryURL()
+        let sessionID = Self.loadOrCreateProbeSessionID(in: workingDirectory)
+        let arguments = Self.launchArguments(sessionID: sessionID)
+        var enriched = TTYCommandRunner.enrichedEnvironment(baseEnv: launchEnvironment, home: launchEnvironment["HOME"] ?? NSHomeDirectory())
+        enriched["PWD"] = workingDirectory.path
+        guard let resolved = WindowsCommandResolver.resolve(executable: binary, override: nil, environment: enriched) else {
+            throw SessionError.launchFailed("Missing CLI '\(binary)'")
+        }
+        do {
+            self.windowsProcess = try WindowsTrackedConPTYProcess.launch(
+                target: resolved.target,
+                arguments: arguments,
+                environment: enriched,
+                currentDirectoryURL: workingDirectory,
+                rows: 50,
+                cols: 160)
+        } catch is CancellationError {
+            throw SessionError.launchFailed("App shutdown in progress")
+        } catch {
+            throw SessionError.launchFailed(error.localizedDescription)
+        }
+        self.sessionIdentity = sessionIdentity
+        self.startedAt = Date()
+        return
+        #else
 
         var primaryFD: Int32 = -1
         var secondaryFD: Int32 = -1
@@ -488,6 +583,7 @@ actor ClaudeCLISession {
         self.processGroup = processGroup
         self.sessionIdentity = sessionIdentity
         self.startedAt = Date()
+        #endif
     }
 
     static func launchArguments(sessionID: UUID) -> [String] {
@@ -508,10 +604,17 @@ actor ClaudeCLISession {
 
         let sessionID = UUID()
         do {
+            #if os(Windows)
+            try fm.createDirectory(
+                at: directory,
+                withIntermediateDirectories: true,
+                attributes: nil)
+            #else
             try fm.createDirectory(
                 at: directory,
                 withIntermediateDirectories: true,
                 attributes: [.posixPermissions: 0o700])
+            #endif
             try sessionID.uuidString.lowercased().write(to: url, atomically: true, encoding: .utf8)
         } catch {
             Self.log.warning(
@@ -552,16 +655,31 @@ actor ClaudeCLISession {
             ClaudeOAuthCredentialsStore.environmentTokenKey,
             ClaudeOAuthCredentialsStore.environmentScopesKey,
         ]
-        for key in explicitKeys {
+        let explicitUppercased = Set(explicitKeys.map { $0.uppercased() })
+        #if os(Windows)
+        for key in env.keys where explicitUppercased.contains(key.uppercased()) || key.uppercased().hasPrefix("ANTHROPIC_") {
             env.removeValue(forKey: key)
         }
-        for key in env.keys where key.hasPrefix("ANTHROPIC_") {
-            env.removeValue(forKey: key)
-        }
+        #else
+        for key in explicitKeys { env.removeValue(forKey: key) }
+        for key in env.keys where key.hasPrefix("ANTHROPIC_") { env.removeValue(forKey: key) }
+        #endif
         return env
     }
 
     private func cleanup() {
+        #if os(Windows)
+        if let proc = self.windowsProcess {
+            try? proc.write(Data("/exit\r".utf8), deadline: Date().addingTimeInterval(0.15), cancellationCheck: { false })
+            proc.terminate()
+            proc.close()
+        }
+        self.windowsProcess = nil
+        self.ioError = nil
+        self.sessionIdentity = nil
+        self.startedAt = nil
+        return
+        #else
         if self.process != nil {
             Self.log.debug("Claude CLI session stopping")
         }
@@ -608,9 +726,23 @@ actor ClaudeCLISession {
         self.processGroup = nil
         self.sessionIdentity = nil
         self.startedAt = nil
+        #endif
     }
 
     private func readChunk() -> Data {
+        #if os(Windows)
+        guard let proc = self.windowsProcess else { return Data() }
+        switch proc.read() {
+        case let .data(data): return data
+        case .eof: return Data()
+        case .overflow:
+            self.ioError = .outputTooLarge
+            return Data()
+        case let .failed(code):
+            self.ioError = .ioFailed("ConPTY read failed (\(code))")
+            return Data()
+        }
+        #else
         guard self.primaryFD >= 0 else { return Data() }
         var appended = Data()
         while true {
@@ -623,6 +755,7 @@ actor ClaudeCLISession {
             break
         }
         return appended
+        #endif
     }
 
     private func drainOutput() {
@@ -646,10 +779,34 @@ actor ClaudeCLISession {
 
     private func send(_ text: String) throws {
         guard let data = text.data(using: .utf8) else { return }
+        #if os(Windows)
+        guard let proc = self.windowsProcess else { throw SessionError.processExited }
+        do {
+            try proc.write(data, deadline: Date().addingTimeInterval(1.0), cancellationCheck: { Task<Never, Never>.isCancelled })
+        } catch is CancellationError {
+            self.cleanup()
+            throw CancellationError()
+        } catch let error as WindowsConPTYProcess.WriteError {
+            self.cleanup()
+            switch error {
+            case .deadlineExceeded:
+                self.ioError = .timedOut
+                throw SessionError.timedOut
+            }
+        } catch {
+            self.cleanup()
+            let mapped = SessionError.ioFailed(error.localizedDescription)
+            self.ioError = mapped
+            throw mapped
+        }
+        return
+        #else
         guard self.primaryFD >= 0 else { throw SessionError.processExited }
         try self.writeAllToPrimary(data)
+        #endif
     }
 
+    #if !os(Windows)
     private func writeAllToPrimary(_ data: Data) throws {
         guard self.primaryFD >= 0 else { throw SessionError.processExited }
         try data.withUnsafeBytes { rawBytes in
@@ -680,4 +837,5 @@ actor ClaudeCLISession {
             }
         }
     }
+    #endif
 }
