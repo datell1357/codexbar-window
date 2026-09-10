@@ -18,18 +18,12 @@
   ],
   "automation_id": "codexbar-windows-qa",
   "interval_minutes": 10,
-  "current_lanes": [
-    {
-      "id": "status_menu_104",
-      "status": "IMPLEMENTING_STATIC_ONLY",
-      "scope": "First-party status page native menu action; dashboard/plugin links excluded from this slice"
-    }
-  ],
-  "static_qa_status": "SCOPED_REVIEWS_THROUGH_100_FULL_PARITY_INCOMPLETE",
+  "current_lanes": [],
+  "static_qa_status": "SCOPED_REVIEWS_THROUGH_105_FULL_PARITY_INCOMPLETE",
   "windows_runtime_status": "NOT_RUN_BY_USER_INSTRUCTION",
   "completion_claim": false,
-  "next": "Publish reviewed CLI idle cadence 101/103; status menu 104 in progress. Menu contract 102 identified dynamic dashboard resolution as separate remaining work.",
-  "last_batch": "startup-connectivity-099-100",
+  "next": "Publish scoped first-party status menu after review. Dynamic dashboard actions remain next; full parity and Windows execution incomplete.",
+  "last_batch": "status-menu-104-105",
   "completed_source_changes": [
     "Windows package dependency wiring (partial)",
     "QuickJS watchdog Windows monotonic clock",

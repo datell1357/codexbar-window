@@ -46,8 +46,8 @@ private final class WindowsTrayApplication: @unchecked Sendable {
     func run() {
         let host = self.host
         Task { [runtime] in
-            await runtime.setPublisher { [weak host] rows in
-                host?.postRows(rows)
+            await runtime.setCombinedPublisher { [weak host] rows, entries in
+                host?.postRows(rows, menuEntries: entries)
             }
             await runtime.start()
         }

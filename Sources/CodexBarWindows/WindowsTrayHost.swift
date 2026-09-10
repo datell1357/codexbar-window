@@ -25,6 +25,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
     private static let lowPowerModeOffCommand = UINT_PTR(0x7020)
     private static let lowPowerModeOnCommand = UINT_PTR(0x7021)
     private static let lowPowerModeAutomaticCommand = UINT_PTR(0x7022)
+    private static let statusCommandBase = UINT_PTR(0x7100)
     private static let className = Array("CodexBar.WindowsTrayHost".utf16) + [0]
     private static let powerSavingStatusGUID = GUID(
         Data1: 0xE00958C0,
@@ -45,6 +46,8 @@ public final class WindowsTrayHost: @unchecked Sendable {
     private let presentationDefaults: UserDefaults
     private let mailboxLock = NSLock()
     private var mailboxRows: [String] = []
+    private var mailboxMenuEntries: [WindowsTrayMenuEntry] = []
+    private var popupStatusCommands: [UINT_PTR: String] = [:]
     private var window: HWND?
     private var runReserved = false
     private var iconInstalled = false
@@ -147,8 +150,16 @@ public final class WindowsTrayHost: @unchecked Sendable {
 
     /// Replaces the rows displayed by the next tray popup and wakes the UI thread.
     public func postRows(_ rows: [String]) {
+        self.postRows(rows, menuEntries: [])
+    }
+
+    /// Publishes rows and structured provider actions atomically. The action
+    /// list is copied into the next popup, preventing a refreshed snapshot from
+    /// reusing command IDs that belonged to an older menu.
+    public func postRows(_ rows: [String], menuEntries: [WindowsTrayMenuEntry]) {
         self.mailboxLock.lock()
         self.mailboxRows = rows
+        self.mailboxMenuEntries = menuEntries
         let hwnd = self.window
         self.mailboxLock.unlock()
         if let hwnd { PostMessageW(hwnd, Self.wakeMessage, 0, 0) }
@@ -183,7 +194,9 @@ public final class WindowsTrayHost: @unchecked Sendable {
         self.onMenuOpen()
         self.mailboxLock.lock()
         let rows = self.mailboxRows
+        let menuEntries = self.mailboxMenuEntries
         self.mailboxLock.unlock()
+        self.popupStatusCommands.removeAll(keepingCapacity: true)
         for (index, row) in rows.enumerated() {
             let title = Array(row.utf16) + [0]
             title.withUnsafeBufferPointer { text in
@@ -191,6 +204,25 @@ public final class WindowsTrayHost: @unchecked Sendable {
             }
         }
         if !rows.isEmpty { _ = AppendMenuW(menu, UINT(MF_SEPARATOR), 0, nil) }
+        if !menuEntries.isEmpty, let statusMenu = CreatePopupMenu() {
+            var statusItemsAppended = true
+            for (index, entry) in menuEntries.enumerated() {
+                let command = Self.statusCommandBase + UINT_PTR(index)
+                self.popupStatusCommands[command] = entry.statusURL
+                let flags = UINT(MF_STRING) | (entry.isEnabled ? 0 : UINT(MF_GRAYED))
+                let title = Array(entry.displayTitle.utf16) + [0]
+                let appended = title.withUnsafeBufferPointer { text in
+                    AppendMenuW(statusMenu, flags, command, text.baseAddress)
+                }
+                if appended == 0 { statusItemsAppended = false; break }
+            }
+            let title = Array("Provider status".utf16) + [0]
+            let attached = statusItemsAppended && AppendMenuW(
+                menu, UINT(MF_STRING | MF_POPUP), UINT_PTR(UInt(bitPattern: statusMenu)), title) != 0
+            if !attached {
+                _ = DestroyMenu(statusMenu)
+            }
+        }
         let showUsed = self.presentationDefaults.object(forKey: "usageBarsShowUsed") as? Bool ?? false
         let showAbsolute = self.presentationDefaults.object(forKey: "resetTimesShowAbsolute") as? Bool ?? false
         let hidePersonalInfo = self.presentationDefaults.object(forKey: "hidePersonalInfo") as? Bool ?? false
@@ -223,10 +255,13 @@ public final class WindowsTrayHost: @unchecked Sendable {
         var point = POINT()
         guard GetCursorPos(&point) != 0 else {
             _ = DestroyMenu(menu)
+            self.popupStatusCommands.removeAll(keepingCapacity: true)
             return
         }
-        _ = TrackPopupMenu(menu, UINT(TPM_RIGHTBUTTON), point.x, point.y, 0, hwnd, nil)
+        let command = TrackPopupMenu(menu, UINT(TPM_RIGHTBUTTON | TPM_RETURNCMD), point.x, point.y, 0, hwnd, nil)
         _ = DestroyMenu(menu)
+        if command != 0 { self.dispatchCommand(UINT_PTR(command)) }
+        self.popupStatusCommands.removeAll(keepingCapacity: true)
         _ = PostMessageW(hwnd, WM_NULL, 0, 0)
     }
 
@@ -347,6 +382,52 @@ public final class WindowsTrayHost: @unchecked Sendable {
         self.onRefreshSettingsChanged()
     }
 
+    private func dispatchCommand(_ command: UINT_PTR) {
+        if let url = self.popupStatusCommands[command] {
+            self.openStatusPage(url)
+            return
+        }
+        switch command {
+        case Self.refreshCommand: self.onRefresh()
+        case Self.quitCommand: self.invokeQuit()
+        case Self.usageBarsShowUsedCommand: self.togglePresentationSetting(forKey: "usageBarsShowUsed")
+        case Self.resetTimesShowAbsoluteCommand: self.togglePresentationSetting(forKey: "resetTimesShowAbsolute")
+        case Self.hidePersonalInfoCommand: self.togglePresentationSetting(forKey: "hidePersonalInfo")
+        case Self.showOptionalCreditsAndExtraUsageCommand: self.toggleOptionalUsageSetting()
+        case Self.lowPowerModeOffCommand: self.selectLowPowerModePreference(.off)
+        case Self.lowPowerModeOnCommand: self.selectLowPowerModePreference(.on)
+        case Self.lowPowerModeAutomaticCommand: self.selectLowPowerModePreference(.automatic)
+        case let frequencyCommand
+            where frequencyCommand >= Self.refreshFrequencyCommandBase
+                && frequencyCommand <= Self.refreshFrequencyCommandBase + 7:
+            let index = frequencyCommand - Self.refreshFrequencyCommandBase
+            let frequency = WindowsRefreshSettings.Frequency.allCases[Int(index)]
+            self.selectRefreshFrequency(frequency)
+        default: break
+        }
+    }
+
+    private func openStatusPage(_ rawURL: String) {
+        guard let url = URL(string: rawURL),
+              let scheme = url.scheme?.lowercased(), scheme == "http" || scheme == "https",
+              let host = url.host, !host.isEmpty,
+              url.user == nil, url.password == nil,
+              !rawURL.unicodeScalars.contains(where: { $0.value < 0x20 || $0.value == 0x7F })
+        else {
+            self.reportStatusOpenFailure(rawURL)
+            return
+        }
+        let target = Array(rawURL.utf16) + [0]
+        let result = target.withUnsafeBufferPointer { text in
+            ShellExecuteW(nil, nil, text.baseAddress, nil, nil, Int32(SW_SHOWNORMAL))
+        }
+        if Int(bitPattern: result) <= 32 { self.reportStatusOpenFailure(rawURL) }
+    }
+
+    private func reportStatusOpenFailure(_ rawURL: String) {
+        FileHandle.standardError.write(Data("CodexBar: could not open provider status page \(rawURL)\n".utf8))
+    }
+
     private static let windowProc: WNDPROC = { hwnd, message, wParam, lParam in
         guard let hwnd else { return DefWindowProcW(hwnd, message, wParam, lParam) }
         let pointer = GetWindowLongPtrW(hwnd, Int32(GWLP_USERDATA))
@@ -378,23 +459,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
         }
         if message == UINT(WM_CLOSE) { host.invokeQuit(); return 0 }
         if message == UINT(WM_COMMAND) {
-            switch UINT_PTR(wParam & 0xffff) {
-            case Self.refreshCommand: host.onRefresh()
-            case Self.quitCommand: host.invokeQuit()
-            case Self.usageBarsShowUsedCommand: host.togglePresentationSetting(forKey: "usageBarsShowUsed")
-            case Self.resetTimesShowAbsoluteCommand: host.togglePresentationSetting(forKey: "resetTimesShowAbsolute")
-            case Self.hidePersonalInfoCommand: host.togglePresentationSetting(forKey: "hidePersonalInfo")
-            case Self.showOptionalCreditsAndExtraUsageCommand: host.toggleOptionalUsageSetting()
-            case Self.lowPowerModeOffCommand: host.selectLowPowerModePreference(.off)
-            case Self.lowPowerModeOnCommand: host.selectLowPowerModePreference(.on)
-            case Self.lowPowerModeAutomaticCommand: host.selectLowPowerModePreference(.automatic)
-            case let command where command >= Self.refreshFrequencyCommandBase
-                                  && command <= Self.refreshFrequencyCommandBase + 7:
-                let index = command - Self.refreshFrequencyCommandBase
-                let frequency = WindowsRefreshSettings.Frequency.allCases[Int(index)]
-                host.selectRefreshFrequency(frequency)
-            default: break
-            }
+            host.dispatchCommand(UINT_PTR(wParam & 0xffff))
             return 0
         }
         if message == UINT(WM_USER) + 1, lParam == LPARAM(WM_RBUTTONUP) || lParam == LPARAM(WM_LBUTTONUP) {

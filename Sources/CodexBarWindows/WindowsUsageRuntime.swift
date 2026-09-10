@@ -23,6 +23,7 @@ public struct WindowsUsagePresentationSettings: Sendable {
 /// enqueue work; all provider I/O stays on this actor and is serialized.
 public actor WindowsUsageRuntime {
     public typealias RowPublisher = @Sendable ([String]) -> Void
+    public typealias CombinedPublisher = @Sendable ([String], [WindowsTrayMenuEntry]) -> Void
     public struct RefreshSignals: Sendable {
         public var lowPowerModeEnabled: Bool
         /// Nil means the native power snapshot succeeded. A non-nil value is
@@ -51,6 +52,7 @@ public actor WindowsUsageRuntime {
     private let claudeFetcher: ClaudeUsageFetcher
     private let pluginApprovalStore: ProviderPluginApprovalStore
     private var publisher: RowPublisher
+    private var combinedPublisher: CombinedPublisher
     private var refreshTask: Task<Void, Never>?
     private var refreshCompletionWaiters: [CheckedContinuation<Void, Never>] = []
     private var startupConnectivityRetryTask: Task<Void, Never>?
@@ -73,10 +75,12 @@ public actor WindowsUsageRuntime {
     private var presentations: [ProviderInstanceID: WindowsUsagePresentation] = [:]
     private enum RenderEntry { case presentation(WindowsUsagePresentation); case row(String) }
     private var renderEntries: [RenderEntry] = []
+    private var statusMenuEntries: [WindowsTrayMenuEntry] = []
 
     public init(
         configStore: CodexBarConfigStore = CodexBarConfigStore(),
         publisher: @escaping RowPublisher = { _ in },
+        combinedPublisher: @escaping CombinedPublisher = { _, _ in },
         signalProvider: @escaping RefreshSignalProvider = {
             let settings = WindowsRefreshSettings.load()
             let power = WindowsPowerState.read()
@@ -93,12 +97,19 @@ public actor WindowsUsageRuntime {
         self.claudeFetcher = ClaudeUsageFetcher(browserDetection: browserDetection)
         self.pluginApprovalStore = ProviderPluginApprovalStore()
         self.publisher = publisher
+        self.combinedPublisher = combinedPublisher
         self.signalProvider = signalProvider
         self.refreshSettings = WindowsRefreshSettings.load()
     }
 
     public func setPublisher(_ publisher: @escaping RowPublisher) {
         self.publisher = publisher
+    }
+
+    public func setCombinedPublisher(_ publisher: @escaping CombinedPublisher) {
+        self.combinedPublisher = publisher
+        guard !self.shuttingDown else { return }
+        self.publishRenderEntries(settings: WindowsUsagePresentationSettings.load())
     }
 
     /// Re-renders retained snapshots after display-only preferences change.
@@ -254,6 +265,16 @@ public actor WindowsUsageRuntime {
                 self.pluginDiscoveryInitialized = true
             }
             let config = try self.configStore.loadOrCreateDefault()
+            self.statusMenuEntries = config.enabledProviders().compactMap { instanceID in
+                guard let provider = instanceID.firstPartyProvider else { return nil }
+                let metadata = ProviderDescriptorRegistry.descriptor(for: provider).metadata
+                let statusURL = metadata.statusPageURL ?? metadata.statusLinkURL
+                return WindowsTrayMenuEntry(
+                    providerID: provider.rawValue,
+                    title: metadata.displayName,
+                    statusURL: statusURL,
+                    disabledText: statusURL == nil ? "unavailable" : nil)
+            }
             let accountContext = try TokenAccountCLIContext(
                 selection: TokenAccountCLISelection(label: nil, index: nil, allAccounts: false),
                 config: config,
@@ -349,7 +370,9 @@ public actor WindowsUsageRuntime {
             }
         }
         let displayRows = rendered.isEmpty ? ["No providers are enabled"] : rendered
-        self.publisher(settings.hidePersonalInfo ? displayRows.map { LogRedactor.redact($0) } : displayRows)
+        let publishedRows = settings.hidePersonalInfo ? displayRows.map { LogRedactor.redact($0) } : displayRows
+        self.publisher(publishedRows)
+        self.combinedPublisher(publishedRows, self.statusMenuEntries)
     }
 
     public func shutdown() async {
