@@ -55,6 +55,9 @@ public actor WindowsUsageRuntime {
     private var queuedOptionalRefresh = false
     private var scheduleTask: Task<Void, Never>?
     private var sleepTask: Task<Void, Never>?
+    private var resetBoundaryRefreshTask: Task<Void, Never>?
+    private var scheduledResetBoundaryRefreshAt: Date?
+    private var attemptedResetBoundaryRefreshes: Set<Date> = []
     private var scheduleGeneration: UInt64 = 0
     private var scheduledDeadline: ContinuousClock.Instant?
     private let signalProvider: RefreshSignalProvider
@@ -130,6 +133,10 @@ public actor WindowsUsageRuntime {
         guard self.started else { return }
         self.scheduleGeneration &+= 1
         let generation = self.scheduleGeneration
+        // A cadence restart invalidates any boundary task created from the
+        // previous interval. Clear both the task and marker so a later pass
+        // can schedule an identical boundary again.
+        self.cancelResetBoundaryRefresh()
         let oldSchedule = self.scheduleTask
         self.scheduleTask = nil
         self.sleepTask?.cancel()
@@ -182,8 +189,14 @@ public actor WindowsUsageRuntime {
     }
 
     public func notePowerChanged() {
-        guard !self.shuttingDown,
-              self.refreshSettings.frequency != .manual,
+        guard !self.shuttingDown else { return }
+        // Battery Saver changes the effective automatic floor. Re-evaluate a
+        // pending reset-boundary refresh even when the normal scheduler is
+        // currently asleep or absent.
+        self.scheduleResetBoundaryRefreshIfNeeded(
+            snapshots: self.currentSnapshots(from: self.renderEntries),
+            now: Date())
+        guard self.refreshSettings.frequency != .manual,
               self.refreshSettings.frequency != .adaptiveAgentAware,
               self.sleepTask != nil
         else { return }
@@ -292,6 +305,9 @@ public actor WindowsUsageRuntime {
                 return
             }
             self.renderEntries = entries
+            self.scheduleResetBoundaryRefreshIfNeeded(
+                snapshots: self.currentSnapshots(from: entries),
+                now: Date())
             self.publishRenderEntries(settings: WindowsUsagePresentationSettings.load())
         } catch is CancellationError {
             return
@@ -304,6 +320,7 @@ public actor WindowsUsageRuntime {
                 return
             }
             self.renderEntries = [.row(message)]
+            self.scheduleResetBoundaryRefreshIfNeeded(snapshots: [:], now: Date())
             self.publishRenderEntries(settings: WindowsUsagePresentationSettings.load())
         }
     }
@@ -337,11 +354,14 @@ public actor WindowsUsageRuntime {
         let task = self.refreshTask
         task?.cancel()
         self.sleepTask?.cancel()
+        self.resetBoundaryRefreshTask?.cancel()
         let schedule = self.scheduleTask
         schedule?.cancel()
         if let schedule { await schedule.value }
         self.scheduleTask = nil
         self.sleepTask = nil
+        self.resetBoundaryRefreshTask = nil
+        self.scheduledResetBoundaryRefreshAt = nil
         if let task { await task.value }
         self.refreshTask = nil
         await CLIProbeSessionResetter.resetAll()
@@ -406,6 +426,127 @@ public actor WindowsUsageRuntime {
                 self.scheduledDeadline = nil
             }
         }
+    }
+
+    private static let resetBoundaryRefreshGraceSeconds: TimeInterval = 30
+    private static let resetBoundaryRefreshMinimumDelaySeconds: TimeInterval = 5
+
+    private struct ResetBoundaryRefreshCandidate {
+        let refreshAt: Date
+        let boundaryRefreshAt: Date
+    }
+
+    /// Mirrors UsageStore's reset-boundary heuristic for the Windows runtime.
+    /// Only snapshots from the just-completed pass are considered, so disabled
+    /// providers and stale presentations cannot create background work.
+    private func scheduleResetBoundaryRefreshIfNeeded(
+        snapshots: [ProviderInstanceID: UsageSnapshot],
+        now: Date)
+    {
+        let signals = self.signalProvider()
+        guard !self.shuttingDown,
+              let normalRefreshInterval = self.normalRefreshIntervalForHeuristics(now: now, signals: signals)
+        else {
+            self.cancelResetBoundaryRefresh()
+            return
+        }
+        let normalRefreshDate = now.addingTimeInterval(normalRefreshInterval)
+        let minimumAutomaticRefreshInterval: TimeInterval? = signals.lowPowerModeEnabled
+            ? 1800
+            : nil
+        let earliestAutomaticRefreshDate = minimumAutomaticRefreshInterval.map(now.addingTimeInterval)
+        let minimumDelayRefreshDate = now.addingTimeInterval(Self.resetBoundaryRefreshMinimumDelaySeconds)
+        let candidate = snapshots.values
+            .flatMap { snapshot in
+                ([snapshot.primary, snapshot.secondary, snapshot.tertiary]
+                    .compactMap { $0 }
+                    + (snapshot.extraRateWindows?.map(\.window) ?? []))
+                    .map { (snapshot, $0) }
+            }
+            .compactMap { snapshot, window -> ResetBoundaryRefreshCandidate? in
+                guard let resetsAt = window.resetsAt else { return nil }
+                let boundaryRefreshAt = resetsAt.addingTimeInterval(Self.resetBoundaryRefreshGraceSeconds)
+                guard !self.attemptedResetBoundaryRefreshes.contains(boundaryRefreshAt),
+                      boundaryRefreshAt <= normalRefreshDate,
+                      snapshot.updatedAt < boundaryRefreshAt
+                else { return nil }
+                let earliestAllowed = max(
+                    minimumDelayRefreshDate,
+                    earliestAutomaticRefreshDate ?? minimumDelayRefreshDate)
+                let refreshAt = max(boundaryRefreshAt, earliestAllowed)
+                guard refreshAt <= normalRefreshDate else { return nil }
+                return ResetBoundaryRefreshCandidate(
+                    refreshAt: refreshAt,
+                    boundaryRefreshAt: boundaryRefreshAt)
+            }
+            .min { $0.refreshAt < $1.refreshAt }
+        guard let candidate else {
+            self.cancelResetBoundaryRefresh()
+            return
+        }
+        if let scheduled = self.scheduledResetBoundaryRefreshAt,
+           abs(scheduled.timeIntervalSince(candidate.refreshAt)) < 1
+        {
+            return
+        }
+        self.cancelResetBoundaryRefresh()
+        self.scheduledResetBoundaryRefreshAt = candidate.refreshAt
+        let generation = self.scheduleGeneration
+        self.resetBoundaryRefreshTask = Task { [weak self] in
+            let delay = max(0, candidate.refreshAt.timeIntervalSince(Date()))
+            do { try await Task.sleep(for: .seconds(delay)) } catch { return }
+            guard let self, !Task.isCancelled else { return }
+            guard generation == self.scheduleGeneration,
+                  self.scheduledResetBoundaryRefreshAt == candidate.refreshAt
+            else { return }
+            self.scheduledResetBoundaryRefreshAt = nil
+            self.resetBoundaryRefreshTask = nil
+            guard self.refreshTask == nil, !self.shuttingDown else { return }
+            self.recordAttemptedResetBoundaryRefresh(candidate.boundaryRefreshAt)
+            await self.refresh()
+        }
+    }
+
+    private func cancelResetBoundaryRefresh() {
+        self.resetBoundaryRefreshTask?.cancel()
+        self.resetBoundaryRefreshTask = nil
+        self.scheduledResetBoundaryRefreshAt = nil
+    }
+
+    private func recordAttemptedResetBoundaryRefresh(_ boundaryRefreshAt: Date) {
+        self.attemptedResetBoundaryRefreshes.insert(boundaryRefreshAt)
+        if self.attemptedResetBoundaryRefreshes.count > 64,
+           let oldest = self.attemptedResetBoundaryRefreshes.min()
+        {
+            self.attemptedResetBoundaryRefreshes.remove(oldest)
+        }
+    }
+
+    private func normalRefreshIntervalForHeuristics(now: Date, signals: RefreshSignals) -> TimeInterval? {
+        let frequency = self.refreshSettings.frequency
+        let interval: TimeInterval
+        if let seconds = frequency.seconds {
+            interval = seconds
+        } else {
+            guard frequency == .adaptive else { return nil }
+            let delay = AdaptiveRefreshPolicyCore().nextDelay(for: .init(
+                now: now,
+                lastMenuOpenAt: self.lastMenuOpenedAt,
+                lastCodingActivityAt: nil,
+                lowPowerModeEnabled: signals.lowPowerModeEnabled,
+                thermalPressure: signals.thermalConstrained ? .constrained : .nominal)).delay
+            interval = TimeInterval(delay.components.seconds)
+        }
+        return signals.lowPowerModeEnabled ? max(interval, 1800) : interval
+    }
+
+    private func currentSnapshots(
+        from entries: [RenderEntry]) -> [ProviderInstanceID: UsageSnapshot]
+    {
+        Dictionary(uniqueKeysWithValues: entries.compactMap { entry in
+            guard case let .presentation(presentation) = entry else { return nil }
+            return (presentation.instanceID, presentation.snapshot)
+        })
     }
 
     private func fetchRows(
