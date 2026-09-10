@@ -52,6 +52,7 @@ public actor WindowsUsageRuntime {
     private let pluginApprovalStore: ProviderPluginApprovalStore
     private var publisher: RowPublisher
     private var refreshTask: Task<Void, Never>?
+    private var queuedOptionalRefresh = false
     private var scheduleTask: Task<Void, Never>?
     private var sleepTask: Task<Void, Never>?
     private var scheduledDeadline: ContinuousClock.Instant?
@@ -96,6 +97,25 @@ public actor WindowsUsageRuntime {
     public func presentationSettingsDidChange() async {
         guard !self.shuttingDown, !self.renderEntries.isEmpty else { return }
         self.publishRenderEntries(settings: WindowsUsagePresentationSettings.load())
+    }
+
+    /// Applies the optional-usage setting change. Disabling only re-renders
+    /// retained snapshots; enabling requests one refresh, coalesced behind an
+    /// in-flight refresh when necessary.
+    public func optionalUsageSettingsDidChange() async {
+        guard !self.shuttingDown else { return }
+        let showOptionalUsage = WindowsUsagePresentationSettings.load().showOptionalCreditsAndExtraUsage
+        guard showOptionalUsage else {
+            self.queuedOptionalRefresh = false
+            guard !self.renderEntries.isEmpty else { return }
+            self.publishRenderEntries(settings: WindowsUsagePresentationSettings.load())
+            return
+        }
+        if self.refreshTask != nil {
+            self.queuedOptionalRefresh = true
+            return
+        }
+        await self.refresh()
     }
 
     /// Performs the initial refresh and starts the selected cadence exactly once.
@@ -154,17 +174,29 @@ public actor WindowsUsageRuntime {
     /// credential and warm-session work.
     public func refresh() async {
         guard !self.shuttingDown, self.refreshTask == nil else { return }
-        let task: Task<Void, Never> = Task { [weak self] in
-            guard let self else { return }
-            await self.performRefresh()
+        repeat {
+            let task: Task<Void, Never> = Task { [weak self] in
+                guard let self else { return }
+                await self.performRefresh()
+            }
+            self.refreshTask = task
+            await task.value
+            self.refreshTask = nil
+            guard !self.shuttingDown,
+                  self.queuedOptionalRefresh,
+                  WindowsUsagePresentationSettings.load().showOptionalCreditsAndExtraUsage
+            else {
+                self.queuedOptionalRefresh = false
+                break
+            }
+            self.queuedOptionalRefresh = false
         }
-        self.refreshTask = task
-        await task.value
-        self.refreshTask = nil
+        while !self.shuttingDown
     }
 
     private func performRefresh() async {
         let presentationSettings = WindowsUsagePresentationSettings.load()
+        let fetchOptionalUsage = presentationSettings.showOptionalCreditsAndExtraUsage
         do {
             if !self.pluginDiscoveryInitialized {
                 _ = UserProviderPluginRegistry.refresh()
@@ -221,6 +253,11 @@ public actor WindowsUsageRuntime {
                 entries.append(.row("Windows activity scanner unavailable; automatic refresh disabled"))
             }
             guard !self.shuttingDown else { return }
+            let latestOptionalUsage = WindowsUsagePresentationSettings.load().showOptionalCreditsAndExtraUsage
+            if !fetchOptionalUsage && latestOptionalUsage {
+                self.queuedOptionalRefresh = true
+                return
+            }
             self.renderEntries = entries
             self.publishRenderEntries(settings: WindowsUsagePresentationSettings.load())
         } catch is CancellationError {
@@ -228,6 +265,11 @@ public actor WindowsUsageRuntime {
         } catch {
             let message = "CodexBar: \(error.localizedDescription)"
             guard !self.shuttingDown else { return }
+            let latestOptionalUsage = WindowsUsagePresentationSettings.load().showOptionalCreditsAndExtraUsage
+            if !fetchOptionalUsage && latestOptionalUsage {
+                self.queuedOptionalRefresh = true
+                return
+            }
             self.renderEntries = [.row(message)]
             self.publishRenderEntries(settings: WindowsUsagePresentationSettings.load())
         }
@@ -257,6 +299,7 @@ public actor WindowsUsageRuntime {
     public func shutdown() async {
         guard !self.shuttingDown else { return }
         self.shuttingDown = true
+        self.queuedOptionalRefresh = false
         let task = self.refreshTask
         task?.cancel()
         self.sleepTask?.cancel()

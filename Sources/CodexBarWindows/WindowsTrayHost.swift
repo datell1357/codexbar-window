@@ -10,6 +10,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
     public typealias RefreshHandler = @Sendable () -> Void
     public typealias PowerChangedHandler = @Sendable () -> Void
     public typealias PresentationSettingsChangedHandler = @Sendable () -> Void
+    public typealias OptionalUsageSettingsChangedHandler = @Sendable () -> Void
     public typealias QuitHandler = @Sendable () -> Void
 
     private static let wakeMessage = UINT(WM_APP) + 1
@@ -17,6 +18,8 @@ public final class WindowsTrayHost: @unchecked Sendable {
     private static let quitCommand = UINT_PTR(0x7002)
     private static let usageBarsShowUsedCommand = UINT_PTR(0x7003)
     private static let resetTimesShowAbsoluteCommand = UINT_PTR(0x7004)
+    private static let hidePersonalInfoCommand = UINT_PTR(0x7005)
+    private static let showOptionalCreditsAndExtraUsageCommand = UINT_PTR(0x7006)
     private static let className = Array("CodexBar.WindowsTrayHost".utf16) + [0]
     private static let taskbarCreated: UINT = {
         "TaskbarCreated".withCString(encodedAs: UTF16.self) { RegisterWindowMessageW($0) }
@@ -26,6 +29,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
     private let onPowerChanged: PowerChangedHandler
     private let onMenuOpen: @Sendable () -> Void
     private let onPresentationSettingsChanged: PresentationSettingsChangedHandler
+    private let onOptionalUsageSettingsChanged: OptionalUsageSettingsChangedHandler
     private let onQuit: QuitHandler
     private let presentationDefaults: UserDefaults
     private let mailboxLock = NSLock()
@@ -40,13 +44,15 @@ public final class WindowsTrayHost: @unchecked Sendable {
         onQuit: @escaping QuitHandler,
         onPowerChanged: @escaping PowerChangedHandler = {},
         onMenuOpen: @escaping @Sendable () -> Void = {},
-        onPresentationSettingsChanged: @escaping PresentationSettingsChangedHandler = {})
+        onPresentationSettingsChanged: @escaping PresentationSettingsChangedHandler = {},
+        onOptionalUsageSettingsChanged: @escaping OptionalUsageSettingsChangedHandler = {})
     {
         self.onRefresh = onRefresh
         self.onQuit = onQuit
         self.onPowerChanged = onPowerChanged
         self.onMenuOpen = onMenuOpen
         self.onPresentationSettingsChanged = onPresentationSettingsChanged
+        self.onOptionalUsageSettingsChanged = onOptionalUsageSettingsChanged
         self.presentationDefaults = UserDefaults(suiteName: WindowsRefreshSettings.suiteName) ?? .standard
     }
 
@@ -155,13 +161,26 @@ public final class WindowsTrayHost: @unchecked Sendable {
         if !rows.isEmpty { _ = AppendMenuW(menu, UINT(MF_SEPARATOR), 0, nil) }
         let showUsed = self.presentationDefaults.object(forKey: "usageBarsShowUsed") as? Bool ?? false
         let showAbsolute = self.presentationDefaults.object(forKey: "resetTimesShowAbsolute") as? Bool ?? false
+        let hidePersonalInfo = self.presentationDefaults.object(forKey: "hidePersonalInfo") as? Bool ?? false
+        let showOptionalCreditsAndExtraUsage = self.presentationDefaults
+            .object(forKey: "showOptionalCreditsAndExtraUsage") as? Bool ?? true
         let showUsedFlags = UINT(MF_STRING) | (showUsed ? UINT(MF_CHECKED) : 0)
         let showAbsoluteFlags = UINT(MF_STRING) | (showAbsolute ? UINT(MF_CHECKED) : 0)
+        let hidePersonalInfoFlags = UINT(MF_STRING) | (hidePersonalInfo ? UINT(MF_CHECKED) : 0)
+        let showOptionalCreditsAndExtraUsageFlags = UINT(MF_STRING)
+            | (showOptionalCreditsAndExtraUsage ? UINT(MF_CHECKED) : 0)
         "Show used usage".withCString(encodedAs: UTF16.self) {
             _ = AppendMenuW(menu, showUsedFlags, Self.usageBarsShowUsedCommand, $0)
         }
         "Show reset times as clock".withCString(encodedAs: UTF16.self) {
             _ = AppendMenuW(menu, showAbsoluteFlags, Self.resetTimesShowAbsoluteCommand, $0)
+        }
+        "Hide personal info".withCString(encodedAs: UTF16.self) {
+            _ = AppendMenuW(menu, hidePersonalInfoFlags, Self.hidePersonalInfoCommand, $0)
+        }
+        "Show credits + extra usage".withCString(encodedAs: UTF16.self) {
+            _ = AppendMenuW(
+                menu, showOptionalCreditsAndExtraUsageFlags, Self.showOptionalCreditsAndExtraUsageCommand, $0)
         }
         _ = AppendMenuW(menu, UINT(MF_SEPARATOR), 0, nil)
         "Refresh".withCString(encodedAs: UTF16.self) { _ = AppendMenuW(menu, UINT(MF_STRING), Self.refreshCommand, $0) }
@@ -188,6 +207,12 @@ public final class WindowsTrayHost: @unchecked Sendable {
         let current = self.presentationDefaults.object(forKey: key) as? Bool ?? false
         self.presentationDefaults.set(!current, forKey: key)
         self.onPresentationSettingsChanged()
+    }
+
+    private func toggleOptionalUsageSetting() {
+        let current = self.presentationDefaults.object(forKey: "showOptionalCreditsAndExtraUsage") as? Bool ?? true
+        self.presentationDefaults.set(!current, forKey: "showOptionalCreditsAndExtraUsage")
+        self.onOptionalUsageSettingsChanged()
     }
 
     private static let windowProc: WNDPROC = { hwnd, message, wParam, lParam in
@@ -225,6 +250,8 @@ public final class WindowsTrayHost: @unchecked Sendable {
             case Self.quitCommand: host.invokeQuit()
             case Self.usageBarsShowUsedCommand: host.togglePresentationSetting(forKey: "usageBarsShowUsed")
             case Self.resetTimesShowAbsoluteCommand: host.togglePresentationSetting(forKey: "resetTimesShowAbsolute")
+            case Self.hidePersonalInfoCommand: host.togglePresentationSetting(forKey: "hidePersonalInfo")
+            case Self.showOptionalCreditsAndExtraUsageCommand: host.toggleOptionalUsageSetting()
             default: break
             }
             return 0
