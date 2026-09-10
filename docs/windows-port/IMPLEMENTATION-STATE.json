@@ -18,12 +18,14 @@
   ],
   "automation_id": "codexbar-windows-qa",
   "interval_minutes": 10,
-  "current_lanes": [],
-  "static_qa_status": "AGY049_056_057_SCOPED_APPROVE_FULL_PARITY_INCOMPLETE",
+  "current_lanes": [
+    "tray_preferences_081"
+  ],
+  "static_qa_status": "SCOPED_REVIEWS_THROUGH_080_FULL_PARITY_INCOMPLETE",
   "windows_runtime_status": "NOT_RUN_BY_USER_INSTRUCTION",
   "completion_claim": false,
-  "next": "Publish scoped Antigravity session changes. Next reconcile feature ledger with reviewed implementation evidence; all569 candidates remain revalidation-only, not product denominator. Full UI/provider/platform parity remains unfinished. Static only.",
-  "last_batch": "antigravity-session-049-056-057",
+  "next": "078-080 text presentation partial slice independently approved statically. Publish scoped files; 081 mapping display preferences and native menu controls. Whole parity incomplete.",
+  "last_batch": "presentation-078-080",
   "completed_source_changes": [
     "Windows package dependency wiring (partial)",
     "QuickJS watchdog Windows monotonic clock",

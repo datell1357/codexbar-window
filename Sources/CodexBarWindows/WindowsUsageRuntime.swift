@@ -3,6 +3,18 @@ import CodexBarCore
 import AdaptiveRefreshCore
 import Foundation
 
+public struct WindowsUsagePresentationSettings: Sendable {
+    public let hidePersonalInfo: Bool
+    public let showOptionalCreditsAndExtraUsage: Bool
+
+    public static func load(from defaults: UserDefaults? = nil) -> Self {
+        let defaults = defaults ?? UserDefaults(suiteName: WindowsRefreshSettings.suiteName) ?? .standard
+        return Self(
+            hidePersonalInfo: defaults.object(forKey: "hidePersonalInfo") as? Bool ?? false,
+            showOptionalCreditsAndExtraUsage: defaults.object(forKey: "showOptionalCreditsAndExtraUsage") as? Bool ?? true)
+    }
+}
+
 /// Owns the Windows tray's provider refresh lifecycle.  Win32 callbacks only
 /// enqueue work; all provider I/O stays on this actor and is serialized.
 public actor WindowsUsageRuntime {
@@ -44,6 +56,7 @@ public actor WindowsUsageRuntime {
     private var refreshSettings: WindowsRefreshSettings
     private var pluginDiscoveryInitialized = false
     private var shuttingDown = false
+    private var presentations: [ProviderInstanceID: WindowsUsagePresentation] = [:]
 
     public init(
         configStore: CodexBarConfigStore = CodexBarConfigStore(),
@@ -138,6 +151,7 @@ public actor WindowsUsageRuntime {
     }
 
     private func performRefresh() async {
+        let presentationSettings = WindowsUsagePresentationSettings.load()
         do {
             if !self.pluginDiscoveryInitialized {
                 _ = UserProviderPluginRegistry.refresh()
@@ -149,6 +163,7 @@ public actor WindowsUsageRuntime {
                 config: config,
                 verbose: false)
             var rows: [String] = []
+            self.presentations.removeAll(keepingCapacity: true)
             if let errorCode = self.signalProvider().powerStateError {
                 rows.append("Windows power status unavailable (error \(errorCode))")
             }
@@ -157,13 +172,14 @@ public actor WindowsUsageRuntime {
                 guard let provider = instanceID.firstPartyProvider else {
                     rows.append(contentsOf: await self.fetchPluginRows(
                         instanceID: instanceID,
-                        config: config))
+                        config: config,
+                        presentationSettings: presentationSettings))
                     continue
                 }
                 if provider == .codex {
                     let configuredAccounts = try? accountContext.resolvedAccounts(for: provider)
                     if let configuredAccounts, !configuredAccounts.isEmpty {
-                        rows.append(contentsOf: await self.fetchRows(provider: provider, context: accountContext))
+                        rows.append(contentsOf: await self.fetchRows(provider: provider, context: accountContext, presentationSettings: presentationSettings))
                     } else {
                         let projection = accountContext.visibleCodexAccounts()
                         let active = projection.visibleAccounts.first {
@@ -172,10 +188,11 @@ public actor WindowsUsageRuntime {
                         rows.append(contentsOf: await self.fetchRows(
                             provider: provider,
                             context: accountContext,
-                            codexVisibleAccount: active))
+                            codexVisibleAccount: active,
+                            presentationSettings: presentationSettings))
                     }
                 } else {
-                    rows.append(contentsOf: await self.fetchRows(provider: provider, context: accountContext))
+                    rows.append(contentsOf: await self.fetchRows(provider: provider, context: accountContext, presentationSettings: presentationSettings))
                 }
             }
             if self.refreshSettings.frequency == .adaptiveAgentAware
@@ -183,11 +200,13 @@ public actor WindowsUsageRuntime {
                 rows.append("Windows activity scanner unavailable; automatic refresh disabled")
             }
             guard !self.shuttingDown else { return }
-            self.publisher(rows.isEmpty ? ["No providers are enabled"] : rows)
+            let displayRows = rows.isEmpty ? ["No providers are enabled"] : rows
+            self.publisher(presentationSettings.hidePersonalInfo ? displayRows.map { LogRedactor.redact($0) } : displayRows)
         } catch is CancellationError {
             return
         } catch {
-            self.publisher(["CodexBar: \(error.localizedDescription)"])
+            let message = "CodexBar: \(error.localizedDescription)"
+            self.publisher(presentationSettings.hidePersonalInfo ? [LogRedactor.redact(message)] : [message])
         }
     }
 
@@ -268,7 +287,8 @@ public actor WindowsUsageRuntime {
     private func fetchRows(
         provider: UsageProvider,
         context: TokenAccountCLIContext,
-        codexVisibleAccount: CodexVisibleAccount? = nil) async -> [String]
+        codexVisibleAccount: CodexVisibleAccount? = nil,
+        presentationSettings: WindowsUsagePresentationSettings) async -> [String]
     {
         do {
             let account: ProviderTokenAccount? = if codexVisibleAccount == nil {
@@ -293,8 +313,9 @@ public actor WindowsUsageRuntime {
             let fetchContext = ProviderFetchContext(
                 runtime: .app,
                 sourceMode: source,
-                includeCredits: true,
-                requiresOptionalUsageCompleteness: true,
+                includeCredits: presentationSettings.showOptionalCreditsAndExtraUsage,
+                includeOptionalUsage: presentationSettings.showOptionalCreditsAndExtraUsage,
+                requiresOptionalUsageCompleteness: presentationSettings.showOptionalCreditsAndExtraUsage,
                 webTimeout: 60,
                 webDebugDumpHTML: false,
                 verbose: false,
@@ -319,14 +340,11 @@ public actor WindowsUsageRuntime {
                 } else {
                     result.usage
                 }
-                let window = labeledUsage.primary ?? labeledUsage.secondary
-                guard let window else { return [metadata.displayName] }
-                let value = UsageFormatter.usageLine(remaining: window.remainingPercent, used: window.usedPercent, showUsed: false)
-                let resetText = UsageFormatter.resetLine(for: window, style: .countdown)
-                let reset = resetText.map { " · \($0)" } ?? ""
                 let accountLabel = labeledUsage.accountEmail(for: provider)
-                let title = accountLabel.map { "\(metadata.displayName) [\($0)]" } ?? metadata.displayName
-                return ["\(title): \(value)\(reset)".trimmingCharacters(in: .whitespaces)]
+                let title = presentationSettings.hidePersonalInfo ? metadata.displayName : accountLabel.map { "\(metadata.displayName) [\($0)]" } ?? metadata.displayName
+                let presentation = WindowsUsagePresentation(instanceID: provider.instanceID, provider: provider, title: title, result: result, snapshot: labeledUsage, hidePersonalInfo: presentationSettings.hidePersonalInfo, showOptionalUsage: presentationSettings.showOptionalCreditsAndExtraUsage)
+                self.presentations[provider.instanceID] = presentation
+                return presentation.rows()
             case let .failure(error):
                 return ["\(provider.rawValue): \(error.localizedDescription)"]
             }
@@ -337,7 +355,7 @@ public actor WindowsUsageRuntime {
         }
     }
 
-    private func fetchPluginRows(instanceID: ProviderInstanceID, config: CodexBarConfig) async -> [String] {
+    private func fetchPluginRows(instanceID: ProviderInstanceID, config: CodexBarConfig, presentationSettings: WindowsUsagePresentationSettings) async -> [String] {
         guard let plugin = UserProviderPluginRegistry.plugin(for: instanceID) else {
             return ["\(instanceID.rawValue): plugin not found"]
         }
@@ -354,16 +372,11 @@ public actor WindowsUsageRuntime {
                 instanceCookieResolver: UserProviderPluginCookieBroker.resolver(
                     browserDetection: self.browserDetection))
             try Task.checkCancellation()
-            guard let window = snapshot.primary ?? snapshot.secondary else {
-                return [plugin.manifest.name]
-            }
-            let value = UsageFormatter.usageLine(
-                remaining: window.remainingPercent,
-                used: window.usedPercent,
-                showUsed: false)
             let accountLabel = snapshot.identity(for: instanceID)?.accountEmail
-            let title = accountLabel.map { "\(plugin.manifest.name) [\($0)]" } ?? plugin.manifest.name
-            return ["\(title): \(value)"]
+            let title = presentationSettings.hidePersonalInfo ? plugin.manifest.name : accountLabel.map { "\(plugin.manifest.name) [\($0)]" } ?? plugin.manifest.name
+            let presentation = WindowsUsagePresentation(instanceID: instanceID, provider: nil, title: title, result: nil, snapshot: snapshot, hidePersonalInfo: presentationSettings.hidePersonalInfo, showOptionalUsage: presentationSettings.showOptionalCreditsAndExtraUsage)
+            self.presentations[instanceID] = presentation
+            return presentation.rows()
         } catch is CancellationError {
             return []
         } catch {
