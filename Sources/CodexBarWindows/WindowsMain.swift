@@ -17,8 +17,10 @@ private final class WindowsTrayApplication: @unchecked Sendable {
             guard let self else { return }
             Task { await self.runtime.refresh() }
         },
-        onQuit: {
-            // The message loop returns before run() drains the runtime.
+        onQuit: {},
+        onMenuOpen: { [weak self] in
+            guard let self else { return }
+            Task { await self.runtime.noteMenuOpened() }
         })
 
     init() {
@@ -31,7 +33,7 @@ private final class WindowsTrayApplication: @unchecked Sendable {
             await runtime.setPublisher { [weak host] rows in
                 host?.postRows(rows)
             }
-            await runtime.refresh()
+            await runtime.start()
         }
         do {
             try host.run()

@@ -19,6 +19,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
     }()
 
     private let onRefresh: RefreshHandler
+    private let onMenuOpen: @Sendable () -> Void
     private let onQuit: QuitHandler
     private let mailboxLock = NSLock()
     private var mailboxRows: [String] = []
@@ -27,9 +28,14 @@ public final class WindowsTrayHost: @unchecked Sendable {
     private var iconInstalled = false
     private var quitInvoked = false
 
-    public init(onRefresh: @escaping RefreshHandler, onQuit: @escaping QuitHandler) {
+    public init(
+        onRefresh: @escaping RefreshHandler,
+        onQuit: @escaping QuitHandler,
+        onMenuOpen: @escaping @Sendable () -> Void = {})
+    {
         self.onRefresh = onRefresh
         self.onQuit = onQuit
+        self.onMenuOpen = onMenuOpen
     }
 
     /// Blocks on the Win32 message loop until the host receives WM_CLOSE or Quit.
@@ -124,6 +130,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
 
     private func popup() {
         guard let hwnd = self.window, let menu = CreatePopupMenu() else { return }
+        self.onMenuOpen()
         self.mailboxLock.lock()
         let rows = self.mailboxRows
         self.mailboxLock.unlock()

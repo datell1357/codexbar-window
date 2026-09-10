@@ -276,7 +276,7 @@ let package = Package(
         #if os(Windows)
         targets.append(.executableTarget(
             name: "CodexBarWindows",
-            dependencies: ["CodexBarCore"],
+            dependencies: ["CodexBarCore", "AdaptiveRefreshCore"],
             path: "Sources/CodexBarWindows",
             swiftSettings: [.enableUpcomingFeature("StrictConcurrency")],
             linkerSettings: sqlite3LinkerSettings + [
