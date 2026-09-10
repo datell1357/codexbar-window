@@ -22,6 +22,9 @@ public final class WindowsTrayHost: @unchecked Sendable {
     private static let hidePersonalInfoCommand = UINT_PTR(0x7005)
     private static let showOptionalCreditsAndExtraUsageCommand = UINT_PTR(0x7006)
     private static let refreshFrequencyCommandBase = UINT_PTR(0x7010)
+    private static let lowPowerModeOffCommand = UINT_PTR(0x7020)
+    private static let lowPowerModeOnCommand = UINT_PTR(0x7021)
+    private static let lowPowerModeAutomaticCommand = UINT_PTR(0x7022)
     private static let className = Array("CodexBar.WindowsTrayHost".utf16) + [0]
     private static let taskbarCreated: UINT = {
         "TaskbarCreated".withCString(encodedAs: UTF16.self) { RegisterWindowMessageW($0) }
@@ -188,6 +191,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
                 menu, showOptionalCreditsAndExtraUsageFlags, Self.showOptionalCreditsAndExtraUsageCommand, $0)
         }
         self.appendRefreshFrequencyMenu(to: menu)
+        self.appendLowPowerModeMenu(to: menu)
         _ = AppendMenuW(menu, UINT(MF_SEPARATOR), 0, nil)
         "Refresh".withCString(encodedAs: UTF16.self) { _ = AppendMenuW(menu, UINT(MF_STRING), Self.refreshCommand, $0) }
         "Quit".withCString(encodedAs: UTF16.self) { _ = AppendMenuW(menu, UINT(MF_STRING), Self.quitCommand, $0) }
@@ -275,6 +279,50 @@ public final class WindowsTrayHost: @unchecked Sendable {
         self.onRefreshSettingsChanged()
     }
 
+    private static func lowPowerModeCommand(for preference: WindowsRefreshSettings.LowPowerModePreference) -> UINT_PTR {
+        switch preference {
+        case .off: Self.lowPowerModeOffCommand
+        case .on: Self.lowPowerModeOnCommand
+        case .automatic: Self.lowPowerModeAutomaticCommand
+        }
+    }
+
+    private func appendLowPowerModeMenu(to menu: HMENU) {
+        guard let submenu = CreatePopupMenu() else { return }
+        let settings = WindowsRefreshSettings.load(userDefaults: self.presentationDefaults)
+        let preferences: [(WindowsRefreshSettings.LowPowerModePreference, String)] = [
+            (.off, "Off"),
+            (.on, "On"),
+            (.automatic, "Automatic")
+        ]
+        for (preference, label) in preferences {
+            let checked = settings.lowPowerModePreference == preference ? UINT(MF_CHECKED) : 0
+            let appended = label.withCString(encodedAs: UTF16.self) {
+                AppendMenuW(
+                    submenu,
+                    UINT(MF_STRING) | checked,
+                    Self.lowPowerModeCommand(for: preference),
+                    $0)
+            }
+            guard appended != 0 else {
+                _ = DestroyMenu(submenu)
+                return
+            }
+        }
+        let title = Array("Background low power mode".utf16) + [0]
+        let attached = title.withUnsafeBufferPointer { text in
+            AppendMenuW(menu, UINT(MF_STRING | MF_POPUP), UINT_PTR(UInt(bitPattern: submenu)), text.baseAddress)
+        }
+        if attached == 0 { _ = DestroyMenu(submenu) }
+    }
+
+    private func selectLowPowerModePreference(_ preference: WindowsRefreshSettings.LowPowerModePreference) {
+        let current = WindowsRefreshSettings.load(userDefaults: self.presentationDefaults).lowPowerModePreference
+        guard current != preference else { return }
+        self.presentationDefaults.set(preference.rawValue, forKey: "backgroundWorkLowPowerModePreference")
+        self.onRefreshSettingsChanged()
+    }
+
     private static let windowProc: WNDPROC = { hwnd, message, wParam, lParam in
         guard let hwnd else { return DefWindowProcW(hwnd, message, wParam, lParam) }
         let pointer = GetWindowLongPtrW(hwnd, Int32(GWLP_USERDATA))
@@ -312,6 +360,9 @@ public final class WindowsTrayHost: @unchecked Sendable {
             case Self.resetTimesShowAbsoluteCommand: host.togglePresentationSetting(forKey: "resetTimesShowAbsolute")
             case Self.hidePersonalInfoCommand: host.togglePresentationSetting(forKey: "hidePersonalInfo")
             case Self.showOptionalCreditsAndExtraUsageCommand: host.toggleOptionalUsageSetting()
+            case Self.lowPowerModeOffCommand: host.selectLowPowerModePreference(.off)
+            case Self.lowPowerModeOnCommand: host.selectLowPowerModePreference(.on)
+            case Self.lowPowerModeAutomaticCommand: host.selectLowPowerModePreference(.automatic)
             case let command where command >= Self.refreshFrequencyCommandBase
                                   && command <= Self.refreshFrequencyCommandBase + 7:
                 let index = command - Self.refreshFrequencyCommandBase
