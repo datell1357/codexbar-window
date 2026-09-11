@@ -30,6 +30,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
     private static let quotaWarningNotificationsCommand = UINT_PTR(0x7008)
     private static let quotaWarningSoundCommand = UINT_PTR(0x7009)
     private static let quotaWarningSettingsCommand = UINT_PTR(0x700A)
+    private static let quotaWarningOnScreenAlertCommand = UINT_PTR(0x700B)
     private static let providerQuotaWarningCommandBase = UINT_PTR(0x7400)
     private static let refreshFrequencyCommandBase = UINT_PTR(0x7010)
     private static let lowPowerModeOffCommand = UINT_PTR(0x7020)
@@ -94,6 +95,9 @@ public final class WindowsTrayHost: @unchecked Sendable {
     private var providerEditorExpectedRequest: ProviderEditorExpectedRequest?
     private var providerEditorMailbox: ProviderEditorMailbox?
     private var window: HWND?
+    // Accessed only on the tray UI thread. The overlay owns its HWND and is
+    // dismissed before the tray window is destroyed.
+    private var quotaWarningOverlay: WindowsQuotaWarningOverlay?
     private var runReserved = false
     private var iconInstalled = false
     private var quitInvoked = false
@@ -171,6 +175,8 @@ public final class WindowsTrayHost: @unchecked Sendable {
             self.mailboxSessionQuotaNotifications.removeAll(keepingCapacity: false)
             self.mailboxQuotaWarningNotifications.removeAll(keepingCapacity: false)
             self.mailboxLock.unlock()
+            self.quotaWarningOverlay?.dismiss()
+            self.quotaWarningOverlay = nil
             self.removeIcon(hwnd)
             if let powerNotification {
                 if UnregisterPowerSettingNotification(powerNotification) == 0 {
@@ -434,6 +440,8 @@ public final class WindowsTrayHost: @unchecked Sendable {
             .object(forKey: "quotaWarningNotificationsEnabled") as? Bool ?? false
         let quotaWarningSoundEnabled = self.presentationDefaults
             .object(forKey: "quotaWarningSoundEnabled") as? Bool ?? true
+        let quotaWarningOnScreenAlertEnabled = self.presentationDefaults
+            .object(forKey: "quotaWarningOnScreenAlertEnabled") as? Bool ?? false
         let showUsedFlags = UINT(MF_STRING) | (showUsed ? UINT(MF_CHECKED) : 0)
         let showAbsoluteFlags = UINT(MF_STRING) | (showAbsolute ? UINT(MF_CHECKED) : 0)
         let hidePersonalInfoFlags = UINT(MF_STRING) | (hidePersonalInfo ? UINT(MF_CHECKED) : 0)
@@ -445,6 +453,8 @@ public final class WindowsTrayHost: @unchecked Sendable {
             | (quotaWarningNotificationsEnabled ? UINT(MF_CHECKED) : 0)
         let quotaWarningSoundFlags = UINT(MF_STRING)
             | (quotaWarningSoundEnabled ? UINT(MF_CHECKED) : 0)
+        let quotaWarningOnScreenAlertFlags = UINT(MF_STRING)
+            | (quotaWarningOnScreenAlertEnabled ? UINT(MF_CHECKED) : 0)
         "Show used usage".withCString(encodedAs: UTF16.self) {
             _ = AppendMenuW(menu, showUsedFlags, Self.usageBarsShowUsedCommand, $0)
         }
@@ -466,6 +476,9 @@ public final class WindowsTrayHost: @unchecked Sendable {
         }
         "Quota threshold notification sound".withCString(encodedAs: UTF16.self) {
             _ = AppendMenuW(menu, quotaWarningSoundFlags, Self.quotaWarningSoundCommand, $0)
+        }
+        "On-screen quota threshold alerts".withCString(encodedAs: UTF16.self) {
+            _ = AppendMenuW(menu, quotaWarningOnScreenAlertFlags, Self.quotaWarningOnScreenAlertCommand, $0)
         }
         "Quota threshold settings...".withCString(encodedAs: UTF16.self) {
             _ = AppendMenuW(menu, UINT(MF_STRING), Self.quotaWarningSettingsCommand, $0)
@@ -502,6 +515,8 @@ public final class WindowsTrayHost: @unchecked Sendable {
     }
 
     private func invokeQuit() {
+        self.quotaWarningOverlay?.dismiss()
+        self.quotaWarningOverlay = nil
         self.mailboxLock.lock()
         guard !self.quitInvoked else {
             self.mailboxLock.unlock()
@@ -548,6 +563,18 @@ public final class WindowsTrayHost: @unchecked Sendable {
             self.mailboxLock.lock()
             self.mailboxQuotaWarningNotifications.removeAll(keepingCapacity: false)
             self.mailboxLock.unlock()
+            self.quotaWarningOverlay?.dismiss()
+            self.quotaWarningOverlay = nil
+        }
+    }
+
+    private func toggleQuotaWarningOnScreenAlertSetting() {
+        let current = self.presentationDefaults.object(forKey: "quotaWarningOnScreenAlertEnabled") as? Bool ?? false
+        let enabled = !current
+        self.presentationDefaults.set(enabled, forKey: "quotaWarningOnScreenAlertEnabled")
+        if !enabled {
+            self.quotaWarningOverlay?.dismiss()
+            self.quotaWarningOverlay = nil
         }
     }
 
@@ -701,6 +728,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
         case Self.sessionQuotaNotificationsCommand: self.toggleSessionQuotaNotificationsSetting()
         case Self.quotaWarningNotificationsCommand: self.toggleQuotaWarningNotificationsSetting()
         case Self.quotaWarningSoundCommand: self.toggleQuotaWarningSoundSetting()
+        case Self.quotaWarningOnScreenAlertCommand: self.toggleQuotaWarningOnScreenAlertSetting()
         case Self.quotaWarningSettingsCommand: self.editQuotaWarningSettings()
         case Self.changelogCommandBase - 1: self.toggleChangelogSetting()
         case Self.lowPowerModeOffCommand: self.selectLowPowerModePreference(.off)
@@ -944,9 +972,17 @@ public final class WindowsTrayHost: @unchecked Sendable {
               self.iconInstalled,
               let hwnd = self.window
         else { return }
+        let overlayEnabled = self.presentationDefaults
+            .object(forKey: "quotaWarningOnScreenAlertEnabled") as? Bool ?? false
         let hidePersonalInfo = self.presentationDefaults.object(forKey: "hidePersonalInfo") as? Bool ?? false
         let soundEnabled = self.presentationDefaults.object(forKey: "quotaWarningSoundEnabled") as? Bool ?? true
         let copy = notification.copy(hidePersonalInfo: hidePersonalInfo)
+        if overlayEnabled {
+            if self.quotaWarningOverlay == nil { self.quotaWarningOverlay = WindowsQuotaWarningOverlay() }
+            self.quotaWarningOverlay?.show(title: copy.title, body: copy.body, owner: hwnd)
+        } else {
+            self.quotaWarningOverlay?.dismiss()
+        }
         var data = NOTIFYICONDATAW()
         data.cbSize = DWORD(MemoryLayout<NOTIFYICONDATAW>.size)
         data.hWnd = hwnd
