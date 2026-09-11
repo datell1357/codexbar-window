@@ -505,6 +505,11 @@ public actor WindowsUsageRuntime {
                 selection: TokenAccountCLISelection(label: nil, index: nil, allAccounts: false),
                 config: config,
                 verbose: false)
+            // Capture Codex reconciliation once for this refresh. Every fetch,
+            // settings/environment projection, and history decision must share
+            // this same snapshot so an account switch cannot mix owners.
+            let codexAccountContext: CodexAccountContextSnapshot? = enabledIDs.contains(UsageProvider.codex.instanceID)
+                ? accountContext.codexAccountContextSnapshot() : nil
             var entries: [RenderEntry] = []
             self.presentations.removeAll(keepingCapacity: true)
             if let errorCode = self.signalProvider().powerStateError {
@@ -522,12 +527,14 @@ public actor WindowsUsageRuntime {
                     continue
                 }
                 if provider == .codex {
+                    guard let codexAccountContext else { continue }
                     let configuredAccounts = try? accountContext.resolvedAccounts(for: provider)
                     if let configuredAccounts, !configuredAccounts.isEmpty {
                         let fetched = await self.fetchRows(
                             provider: provider,
                             context: accountContext,
                             config: config,
+                            codexAccountContext: codexAccountContext,
                             presentationSettings: presentationSettings,
                             quotaWarningGeneration: refreshQuotaWarningGeneration,
                             predictivePaceWarningGeneration: refreshPredictivePaceWarningGeneration,
@@ -535,7 +542,7 @@ public actor WindowsUsageRuntime {
                         if let presentation = self.presentations[provider.instanceID] { entries.append(.presentation(presentation)) }
                         else { entries.append(contentsOf: fetched.map(RenderEntry.row)) }
                     } else {
-                        let projection = accountContext.visibleCodexAccounts()
+                        let projection = codexAccountContext.visibleAccounts
                         let active = projection.visibleAccounts.first {
                             $0.id == projection.activeVisibleAccountID
                         }
@@ -544,6 +551,7 @@ public actor WindowsUsageRuntime {
                             context: accountContext,
                             config: config,
                             codexVisibleAccount: active,
+                            codexAccountContext: active.flatMap { codexAccountContext.selecting(activeSource: $0.selectionSource) },
                             presentationSettings: presentationSettings,
                             quotaWarningGeneration: refreshQuotaWarningGeneration,
                             predictivePaceWarningGeneration: refreshPredictivePaceWarningGeneration,
@@ -556,6 +564,7 @@ public actor WindowsUsageRuntime {
                         provider: provider,
                         context: accountContext,
                         config: config,
+                        codexAccountContext: nil,
                         presentationSettings: presentationSettings,
                         quotaWarningGeneration: refreshQuotaWarningGeneration,
                         predictivePaceWarningGeneration: refreshPredictivePaceWarningGeneration,
@@ -574,7 +583,8 @@ public actor WindowsUsageRuntime {
                 let environment = accountContext.environment(
                     base: ProcessInfo.processInfo.environment,
                     provider: provider,
-                    account: account)
+                    account: account,
+                    codexAccountContext: provider == .codex ? codexAccountContext : nil)
                 let presentation = self.presentations[instanceID]
                 let providerConfig = config.providerConfig(for: instanceID)
                 let digest: (String?) -> String? = { value in
@@ -851,10 +861,46 @@ public actor WindowsUsageRuntime {
         }
     }
 
+    private func codexHistoricalOwnership(
+        snapshot: UsageSnapshot,
+        codexVisibleAccount: CodexVisibleAccount?,
+        codexAccountContext: CodexAccountContextSnapshot) -> CodexHistoricalOwnershipContext
+    {
+        let source = codexVisibleAccount?.selectionSource
+            ?? codexAccountContext.resolvedActiveSource.resolvedSource
+        let selectedContext = codexAccountContext.selecting(activeSource: source)
+        let identity = selectedContext.identity(for: source)
+        let normalizedEmail = CodexIdentityResolver.normalizeEmail(
+            codexVisibleAccount?.email ?? snapshot.accountEmail(for: .codex))
+            ?? (if case let .emailOnly(email) = identity {
+                CodexIdentityResolver.normalizeEmail(email)
+            } else {
+                nil
+            })
+        let resolvedIdentity: CodexIdentity = switch identity {
+        case .unresolved:
+            if case .liveSystem = source, let normalizedEmail {
+                .emailOnly(normalizedEmail: normalizedEmail)
+            } else {
+                .unresolved
+            }
+        default:
+            identity
+        }
+        return CodexHistoricalOwnershipContext.resolve(
+            identity: resolvedIdentity,
+            normalizedEmail: normalizedEmail,
+            currentWeeklyResetAt: CodexProviderDescriptor.predictivePaceSourceWindows(snapshot: snapshot).weekly?.resetsAt,
+            snapshot: selectedContext.reconciliationSnapshot,
+            projection: selectedContext.visibleAccounts,
+            includeVisibleAccounts: codexVisibleAccount != nil)
+    }
+
     private func recordCodexHistoricalSampleIfNeeded(
         provider: UsageProvider,
         snapshot: UsageSnapshot,
         codexVisibleAccount: CodexVisibleAccount?,
+        codexAccountContext: CodexAccountContextSnapshot?,
         generation: UInt64) async
     {
         guard provider == .codex else { return }
@@ -863,22 +909,20 @@ public actor WindowsUsageRuntime {
               generation == self.historicalTrackingGeneration,
               self.latestEnabledProviderIDs?.contains(UsageProvider.codex.instanceID) == true
         else { return }
-        guard let owner = PredictivePaceWarningOwnerIdentityCore.discriminator(.init(
-            provider: .codex,
-            snapshotAccountID: snapshot.identity?.accountID,
-            snapshotEmail: snapshot.accountEmail(for: .codex),
-            codexSelectedWorkspaceAccountID: codexVisibleAccount?.workspaceAccountID,
-            codexSelectedEmail: codexVisibleAccount?.email,
-            tokenAccountID: nil,
-            claudeResolvedDiscriminator: nil)),
+        guard let codexAccountContext else { return }
+        let ownership = self.codexHistoricalOwnership(
+            snapshot: snapshot,
+            codexVisibleAccount: codexVisibleAccount,
+            codexAccountContext: codexAccountContext)
+        guard let owner = ownership.canonicalKey,
               let weekly = CodexProviderDescriptor.predictivePaceSourceWindows(snapshot: snapshot).weekly,
               weekly.resetsAt != nil, weekly.windowMinutes != nil
         else {
             // Missing identity/window is not evidence that the current owner disappeared.
             return
         }
-        // Legacy and adjacent-account records are intentionally excluded here; continuity
-        // migration is a separate scoped task.
+        // Persist only canonical records; legacy continuity is admitted only when
+        // the captured ownership context proves it belongs to this account.
         _ = await self.historicalUsageHistoryStore.recordCodexWeekly(
             window: weekly, sampledAt: snapshot.updatedAt, accountKey: owner)
         guard !self.shuttingDown,
@@ -888,9 +932,9 @@ public actor WindowsUsageRuntime {
         else { return }
         let dataset = await self.historicalUsageHistoryStore.loadCodexDataset(
             canonicalAccountKey: owner,
-            canonicalEmailHashKey: nil,
-            legacyEmailHash: nil,
-            hasAdjacentMultiAccountVeto: true)
+            canonicalEmailHashKey: ownership.hasAdjacentEmailScopeAmbiguity ? nil : ownership.canonicalEmailHashKey,
+            legacyEmailHash: ownership.hasAdjacentEmailScopeAmbiguity ? nil : ownership.historicalLegacyEmailHash,
+            hasAdjacentMultiAccountVeto: ownership.hasAdjacentMultiAccountVeto)
         guard !self.shuttingDown,
               generation == self.historicalTrackingGeneration,
               self.latestEnabledProviderIDs?.contains(UsageProvider.codex.instanceID) == true,
@@ -904,6 +948,7 @@ public actor WindowsUsageRuntime {
         provider: UsageProvider, snapshot: UsageSnapshot,
         predictivePaceWarningGeneration: UInt64,
         codexVisibleAccount: CodexVisibleAccount?, tokenAccount: ProviderTokenAccount?,
+        codexAccountContext: CodexAccountContextSnapshot?,
         environment: [String: String],
         claudeAccountUUIDBefore: String?, claudeAccountUUIDAfter: String?,
         strategyKind: ProviderFetchKind?, oauthHistoryOwnerIdentifier: String?)
@@ -919,17 +964,27 @@ public actor WindowsUsageRuntime {
             }
             return
         }
-        let resolved = provider == .claude ? self.quotaAccountDiscriminator(
+        let resolved = provider == .codex ? codexAccountContext.flatMap {
+            self.codexHistoricalOwnership(
+                snapshot: snapshot,
+                codexVisibleAccount: codexVisibleAccount,
+                codexAccountContext: $0).canonicalKey
+        } : self.quotaAccountDiscriminator(
             provider: provider, snapshot: snapshot, codexVisibleAccount: codexVisibleAccount,
             tokenAccount: tokenAccount, environment: environment,
             strategyKind: strategyKind, oauthHistoryOwnerIdentifier: oauthHistoryOwnerIdentifier,
-            claudeAccountUUIDBefore: claudeAccountUUIDBefore, claudeAccountUUIDAfter: claudeAccountUUIDAfter) : nil
-        guard let owner = PredictivePaceWarningOwnerIdentityCore.discriminator(.init(
-            provider: provider, snapshotAccountID: snapshot.identity?.accountID,
-            snapshotEmail: snapshot.accountEmail(for: provider),
-            codexSelectedWorkspaceAccountID: codexVisibleAccount?.workspaceAccountID,
-            codexSelectedEmail: codexVisibleAccount?.email, tokenAccountID: tokenAccount?.id,
-            claudeResolvedDiscriminator: resolved)) else {
+            claudeAccountUUIDBefore: claudeAccountUUIDBefore, claudeAccountUUIDAfter: claudeAccountUUIDAfter)
+        let owner: String? = if provider == .codex {
+            resolved
+        } else {
+            PredictivePaceWarningOwnerIdentityCore.discriminator(.init(
+                provider: provider, snapshotAccountID: snapshot.identity?.accountID,
+                snapshotEmail: snapshot.accountEmail(for: provider),
+                codexSelectedWorkspaceAccountID: nil,
+                codexSelectedEmail: nil, tokenAccountID: tokenAccount?.id,
+                claudeResolvedDiscriminator: resolved))
+        }
+        guard let owner else {
             // An incomplete identity is not evidence that a prior account disappeared.
             // Preserve the episode until a later successful snapshot supplies stable ownership.
             return
@@ -1262,6 +1317,7 @@ public actor WindowsUsageRuntime {
         context: TokenAccountCLIContext,
         config: CodexBarConfig,
         codexVisibleAccount: CodexVisibleAccount? = nil,
+        codexAccountContext: CodexAccountContextSnapshot? = nil,
         presentationSettings: WindowsUsagePresentationSettings,
         quotaWarningGeneration: UInt64,
         predictivePaceWarningGeneration: UInt64,
@@ -1274,15 +1330,21 @@ public actor WindowsUsageRuntime {
                 nil
             }
             let sourceOverride = codexVisibleAccount?.selectionSource
+            let retainedCodexContext = codexAccountContext.map {
+                if let sourceOverride { return $0.selecting(activeSource: sourceOverride) }
+                return $0
+            }
             let env = context.environment(
                 base: ProcessInfo.processInfo.environment,
                 provider: provider,
                 account: account,
-                codexActiveSourceOverride: sourceOverride)
+                codexActiveSourceOverride: sourceOverride,
+                codexAccountContext: retainedCodexContext)
             let settings = context.settingsSnapshot(
                 for: provider,
                 account: account,
-                codexActiveSourceOverride: sourceOverride)
+                codexActiveSourceOverride: sourceOverride,
+                codexAccountContext: retainedCodexContext)
             let source = context.effectiveSourceMode(
                 base: context.preferredSourceMode(for: provider),
                 provider: provider,
@@ -1338,10 +1400,12 @@ public actor WindowsUsageRuntime {
                     provider: provider,
                     snapshot: result.usage,
                     codexVisibleAccount: codexVisibleAccount,
+                    codexAccountContext: retainedCodexContext,
                     generation: historicalTrackingGeneration)
                 self.evaluatePredictivePaceWarnings(provider: provider, snapshot: result.usage,
                     predictivePaceWarningGeneration: predictivePaceWarningGeneration,
                     codexVisibleAccount: codexVisibleAccount, tokenAccount: account,
+                    codexAccountContext: retainedCodexContext,
                     environment: env,
                     claudeAccountUUIDBefore: claudeAccountUUIDBefore,
                     claudeAccountUUIDAfter: provider == .claude ? ClaudeAccountProfile.accountUuid(environment: env) : nil,
