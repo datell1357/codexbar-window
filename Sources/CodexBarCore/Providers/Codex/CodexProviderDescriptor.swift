@@ -203,6 +203,16 @@ public enum CodexProviderDescriptor {
         })
     }
 
+    /// Supplies the source windows used by predictive pace warnings without applying presentation rules.
+    public static func predictivePaceSourceWindows(
+        snapshot: UsageSnapshot) -> PredictivePaceWarningCandidateCore.SourceWindows
+    {
+        let windows = self.windowsByLane(snapshot: snapshot)
+        return PredictivePaceWarningCandidateCore.SourceWindows(
+            session: windows[.session],
+            weekly: windows[.weekly])
+    }
+
     private static func visibleWindows(snapshot: UsageSnapshot, now: Date) -> [RateWindow] {
         let slotted = [
             self.classified(snapshot.primary, fallback: .session),
