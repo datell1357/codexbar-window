@@ -20,21 +20,16 @@
   "interval_minutes": 10,
   "current_lanes": [
     {
-      "id": "provider_host_wire_140",
-      "status": "REPAIR_IN_PROGRESS",
-      "scope": "Terminal load state, retained provider title, modal reentrancy, typed mailbox and notification gating"
-    },
-    {
-      "id": "provider_host_review_141",
-      "status": "STATIC_REVIEW_IN_PROGRESS",
-      "scope": "Review host async integration"
+      "id": "quota_overlay_144",
+      "status": "IMPLEMENTING",
+      "scope": "Native transient quota overlay controller only; no host changes"
     }
   ],
-  "static_qa_status": "SCOPED_REVIEW_133_APPROVED_FULL_PARITY_INCOMPLETE",
+  "static_qa_status": "SCOPED_REVIEW_141_APPROVED_FULL_PARITY_INCOMPLETE",
   "windows_runtime_status": "NOT_RUN_BY_USER_INSTRUCTION",
   "completion_claim": false,
-  "next": "Publish reviewed persistence/dialog slice after stage-error fix, finish host140 repairs and independent141 review.",
-  "last_batch": "provider-override-draft-132-133",
+  "next": "Review overlay144 then connect setting and threshold delivery; provider editor host approved statically.",
+  "last_batch": "provider-host-integration-140-143",
   "completed_source_changes": [
     "Windows package dependency wiring (partial)",
     "QuickJS watchdog Windows monotonic clock",

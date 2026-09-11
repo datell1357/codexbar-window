@@ -45,6 +45,20 @@ private final class WindowsTrayApplication: @unchecked Sendable {
         onQuotaWarningSettingsChanged: { [weak self] settings in
             guard let self else { return }
             Task { await self.runtime.quotaWarningSettingsDidChange(settings) }
+        },
+        onProviderQuotaWarningLoad: { [weak self] requestID, providerID in
+            guard let self else { return }
+            Task {
+                let result = await self.runtime.loadProviderQuotaWarningEditor(providerID: providerID)
+                self.host.postProviderQuotaWarningLoad(requestID: requestID, providerID: providerID, result: result)
+            }
+        },
+        onProviderQuotaWarningSave: { [weak self] requestID, providerID, patch in
+            guard let self else { return }
+            Task {
+                let result = await self.runtime.saveProviderQuotaWarnings(providerID: providerID, patch: patch)
+                self.host.postProviderQuotaWarningSave(requestID: requestID, providerID: providerID, result: result)
+            }
         })
 
     init() {

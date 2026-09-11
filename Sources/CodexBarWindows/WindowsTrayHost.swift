@@ -1,6 +1,7 @@
 #if os(Windows)
 import Foundation
 import WinSDK
+import CodexBarCore
 
 /// Minimal Win32 tray host.  The host owns every HWND/HMENU on the thread running
 /// `run`; callers may publish rows from any thread through `postRows`.
@@ -14,6 +15,8 @@ public final class WindowsTrayHost: @unchecked Sendable {
     public typealias RefreshSettingsChangedHandler = @Sendable () -> Void
     public typealias SessionQuotaNotificationSettingsChangedHandler = @Sendable () -> Void
     public typealias QuotaWarningSettingsChangedHandler = @Sendable (WindowsQuotaWarningSettings) -> Void
+    public typealias ProviderQuotaWarningLoadHandler = @Sendable (UInt64, ProviderInstanceID) -> Void
+    public typealias ProviderQuotaWarningSaveHandler = @Sendable (UInt64, ProviderInstanceID, WindowsProviderQuotaWarningPatch) -> Void
     public typealias QuitHandler = @Sendable () -> Void
 
     private static let wakeMessage = UINT(WM_APP) + 1
@@ -27,6 +30,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
     private static let quotaWarningNotificationsCommand = UINT_PTR(0x7008)
     private static let quotaWarningSoundCommand = UINT_PTR(0x7009)
     private static let quotaWarningSettingsCommand = UINT_PTR(0x700A)
+    private static let providerQuotaWarningCommandBase = UINT_PTR(0x7400)
     private static let refreshFrequencyCommandBase = UINT_PTR(0x7010)
     private static let lowPowerModeOffCommand = UINT_PTR(0x7020)
     private static let lowPowerModeOnCommand = UINT_PTR(0x7021)
@@ -52,6 +56,8 @@ public final class WindowsTrayHost: @unchecked Sendable {
     private let onRefreshSettingsChanged: RefreshSettingsChangedHandler
     private let onSessionQuotaNotificationSettingsChanged: SessionQuotaNotificationSettingsChangedHandler
     private let onQuotaWarningSettingsChanged: QuotaWarningSettingsChangedHandler
+    private let onProviderQuotaWarningLoad: ProviderQuotaWarningLoadHandler
+    private let onProviderQuotaWarningSave: ProviderQuotaWarningSaveHandler
     private let onQuit: QuitHandler
     private let presentationDefaults: UserDefaults
     private let mailboxLock = NSLock()
@@ -62,6 +68,31 @@ public final class WindowsTrayHost: @unchecked Sendable {
     private var popupStatusCommands: [UINT_PTR: String] = [:]
     private var popupDashboardCommands: [UINT_PTR: String] = [:]
     private var popupChangelogCommands: [UINT_PTR: String] = [:]
+    private var popupProviderQuotaWarningCommands: [UINT_PTR: ProviderInstanceID] = [:]
+    private var popupProviderQuotaWarningNames: [ProviderInstanceID: String] = [:]
+    private enum ProviderEditorPhase {
+        case idle
+        case loading(UInt64, ProviderInstanceID, String)
+        case editing(UInt64, ProviderInstanceID, String)
+        case saving(UInt64, ProviderInstanceID, String, WindowsProviderQuotaWarningPatch)
+    }
+    private var providerEditorPhase: ProviderEditorPhase = .idle
+    private var nextProviderEditorRequestID: UInt64 = 1
+    private enum ProviderEditorRequestKind: Equatable { case load, save }
+    private struct ProviderEditorExpectedRequest {
+        let requestID: UInt64
+        let providerID: ProviderInstanceID
+        let kind: ProviderEditorRequestKind
+    }
+    private struct ProviderEditorMailbox {
+        let requestID: UInt64
+        let providerID: ProviderInstanceID
+        let kind: ProviderEditorRequestKind
+        let result: WindowsProviderQuotaWarningLoadResult?
+        let saveResult: WindowsProviderQuotaWarningSaveResult?
+    }
+    private var providerEditorExpectedRequest: ProviderEditorExpectedRequest?
+    private var providerEditorMailbox: ProviderEditorMailbox?
     private var window: HWND?
     private var runReserved = false
     private var iconInstalled = false
@@ -76,7 +107,9 @@ public final class WindowsTrayHost: @unchecked Sendable {
         onOptionalUsageSettingsChanged: @escaping OptionalUsageSettingsChangedHandler = {},
         onRefreshSettingsChanged: @escaping RefreshSettingsChangedHandler = {},
         onSessionQuotaNotificationSettingsChanged: @escaping SessionQuotaNotificationSettingsChangedHandler = {},
-        onQuotaWarningSettingsChanged: @escaping QuotaWarningSettingsChangedHandler = {})
+        onQuotaWarningSettingsChanged: @escaping QuotaWarningSettingsChangedHandler = {},
+        onProviderQuotaWarningLoad: @escaping ProviderQuotaWarningLoadHandler = { _, _ in },
+        onProviderQuotaWarningSave: @escaping ProviderQuotaWarningSaveHandler = { _, _, _ in })
     {
         self.onRefresh = onRefresh
         self.onQuit = onQuit
@@ -87,6 +120,8 @@ public final class WindowsTrayHost: @unchecked Sendable {
         self.onRefreshSettingsChanged = onRefreshSettingsChanged
         self.onSessionQuotaNotificationSettingsChanged = onSessionQuotaNotificationSettingsChanged
         self.onQuotaWarningSettingsChanged = onQuotaWarningSettingsChanged
+        self.onProviderQuotaWarningLoad = onProviderQuotaWarningLoad
+        self.onProviderQuotaWarningSave = onProviderQuotaWarningSave
         self.presentationDefaults = UserDefaults(suiteName: WindowsRefreshSettings.suiteName) ?? .standard
     }
 
@@ -131,6 +166,8 @@ public final class WindowsTrayHost: @unchecked Sendable {
         var powerNotification: HPOWERNOTIFY?
         defer {
             self.mailboxLock.lock()
+            self.providerEditorExpectedRequest = nil
+            self.providerEditorMailbox = nil
             self.mailboxSessionQuotaNotifications.removeAll(keepingCapacity: false)
             self.mailboxQuotaWarningNotifications.removeAll(keepingCapacity: false)
             self.mailboxLock.unlock()
@@ -221,6 +258,40 @@ public final class WindowsTrayHost: @unchecked Sendable {
         if let hwnd { PostMessageW(hwnd, Self.wakeMessage, 0, 0) }
     }
 
+    public func postProviderQuotaWarningLoad(
+        requestID: UInt64, providerID: ProviderInstanceID, result: WindowsProviderQuotaWarningLoadResult)
+    {
+        self.mailboxLock.lock()
+        guard !self.quitInvoked else { self.mailboxLock.unlock(); return }
+        guard let expected = self.providerEditorExpectedRequest,
+              expected.requestID == requestID,
+              expected.providerID == providerID,
+              expected.kind == .load,
+              self.providerEditorMailbox == nil else { self.mailboxLock.unlock(); return }
+        self.providerEditorMailbox = .init(
+            requestID: requestID, providerID: providerID, kind: .load, result: result, saveResult: nil)
+        let hwnd = self.window
+        self.mailboxLock.unlock()
+        if let hwnd { PostMessageW(hwnd, Self.wakeMessage, 0, 0) }
+    }
+
+    public func postProviderQuotaWarningSave(
+        requestID: UInt64, providerID: ProviderInstanceID, result: WindowsProviderQuotaWarningSaveResult)
+    {
+        self.mailboxLock.lock()
+        guard !self.quitInvoked else { self.mailboxLock.unlock(); return }
+        guard let expected = self.providerEditorExpectedRequest,
+              expected.requestID == requestID,
+              expected.providerID == providerID,
+              expected.kind == .save,
+              self.providerEditorMailbox == nil else { self.mailboxLock.unlock(); return }
+        self.providerEditorMailbox = .init(
+            requestID: requestID, providerID: providerID, kind: .save, result: nil, saveResult: result)
+        let hwnd = self.window
+        self.mailboxLock.unlock()
+        if let hwnd { PostMessageW(hwnd, Self.wakeMessage, 0, 0) }
+    }
+
     private func installIcon(_ hwnd: HWND) throws {
         var data = NOTIFYICONDATAW()
         data.cbSize = DWORD(MemoryLayout<NOTIFYICONDATAW>.size)
@@ -257,6 +328,8 @@ public final class WindowsTrayHost: @unchecked Sendable {
         self.popupStatusCommands.removeAll(keepingCapacity: true)
         self.popupDashboardCommands.removeAll(keepingCapacity: true)
         self.popupChangelogCommands.removeAll(keepingCapacity: true)
+        self.popupProviderQuotaWarningCommands.removeAll(keepingCapacity: true)
+        self.popupProviderQuotaWarningNames.removeAll(keepingCapacity: true)
         for (index, row) in rows.enumerated() {
             let title = Array(row.utf16) + [0]
             title.withUnsafeBufferPointer { text in
@@ -328,6 +401,28 @@ public final class WindowsTrayHost: @unchecked Sendable {
                 menu, UINT(MF_STRING | MF_POPUP), UINT_PTR(UInt(bitPattern: changelogMenu)), title) != 0
             if !attached { _ = DestroyMenu(changelogMenu) }
         }
+        let providerEntries = menuEntries.reduce(into: [ProviderInstanceID: WindowsTrayMenuEntry]()) { result, entry in
+            guard let id = ProviderInstanceID(rawValue: entry.providerID), result[id] == nil else { return }
+            result[id] = entry
+        }
+        if !providerEntries.isEmpty, let providerMenu = CreatePopupMenu() {
+            var appended = true
+            let editorBusy: Bool = { if case .idle = self.providerEditorPhase { return false }; return true }()
+            for (index, pair) in providerEntries.sorted(by: { $0.key.rawValue < $1.key.rawValue }).enumerated() {
+                let command = Self.providerQuotaWarningCommandBase + UINT_PTR(index)
+                self.popupProviderQuotaWarningCommands[command] = pair.key
+                self.popupProviderQuotaWarningNames[pair.key] = pair.value.title
+                let title = Array((pair.value.title + "…").utf16) + [0]
+                let flags = UINT(MF_STRING) | (editorBusy ? UINT(MF_GRAYED) : 0)
+                if title.withUnsafeBufferPointer({ AppendMenuW(providerMenu, flags, command, $0.baseAddress) }) == 0 {
+                    appended = false; break
+                }
+            }
+            let title = Array("Provider quota warnings".utf16) + [0]
+            if !appended || title.withUnsafeBufferPointer({ AppendMenuW(menu, UINT(MF_STRING | MF_POPUP), UINT_PTR(UInt(bitPattern: providerMenu)), $0.baseAddress) }) == 0 {
+                _ = DestroyMenu(providerMenu)
+            }
+        }
         let showUsed = self.presentationDefaults.object(forKey: "usageBarsShowUsed") as? Bool ?? false
         let showAbsolute = self.presentationDefaults.object(forKey: "resetTimesShowAbsolute") as? Bool ?? false
         let hidePersonalInfo = self.presentationDefaults.object(forKey: "hidePersonalInfo") as? Bool ?? false
@@ -391,6 +486,8 @@ public final class WindowsTrayHost: @unchecked Sendable {
             self.popupStatusCommands.removeAll(keepingCapacity: true)
             self.popupDashboardCommands.removeAll(keepingCapacity: true)
             self.popupChangelogCommands.removeAll(keepingCapacity: true)
+            self.popupProviderQuotaWarningCommands.removeAll(keepingCapacity: true)
+            self.popupProviderQuotaWarningNames.removeAll(keepingCapacity: true)
             return
         }
         let command = TrackPopupMenu(menu, UINT(TPM_RIGHTBUTTON | TPM_RETURNCMD), point.x, point.y, 0, hwnd, nil)
@@ -399,6 +496,8 @@ public final class WindowsTrayHost: @unchecked Sendable {
         self.popupStatusCommands.removeAll(keepingCapacity: true)
         self.popupDashboardCommands.removeAll(keepingCapacity: true)
         self.popupChangelogCommands.removeAll(keepingCapacity: true)
+        self.popupProviderQuotaWarningCommands.removeAll(keepingCapacity: true)
+        self.popupProviderQuotaWarningNames.removeAll(keepingCapacity: true)
         _ = PostMessageW(hwnd, WM_NULL, 0, 0)
     }
 
@@ -409,6 +508,9 @@ public final class WindowsTrayHost: @unchecked Sendable {
             return
         }
         self.quitInvoked = true
+        self.providerEditorPhase = .idle
+        self.providerEditorExpectedRequest = nil
+        self.providerEditorMailbox = nil
         self.mailboxSessionQuotaNotifications.removeAll(keepingCapacity: false)
         self.mailboxQuotaWarningNotifications.removeAll(keepingCapacity: false)
         self.mailboxLock.unlock()
@@ -585,6 +687,10 @@ public final class WindowsTrayHost: @unchecked Sendable {
             self.openStatusPage(url)
             return
         }
+        if let providerID = self.popupProviderQuotaWarningCommands[command] {
+            self.beginProviderQuotaWarningLoad(providerID)
+            return
+        }
         switch command {
         case Self.refreshCommand: self.onRefresh()
         case Self.quitCommand: self.invokeQuit()
@@ -608,6 +714,100 @@ public final class WindowsTrayHost: @unchecked Sendable {
             self.selectRefreshFrequency(frequency)
         default: break
         }
+    }
+
+    private func beginProviderQuotaWarningLoad(_ providerID: ProviderInstanceID) {
+        guard case .idle = self.providerEditorPhase, !self.quitInvoked else { return }
+        let requestID = self.nextProviderEditorRequestID
+        self.nextProviderEditorRequestID &+= 1
+        self.providerEditorPhase = .loading(
+            requestID, providerID, self.popupProviderQuotaWarningNames[providerID] ?? providerID.rawValue)
+        self.mailboxLock.lock()
+        self.providerEditorExpectedRequest = .init(requestID: requestID, providerID: providerID, kind: .load)
+        self.providerEditorMailbox = nil
+        self.mailboxLock.unlock()
+        self.onProviderQuotaWarningLoad(requestID, providerID)
+    }
+
+    /// Consumes provider-editor replies on the tray UI thread only.
+    private func drainProviderQuotaWarningEditor() {
+        self.mailboxLock.lock()
+        let mailbox = self.providerEditorMailbox
+        if mailbox != nil {
+            self.providerEditorMailbox = nil
+            self.providerEditorExpectedRequest = nil
+        }
+        self.mailboxLock.unlock()
+        guard let mailbox else { return }
+        switch self.providerEditorPhase {
+        case let .loading(requestID, providerID, providerName)
+            where requestID == mailbox.requestID
+                && providerID == mailbox.providerID
+                && mailbox.kind == .load:
+            guard let result = mailbox.result else { return }
+            switch result {
+            case let .loaded(snapshot):
+                guard snapshot.providerID == providerID, !self.quitInvoked, let hwnd = self.window, IsWindow(hwnd) != 0 else {
+                    self.providerEditorPhase = .idle; return
+                }
+                self.providerEditorPhase = .editing(requestID, providerID, providerName)
+                let patch = WindowsProviderQuotaWarningDialog.show(
+                    owner: hwnd, providerName: providerName,
+                    session: snapshot.session, weekly: snapshot.weekly)
+                self.providerEditorPhase = .idle
+                guard !self.quitInvoked else { return }
+                guard let patch, !patch.isUnchanged else { return }
+                self.beginProviderQuotaWarningSave(providerID, providerName: providerName, patch: patch)
+            case .providerMissing: self.providerEditorPhase = .idle; self.showProviderEditorNotice("Provider is no longer enabled.")
+            case .shuttingDown: self.providerEditorPhase = .idle
+            case let .failed(message): self.providerEditorPhase = .idle; self.showProviderEditorNotice("Could not load provider quota warnings: \(message)")
+            }
+        case let .saving(requestID, providerID, providerName, patch)
+            where requestID == mailbox.requestID
+                && providerID == mailbox.providerID
+                && mailbox.kind == .save:
+            guard let result = mailbox.saveResult else { return }
+            switch result {
+            case let .saved(snapshot), let .unchanged(snapshot):
+                guard snapshot.providerID == providerID else { self.providerEditorPhase = .idle; return }
+                self.mailboxLock.lock(); self.mailboxQuotaWarningNotifications.removeAll(keepingCapacity: false); self.mailboxLock.unlock()
+                self.providerEditorPhase = .idle
+            case .providerMissing: self.providerEditorPhase = .idle; self.showProviderEditorNotice("Provider is no longer enabled.")
+            case .shuttingDown: self.providerEditorPhase = .idle
+            case let .failed(message):
+                guard let hwnd = self.window else { return }
+                let retry = "Could not save provider quota warnings: \(message)\n\nRetry?"
+                let text = Array(retry.utf16) + [0]; let caption = Array("CodexBar".utf16) + [0]
+                let choice = text.withUnsafeBufferPointer { body in
+                    caption.withUnsafeBufferPointer { title in MessageBoxW(hwnd, body.baseAddress, title.baseAddress, UINT(MB_RETRYCANCEL | MB_ICONWARNING)) }
+                }
+                guard !self.quitInvoked else { self.providerEditorPhase = .idle; return }
+                if choice == IDRETRY { self.beginProviderQuotaWarningSave(providerID, providerName: providerName, patch: patch) }
+                else { self.providerEditorPhase = .idle }
+            }
+        default: break
+        }
+    }
+
+    private func beginProviderQuotaWarningSave(
+        _ providerID: ProviderInstanceID, providerName: String, patch: WindowsProviderQuotaWarningPatch)
+    {
+        guard !self.quitInvoked else { return }
+        let requestID = self.nextProviderEditorRequestID
+        self.nextProviderEditorRequestID &+= 1
+        self.providerEditorPhase = .saving(requestID, providerID, providerName, patch)
+        self.mailboxLock.lock()
+        self.providerEditorExpectedRequest = .init(requestID: requestID, providerID: providerID, kind: .save)
+        self.providerEditorMailbox = nil
+        self.mailboxQuotaWarningNotifications.removeAll(keepingCapacity: false)
+        self.mailboxLock.unlock()
+        self.onProviderQuotaWarningSave(requestID, providerID, patch)
+    }
+
+    private func showProviderEditorNotice(_ message: String) {
+        guard let hwnd = self.window else { return }
+        let body = Array(message.utf16) + [0]; let title = Array("CodexBar".utf16) + [0]
+        _ = body.withUnsafeBufferPointer { text in title.withUnsafeBufferPointer { caption in MessageBoxW(hwnd, text.baseAddress, caption.baseAddress, UINT(MB_OK | MB_ICONWARNING)) } }
     }
 
     private func openStatusPage(_ rawURL: String) {
@@ -642,8 +842,9 @@ public final class WindowsTrayHost: @unchecked Sendable {
         }
         let host = Unmanaged<WindowsTrayHost>.fromOpaque(UnsafeRawPointer(bitPattern: UInt(pointer))!).takeUnretainedValue()
         if message == Self.wakeMessage {
+            host.drainProviderQuotaWarningEditor()
             host.drainSessionQuotaNotifications()
-            host.drainQuotaWarningNotifications()
+            if case .editing = host.providerEditorPhase {} else if case .saving = host.providerEditorPhase {} else { host.drainQuotaWarningNotifications() }
             return 0
         }
         if message == Self.taskbarCreated {
@@ -699,6 +900,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
     }
 
     private func drainQuotaWarningNotifications() {
+        guard case .idle = self.providerEditorPhase else { return }
         guard self.iconInstalled,
               self.presentationDefaults.object(forKey: "quotaWarningNotificationsEnabled") as? Bool ?? false
         else {
