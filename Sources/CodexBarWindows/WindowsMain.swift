@@ -60,6 +60,23 @@ private final class WindowsTrayApplication: @unchecked Sendable {
                 self.host.postProviderQuotaWarningSave(requestID: requestID, providerID: providerID, result: result)
             }
         },
+        onCodexWebSettingsLoad: { [weak self] requestID in
+            guard let self else { return }
+            Task {
+                let result = await self.runtime.loadCodexWebSettings()
+                self.host.postCodexWebSettingsLoad(requestID: requestID, result: result)
+            }
+        },
+        onCodexWebSettingsSave: { [weak self] requestID, patch in
+            guard let self else { return }
+            Task {
+                let result = await self.runtime.saveCodexWebSettings(patch: patch)
+                self.host.postCodexWebSettingsSave(requestID: requestID, result: result)
+                if case .saved = result {
+                    await self.runtime.refresh()
+                }
+            }
+        },
         onPredictivePaceWarningSettingsChanged: { [weak self] settings in
             guard let self else { return }
             Task { await self.runtime.predictivePaceWarningSettingsDidChange(settings) }

@@ -71,6 +71,7 @@ public actor WindowsUsageRuntime {
     private var startupConnectivityRetryNeeded = false
     private var queuedOptionalRefresh = false
     private var queuedPredictiveSettingsRefresh = false
+    private var queuedCodexWebSettingsRefresh = false
     private var scheduleTask: Task<Void, Never>?
     private var sleepTask: Task<Void, Never>?
     private var resetBoundaryRefreshTask: Task<Void, Never>?
@@ -218,6 +219,94 @@ public actor WindowsUsageRuntime {
         } catch {
             return .failed("load: \(error.localizedDescription)")
         }
+    }
+
+    public func loadCodexWebSettings() -> WindowsCodexWebSettingsLoadResult {
+        guard !self.shuttingDown else { return .shuttingDown }
+        do {
+            guard let config = try self.configStore.load(),
+                  config.enabledProviders().contains(ProviderInstanceID.codex),
+                  let providerConfig = config.providerConfig(for: ProviderInstanceID.codex)
+            else { return .providerMissing }
+            return .loaded(Self.codexWebSettingsSnapshot(from: providerConfig))
+        } catch {
+            return .failed("load: \(error.localizedDescription)")
+        }
+    }
+
+    public func saveCodexWebSettings(
+        patch: WindowsCodexWebSettingsPatch) -> WindowsCodexWebSettingsSaveResult
+    {
+        guard !self.shuttingDown else { return .shuttingDown }
+        do {
+            guard var config = try self.configStore.load(),
+                  config.enabledProviders().contains(ProviderInstanceID.codex),
+                  var providerConfig = config.providerConfig(for: ProviderInstanceID.codex)
+            else { return .providerMissing }
+
+            let current = Self.codexWebSettingsSnapshot(from: providerConfig)
+            let sourceMode = patch.sourceMode ?? current.sourceMode
+            let cookieSource = patch.cookieSource ?? current.cookieSource
+            let resultingHeader: String?
+            switch patch.manualHeader {
+            case .unchanged:
+                // Preserve the stored value exactly. Older configs may contain a
+                // malformed header; unrelated source/cookie edits must not erase it.
+                resultingHeader = providerConfig.cookieHeader
+            case let .replace(raw):
+                guard let normalized = Self.usableCookieHeader(raw) else {
+                    return .failed("save: manual cookie header is invalid")
+                }
+                resultingHeader = normalized
+            }
+
+            guard !(sourceMode == .web && cookieSource == .off) else {
+                return .failed("save: web source requires cookies")
+            }
+            guard cookieSource != .manual || Self.usableCookieHeader(resultingHeader) != nil else {
+                return .failed("save: manual cookie source requires a stored header or replacement")
+            }
+
+            let resulting = WindowsCodexWebSettingsSnapshot(
+                sourceMode: sourceMode,
+                cookieSource: cookieSource,
+                hasStoredManualHeader: Self.usableCookieHeader(resultingHeader) != nil)
+            let storedSource: ProviderSourceMode? = sourceMode == .auto ? nil : sourceMode
+            let storedCookieSource: ProviderCookieSource? = cookieSource == .auto ? nil : cookieSource
+            let headerChanged = providerConfig.cookieHeader != resultingHeader
+            let settingsChanged = providerConfig.source != storedSource ||
+                providerConfig.cookieSource != storedCookieSource || headerChanged
+            guard settingsChanged else {
+                return .unchanged(current)
+            }
+            providerConfig.source = storedSource
+            providerConfig.cookieSource = storedCookieSource
+            providerConfig.cookieHeader = resultingHeader
+            config.setProviderConfig(providerConfig)
+            try self.configStore.save(config)
+            self.latestProviderConfigs[ProviderInstanceID.codex] = providerConfig
+            if self.refreshTask != nil {
+                self.queuedCodexWebSettingsRefresh = true
+            }
+            return .saved(resulting)
+        } catch {
+            return .failed("save: \(error.localizedDescription)")
+        }
+    }
+
+    private static func codexWebSettingsSnapshot(from config: ProviderConfig) -> WindowsCodexWebSettingsSnapshot {
+        WindowsCodexWebSettingsSnapshot(
+            sourceMode: config.source ?? .auto,
+            cookieSource: config.cookieSource ?? .auto,
+            hasStoredManualHeader: Self.usableCookieHeader(config.cookieHeader) != nil)
+    }
+
+    private static func usableCookieHeader(_ raw: String?) -> String? {
+        guard let normalized = CookieHeaderNormalizer.normalize(raw),
+              !CookieHeaderNormalizer.pairs(from: normalized).isEmpty else {
+            return nil
+        }
+        return normalized
     }
 
     public func saveProviderQuotaWarnings(
@@ -447,13 +536,18 @@ public actor WindowsUsageRuntime {
             let optionalRefreshNeeded = self.queuedOptionalRefresh &&
                 WindowsUsagePresentationSettings.load().showOptionalCreditsAndExtraUsage
             let predictiveSettingsRefreshNeeded = self.queuedPredictiveSettingsRefresh
-            guard !self.shuttingDown, optionalRefreshNeeded || predictiveSettingsRefreshNeeded else {
+            let codexWebSettingsRefreshNeeded = self.queuedCodexWebSettingsRefresh
+            guard !self.shuttingDown,
+                  optionalRefreshNeeded || predictiveSettingsRefreshNeeded || codexWebSettingsRefreshNeeded
+            else {
                 self.queuedOptionalRefresh = false
                 self.queuedPredictiveSettingsRefresh = false
+                self.queuedCodexWebSettingsRefresh = false
                 break
             }
             self.queuedOptionalRefresh = false
             self.queuedPredictiveSettingsRefresh = false
+            self.queuedCodexWebSettingsRefresh = false
         }
         while !self.shuttingDown
         self.resumeRefreshCompletionWaiters()
@@ -698,6 +792,7 @@ public actor WindowsUsageRuntime {
         self.scheduleGeneration &+= 1
         self.queuedOptionalRefresh = false
         self.queuedPredictiveSettingsRefresh = false
+        self.queuedCodexWebSettingsRefresh = false
         let task = self.refreshTask
         task?.cancel()
         self.startupConnectivityRetryTask?.cancel()

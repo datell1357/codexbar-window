@@ -19,6 +19,8 @@ public final class WindowsTrayHost: @unchecked Sendable {
         @Sendable (WindowsPredictivePaceWarningSettings) -> Void
     public typealias ProviderQuotaWarningLoadHandler = @Sendable (UInt64, ProviderInstanceID) -> Void
     public typealias ProviderQuotaWarningSaveHandler = @Sendable (UInt64, ProviderInstanceID, WindowsProviderQuotaWarningPatch) -> Void
+    public typealias CodexWebSettingsLoadHandler = @Sendable (UInt64) -> Void
+    public typealias CodexWebSettingsSaveHandler = @Sendable (UInt64, WindowsCodexWebSettingsPatch) -> Void
     public typealias QuitHandler = @Sendable () -> Void
 
     private static let wakeMessage = UINT(WM_APP) + 1
@@ -35,6 +37,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
     private static let quotaWarningOnScreenAlertCommand = UINT_PTR(0x700B)
     private static let predictivePaceWarningNotificationsCommand = UINT_PTR(0x700C)
     private static let historicalTrackingCommand = UINT_PTR(0x700D)
+    private static let codexWebSettingsCommand = UINT_PTR(0x700E)
     private static let weeklyProgressWorkDaysCommandBase = UINT_PTR(0x7060)
     private static let providerQuotaWarningCommandBase = UINT_PTR(0x7400)
     private static let refreshFrequencyCommandBase = UINT_PTR(0x7010)
@@ -64,6 +67,8 @@ public final class WindowsTrayHost: @unchecked Sendable {
     private let onQuotaWarningSettingsChanged: QuotaWarningSettingsChangedHandler
     private let onProviderQuotaWarningLoad: ProviderQuotaWarningLoadHandler
     private let onProviderQuotaWarningSave: ProviderQuotaWarningSaveHandler
+    private let onCodexWebSettingsLoad: CodexWebSettingsLoadHandler
+    private let onCodexWebSettingsSave: CodexWebSettingsSaveHandler
     private let onPredictivePaceWarningSettingsChanged: PredictivePaceWarningSettingsChangedHandler
     private let onQuit: QuitHandler
     private let presentationDefaults: UserDefaults
@@ -101,6 +106,27 @@ public final class WindowsTrayHost: @unchecked Sendable {
     }
     private var providerEditorExpectedRequest: ProviderEditorExpectedRequest?
     private var providerEditorMailbox: ProviderEditorMailbox?
+    private enum CodexWebSettingsEditorPhase {
+        case idle
+        case loading(UInt64)
+        case editing(UInt64)
+        case saving(UInt64)
+    }
+    private var codexWebSettingsEditorPhase: CodexWebSettingsEditorPhase = .idle
+    private var nextCodexWebSettingsRequestID: UInt64 = 1
+    private enum CodexWebSettingsEditorRequestKind: Equatable { case load, save }
+    private struct CodexWebSettingsEditorExpectedRequest {
+        let requestID: UInt64
+        let kind: CodexWebSettingsEditorRequestKind
+    }
+    private struct CodexWebSettingsEditorMailbox {
+        let requestID: UInt64
+        let kind: CodexWebSettingsEditorRequestKind
+        let result: WindowsCodexWebSettingsLoadResult?
+        let saveResult: WindowsCodexWebSettingsSaveResult?
+    }
+    private var codexWebSettingsEditorExpectedRequest: CodexWebSettingsEditorExpectedRequest?
+    private var codexWebSettingsEditorMailbox: CodexWebSettingsEditorMailbox?
     private var window: HWND?
     // Accessed only on the tray UI thread. The overlay owns its HWND and is
     // dismissed before the tray window is destroyed.
@@ -123,6 +149,8 @@ public final class WindowsTrayHost: @unchecked Sendable {
         onQuotaWarningSettingsChanged: @escaping QuotaWarningSettingsChangedHandler = {},
         onProviderQuotaWarningLoad: @escaping ProviderQuotaWarningLoadHandler = { _, _ in },
         onProviderQuotaWarningSave: @escaping ProviderQuotaWarningSaveHandler = { _, _, _ in },
+        onCodexWebSettingsLoad: @escaping CodexWebSettingsLoadHandler = { _ in },
+        onCodexWebSettingsSave: @escaping CodexWebSettingsSaveHandler = { _, _ in },
         onPredictivePaceWarningSettingsChanged: @escaping PredictivePaceWarningSettingsChangedHandler = { _ in })
     {
         self.onRefresh = onRefresh
@@ -136,6 +164,8 @@ public final class WindowsTrayHost: @unchecked Sendable {
         self.onQuotaWarningSettingsChanged = onQuotaWarningSettingsChanged
         self.onProviderQuotaWarningLoad = onProviderQuotaWarningLoad
         self.onProviderQuotaWarningSave = onProviderQuotaWarningSave
+        self.onCodexWebSettingsLoad = onCodexWebSettingsLoad
+        self.onCodexWebSettingsSave = onCodexWebSettingsSave
         self.onPredictivePaceWarningSettingsChanged = onPredictivePaceWarningSettingsChanged
         self.presentationDefaults = UserDefaults(suiteName: WindowsRefreshSettings.suiteName) ?? .standard
     }
@@ -183,6 +213,8 @@ public final class WindowsTrayHost: @unchecked Sendable {
             self.mailboxLock.lock()
             self.providerEditorExpectedRequest = nil
             self.providerEditorMailbox = nil
+            self.codexWebSettingsEditorExpectedRequest = nil
+            self.codexWebSettingsEditorMailbox = nil
             self.mailboxSessionQuotaNotifications.removeAll(keepingCapacity: false)
             self.mailboxQuotaWarningNotifications.removeAll(keepingCapacity: false)
             self.mailboxPredictivePaceWarningNotifications.removeAll(keepingCapacity: false)
@@ -320,6 +352,34 @@ public final class WindowsTrayHost: @unchecked Sendable {
               self.providerEditorMailbox == nil else { self.mailboxLock.unlock(); return }
         self.providerEditorMailbox = .init(
             requestID: requestID, providerID: providerID, kind: .save, result: nil, saveResult: result)
+        let hwnd = self.window
+        self.mailboxLock.unlock()
+        if let hwnd { PostMessageW(hwnd, Self.wakeMessage, 0, 0) }
+    }
+
+    public func postCodexWebSettingsLoad(
+        requestID: UInt64, result: WindowsCodexWebSettingsLoadResult)
+    {
+        self.mailboxLock.lock()
+        guard !self.quitInvoked else { self.mailboxLock.unlock(); return }
+        guard let expected = self.codexWebSettingsEditorExpectedRequest,
+              expected.requestID == requestID, expected.kind == .load,
+              self.codexWebSettingsEditorMailbox == nil else { self.mailboxLock.unlock(); return }
+        self.codexWebSettingsEditorMailbox = .init(requestID: requestID, kind: .load, result: result, saveResult: nil)
+        let hwnd = self.window
+        self.mailboxLock.unlock()
+        if let hwnd { PostMessageW(hwnd, Self.wakeMessage, 0, 0) }
+    }
+
+    public func postCodexWebSettingsSave(
+        requestID: UInt64, result: WindowsCodexWebSettingsSaveResult)
+    {
+        self.mailboxLock.lock()
+        guard !self.quitInvoked else { self.mailboxLock.unlock(); return }
+        guard let expected = self.codexWebSettingsEditorExpectedRequest,
+              expected.requestID == requestID, expected.kind == .save,
+              self.codexWebSettingsEditorMailbox == nil else { self.mailboxLock.unlock(); return }
+        self.codexWebSettingsEditorMailbox = .init(requestID: requestID, kind: .save, result: nil, saveResult: result)
         let hwnd = self.window
         self.mailboxLock.unlock()
         if let hwnd { PostMessageW(hwnd, Self.wakeMessage, 0, 0) }
@@ -529,6 +589,10 @@ public final class WindowsTrayHost: @unchecked Sendable {
         "Quota threshold settings...".withCString(encodedAs: UTF16.self) {
             _ = AppendMenuW(menu, UINT(MF_STRING), Self.quotaWarningSettingsCommand, $0)
         }
+        "Codex web settings...".withCString(encodedAs: UTF16.self) {
+            let flags: UINT = { if case .idle = self.codexWebSettingsEditorPhase { return UINT(MF_STRING) }; return UINT(MF_STRING | MF_GRAYED) }()
+            _ = AppendMenuW(menu, flags, Self.codexWebSettingsCommand, $0)
+        }
         let changelogFlags = UINT(MF_STRING) | (changelogEnabled ? UINT(MF_CHECKED) : 0)
         "Show provider changelog links".withCString(encodedAs: UTF16.self) {
             _ = AppendMenuW(menu, changelogFlags, Self.changelogCommandBase - 1, $0)
@@ -573,6 +637,9 @@ public final class WindowsTrayHost: @unchecked Sendable {
         self.providerEditorPhase = .idle
         self.providerEditorExpectedRequest = nil
         self.providerEditorMailbox = nil
+        self.codexWebSettingsEditorPhase = .idle
+        self.codexWebSettingsEditorExpectedRequest = nil
+        self.codexWebSettingsEditorMailbox = nil
         self.mailboxSessionQuotaNotifications.removeAll(keepingCapacity: false)
         self.mailboxQuotaWarningNotifications.removeAll(keepingCapacity: false)
         self.mailboxPredictivePaceWarningNotifications.removeAll(keepingCapacity: false)
@@ -841,6 +908,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
         case Self.quotaWarningSoundCommand: self.toggleQuotaWarningSoundSetting()
         case Self.quotaWarningOnScreenAlertCommand: self.toggleQuotaWarningOnScreenAlertSetting()
         case Self.quotaWarningSettingsCommand: self.editQuotaWarningSettings()
+        case Self.codexWebSettingsCommand: self.beginCodexWebSettingsLoad()
         case Self.changelogCommandBase - 1: self.toggleChangelogSetting()
         case Self.lowPowerModeOffCommand: self.selectLowPowerModePreference(.off)
         case Self.lowPowerModeOnCommand: self.selectLowPowerModePreference(.on)
@@ -870,6 +938,66 @@ public final class WindowsTrayHost: @unchecked Sendable {
         self.providerEditorMailbox = nil
         self.mailboxLock.unlock()
         self.onProviderQuotaWarningLoad(requestID, providerID)
+    }
+
+    private func beginCodexWebSettingsLoad() {
+        guard case .idle = self.codexWebSettingsEditorPhase, !self.quitInvoked else { return }
+        let requestID = self.nextCodexWebSettingsRequestID
+        self.nextCodexWebSettingsRequestID &+= 1
+        self.codexWebSettingsEditorPhase = .loading(requestID)
+        self.mailboxLock.lock()
+        self.codexWebSettingsEditorExpectedRequest = .init(requestID: requestID, kind: .load)
+        self.codexWebSettingsEditorMailbox = nil
+        self.mailboxLock.unlock()
+        self.onCodexWebSettingsLoad(requestID)
+    }
+
+    private func beginCodexWebSettingsSave(patch: WindowsCodexWebSettingsPatch) {
+        guard !self.quitInvoked else { return }
+        let requestID = self.nextCodexWebSettingsRequestID
+        self.nextCodexWebSettingsRequestID &+= 1
+        self.codexWebSettingsEditorPhase = .saving(requestID)
+        self.mailboxLock.lock()
+        self.codexWebSettingsEditorExpectedRequest = .init(requestID: requestID, kind: .save)
+        self.codexWebSettingsEditorMailbox = nil
+        self.mailboxLock.unlock()
+        self.onCodexWebSettingsSave(requestID, patch)
+    }
+
+    private func drainCodexWebSettingsEditor() {
+        self.mailboxLock.lock()
+        let mailbox = self.codexWebSettingsEditorMailbox
+        if mailbox != nil {
+            self.codexWebSettingsEditorMailbox = nil
+            self.codexWebSettingsEditorExpectedRequest = nil
+        }
+        self.mailboxLock.unlock()
+        guard let mailbox else { return }
+        switch self.codexWebSettingsEditorPhase {
+        case let .loading(requestID) where requestID == mailbox.requestID && mailbox.kind == .load:
+            guard let result = mailbox.result else { return }
+            switch result {
+            case let .loaded(snapshot):
+                guard !self.quitInvoked, let hwnd = self.window, IsWindow(hwnd) != 0 else { self.codexWebSettingsEditorPhase = .idle; return }
+                self.codexWebSettingsEditorPhase = .editing(requestID)
+                let patch = WindowsCodexWebSettingsDialog.show(owner: hwnd, settings: snapshot)
+                self.codexWebSettingsEditorPhase = .idle
+                guard !self.quitInvoked, let patch, !patch.isUnchanged else { return }
+                self.beginCodexWebSettingsSave(patch: patch)
+            case .providerMissing: self.codexWebSettingsEditorPhase = .idle; self.showProviderEditorNotice("Codex provider is not enabled.")
+            case .shuttingDown: self.codexWebSettingsEditorPhase = .idle
+            case let .failed(message): self.codexWebSettingsEditorPhase = .idle; self.showProviderEditorNotice("Could not load Codex web settings: \(message)")
+            }
+        case let .saving(requestID) where requestID == mailbox.requestID && mailbox.kind == .save:
+            guard let result = mailbox.saveResult else { return }
+            switch result {
+            case .saved, .unchanged: self.codexWebSettingsEditorPhase = .idle
+            case .providerMissing: self.codexWebSettingsEditorPhase = .idle; self.showProviderEditorNotice("Codex provider is not enabled.")
+            case .shuttingDown: self.codexWebSettingsEditorPhase = .idle
+            case let .failed(message): self.codexWebSettingsEditorPhase = .idle; self.showProviderEditorNotice("Could not save Codex web settings: \(message)")
+            }
+        default: break
+        }
     }
 
     /// Consumes provider-editor replies on the tray UI thread only.
@@ -986,8 +1114,10 @@ public final class WindowsTrayHost: @unchecked Sendable {
         let host = Unmanaged<WindowsTrayHost>.fromOpaque(UnsafeRawPointer(bitPattern: UInt(pointer))!).takeUnretainedValue()
         if message == Self.wakeMessage {
             host.drainProviderQuotaWarningEditor()
+            host.drainCodexWebSettingsEditor()
             host.drainSessionQuotaNotifications()
-            if case .editing = host.providerEditorPhase {} else if case .saving = host.providerEditorPhase {} else {
+            if case .editing = host.providerEditorPhase {} else if case .saving = host.providerEditorPhase {}
+            else if case .editing = host.codexWebSettingsEditorPhase {} else if case .saving = host.codexWebSettingsEditorPhase {} else {
                 host.drainQuotaWarningNotifications()
                 host.drainPredictivePaceWarningNotifications()
             }
