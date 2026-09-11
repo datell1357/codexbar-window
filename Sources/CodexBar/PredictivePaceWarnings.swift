@@ -119,27 +119,25 @@ extension UsageStore {
         provider: UsageProvider,
         snapshot: UsageSnapshot) -> [(window: QuotaWarningWindow, rateWindow: RateWindow, pace: UsagePace)]
     {
-        var candidates: [(window: QuotaWarningWindow, rateWindow: RateWindow, pace: UsagePace)] = []
         let now = snapshot.updatedAt
-
-        if let sessionWindow = self.predictivePaceWarningSessionWindow(provider: provider, snapshot: snapshot),
-           !sessionWindow.isSyntheticPlaceholder,
-           let sessionPace = UsagePaceText.sessionPace(provider: provider, window: sessionWindow, now: now)
-        {
-            candidates.append((window: .session, rateWindow: sessionWindow, pace: sessionPace))
+        let sourceWindows = PredictivePaceWarningCandidateCore.SourceWindows(
+            session: self.predictivePaceWarningSessionWindow(provider: provider, snapshot: snapshot),
+            weekly: self.predictivePaceWarningWeeklyWindow(provider: provider, snapshot: snapshot))
+        let weeklyPace = if let weeklyWindow = sourceWindows.weekly {
+            self.weeklyPace(
+                provider: provider,
+                window: weeklyWindow,
+                dataConfidence: snapshot.dataConfidence,
+                now: now)
+        } else {
+            nil
         }
-
-        if let weeklyWindow = self.predictivePaceWarningWeeklyWindow(provider: provider, snapshot: snapshot),
-           let weeklyPace = self.weeklyPace(
-               provider: provider,
-               window: weeklyWindow,
-               dataConfidence: snapshot.dataConfidence,
-               now: now)
-        {
-            candidates.append((window: .weekly, rateWindow: weeklyWindow, pace: weeklyPace))
-        }
-
-        return candidates
+        return PredictivePaceWarningCandidateCore.candidates(
+            provider: provider,
+            sourceWindows: sourceWindows,
+            weeklyPace: weeklyPace,
+            now: now)
+            .map { (window: $0.window, rateWindow: $0.rateWindow, pace: $0.pace) }
     }
 
     private func predictivePaceWarningSessionWindow(provider: UsageProvider, snapshot: UsageSnapshot) -> RateWindow? {
