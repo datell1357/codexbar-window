@@ -111,6 +111,7 @@ public actor WindowsUsageRuntime {
     private var quotaWarningStates: [QuotaWarningTransitionCore.Key: QuotaWarningTransitionCore.State] = [:]
     private var latestProviderConfigs: [ProviderInstanceID: ProviderConfig] = [:]
     private var latestEnabledProviderIDs: Set<ProviderInstanceID>?
+    private var quotaWarningGeneration: UInt64 = 0
 
     public init(
         configStore: CodexBarConfigStore = CodexBarConfigStore(),
@@ -157,6 +158,94 @@ public actor WindowsUsageRuntime {
 
     public func setNotificationPublisher(_ publisher: @escaping NotificationPublisher) {
         self.notificationPublisher = publisher
+    }
+
+    public func loadProviderQuotaWarningEditor(
+        providerID: ProviderInstanceID) -> WindowsProviderQuotaWarningLoadResult
+    {
+        guard !self.shuttingDown else { return .shuttingDown }
+        do {
+            guard let config = try self.configStore.load(),
+                  config.enabledProviders().contains(providerID),
+                  let providerConfig = config.providerConfig(for: providerID)
+            else { return .providerMissing }
+            let global = WindowsQuotaWarningSettings.load()
+            let warningConfig = providerConfig.quotaWarnings
+            return .loaded(.init(
+                providerID: providerID,
+                session: .init(config: warningConfig?.session, globalThresholds: global.sessionThresholds),
+                weekly: .init(config: warningConfig?.weekly, globalThresholds: global.weeklyThresholds)))
+        } catch {
+            return .failed("load: \(error.localizedDescription)")
+        }
+    }
+
+    public func saveProviderQuotaWarnings(
+        providerID: ProviderInstanceID,
+        patch: WindowsProviderQuotaWarningPatch) -> WindowsProviderQuotaWarningSaveResult
+    {
+        guard !self.shuttingDown else { return .shuttingDown }
+        let loadedConfig: CodexBarConfig?
+        do {
+            loadedConfig = try self.configStore.load()
+        } catch {
+            return .failed("load: \(error.localizedDescription)")
+        }
+        do {
+            guard var config = loadedConfig,
+                  config.enabledProviders().contains(providerID),
+                  var providerConfig = config.providerConfig(for: providerID)
+            else { return .providerMissing }
+
+            let global = WindowsQuotaWarningSettings.load()
+            let current = providerConfig.quotaWarnings
+            let updatedSession = Self.applyQuotaWarningPatch(patch.session, to: current?.session)
+            let updatedWeekly = Self.applyQuotaWarningPatch(patch.weekly, to: current?.weekly)
+            let updatedWarningConfig = QuotaWarningConfig(session: updatedSession, weekly: updatedWeekly)
+            let normalizedWarningConfig: QuotaWarningConfig? = updatedWarningConfig.isEmpty ? nil : updatedWarningConfig
+            guard normalizedWarningConfig != current else {
+                return .unchanged(.init(
+                    providerID: providerID,
+                    session: .init(config: current?.session, globalThresholds: global.sessionThresholds),
+                    weekly: .init(config: current?.weekly, globalThresholds: global.weeklyThresholds)))
+            }
+            providerConfig.quotaWarnings = normalizedWarningConfig
+            config.setProviderConfig(providerConfig)
+            try self.configStore.save(config)
+            let enabledIDs = Set(config.enabledProviders())
+            self.latestEnabledProviderIDs = enabledIDs
+            self.latestProviderConfigs = enabledIDs.reduce(into: [:]) { result, id in
+                if result[id] == nil, let config = config.providerConfig(for: id) {
+                    result[id] = config
+                }
+            }
+            self.quotaWarningGeneration &+= 1
+            let latestGlobal = WindowsQuotaWarningSettings.load()
+            self.quotaWarningStates = self.quotaWarningStates.filter { key, _ in
+                guard enabledIDs.contains(key.provider.instanceID) else { return false }
+                let settings = self.latestProviderConfigs[key.provider.instanceID].map {
+                    latestGlobal.resolved(providerConfig: $0)
+                } ?? latestGlobal
+                return settings.isEnabled(for: key.lane)
+            }
+            return .saved(.init(
+                providerID: providerID,
+                session: .init(config: normalizedWarningConfig?.session, globalThresholds: global.sessionThresholds),
+                weekly: .init(config: normalizedWarningConfig?.weekly, globalThresholds: global.weeklyThresholds)))
+        } catch {
+            return .failed("save: \(error.localizedDescription)")
+        }
+    }
+
+    private static func applyQuotaWarningPatch(
+        _ patch: WindowsProviderQuotaWarningLanePatch,
+        to original: QuotaWarningWindowConfig?) -> QuotaWarningWindowConfig?
+    {
+        switch patch {
+        case .unchanged: return original
+        case .clear: return nil
+        case let .replace(config): return config.hasOverride ? config : nil
+        }
     }
 
     /// Applies a global threshold edit without refreshing providers. Existing
@@ -326,6 +415,7 @@ public actor WindowsUsageRuntime {
     }
 
     private func performRefresh() async {
+        let refreshQuotaWarningGeneration = self.quotaWarningGeneration
         let presentationSettings = WindowsUsagePresentationSettings.load()
         let fetchOptionalUsage = presentationSettings.showOptionalCreditsAndExtraUsage
         do {
@@ -384,7 +474,12 @@ public actor WindowsUsageRuntime {
                 if provider == .codex {
                     let configuredAccounts = try? accountContext.resolvedAccounts(for: provider)
                     if let configuredAccounts, !configuredAccounts.isEmpty {
-                        let fetched = await self.fetchRows(provider: provider, context: accountContext, config: config, presentationSettings: presentationSettings)
+                        let fetched = await self.fetchRows(
+                            provider: provider,
+                            context: accountContext,
+                            config: config,
+                            presentationSettings: presentationSettings,
+                            quotaWarningGeneration: refreshQuotaWarningGeneration)
                         if let presentation = self.presentations[provider.instanceID] { entries.append(.presentation(presentation)) }
                         else { entries.append(contentsOf: fetched.map(RenderEntry.row)) }
                     } else {
@@ -397,12 +492,18 @@ public actor WindowsUsageRuntime {
                             context: accountContext,
                             config: config,
                             codexVisibleAccount: active,
-                            presentationSettings: presentationSettings)
+                            presentationSettings: presentationSettings,
+                            quotaWarningGeneration: refreshQuotaWarningGeneration)
                         if let presentation = self.presentations[provider.instanceID] { entries.append(.presentation(presentation)) }
                         else { entries.append(contentsOf: fetched.map(RenderEntry.row)) }
                     }
                 } else {
-                    let fetched = await self.fetchRows(provider: provider, context: accountContext, config: config, presentationSettings: presentationSettings)
+                    let fetched = await self.fetchRows(
+                        provider: provider,
+                        context: accountContext,
+                        config: config,
+                        presentationSettings: presentationSettings,
+                        quotaWarningGeneration: refreshQuotaWarningGeneration)
                     if let presentation = self.presentations[provider.instanceID] { entries.append(.presentation(presentation)) }
                     else { entries.append(contentsOf: fetched.map(RenderEntry.row)) }
                 }
@@ -639,9 +740,10 @@ public actor WindowsUsageRuntime {
         claudeAccountUUIDBefore: String?,
         claudeAccountUUIDAfter: String?,
         strategyKind: ProviderFetchKind? = nil,
-        oauthHistoryOwnerIdentifier: String? = nil)
+        oauthHistoryOwnerIdentifier: String? = nil,
+        quotaWarningGeneration: UInt64)
     {
-        guard !self.shuttingDown else { return }
+        guard !self.shuttingDown, quotaWarningGeneration == self.quotaWarningGeneration else { return }
         let globalSettings = WindowsQuotaWarningSettings.load()
         let settings = config.providerConfig(for: provider.instanceID).map {
             globalSettings.resolved(providerConfig: $0)
@@ -945,7 +1047,8 @@ public actor WindowsUsageRuntime {
         context: TokenAccountCLIContext,
         config: CodexBarConfig,
         codexVisibleAccount: CodexVisibleAccount? = nil,
-        presentationSettings: WindowsUsagePresentationSettings) async -> [String]
+        presentationSettings: WindowsUsagePresentationSettings,
+        quotaWarningGeneration: UInt64) async -> [String]
     {
         do {
             let account: ProviderTokenAccount? = if codexVisibleAccount == nil {
@@ -1011,7 +1114,9 @@ public actor WindowsUsageRuntime {
                     claudeAccountUUIDBefore: claudeAccountUUIDBefore,
                     claudeAccountUUIDAfter: provider == .claude
                         ? ClaudeAccountProfile.accountUuid(environment: env) : nil,
-                    strategyKind: result.strategyKind, oauthHistoryOwnerIdentifier: result.claudeOAuthHistoryOwnerIdentifier)
+                    strategyKind: result.strategyKind,
+                    oauthHistoryOwnerIdentifier: result.claudeOAuthHistoryOwnerIdentifier,
+                    quotaWarningGeneration: quotaWarningGeneration)
                 return presentation.rows()
             case let .failure(error):
                 self.recordStartupConnectivityRetryableFailure(error)
