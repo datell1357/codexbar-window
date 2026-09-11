@@ -864,14 +864,15 @@ public actor WindowsUsageRuntime {
     private func codexHistoricalOwnership(
         snapshot: UsageSnapshot,
         codexVisibleAccount: CodexVisibleAccount?,
-        codexAccountContext: CodexAccountContextSnapshot) -> CodexHistoricalOwnershipContext
+        codexAccountContext: CodexAccountContextSnapshot,
+        preferredEmail: String? = nil) -> CodexHistoricalOwnershipContext
     {
         let source = codexVisibleAccount?.selectionSource
             ?? codexAccountContext.resolvedActiveSource.resolvedSource
         let selectedContext = codexAccountContext.selecting(activeSource: source)
         let identity = selectedContext.identity(for: source)
         let normalizedEmail = CodexIdentityResolver.normalizeEmail(
-            codexVisibleAccount?.email ?? snapshot.accountEmail(for: .codex))
+            preferredEmail ?? codexVisibleAccount?.email ?? snapshot.accountEmail(for: .codex))
             ?? (if case let .emailOnly(email) = identity {
                 CodexIdentityResolver.normalizeEmail(email)
             } else {
@@ -899,6 +900,7 @@ public actor WindowsUsageRuntime {
     private func recordCodexHistoricalSampleIfNeeded(
         provider: UsageProvider,
         snapshot: UsageSnapshot,
+        authorizedDashboard: CodexAuthorizedDashboard?,
         codexVisibleAccount: CodexVisibleAccount?,
         codexAccountContext: CodexAccountContextSnapshot?,
         generation: UInt64) async
@@ -914,17 +916,56 @@ public actor WindowsUsageRuntime {
             snapshot: snapshot,
             codexVisibleAccount: codexVisibleAccount,
             codexAccountContext: codexAccountContext)
-        guard let owner = ownership.canonicalKey,
-              let weekly = CodexProviderDescriptor.predictivePaceSourceWindows(snapshot: snapshot).weekly,
-              weekly.resetsAt != nil, weekly.windowMinutes != nil
-        else {
-            // Missing identity/window is not evidence that the current owner disappeared.
+        guard let owner = ownership.canonicalKey else {
+            // Missing identity is not evidence that the current owner disappeared.
             return
         }
-        // Persist only canonical records; legacy continuity is admitted only when
-        // the captured ownership context proves it belongs to this account.
-        _ = await self.historicalUsageHistoryStore.recordCodexWeekly(
-            window: weekly, sampledAt: snapshot.updatedAt, accountKey: owner)
+        let liveWeekly = CodexProviderDescriptor.predictivePaceSourceWindows(snapshot: snapshot).weekly
+        var datasetOwnership = ownership
+        if let liveWeekly, liveWeekly.resetsAt != nil, liveWeekly.windowMinutes != nil {
+            // Persist only canonical live records; legacy continuity is admitted only when
+            // the captured ownership context proves it belongs to this account.
+            _ = await self.historicalUsageHistoryStore.recordCodexWeekly(
+                window: liveWeekly, sampledAt: snapshot.updatedAt, accountKey: owner)
+            guard !self.shuttingDown,
+                  generation == self.historicalTrackingGeneration,
+                  self.latestEnabledProviderIDs?.contains(UsageProvider.codex.instanceID) == true,
+                  WindowsPredictivePaceWarningSettings.load().historicalTrackingEnabled
+            else { return }
+        }
+
+        // Windows currently has no native web-dashboard producer. This consumer only
+        // accepts an already authorized bundle returned by the shared provider fetch path.
+        if let authorizedDashboard,
+           let dashboardOwner = Self.dashboardBackfillOwner(authorizedDashboard),
+           dashboardOwner == owner,
+           let candidate = CodexHistoricalDashboardBackfillCore.candidate(
+               authorizedDashboard: authorizedDashboard,
+               fallbackWeekly: liveWeekly,
+               fallbackUpdatedAt: snapshot.updatedAt)
+        {
+            let backfillOwnership = self.codexHistoricalOwnership(
+                snapshot: snapshot,
+                codexVisibleAccount: codexVisibleAccount,
+                codexAccountContext: codexAccountContext,
+                preferredEmail: candidate.attachedAccountEmail)
+            guard backfillOwnership.canonicalKey == owner,
+                  backfillOwnership.canonicalKey == dashboardOwner
+            else { return }
+            datasetOwnership = backfillOwnership
+            // A dashboard may provide its own weekly window, so live weekly usage is optional.
+            _ = await self.historicalUsageHistoryStore.backfillCodexWeeklyFromUsageBreakdown(
+                candidate.usageBreakdown,
+                referenceWindow: candidate.referenceWindow,
+                now: candidate.calibrationAt,
+                accountKey: backfillOwnership.canonicalKey)
+            guard !self.shuttingDown,
+                  generation == self.historicalTrackingGeneration,
+                  self.latestEnabledProviderIDs?.contains(UsageProvider.codex.instanceID) == true,
+                  WindowsPredictivePaceWarningSettings.load().historicalTrackingEnabled
+            else { return }
+        }
+
         guard !self.shuttingDown,
               generation == self.historicalTrackingGeneration,
               self.latestEnabledProviderIDs?.contains(UsageProvider.codex.instanceID) == true,
@@ -932,9 +973,9 @@ public actor WindowsUsageRuntime {
         else { return }
         let dataset = await self.historicalUsageHistoryStore.loadCodexDataset(
             canonicalAccountKey: owner,
-            canonicalEmailHashKey: ownership.hasAdjacentEmailScopeAmbiguity ? nil : ownership.canonicalEmailHashKey,
-            legacyEmailHash: ownership.hasAdjacentEmailScopeAmbiguity ? nil : ownership.historicalLegacyEmailHash,
-            hasAdjacentMultiAccountVeto: ownership.hasAdjacentMultiAccountVeto)
+            canonicalEmailHashKey: datasetOwnership.hasAdjacentEmailScopeAmbiguity ? nil : datasetOwnership.canonicalEmailHashKey,
+            legacyEmailHash: datasetOwnership.hasAdjacentEmailScopeAmbiguity ? nil : datasetOwnership.historicalLegacyEmailHash,
+            hasAdjacentMultiAccountVeto: datasetOwnership.hasAdjacentMultiAccountVeto)
         guard !self.shuttingDown,
               generation == self.historicalTrackingGeneration,
               self.latestEnabledProviderIDs?.contains(UsageProvider.codex.instanceID) == true,
@@ -942,6 +983,30 @@ public actor WindowsUsageRuntime {
         else { return }
         self.codexHistoricalDatasetAccountKey = owner
         self.codexHistoricalDataset = dataset
+    }
+
+    /// Returns the canonical owner proven by the authorized dashboard bundle.
+    /// Unresolved identities use the bundle's scoped expected or trusted usage email;
+    /// routing hints and raw dashboard fields are intentionally excluded.
+    private static func dashboardBackfillOwner(_ authorized: CodexAuthorizedDashboard) -> String? {
+        let proof = authorized.input.proof
+        let identity: CodexIdentity
+        switch proof.currentIdentity {
+        case .unresolved:
+            // Authority evaluation permits unresolved continuity only when the
+            // trusted usage email matches the exact dashboard snapshot. A scoped
+            // expected email is equally proven when present; never derive owner
+            // identity from the dashboard payload or routing hints.
+            guard let email = CodexIdentityResolver.normalizeEmail(
+                proof.expectedScopedEmail ?? proof.trustedCurrentUsageEmail)
+            else {
+                return nil
+            }
+            identity = .emailOnly(normalizedEmail: email)
+        default:
+            identity = proof.currentIdentity
+        }
+        return CodexHistoryOwnership.canonicalKey(for: identity)
     }
 
     private func evaluatePredictivePaceWarnings(
@@ -1399,6 +1464,7 @@ public actor WindowsUsageRuntime {
                 await self.recordCodexHistoricalSampleIfNeeded(
                     provider: provider,
                     snapshot: result.usage,
+                    authorizedDashboard: result.authorizedDashboard,
                     codexVisibleAccount: codexVisibleAccount,
                     codexAccountContext: retainedCodexContext,
                     generation: historicalTrackingGeneration)
