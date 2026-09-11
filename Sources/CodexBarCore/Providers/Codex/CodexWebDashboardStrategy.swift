@@ -54,6 +54,7 @@ public struct CodexWebDashboardStrategy: ProviderFetchStrategy {
             usage: result.usage,
             credits: result.credits,
             dashboard: result.dashboard,
+            authorizedDashboard: result.authorizedDashboard,
             sourceLabel: "openai-web")
     }
 
@@ -79,6 +80,7 @@ struct OpenAIWebCodexResult {
     let usage: UsageSnapshot
     let credits: CreditsSnapshot?
     let dashboard: OpenAIDashboardSnapshot
+    let authorizedDashboard: CodexAuthorizedDashboard
 }
 
 enum OpenAIWebCodexError: LocalizedError, Equatable {
@@ -232,7 +234,10 @@ extension CodexWebDashboardStrategy {
             dashboard: dashboard,
             context: context,
             routingTargetEmail: routingTargetEmail)
-        let decision = CodexDashboardAuthority.evaluate(input)
+        let authorizedDashboard = CodexDashboardAuthority.authorize(
+            dashboard: dashboard,
+            input: input)
+        let decision = authorizedDashboard.decision
 
         switch decision.disposition {
         case .attach:
@@ -254,7 +259,8 @@ extension CodexWebDashboardStrategy {
             return OpenAIWebCodexResult(
                 usage: CodexExtraUsageCost.attaching(to: usage, credits: credits),
                 credits: credits,
-                dashboard: dashboard)
+                dashboard: dashboard,
+                authorizedDashboard: authorizedDashboard)
         case .displayOnly:
             if decision.cleanup.contains(.dashboardCache) {
                 OpenAIDashboardCacheStore.clear()

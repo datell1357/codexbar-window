@@ -139,6 +139,25 @@ public struct CodexDashboardAuthorityDecision: Equatable, Sendable {
     }
 }
 
+/// Immutable ownership evidence bound to the exact dashboard snapshot it evaluated.
+/// Keeping these values together prevents later enrichment paths from pairing a decision
+/// with a different dashboard value.
+public struct CodexAuthorizedDashboard: Equatable, Sendable {
+    public let dashboard: OpenAIDashboardSnapshot
+    public let input: CodexDashboardAuthorityInput
+    public let decision: CodexDashboardAuthorityDecision
+
+    fileprivate init(
+        dashboard: OpenAIDashboardSnapshot,
+        input: CodexDashboardAuthorityInput,
+        decision: CodexDashboardAuthorityDecision)
+    {
+        self.dashboard = dashboard
+        self.input = input
+        self.decision = decision
+    }
+}
+
 public enum CodexDashboardPolicyError: LocalizedError, Equatable, Sendable {
     case displayOnly(CodexDashboardAuthorityDecision)
 
@@ -151,6 +170,29 @@ public enum CodexDashboardPolicyError: LocalizedError, Equatable, Sendable {
 }
 
 public enum CodexDashboardAuthority {
+    public static func authorize(
+        dashboard: OpenAIDashboardSnapshot,
+        input: CodexDashboardAuthorityInput) -> CodexAuthorizedDashboard
+    {
+        let proofEmail = CodexIdentityResolver.normalizeEmail(input.proof.dashboardSignedInEmail)
+        let dashboardEmail = CodexIdentityResolver.normalizeEmail(dashboard.signedInEmail)
+        let decision: CodexDashboardAuthorityDecision
+        if proofEmail != dashboardEmail {
+            // The proof must describe this exact snapshot. A mismatched (including nil)
+            // email is never allowed to attach through a later copy/enrichment path.
+            decision = CodexDashboardAuthorityDecision(
+                disposition: .failClosed,
+                reason: .wrongEmail(expected: proofEmail, actual: dashboardEmail),
+                allowedEffects: [],
+                cleanup: Set(CodexDashboardCleanup.allCases))
+        } else {
+            decision = self.evaluate(input)
+        }
+        CodexAuthorizedDashboard(
+            dashboard: dashboard,
+            input: input,
+            decision: decision)
+    }
     /// Evaluates whether a Codex dashboard snapshot may attach to the active account.
     ///
     /// App callers may keep `.displayOnly` dashboard data visible, but must not attach usage,

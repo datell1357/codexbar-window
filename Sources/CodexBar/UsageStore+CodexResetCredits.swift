@@ -133,6 +133,7 @@ extension ProviderFetchOutcome {
                 usage: usage,
                 credits: result.credits,
                 dashboard: result.dashboard,
+                authorizedDashboard: result.authorizedDashboard,
                 sourceLabel: result.sourceLabel,
                 strategyID: result.strategyID,
                 strategyKind: result.strategyKind,

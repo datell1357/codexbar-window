@@ -115,6 +115,8 @@ public struct ProviderFetchResult: Sendable {
     public let usage: UsageSnapshot
     public let credits: CreditsSnapshot?
     public let dashboard: OpenAIDashboardSnapshot?
+    /// Ownership decision bound to `dashboard`, when a web dashboard was authorized.
+    public let authorizedDashboard: CodexAuthorizedDashboard?
     public let sourceLabel: String
     public let strategyID: String
     public let strategyKind: ProviderFetchKind
@@ -147,6 +149,7 @@ public struct ProviderFetchResult: Sendable {
         usage: UsageSnapshot,
         credits: CreditsSnapshot?,
         dashboard: OpenAIDashboardSnapshot?,
+        authorizedDashboard: CodexAuthorizedDashboard? = nil,
         sourceLabel: String,
         strategyID: String,
         strategyKind: ProviderFetchKind,
@@ -162,7 +165,10 @@ public struct ProviderFetchResult: Sendable {
     {
         self.usage = usage
         self.credits = credits
-        self.dashboard = dashboard
+        // An authorized bundle is the source of truth for its dashboard value. This keeps
+        // legacy raw-dashboard callers source-compatible while preventing bundle/result drift.
+        self.dashboard = authorizedDashboard?.dashboard ?? dashboard
+        self.authorizedDashboard = authorizedDashboard
         self.sourceLabel = sourceLabel
         self.strategyID = strategyID
         self.strategyKind = strategyKind
@@ -183,6 +189,7 @@ public struct ProviderFetchResult: Sendable {
             usage: self.usage,
             credits: self.credits,
             dashboard: self.dashboard,
+            authorizedDashboard: self.authorizedDashboard,
             sourceLabel: self.sourceLabel,
             strategyID: self.strategyID,
             strategyKind: self.strategyKind,
@@ -290,6 +297,7 @@ extension ProviderFetchStrategy {
         usage: UsageSnapshot,
         credits: CreditsSnapshot? = nil,
         dashboard: OpenAIDashboardSnapshot? = nil,
+        authorizedDashboard: CodexAuthorizedDashboard? = nil,
         sourceLabel: String,
         diagnostic: String? = nil) -> ProviderFetchResult
     {
@@ -297,6 +305,7 @@ extension ProviderFetchStrategy {
             usage: usage,
             credits: credits,
             dashboard: dashboard,
+            authorizedDashboard: authorizedDashboard,
             sourceLabel: sourceLabel,
             strategyID: self.id,
             strategyKind: self.kind,
