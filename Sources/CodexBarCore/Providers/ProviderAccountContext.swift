@@ -15,6 +15,48 @@ public struct CodexAccountContextSnapshot: Equatable, Sendable {
         self.visibleAccounts = CodexVisibleAccountProjection.make(from: reconciliationSnapshot)
         self.resolvedActiveSource = CodexActiveSourceResolver.resolve(from: reconciliationSnapshot)
     }
+
+    /// Returns a view of this captured reconciliation after applying a source
+    /// selection. No store or filesystem is read while creating the view.
+    public func selecting(activeSource: CodexActiveSource) -> CodexAccountContextSnapshot {
+        let activeStoredAccount: ManagedCodexAccount? = if case let .managedAccount(id) = activeSource {
+            self.reconciliationSnapshot.storedAccounts.first { $0.id == id }
+        } else {
+            nil
+        }
+        let snapshot = CodexAccountReconciliationSnapshot(
+            storedAccounts: self.reconciliationSnapshot.storedAccounts,
+            activeStoredAccount: activeStoredAccount,
+            liveSystemAccount: self.reconciliationSnapshot.liveSystemAccount,
+            profileHomeAccounts: self.reconciliationSnapshot.profileHomeAccounts,
+            profileHomePaths: self.reconciliationSnapshot.profileHomePaths,
+            matchingStoredAccountForLiveSystemAccount: self.reconciliationSnapshot.matchingStoredAccountForLiveSystemAccount,
+            activeSource: activeSource,
+            hasUnreadableAddedAccountStore: self.reconciliationSnapshot.hasUnreadableAddedAccountStore,
+            storedAccountRuntimeIdentities: self.reconciliationSnapshot.storedAccountRuntimeIdentities,
+            storedAccountRuntimeEmails: self.reconciliationSnapshot.storedAccountRuntimeEmails)
+        return CodexAccountContextSnapshot(reconciliationSnapshot: snapshot)
+    }
+
+    /// Resolves the identity represented by a source in this captured view.
+    /// An unreadable managed store is deliberately unresolved; its configured
+    /// email must not be used as a substitute for runtime ownership.
+    public func identity(for source: CodexActiveSource? = nil) -> CodexIdentity {
+        let source = source ?? self.resolvedActiveSource.resolvedSource
+        switch source {
+        case .liveSystem:
+            guard let liveSystemAccount = self.reconciliationSnapshot.liveSystemAccount else { return .unresolved }
+            return self.reconciliationSnapshot.runtimeIdentity(for: liveSystemAccount)
+        case let .managedAccount(id):
+            guard !self.reconciliationSnapshot.hasUnreadableAddedAccountStore,
+                  let account = self.reconciliationSnapshot.storedAccounts.first(where: { $0.id == id })
+            else { return .unresolved }
+            return self.reconciliationSnapshot.managedRemoteIdentity(for: account)
+        case let .profileHome(path):
+            guard let account = self.reconciliationSnapshot.profileHomeAccount(path: path) else { return .unresolved }
+            return self.reconciliationSnapshot.runtimeIdentity(for: account)
+        }
+    }
 }
 
 
@@ -123,14 +165,16 @@ public struct TokenAccountCLIContext {
     public func settingsSnapshot(
         for provider: UsageProvider,
         account: ProviderTokenAccount?,
-        codexActiveSourceOverride: CodexActiveSource? = nil) -> ProviderSettingsSnapshot?
+        codexActiveSourceOverride: CodexActiveSource? = nil,
+        codexAccountContext: CodexAccountContextSnapshot? = nil) -> ProviderSettingsSnapshot?
     {
         let config = self.providerConfig(for: provider)
         // Provider-specific by design: managed Codex profiles require live reconciliation state that is not config.
         if provider == .codex {
             return ProviderSettingsSnapshot.make(codex: self.makeCodexSettingsSnapshot(
                 account: account,
-                codexActiveSourceOverride: codexActiveSourceOverride))
+                codexActiveSourceOverride: codexActiveSourceOverride,
+                codexAccountContext: codexAccountContext))
         }
         guard let contribution = ProviderDescriptorRegistry.descriptor(for: provider)
             .settingsSection
@@ -141,12 +185,16 @@ public struct TokenAccountCLIContext {
 
     private func makeCodexSettingsSnapshot(
         account: ProviderTokenAccount?,
-        codexActiveSourceOverride: CodexActiveSource? = nil) ->
+        codexActiveSourceOverride: CodexActiveSource? = nil,
+        codexAccountContext: CodexAccountContextSnapshot? = nil) ->
         ProviderSettingsSnapshot.CodexProviderSettings
     {
         // Provider-specific by design: Codex settings include reconciliation state and profile-home selection.
         let config = self.providerConfig(for: .codex)
-        let accountContext = self.codexAccountContextSnapshot(activeSource: codexActiveSourceOverride)
+        let accountContext = self.retainedCodexContext(
+            codexAccountContext,
+            activeSourceOverride: codexActiveSourceOverride)
+            ?? self.codexAccountContextSnapshot(activeSource: codexActiveSourceOverride)
         let cookieSettings = ProviderCredentialSettingsContext(config: config, account: account)
             .cookieSettings(for: .codex)
         return CodexProviderSettingsBuilder.make(input: CodexProviderSettingsBuilderInput(
@@ -161,7 +209,8 @@ public struct TokenAccountCLIContext {
         base: [String: String],
         provider: UsageProvider,
         account: ProviderTokenAccount?,
-        codexActiveSourceOverride: CodexActiveSource? = nil) -> [String: String]
+        codexActiveSourceOverride: CodexActiveSource? = nil,
+        codexAccountContext: CodexAccountContextSnapshot? = nil) -> [String: String]
     {
         let providerConfig = self.providerConfig(for: provider)
         var env = ProviderEnvironmentResolver.resolve(
@@ -171,7 +220,11 @@ public struct TokenAccountCLIContext {
             selectedAccount: account)
         // Provider-specific by design: managed Codex accounts select a distinct filesystem home, not a credential.
         if provider == .codex,
-           let codexHomePath = self.codexHomePath(for: codexActiveSourceOverride)
+           let codexHomePath = self.codexHomePath(
+               for: codexActiveSourceOverride,
+               accountContext: self.retainedCodexContext(
+                   codexAccountContext,
+                   activeSourceOverride: codexActiveSourceOverride))
         {
             env = CodexHomeScope.scopedEnvironment(base: env, codexHome: codexHomePath)
         }
@@ -296,6 +349,15 @@ public struct TokenAccountCLIContext {
         self.config.providerConfig(for: provider.instanceID)
     }
 
+    private func retainedCodexContext(
+        _ context: CodexAccountContextSnapshot?,
+        activeSourceOverride: CodexActiveSource?) -> CodexAccountContextSnapshot?
+    {
+        guard let context else { return nil }
+        guard let activeSourceOverride else { return context }
+        return context.selecting(activeSource: activeSourceOverride)
+    }
+
     private func codexAccountReconciler(activeSource: CodexActiveSource? = nil) -> DefaultCodexAccountReconciler {
         // Provider-specific by design: this reconciles Codex profile homes with its managed-account store.
         let storeLoader: @Sendable () throws -> ManagedCodexAccountSet = if let managedCodexAccountStoreURL {
@@ -317,10 +379,14 @@ public struct TokenAccountCLIContext {
             })
     }
 
-    private func codexHomePath(for activeSourceOverride: CodexActiveSource?) -> String? {
+    private func codexHomePath(
+        for activeSourceOverride: CodexActiveSource?,
+        accountContext: CodexAccountContextSnapshot? = nil) -> String?
         // Provider-specific by design: Codex profile selection changes the local data root for the whole fetcher.
         let activeSource: CodexActiveSource = if let activeSourceOverride {
             activeSourceOverride
+        } else if let accountContext {
+            accountContext.resolvedActiveSource.resolvedSource
         } else {
             CodexActiveSourceResolver.resolve(from: self.codexAccountReconciler().loadSnapshot())
                 .resolvedSource
@@ -330,6 +396,11 @@ public struct TokenAccountCLIContext {
         case .liveSystem:
             return nil
         case let .managedAccount(id):
+            if let accountContext {
+                guard !accountContext.reconciliationSnapshot.hasUnreadableAddedAccountStore else { return nil }
+                return accountContext.reconciliationSnapshot.storedAccounts
+                    .first { $0.id == id }?.managedHomePath
+            }
             let accounts: ManagedCodexAccountSet? = if let managedCodexAccountStoreURL {
                 try? FileManagedCodexAccountStore(fileURL: managedCodexAccountStoreURL).loadAccounts()
             } else {
