@@ -70,6 +70,7 @@ public actor WindowsUsageRuntime {
     private var startupConnectivityRetryActive = false
     private var startupConnectivityRetryNeeded = false
     private var queuedOptionalRefresh = false
+    private var queuedPredictiveSettingsRefresh = false
     private var scheduleTask: Task<Void, Never>?
     private var sleepTask: Task<Void, Never>?
     private var resetBoundaryRefreshTask: Task<Void, Never>?
@@ -116,6 +117,14 @@ public actor WindowsUsageRuntime {
     private var quotaWarningGeneration: UInt64 = 0
     private var predictivePaceWarningGeneration: UInt64 = 0
     private var predictivePaceWarningKeys: Set<PredictivePaceWarningTransitionCore.Key> = []
+    // Windows keeps one in-memory dataset for the currently visible Codex owner.
+    // Persistence is delegated to the shared history actor; no account dictionary
+    // is kept here, so a stale owner cannot score another account.
+    private let historicalUsageHistoryStore: HistoricalUsageHistoryStore
+    private var codexHistoricalDataset: CodexHistoricalDataset?
+    private var codexHistoricalDatasetAccountKey: String?
+    private var historicalTrackingGeneration: UInt64 = 0
+    private var lastHistoricalTrackingEnabled: Bool
 
     public init(
         configStore: CodexBarConfigStore = CodexBarConfigStore(),
@@ -146,6 +155,8 @@ public actor WindowsUsageRuntime {
         self.predictivePaceWarningPublisher = predictivePaceWarningPublisher
         self.signalProvider = signalProvider
         self.refreshSettings = WindowsRefreshSettings.load()
+        self.historicalUsageHistoryStore = HistoricalUsageHistoryStore()
+        self.lastHistoricalTrackingEnabled = WindowsPredictivePaceWarningSettings.load().historicalTrackingEnabled
     }
 
     public func setPublisher(_ publisher: @escaping RowPublisher) {
@@ -170,6 +181,19 @@ public actor WindowsUsageRuntime {
         guard !self.shuttingDown else { return }
         self.predictivePaceWarningGeneration &+= 1
         if !settings.notificationsEnabled { self.predictivePaceWarningKeys.removeAll(keepingCapacity: true) }
+        if settings.historicalTrackingEnabled != self.lastHistoricalTrackingEnabled {
+            self.historicalTrackingGeneration &+= 1
+            self.lastHistoricalTrackingEnabled = settings.historicalTrackingEnabled
+            if !settings.historicalTrackingEnabled {
+                self.codexHistoricalDataset = nil
+                self.codexHistoricalDatasetAccountKey = nil
+            }
+        }
+        if self.refreshTask != nil {
+            self.queuedPredictiveSettingsRefresh = true
+            return
+        }
+        await self.refresh()
     }
 
     public func setNotificationPublisher(_ publisher: @escaping NotificationPublisher) {
@@ -420,14 +444,16 @@ public actor WindowsUsageRuntime {
             self.refreshTask = task
             await task.value
             self.refreshTask = nil
-            guard !self.shuttingDown,
-                  self.queuedOptionalRefresh,
-                  WindowsUsagePresentationSettings.load().showOptionalCreditsAndExtraUsage
-            else {
+            let optionalRefreshNeeded = self.queuedOptionalRefresh &&
+                WindowsUsagePresentationSettings.load().showOptionalCreditsAndExtraUsage
+            let predictiveSettingsRefreshNeeded = self.queuedPredictiveSettingsRefresh
+            guard !self.shuttingDown, optionalRefreshNeeded || predictiveSettingsRefreshNeeded else {
                 self.queuedOptionalRefresh = false
+                self.queuedPredictiveSettingsRefresh = false
                 break
             }
             self.queuedOptionalRefresh = false
+            self.queuedPredictiveSettingsRefresh = false
         }
         while !self.shuttingDown
         self.resumeRefreshCompletionWaiters()
@@ -436,6 +462,7 @@ public actor WindowsUsageRuntime {
     private func performRefresh() async {
         let refreshQuotaWarningGeneration = self.quotaWarningGeneration
         let refreshPredictivePaceWarningGeneration = self.predictivePaceWarningGeneration
+        let refreshHistoricalTrackingGeneration = self.historicalTrackingGeneration
         let presentationSettings = WindowsUsagePresentationSettings.load()
         let fetchOptionalUsage = presentationSettings.showOptionalCreditsAndExtraUsage
         do {
@@ -503,7 +530,8 @@ public actor WindowsUsageRuntime {
                             config: config,
                             presentationSettings: presentationSettings,
                             quotaWarningGeneration: refreshQuotaWarningGeneration,
-                            predictivePaceWarningGeneration: refreshPredictivePaceWarningGeneration)
+                            predictivePaceWarningGeneration: refreshPredictivePaceWarningGeneration,
+                            historicalTrackingGeneration: refreshHistoricalTrackingGeneration)
                         if let presentation = self.presentations[provider.instanceID] { entries.append(.presentation(presentation)) }
                         else { entries.append(contentsOf: fetched.map(RenderEntry.row)) }
                     } else {
@@ -518,7 +546,8 @@ public actor WindowsUsageRuntime {
                             codexVisibleAccount: active,
                             presentationSettings: presentationSettings,
                             quotaWarningGeneration: refreshQuotaWarningGeneration,
-                            predictivePaceWarningGeneration: refreshPredictivePaceWarningGeneration)
+                            predictivePaceWarningGeneration: refreshPredictivePaceWarningGeneration,
+                            historicalTrackingGeneration: refreshHistoricalTrackingGeneration)
                         if let presentation = self.presentations[provider.instanceID] { entries.append(.presentation(presentation)) }
                         else { entries.append(contentsOf: fetched.map(RenderEntry.row)) }
                     }
@@ -529,7 +558,8 @@ public actor WindowsUsageRuntime {
                         config: config,
                         presentationSettings: presentationSettings,
                         quotaWarningGeneration: refreshQuotaWarningGeneration,
-                        predictivePaceWarningGeneration: refreshPredictivePaceWarningGeneration)
+                        predictivePaceWarningGeneration: refreshPredictivePaceWarningGeneration,
+                        historicalTrackingGeneration: refreshHistoricalTrackingGeneration)
                     if let presentation = self.presentations[provider.instanceID] { entries.append(.presentation(presentation)) }
                     else { entries.append(contentsOf: fetched.map(RenderEntry.row)) }
                 }
@@ -657,6 +687,7 @@ public actor WindowsUsageRuntime {
         self.shuttingDown = true
         self.scheduleGeneration &+= 1
         self.queuedOptionalRefresh = false
+        self.queuedPredictiveSettingsRefresh = false
         let task = self.refreshTask
         task?.cancel()
         self.startupConnectivityRetryTask?.cancel()
@@ -679,6 +710,9 @@ public actor WindowsUsageRuntime {
         self.codexSessionQuotaBaselineWatermark = nil
         self.quotaWarningStates.removeAll(keepingCapacity: false)
         self.predictivePaceWarningKeys.removeAll(keepingCapacity: false)
+        self.historicalTrackingGeneration &+= 1
+        self.codexHistoricalDataset = nil
+        self.codexHistoricalDatasetAccountKey = nil
         self.latestProviderConfigs.removeAll(keepingCapacity: false)
         self.latestEnabledProviderIDs = nil
         await CLIProbeSessionResetter.resetAll()
@@ -817,6 +851,55 @@ public actor WindowsUsageRuntime {
         }
     }
 
+    private func recordCodexHistoricalSampleIfNeeded(
+        provider: UsageProvider,
+        snapshot: UsageSnapshot,
+        codexVisibleAccount: CodexVisibleAccount?,
+        generation: UInt64) async
+    {
+        guard provider == .codex else { return }
+        let settings = WindowsPredictivePaceWarningSettings.load()
+        guard !self.shuttingDown, settings.historicalTrackingEnabled,
+              generation == self.historicalTrackingGeneration,
+              self.latestEnabledProviderIDs?.contains(UsageProvider.codex.instanceID) == true
+        else { return }
+        guard let owner = PredictivePaceWarningOwnerIdentityCore.discriminator(.init(
+            provider: .codex,
+            snapshotAccountID: snapshot.identity?.accountID,
+            snapshotEmail: snapshot.accountEmail(for: .codex),
+            codexSelectedWorkspaceAccountID: codexVisibleAccount?.workspaceAccountID,
+            codexSelectedEmail: codexVisibleAccount?.email,
+            tokenAccountID: nil,
+            claudeResolvedDiscriminator: nil)),
+              let weekly = CodexProviderDescriptor.predictivePaceSourceWindows(snapshot: snapshot).weekly,
+              weekly.resetsAt != nil, weekly.windowMinutes != nil
+        else {
+            // Missing identity/window is not evidence that the current owner disappeared.
+            return
+        }
+        // Legacy and adjacent-account records are intentionally excluded here; continuity
+        // migration is a separate scoped task.
+        _ = await self.historicalUsageHistoryStore.recordCodexWeekly(
+            window: weekly, sampledAt: snapshot.updatedAt, accountKey: owner)
+        guard !self.shuttingDown,
+              generation == self.historicalTrackingGeneration,
+              self.latestEnabledProviderIDs?.contains(UsageProvider.codex.instanceID) == true,
+              WindowsPredictivePaceWarningSettings.load().historicalTrackingEnabled
+        else { return }
+        let dataset = await self.historicalUsageHistoryStore.loadCodexDataset(
+            canonicalAccountKey: owner,
+            canonicalEmailHashKey: nil,
+            legacyEmailHash: nil,
+            hasAdjacentMultiAccountVeto: true)
+        guard !self.shuttingDown,
+              generation == self.historicalTrackingGeneration,
+              self.latestEnabledProviderIDs?.contains(UsageProvider.codex.instanceID) == true,
+              WindowsPredictivePaceWarningSettings.load().historicalTrackingEnabled
+        else { return }
+        self.codexHistoricalDatasetAccountKey = owner
+        self.codexHistoricalDataset = dataset
+    }
+
     private func evaluatePredictivePaceWarnings(
         provider: UsageProvider, snapshot: UsageSnapshot,
         predictivePaceWarningGeneration: UInt64,
@@ -857,11 +940,38 @@ public actor WindowsUsageRuntime {
             .init(session: SessionQuotaTransitionCore.sessionWindow(provider: provider, snapshot: snapshot)?.window,
                 weekly: snapshot.secondary)
         }
-        // Windows currently has no learned-history store; historicalTrackingEnabled is
-        // retained for settings parity, while this path uses the live linear projection.
-        let weekly = source.weekly.flatMap {
-            PredictivePaceWarningCandidateCore.linearWeeklyPace(provider: provider, window: $0,
-                dataConfidence: snapshot.dataConfidence, now: snapshot.updatedAt,
+        let weekly = source.weekly.flatMap { window -> UsagePace? in
+            if provider == .codex, settings.historicalTrackingEnabled {
+                guard ProviderDescriptorRegistry.descriptor(for: .codex).pace.allowsPace(
+                    dataConfidence: snapshot.dataConfidence),
+                    window.remainingPercent > 0
+                else { return nil }
+
+                if settings.weeklyProgressWorkDays == nil,
+                   self.codexHistoricalDatasetAccountKey == owner,
+                   let historical = CodexHistoricalPaceEvaluator.evaluate(
+                       window: window,
+                       now: snapshot.updatedAt,
+                       dataset: self.codexHistoricalDataset)
+                {
+                    // Once a learned result exists, apply the same floor as the
+                    // original resolver; do not silently replace it with linear pace.
+                    return historical.expectedUsedPercent >= 3 ? historical : nil
+                }
+                guard let fallback = UsagePace.weekly(
+                    window: window,
+                    now: snapshot.updatedAt,
+                    defaultWindowMinutes: 10080,
+                    workDays: settings.weeklyProgressWorkDays),
+                    fallback.expectedUsedPercent >= 3
+                else { return nil }
+                return fallback
+            }
+            return PredictivePaceWarningCandidateCore.linearWeeklyPace(
+                provider: provider,
+                window: window,
+                dataConfidence: snapshot.dataConfidence,
+                now: snapshot.updatedAt,
                 workDays: settings.weeklyProgressWorkDays)
         }
         let candidates = PredictivePaceWarningCandidateCore.candidates(
@@ -1154,7 +1264,8 @@ public actor WindowsUsageRuntime {
         codexVisibleAccount: CodexVisibleAccount? = nil,
         presentationSettings: WindowsUsagePresentationSettings,
         quotaWarningGeneration: UInt64,
-        predictivePaceWarningGeneration: UInt64) async -> [String]
+        predictivePaceWarningGeneration: UInt64,
+        historicalTrackingGeneration: UInt64) async -> [String]
     {
         do {
             let account: ProviderTokenAccount? = if codexVisibleAccount == nil {
@@ -1223,6 +1334,11 @@ public actor WindowsUsageRuntime {
                     strategyKind: result.strategyKind,
                     oauthHistoryOwnerIdentifier: result.claudeOAuthHistoryOwnerIdentifier,
                     quotaWarningGeneration: quotaWarningGeneration)
+                await self.recordCodexHistoricalSampleIfNeeded(
+                    provider: provider,
+                    snapshot: result.usage,
+                    codexVisibleAccount: codexVisibleAccount,
+                    generation: historicalTrackingGeneration)
                 self.evaluatePredictivePaceWarnings(provider: provider, snapshot: result.usage,
                     predictivePaceWarningGeneration: predictivePaceWarningGeneration,
                     codexVisibleAccount: codexVisibleAccount, tokenAccount: account,

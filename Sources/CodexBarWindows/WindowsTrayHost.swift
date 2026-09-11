@@ -34,6 +34,8 @@ public final class WindowsTrayHost: @unchecked Sendable {
     private static let quotaWarningSettingsCommand = UINT_PTR(0x700A)
     private static let quotaWarningOnScreenAlertCommand = UINT_PTR(0x700B)
     private static let predictivePaceWarningNotificationsCommand = UINT_PTR(0x700C)
+    private static let historicalTrackingCommand = UINT_PTR(0x700D)
+    private static let weeklyProgressWorkDaysCommandBase = UINT_PTR(0x7060)
     private static let providerQuotaWarningCommandBase = UINT_PTR(0x7400)
     private static let refreshFrequencyCommandBase = UINT_PTR(0x7010)
     private static let lowPowerModeOffCommand = UINT_PTR(0x7020)
@@ -509,6 +511,13 @@ public final class WindowsTrayHost: @unchecked Sendable {
                 menu, predictivePaceWarningNotificationsFlags,
                 Self.predictivePaceWarningNotificationsCommand, $0)
         }
+        let historicalTrackingEnabled = self.presentationDefaults
+            .object(forKey: "historicalTrackingEnabled") as? Bool ?? false
+        "Historical tracking".withCString(encodedAs: UTF16.self) {
+            let flags = UINT(MF_STRING) | (historicalTrackingEnabled ? UINT(MF_CHECKED) : 0)
+            _ = AppendMenuW(menu, flags, Self.historicalTrackingCommand, $0)
+        }
+        self.appendWeeklyProgressWorkDaysMenu(to: menu)
         if quotaWarningNotificationsEnabled || predictivePaceWarningNotificationsEnabled {
             "Warning notification sound".withCString(encodedAs: UTF16.self) {
                 _ = AppendMenuW(menu, quotaWarningSoundFlags, Self.quotaWarningSoundCommand, $0)
@@ -620,6 +629,50 @@ public final class WindowsTrayHost: @unchecked Sendable {
             if self.quotaWarningOverlayOwner == .predictive {
                 self.dismissQuotaWarningOverlay()
             }
+        }
+        self.onPredictivePaceWarningSettingsChanged(
+            WindowsPredictivePaceWarningSettings.load(userDefaults: self.presentationDefaults))
+    }
+
+    private func toggleHistoricalTrackingSetting() {
+        let current = self.presentationDefaults.object(forKey: "historicalTrackingEnabled") as? Bool ?? false
+        self.presentationDefaults.set(!current, forKey: "historicalTrackingEnabled")
+        self.onPredictivePaceWarningSettingsChanged(
+            WindowsPredictivePaceWarningSettings.load(userDefaults: self.presentationDefaults))
+    }
+
+    private static func weeklyProgressWorkDaysCommand(for workDays: Int?) -> UINT_PTR {
+        switch workDays {
+        case nil: return Self.weeklyProgressWorkDaysCommandBase
+        case 4: return Self.weeklyProgressWorkDaysCommandBase + 1
+        case 5: return Self.weeklyProgressWorkDaysCommandBase + 2
+        case 7: return Self.weeklyProgressWorkDaysCommandBase + 3
+        default: return Self.weeklyProgressWorkDaysCommandBase + 4
+        }
+    }
+
+    private func appendWeeklyProgressWorkDaysMenu(to menu: HMENU) {
+        guard let submenu = CreatePopupMenu() else { return }
+        let current = self.presentationDefaults.object(forKey: "weeklyProgressWorkDays") as? Int
+        for workDays in WindowsPredictivePaceWarningSettings.weeklyProgressWorkDayOptions {
+            let label = WindowsPredictivePaceWarningSettings.weeklyProgressWorkDaysLabel(workDays)
+            let flags = UINT(MF_STRING) | ((current == workDays) ? UINT(MF_CHECKED) : 0)
+            label.withCString(encodedAs: UTF16.self) {
+                _ = AppendMenuW(submenu, flags, Self.weeklyProgressWorkDaysCommand(for: workDays), $0)
+            }
+        }
+        let title = Array("Weekly progress work days".utf16) + [0]
+        let attached = title.withUnsafeBufferPointer {
+            AppendMenuW(menu, UINT(MF_STRING | MF_POPUP), UINT_PTR(UInt(bitPattern: submenu)), $0.baseAddress)
+        }
+        if attached == 0 { _ = DestroyMenu(submenu) }
+    }
+
+    private func selectWeeklyProgressWorkDays(_ workDays: Int?) {
+        if let workDays {
+            self.presentationDefaults.set(workDays, forKey: "weeklyProgressWorkDays")
+        } else {
+            self.presentationDefaults.removeObject(forKey: "weeklyProgressWorkDays")
         }
         self.onPredictivePaceWarningSettingsChanged(
             WindowsPredictivePaceWarningSettings.load(userDefaults: self.presentationDefaults))
@@ -784,6 +837,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
         case Self.sessionQuotaNotificationsCommand: self.toggleSessionQuotaNotificationsSetting()
         case Self.quotaWarningNotificationsCommand: self.toggleQuotaWarningNotificationsSetting()
         case Self.predictivePaceWarningNotificationsCommand: self.togglePredictivePaceWarningNotificationsSetting()
+        case Self.historicalTrackingCommand: self.toggleHistoricalTrackingSetting()
         case Self.quotaWarningSoundCommand: self.toggleQuotaWarningSoundSetting()
         case Self.quotaWarningOnScreenAlertCommand: self.toggleQuotaWarningOnScreenAlertSetting()
         case Self.quotaWarningSettingsCommand: self.editQuotaWarningSettings()
@@ -791,6 +845,10 @@ public final class WindowsTrayHost: @unchecked Sendable {
         case Self.lowPowerModeOffCommand: self.selectLowPowerModePreference(.off)
         case Self.lowPowerModeOnCommand: self.selectLowPowerModePreference(.on)
         case Self.lowPowerModeAutomaticCommand: self.selectLowPowerModePreference(.automatic)
+        case Self.weeklyProgressWorkDaysCommandBase: self.selectWeeklyProgressWorkDays(nil)
+        case Self.weeklyProgressWorkDaysCommandBase + 1: self.selectWeeklyProgressWorkDays(4)
+        case Self.weeklyProgressWorkDaysCommandBase + 2: self.selectWeeklyProgressWorkDays(5)
+        case Self.weeklyProgressWorkDaysCommandBase + 3: self.selectWeeklyProgressWorkDays(7)
         case let frequencyCommand
             where frequencyCommand >= Self.refreshFrequencyCommandBase
                 && frequencyCommand <= Self.refreshFrequencyCommandBase + 7:
