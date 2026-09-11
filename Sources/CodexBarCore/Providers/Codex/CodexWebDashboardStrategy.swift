@@ -353,6 +353,165 @@ extension CodexWebDashboardStrategy {
         return dashboard.withSubscriptionMetadata(result.metadata)
     }
 }
+#elseif os(Windows)
+import Foundation
+
+public struct CodexWebDashboardStrategy: ProviderFetchStrategy {
+    public let id: String = "codex.web.dashboard"
+    public let kind: ProviderFetchKind = .webDashboard
+
+    public init() {}
+
+    public func isAvailable(_ context: ProviderFetchContext) async -> Bool {
+        context.sourceMode.usesWeb &&
+            context.settings?.codex?.cookieSource != .off &&
+            !Self.managedAccountStoreIsUnreadable(context) &&
+            !Self.managedAccountTargetIsUnavailable(context) &&
+            !Self.profileAccountTargetIsUnavailable(context)
+    }
+
+    public func fetch(_ context: ProviderFetchContext) async throws -> ProviderFetchResult {
+        guard context.settings?.codex?.cookieSource != .off else {
+            throw ProviderFetchError.noAvailableStrategy(.codex)
+        }
+        guard !Self.managedAccountStoreIsUnreadable(context),
+              !Self.managedAccountTargetIsUnavailable(context),
+              !Self.profileAccountTargetIsUnavailable(context)
+        else {
+            throw WindowsOpenAIWebCodexError.loginRequired
+        }
+
+        let deadline = Date().addingTimeInterval(Self.sanitizedTimeout(context.webTimeout))
+        let auth = context.fetcher.loadAuthBackedCodexAccount()
+        let expectedEmail = auth.email?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let cookieSettings = context.settings?.codex
+        let importer = WindowsOpenAIDashboardCookieImporter()
+        let candidates = try await importer.acquireCandidates(
+            cookieSource: cookieSettings?.cookieSource ?? .auto,
+            manualCookieHeader: cookieSettings?.manualCookieHeader,
+            cacheScope: cookieSettings?.openAIWebCacheScope,
+            deadline: deadline)
+        guard !candidates.isEmpty else { throw WindowsOpenAIWebCodexError.loginRequired }
+
+        var firstError: Error?
+        for candidate in candidates {
+            try Task.checkCancellation()
+            do {
+                let fetched = try await importer.fetchSnapshot(
+                    for: candidate,
+                    expectedAccountEmail: expectedEmail,
+                    // Cookie persistence is committed only after dashboard authority accepts this
+                    // exact candidate for the selected account.
+                    cacheScope: nil,
+                    deadline: deadline)
+                let input = CodexCLIDashboardAuthorityContext.makeLiveWebInput(
+                    dashboard: fetched.snapshot,
+                    context: context,
+                    routingTargetEmail: expectedEmail)
+                let authorizedDashboard = CodexDashboardAuthority.authorize(
+                    dashboard: fetched.snapshot,
+                    input: input)
+                let decision = authorizedDashboard.decision
+                switch decision.disposition {
+                case .attach:
+                    let attachedAccountEmail = CodexCLIDashboardAuthorityContext.attachmentEmail(from: input)
+                    let credits = fetched.snapshot.toCreditsSnapshot()
+                    let usage = fetched.snapshot.toUsageSnapshot(
+                        provider: .codex,
+                        accountEmail: attachedAccountEmail)
+                        ?? Self.makeCreditsOnlyUsageSnapshot(
+                            dashboard: fetched.snapshot,
+                            attachedAccountEmail: attachedAccountEmail,
+                            credits: credits)
+                    guard let usage else { throw WindowsOpenAIWebCodexError.missingUsage }
+                    if let attachedAccountEmail {
+                        if let cacheScope = cookieSettings?.openAIWebCacheScope {
+                            CookieHeaderCache.store(
+                                provider: .codex,
+                                scope: cacheScope,
+                                cookieHeader: fetched.candidate.cookieHeader,
+                                sourceLabel: fetched.candidate.sourceLabel)
+                        }
+                        OpenAIDashboardCacheStore.save(OpenAIDashboardCache(
+                            accountEmail: attachedAccountEmail,
+                            snapshot: fetched.snapshot))
+                    }
+                    return self.makeResult(
+                        usage: CodexExtraUsageCost.attaching(to: usage, credits: credits),
+                        credits: credits,
+                        dashboard: fetched.snapshot,
+                        authorizedDashboard: authorizedDashboard,
+                        sourceLabel: "openai-web")
+                case .displayOnly:
+                    throw CodexDashboardPolicyError.displayOnly(decision)
+                case .failClosed:
+                    throw WindowsOpenAIWebCodexError.policyRejected(decision)
+                }
+            } catch is CancellationError {
+                throw CancellationError()
+            } catch let error as URLError where error.code == .cancelled || error.code == .timedOut {
+                throw error
+            } catch {
+                if firstError == nil { firstError = error }
+                continue
+            }
+        }
+        throw firstError ?? WindowsOpenAIWebCodexError.loginRequired
+    }
+
+    public func shouldFallback(on _: Error, context: ProviderFetchContext) -> Bool {
+        context.sourceMode == .auto
+    }
+
+    private static func managedAccountStoreIsUnreadable(_ context: ProviderFetchContext) -> Bool {
+        context.settings?.codex?.managedAccountStoreUnreadable == true
+    }
+
+    private static func managedAccountTargetIsUnavailable(_ context: ProviderFetchContext) -> Bool {
+        context.settings?.codex?.managedAccountTargetUnavailable == true
+    }
+
+    private static func profileAccountTargetIsUnavailable(_ context: ProviderFetchContext) -> Bool {
+        context.settings?.codex?.profileAccountTargetUnavailable == true
+    }
+
+    private static func sanitizedTimeout(_ timeout: TimeInterval) -> TimeInterval {
+        guard timeout.isFinite, timeout > 0 else { return 1 }
+        return timeout
+    }
+
+    private static func makeCreditsOnlyUsageSnapshot(
+        dashboard: OpenAIDashboardSnapshot,
+        attachedAccountEmail: String?,
+        credits: CreditsSnapshot?) -> UsageSnapshot?
+    {
+        guard credits != nil else { return nil }
+        return UsageSnapshot(
+            primary: nil,
+            secondary: nil,
+            tertiary: nil,
+            updatedAt: dashboard.updatedAt,
+            identity: ProviderIdentitySnapshot(
+                providerID: .codex,
+                accountEmail: attachedAccountEmail ?? dashboard.signedInEmail,
+                accountOrganization: nil,
+                loginMethod: dashboard.accountPlan))
+    }
+}
+
+private enum WindowsOpenAIWebCodexError: LocalizedError, Sendable {
+    case loginRequired
+    case missingUsage
+    case policyRejected(CodexDashboardAuthorityDecision)
+
+    var errorDescription: String? {
+        switch self {
+        case .loginRequired: "OpenAI web access requires login."
+        case .missingUsage: "OpenAI web dashboard did not include usage limits."
+        case .policyRejected: "OpenAI web dashboard was rejected by Codex dashboard authority."
+        }
+    }
+}
 #else
 public struct CodexWebDashboardStrategy: ProviderFetchStrategy {
     public let id: String = "codex.web.dashboard"
