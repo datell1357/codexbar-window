@@ -31,6 +31,7 @@ public actor WindowsUsageRuntime {
     public typealias CombinedPublisher = @Sendable ([String], [WindowsTrayMenuEntry]) -> Void
     public typealias NotificationPublisher = @Sendable (WindowsSessionQuotaNotification) -> Void
     public typealias QuotaWarningPublisher = @Sendable (WindowsQuotaWarningNotification) -> Void
+    public typealias PredictivePaceWarningPublisher = @Sendable (WindowsPredictivePaceWarningNotification) -> Void
     public struct RefreshSignals: Sendable {
         public var lowPowerModeEnabled: Bool
         /// Nil means the native power snapshot succeeded. A non-nil value is
@@ -62,6 +63,7 @@ public actor WindowsUsageRuntime {
     private var combinedPublisher: CombinedPublisher
     private var notificationPublisher: NotificationPublisher
     private var quotaWarningPublisher: QuotaWarningPublisher
+    private var predictivePaceWarningPublisher: PredictivePaceWarningPublisher
     private var refreshTask: Task<Void, Never>?
     private var refreshCompletionWaiters: [CheckedContinuation<Void, Never>] = []
     private var startupConnectivityRetryTask: Task<Void, Never>?
@@ -112,6 +114,8 @@ public actor WindowsUsageRuntime {
     private var latestProviderConfigs: [ProviderInstanceID: ProviderConfig] = [:]
     private var latestEnabledProviderIDs: Set<ProviderInstanceID>?
     private var quotaWarningGeneration: UInt64 = 0
+    private var predictivePaceWarningGeneration: UInt64 = 0
+    private var predictivePaceWarningKeys: Set<PredictivePaceWarningTransitionCore.Key> = []
 
     public init(
         configStore: CodexBarConfigStore = CodexBarConfigStore(),
@@ -119,6 +123,7 @@ public actor WindowsUsageRuntime {
         combinedPublisher: @escaping CombinedPublisher = { _, _ in },
         notificationPublisher: @escaping NotificationPublisher = { _ in },
         quotaWarningPublisher: @escaping QuotaWarningPublisher = { _ in },
+        predictivePaceWarningPublisher: @escaping PredictivePaceWarningPublisher = { _ in },
         signalProvider: @escaping RefreshSignalProvider = {
             let settings = WindowsRefreshSettings.load()
             let power = WindowsPowerState.read()
@@ -138,6 +143,7 @@ public actor WindowsUsageRuntime {
         self.combinedPublisher = combinedPublisher
         self.notificationPublisher = notificationPublisher
         self.quotaWarningPublisher = quotaWarningPublisher
+        self.predictivePaceWarningPublisher = predictivePaceWarningPublisher
         self.signalProvider = signalProvider
         self.refreshSettings = WindowsRefreshSettings.load()
     }
@@ -154,6 +160,16 @@ public actor WindowsUsageRuntime {
 
     public func setQuotaWarningPublisher(_ publisher: @escaping QuotaWarningPublisher) {
         self.quotaWarningPublisher = publisher
+    }
+
+    public func setPredictivePaceWarningPublisher(_ publisher: @escaping PredictivePaceWarningPublisher) {
+        self.predictivePaceWarningPublisher = publisher
+    }
+
+    public func predictivePaceWarningSettingsDidChange(_ settings: WindowsPredictivePaceWarningSettings) async {
+        guard !self.shuttingDown else { return }
+        self.predictivePaceWarningGeneration &+= 1
+        if !settings.notificationsEnabled { self.predictivePaceWarningKeys.removeAll(keepingCapacity: true) }
     }
 
     public func setNotificationPublisher(_ publisher: @escaping NotificationPublisher) {
@@ -214,6 +230,9 @@ public actor WindowsUsageRuntime {
             try self.configStore.save(config)
             let enabledIDs = Set(config.enabledProviders())
             self.latestEnabledProviderIDs = enabledIDs
+            self.predictivePaceWarningKeys = self.predictivePaceWarningKeys.filter {
+                enabledIDs.contains($0.provider.instanceID)
+            }
             self.latestProviderConfigs = enabledIDs.reduce(into: [:]) { result, id in
                 if result[id] == nil, let config = config.providerConfig(for: id) {
                     result[id] = config
@@ -416,6 +435,7 @@ public actor WindowsUsageRuntime {
 
     private func performRefresh() async {
         let refreshQuotaWarningGeneration = self.quotaWarningGeneration
+        let refreshPredictivePaceWarningGeneration = self.predictivePaceWarningGeneration
         let presentationSettings = WindowsUsagePresentationSettings.load()
         let fetchOptionalUsage = presentationSettings.showOptionalCreditsAndExtraUsage
         do {
@@ -426,6 +446,9 @@ public actor WindowsUsageRuntime {
             let config = try self.configStore.loadOrCreateDefault()
             let enabledIDs = Set(config.enabledProviders())
             self.latestEnabledProviderIDs = enabledIDs
+            self.predictivePaceWarningKeys = self.predictivePaceWarningKeys.filter {
+                enabledIDs.contains($0.provider.instanceID)
+            }
             self.latestProviderConfigs = enabledIDs.reduce(into: [:]) { result, id in
                 if result[id] == nil, let providerConfig = config.providerConfig(for: id) {
                     result[id] = providerConfig
@@ -479,7 +502,8 @@ public actor WindowsUsageRuntime {
                             context: accountContext,
                             config: config,
                             presentationSettings: presentationSettings,
-                            quotaWarningGeneration: refreshQuotaWarningGeneration)
+                            quotaWarningGeneration: refreshQuotaWarningGeneration,
+                            predictivePaceWarningGeneration: refreshPredictivePaceWarningGeneration)
                         if let presentation = self.presentations[provider.instanceID] { entries.append(.presentation(presentation)) }
                         else { entries.append(contentsOf: fetched.map(RenderEntry.row)) }
                     } else {
@@ -493,7 +517,8 @@ public actor WindowsUsageRuntime {
                             config: config,
                             codexVisibleAccount: active,
                             presentationSettings: presentationSettings,
-                            quotaWarningGeneration: refreshQuotaWarningGeneration)
+                            quotaWarningGeneration: refreshQuotaWarningGeneration,
+                            predictivePaceWarningGeneration: refreshPredictivePaceWarningGeneration)
                         if let presentation = self.presentations[provider.instanceID] { entries.append(.presentation(presentation)) }
                         else { entries.append(contentsOf: fetched.map(RenderEntry.row)) }
                     }
@@ -503,7 +528,8 @@ public actor WindowsUsageRuntime {
                         context: accountContext,
                         config: config,
                         presentationSettings: presentationSettings,
-                        quotaWarningGeneration: refreshQuotaWarningGeneration)
+                        quotaWarningGeneration: refreshQuotaWarningGeneration,
+                        predictivePaceWarningGeneration: refreshPredictivePaceWarningGeneration)
                     if let presentation = self.presentations[provider.instanceID] { entries.append(.presentation(presentation)) }
                     else { entries.append(contentsOf: fetched.map(RenderEntry.row)) }
                 }
@@ -652,6 +678,7 @@ public actor WindowsUsageRuntime {
         self.sessionQuotaStates.removeAll(keepingCapacity: false)
         self.codexSessionQuotaBaselineWatermark = nil
         self.quotaWarningStates.removeAll(keepingCapacity: false)
+        self.predictivePaceWarningKeys.removeAll(keepingCapacity: false)
         self.latestProviderConfigs.removeAll(keepingCapacity: false)
         self.latestEnabledProviderIDs = nil
         await CLIProbeSessionResetter.resetAll()
@@ -787,6 +814,84 @@ public actor WindowsUsageRuntime {
             let providerName = ProviderDescriptorRegistry.descriptor(for: key.provider).metadata.displayName
             self.quotaWarningPublisher(.init(providerName: providerName, window: key.lane, threshold: threshold,
                 currentRemaining: candidate.window.remainingPercent, accountDisplayName: accountDisplayName, windowDisplayLabel: candidate.displayLabel))
+        }
+    }
+
+    private func evaluatePredictivePaceWarnings(
+        provider: UsageProvider, snapshot: UsageSnapshot,
+        predictivePaceWarningGeneration: UInt64,
+        codexVisibleAccount: CodexVisibleAccount?, tokenAccount: ProviderTokenAccount?,
+        environment: [String: String],
+        claudeAccountUUIDBefore: String?, claudeAccountUUIDAfter: String?,
+        strategyKind: ProviderFetchKind?, oauthHistoryOwnerIdentifier: String?)
+    {
+        let settings = WindowsPredictivePaceWarningSettings.load()
+        guard !self.shuttingDown,
+              predictivePaceWarningGeneration == self.predictivePaceWarningGeneration,
+              self.latestEnabledProviderIDs?.contains(provider.instanceID) == true
+        else { return }
+        guard settings.notificationsEnabled, provider == .codex || provider == .claude else {
+            if provider == .codex || provider == .claude {
+                self.predictivePaceWarningKeys = self.predictivePaceWarningKeys.filter { $0.provider != provider }
+            }
+            return
+        }
+        let resolved = provider == .claude ? self.quotaAccountDiscriminator(
+            provider: provider, snapshot: snapshot, codexVisibleAccount: codexVisibleAccount,
+            tokenAccount: tokenAccount, environment: environment,
+            strategyKind: strategyKind, oauthHistoryOwnerIdentifier: oauthHistoryOwnerIdentifier,
+            claudeAccountUUIDBefore: claudeAccountUUIDBefore, claudeAccountUUIDAfter: claudeAccountUUIDAfter) : nil
+        guard let owner = PredictivePaceWarningOwnerIdentityCore.discriminator(.init(
+            provider: provider, snapshotAccountID: snapshot.identity?.accountID,
+            snapshotEmail: snapshot.accountEmail(for: provider),
+            codexSelectedWorkspaceAccountID: codexVisibleAccount?.workspaceAccountID,
+            codexSelectedEmail: codexVisibleAccount?.email, tokenAccountID: tokenAccount?.id,
+            claudeResolvedDiscriminator: resolved)) else {
+            // An incomplete identity is not evidence that a prior account disappeared.
+            // Preserve the episode until a later successful snapshot supplies stable ownership.
+            return
+        }
+        let source: PredictivePaceWarningCandidateCore.SourceWindows = if provider == .codex {
+            CodexProviderDescriptor.predictivePaceSourceWindows(snapshot: snapshot)
+        } else {
+            .init(session: SessionQuotaTransitionCore.sessionWindow(provider: provider, snapshot: snapshot)?.window,
+                weekly: snapshot.secondary)
+        }
+        // Windows currently has no learned-history store; historicalTrackingEnabled is
+        // retained for settings parity, while this path uses the live linear projection.
+        let weekly = source.weekly.flatMap {
+            PredictivePaceWarningCandidateCore.linearWeeklyPace(provider: provider, window: $0,
+                dataConfidence: snapshot.dataConfidence, now: snapshot.updatedAt,
+                workDays: settings.weeklyProgressWorkDays)
+        }
+        let candidates = PredictivePaceWarningCandidateCore.candidates(
+            provider: provider,
+            sourceWindows: source,
+            weeklyPace: weekly,
+            now: snapshot.updatedAt)
+        for candidate in candidates {
+            guard let resetsAt = candidate.rateWindow.resetsAt else { continue }
+            let key = PredictivePaceWarningTransitionCore.Key(
+                provider: provider,
+                accountDiscriminator: owner,
+                window: candidate.window,
+                resetWindow: .init(
+                    windowMinutes: candidate.rateWindow.windowMinutes,
+                    resetsAt: resetsAt))
+            PredictivePaceWarningTransitionCore.reconcileSiblingWindowKeys(
+                activeKey: key,
+                notifiedKeys: &self.predictivePaceWarningKeys)
+            guard PredictivePaceWarningTransitionCore.recordObservation(
+                key: key,
+                pace: candidate.pace,
+                notifiedKeys: &self.predictivePaceWarningKeys),
+                  let eta = candidate.pace.etaSeconds, eta > 0 else { continue }
+            self.predictivePaceWarningPublisher(.init(
+                providerName: ProviderDescriptorRegistry.descriptor(for: provider).metadata.displayName,
+                window: candidate.window,
+                etaSeconds: eta,
+                accountDisplayName: WindowsUsagePresentationSettings.load().hidePersonalInfo
+                    ? nil : snapshot.accountEmail(for: provider)))
         }
     }
 
@@ -1048,7 +1153,8 @@ public actor WindowsUsageRuntime {
         config: CodexBarConfig,
         codexVisibleAccount: CodexVisibleAccount? = nil,
         presentationSettings: WindowsUsagePresentationSettings,
-        quotaWarningGeneration: UInt64) async -> [String]
+        quotaWarningGeneration: UInt64,
+        predictivePaceWarningGeneration: UInt64) async -> [String]
     {
         do {
             let account: ProviderTokenAccount? = if codexVisibleAccount == nil {
@@ -1117,6 +1223,14 @@ public actor WindowsUsageRuntime {
                     strategyKind: result.strategyKind,
                     oauthHistoryOwnerIdentifier: result.claudeOAuthHistoryOwnerIdentifier,
                     quotaWarningGeneration: quotaWarningGeneration)
+                self.evaluatePredictivePaceWarnings(provider: provider, snapshot: result.usage,
+                    predictivePaceWarningGeneration: predictivePaceWarningGeneration,
+                    codexVisibleAccount: codexVisibleAccount, tokenAccount: account,
+                    environment: env,
+                    claudeAccountUUIDBefore: claudeAccountUUIDBefore,
+                    claudeAccountUUIDAfter: provider == .claude ? ClaudeAccountProfile.accountUuid(environment: env) : nil,
+                    strategyKind: result.strategyKind,
+                    oauthHistoryOwnerIdentifier: result.claudeOAuthHistoryOwnerIdentifier)
                 return presentation.rows()
             case let .failure(error):
                 self.recordStartupConnectivityRetryableFailure(error)
