@@ -59,6 +59,10 @@ private final class WindowsTrayApplication: @unchecked Sendable {
                 let result = await self.runtime.saveProviderQuotaWarnings(providerID: providerID, patch: patch)
                 self.host.postProviderQuotaWarningSave(requestID: requestID, providerID: providerID, result: result)
             }
+        },
+        onPredictivePaceWarningSettingsChanged: { [weak self] settings in
+            guard let self else { return }
+            Task { await self.runtime.predictivePaceWarningSettingsDidChange(settings) }
         })
 
     init() {
@@ -76,6 +80,9 @@ private final class WindowsTrayApplication: @unchecked Sendable {
             }
             await runtime.setQuotaWarningPublisher { [weak host] event in
                 host?.postQuotaWarningNotification(event)
+            }
+            await runtime.setPredictivePaceWarningPublisher { [weak host] event in
+                host?.postPredictivePaceWarningNotification(event)
             }
             await runtime.start()
         }
