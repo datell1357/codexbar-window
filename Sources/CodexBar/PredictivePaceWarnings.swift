@@ -1,23 +1,8 @@
 import CodexBarCore
 import Foundation
 
-struct PredictivePaceWarningStateKey: Hashable {
-    let provider: UsageProvider
-    let accountDiscriminator: String
-    let window: QuotaWarningWindow
-    let resetWindow: PredictivePaceWarningResetWindow
-}
-
-struct PredictivePaceWarningResetWindow: Hashable {
-    let windowMinutes: Int?
-    let resetsAt: Date
-
-    func belongsToSameCycle(as other: Self) -> Bool {
-        guard self.windowMinutes == other.windowMinutes else { return false }
-        let tolerance = self.windowMinutes.map { max(TimeInterval($0 * 60) / 2, 300) } ?? 300
-        return abs(self.resetsAt.timeIntervalSince(other.resetsAt)) < tolerance
-    }
-}
+typealias PredictivePaceWarningStateKey = PredictivePaceWarningTransitionCore.Key
+typealias PredictivePaceWarningResetWindow = PredictivePaceWarningTransitionCore.ResetWindow
 
 struct PredictivePaceWarningEvent: Equatable {
     let window: QuotaWarningWindow
@@ -47,10 +32,7 @@ enum PredictivePaceWarningNotificationLogic {
     }
 
     static func shouldNotify(pace: UsagePace) -> Bool {
-        guard !pace.willLastToReset else { return false }
-        guard let etaSeconds = pace.etaSeconds, etaSeconds > 0 else { return false }
-        guard (pace.runOutProbability ?? 1) >= 0.5 else { return false }
-        return true
+        PredictivePaceWarningTransitionCore.shouldNotify(pace: pace)
     }
 
     static func recordObservation(
@@ -58,37 +40,19 @@ enum PredictivePaceWarningNotificationLogic {
         pace: UsagePace,
         notifiedKeys: inout Set<PredictivePaceWarningStateKey>) -> Bool
     {
-        if pace.willLastToReset {
-            notifiedKeys.remove(key)
-            return false
-        }
-
-        guard self.shouldNotify(pace: pace) else { return false }
-        guard !notifiedKeys.contains(key) else { return false }
-        notifiedKeys.insert(key)
-        return true
+        PredictivePaceWarningTransitionCore.recordObservation(
+            key: key,
+            pace: pace,
+            notifiedKeys: &notifiedKeys)
     }
 
     static func reconcileSiblingWindowKeys(
         activeKey: PredictivePaceWarningStateKey,
         notifiedKeys: inout Set<PredictivePaceWarningStateKey>)
     {
-        let siblingKeys = notifiedKeys.filter { key in
-            key.provider == activeKey.provider &&
-                key.accountDiscriminator == activeKey.accountDiscriminator &&
-                key.window == activeKey.window
-        }
-        guard !siblingKeys.isEmpty else { return }
-
-        let alreadyWarnedThisCycle = siblingKeys.contains { key in
-            key.resetWindow.belongsToSameCycle(as: activeKey.resetWindow)
-        }
-        notifiedKeys.subtract(siblingKeys)
-        if alreadyWarnedThisCycle {
-            // Follow small provider reset-time corrections without re-alerting. Replacing the key
-            // lets successive relative-TTL observations move together instead of accumulating drift.
-            notifiedKeys.insert(activeKey)
-        }
+        PredictivePaceWarningTransitionCore.reconcileSiblingWindowKeys(
+            activeKey: activeKey,
+            notifiedKeys: &notifiedKeys)
     }
 
     private static func durationText(seconds: TimeInterval, now: Date) -> String {

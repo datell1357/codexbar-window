@@ -20,16 +20,16 @@
   "interval_minutes": 10,
   "current_lanes": [
     {
-      "id": "predictive_core_149",
-      "status": "IMPLEMENTING",
-      "scope": "Pure reset-cycle warning reducer extraction only"
+      "id": "predictive_candidates_152",
+      "status": "READ_ONLY_CONTRACT_IN_PROGRESS",
+      "scope": "Shared candidate pace policy and Windows input dependencies"
     }
   ],
-  "static_qa_status": "SCOPED_REVIEWS_145_147_APPROVED_FULL_PARITY_INCOMPLETE",
+  "static_qa_status": "SCOPED_REVIEW_150_APPROVED_FULL_PARITY_INCOMPLETE",
   "windows_runtime_status": "NOT_RUN_BY_USER_INSTRUCTION",
   "completion_claim": false,
-  "next": "Publish reviewed overlay, review predictive reducer149; candidate/history/Windows predictive delivery remain pending.",
-  "last_batch": "quota-overlay-144-147",
+  "next": "Review candidate contract152; reducer extraction linked in original app, Windows predictive runtime remains pending.",
+  "last_batch": "predictive-reducer-149-151",
   "completed_source_changes": [
     "Windows package dependency wiring (partial)",
     "QuickJS watchdog Windows monotonic clock",
