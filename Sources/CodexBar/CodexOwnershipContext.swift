@@ -2,15 +2,7 @@ import CodexBarCore
 import CryptoKit
 import Foundation
 
-struct CodexOwnershipContext {
-    let canonicalKey: String?
-    let canonicalEmailHashKey: String?
-    let historicalLegacyEmailHash: String?
-    let planUtilizationLegacyEmailHash: String?
-    let currentWeeklyResetAt: Date?
-    let hasAdjacentMultiAccountVeto: Bool
-    let hasAdjacentEmailScopeAmbiguity: Bool
-}
+typealias CodexOwnershipContext = CodexHistoricalOwnershipContext
 
 extension UsageStore {
     func codexOwnershipContext(
@@ -56,21 +48,13 @@ extension UsageStore {
             ?? self.snapshots[.codex]?.secondary?.resetsAt
             ?? normalizedDashboardSnapshot?.secondary?.resetsAt
 
-        return CodexOwnershipContext(
-            canonicalKey: CodexHistoryOwnership.canonicalKey(for: canonicalIdentity),
-            canonicalEmailHashKey: normalizedEmail.map { CodexHistoryOwnership.canonicalEmailHashKey(for: $0) },
-            historicalLegacyEmailHash: legacyEmailSource.map {
-                CodexHistoryOwnership.legacyEmailHash(normalizedEmail: $0)
-            },
-            planUtilizationLegacyEmailHash: legacyEmailSource.map {
-                Self.codexLegacyPlanUtilizationEmailHashKey(for: $0)
-            },
+        return CodexHistoricalOwnershipContext.resolve(
+            identity: canonicalIdentity,
+            normalizedEmail: legacyEmailSource,
             currentWeeklyResetAt: currentWeeklyResetAt,
-            hasAdjacentMultiAccountVeto: self.codexHasAdjacentMultiAccountVeto(),
-            hasAdjacentEmailScopeAmbiguity: normalizedEmail.map {
-                self.codexHasAdjacentEmailScopeAmbiguity(normalizedEmail: $0) ||
-                    self.codexVisibleAccountsHaveAdjacentEmailScopeAmbiguity(normalizedEmail: $0)
-            } ?? false)
+            snapshot: self.settings.codexAccountReconciliationSnapshot,
+            projection: self.settings.codexVisibleAccountProjection,
+            includeVisibleAccounts: false)
     }
 
     func codexOwnershipContext(
@@ -87,22 +71,13 @@ extension UsageStore {
             .unresolved
         }
 
-        return CodexOwnershipContext(
-            canonicalKey: CodexHistoryOwnership.canonicalKey(for: canonicalIdentity),
-            canonicalEmailHashKey: normalizedEmail.map { CodexHistoryOwnership.canonicalEmailHashKey(for: $0) },
-            historicalLegacyEmailHash: normalizedEmail.map {
-                CodexHistoryOwnership.legacyEmailHash(normalizedEmail: $0)
-            },
-            planUtilizationLegacyEmailHash: normalizedEmail.map {
-                Self.codexLegacyPlanUtilizationEmailHashKey(for: $0)
-            },
+        return CodexHistoricalOwnershipContext.resolve(
+            identity: canonicalIdentity,
+            normalizedEmail: normalizedEmail,
             currentWeeklyResetAt: currentWeeklyResetAt,
-            hasAdjacentMultiAccountVeto: self.codexHasAdjacentMultiAccountVeto() ||
-                self.codexVisibleAccountsHaveAdjacentMultiAccountVeto(),
-            hasAdjacentEmailScopeAmbiguity: normalizedEmail.map {
-                self.codexHasAdjacentEmailScopeAmbiguity(normalizedEmail: $0) ||
-                    self.codexVisibleAccountsHaveAdjacentEmailScopeAmbiguity(normalizedEmail: $0)
-            } ?? false)
+            snapshot: self.settings.codexAccountReconciliationSnapshot,
+            projection: self.settings.codexVisibleAccountProjection,
+            includeVisibleAccounts: true)
     }
 
     func codexHasAdjacentMultiAccountVeto() -> Bool {

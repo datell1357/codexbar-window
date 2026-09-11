@@ -1,5 +1,22 @@
 import Foundation
 
+/// A coherent view of Codex account reconciliation state.
+///
+/// The projection and resolved source are both derived from the same
+/// reconciliation snapshot. Callers that need more than one of these values
+/// should retain this value instead of loading the reconciler repeatedly.
+public struct CodexAccountContextSnapshot: Equatable, Sendable {
+    public let reconciliationSnapshot: CodexAccountReconciliationSnapshot
+    public let visibleAccounts: CodexVisibleAccountProjection
+    public let resolvedActiveSource: CodexResolvedActiveSource
+
+    public init(reconciliationSnapshot: CodexAccountReconciliationSnapshot) {
+        self.reconciliationSnapshot = reconciliationSnapshot
+        self.visibleAccounts = CodexVisibleAccountProjection.make(from: reconciliationSnapshot)
+        self.resolvedActiveSource = CodexActiveSourceResolver.resolve(from: reconciliationSnapshot)
+    }
+}
+
 
 public struct TokenAccountCLISelection {
     public let label: String?
@@ -129,17 +146,15 @@ public struct TokenAccountCLIContext {
     {
         // Provider-specific by design: Codex settings include reconciliation state and profile-home selection.
         let config = self.providerConfig(for: .codex)
-        let reconciliationSnapshot = self.codexAccountReconciler(
-            activeSource: codexActiveSourceOverride).loadSnapshot()
-        let resolvedActiveSource = CodexActiveSourceResolver.resolve(from: reconciliationSnapshot)
+        let accountContext = self.codexAccountContextSnapshot(activeSource: codexActiveSourceOverride)
         let cookieSettings = ProviderCredentialSettingsContext(config: config, account: account)
             .cookieSettings(for: .codex)
         return CodexProviderSettingsBuilder.make(input: CodexProviderSettingsBuilderInput(
             usageDataSource: .auto,
             cookieSource: cookieSettings.cookieSource,
             manualCookieHeader: cookieSettings.manualCookieHeader,
-            reconciliationSnapshot: reconciliationSnapshot,
-            resolvedActiveSource: resolvedActiveSource))
+            reconciliationSnapshot: accountContext.reconciliationSnapshot,
+            resolvedActiveSource: accountContext.resolvedActiveSource))
     }
 
     public func environment(
@@ -222,7 +237,15 @@ public struct TokenAccountCLIContext {
 
     public func visibleCodexAccounts() -> CodexVisibleAccountProjection {
         // Provider-specific by design: only Codex exposes reconciled live, managed, and profile-home accounts.
-        self.codexAccountReconciler().loadVisibleAccounts()
+        self.codexAccountContextSnapshot().visibleAccounts
+    }
+
+    public func codexAccountContextSnapshot(
+        activeSource: CodexActiveSource? = nil) -> CodexAccountContextSnapshot
+    {
+        // Provider-specific by design: all returned values come from one reconciler load.
+        CodexAccountContextSnapshot(
+            reconciliationSnapshot: self.codexAccountReconciler(activeSource: activeSource).loadSnapshot())
     }
 
     public func applyAccountLabel(
