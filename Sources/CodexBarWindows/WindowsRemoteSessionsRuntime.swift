@@ -192,6 +192,7 @@ public actor WindowsRemoteSessionsRuntime {
             return
         }
         let hide = self.defaults.object(forKey: "hidePersonalInfo") as? Bool ?? false
+        let style = WindowsSessionLabelStyle.load(self.defaults)
         var messages = self.message.map { [$0] } ?? []
         if self.fetchTask != nil { messages.append("Refreshing remote sessions…") }
         var rows: [WindowsRemoteSessionMenuItem] = []
@@ -200,7 +201,7 @@ public actor WindowsRemoteSessionsRuntime {
             if host.error != nil { messages.append("\(hostLabel): unavailable; previous rows are disabled.") }
             else if host.sessions.isEmpty { messages.append("\(hostLabel): no sessions reported.") }
             for session in host.sessions.prefix(32) where rows.count < 128 {
-                let detail = hide ? session.provider.rawValue : (session.projectName ?? session.provider.rawValue)
+                let detail = style.label(session, hidePersonalInfo: hide) ?? session.provider.rawValue
                 let plainTitle = "\(hostLabel) · \(detail)".unicodeScalars.filter {
                     !CharacterSet.controlCharacters.contains($0)
                 }.map { String($0) }.joined()

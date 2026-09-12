@@ -204,9 +204,11 @@ public actor WindowsAgentSessionsRuntime {
             return
         }
         let hidePersonalInfo = self.defaults.object(forKey: "hidePersonalInfo") as? Bool ?? false
+        let style = WindowsSessionLabelStyle.load(self.defaults)
         let rows = self.sessions.prefix(64).map { session in
-            let label = hidePersonalInfo ? nil : session.projectName
-            let detail = label ?? "PID \(session.pid.map(String.init) ?? "—")"
+            let label = style.label(session, hidePersonalInfo: hidePersonalInfo)
+            let process = "PID \(session.pid.map(String.init) ?? "—")"
+            let detail = label.map { "\($0) · \(process)" } ?? process
             let provider = session.dialect?.rawValue ?? session.provider.rawValue
             // Ampersands are Win32 menu mnemonic markers; session titles are plain text.
             let title = "\(provider) · \(detail)".replacingOccurrences(of: "&", with: "&&")
@@ -216,7 +218,7 @@ public actor WindowsAgentSessionsRuntime {
                 isEnabled: self.fresh)
         }
         let status = self.message ?? (self.scanTask != nil ? "Scanning local CLI sessions…" :
-            (rows.isEmpty ? "No recognized local CLI sessions." : "Local CLI processes; project metadata is not connected yet."))
+            (rows.isEmpty ? "No recognized local CLI sessions." : "Labels use explicit launch paths or selected session headers; live cwd detection is not connected."))
         self.publisher(.init(enabled: true, isRefreshing: self.scanTask != nil, rows: rows, message: status))
     }
 }

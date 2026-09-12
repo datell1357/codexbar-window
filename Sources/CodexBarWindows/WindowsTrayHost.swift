@@ -23,6 +23,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
     public typealias CodexWebSettingsSaveHandler = @Sendable (UInt64, WindowsCodexWebSettingsPatch) -> Void
     public typealias QuitHandler = @Sendable () -> Void
 
+    private static let sessionLabelCommandBase = UINT_PTR(0x7510)
     private static let remoteSettingsCommand = UINT_PTR(0x7502)
     private static let remoteRefreshCommand = UINT_PTR(0x7503)
     private static let remoteSessionCommandBase = UINT_PTR(0x7800)
@@ -654,6 +655,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
         }
         self.appendAgentSessionsMenu(to: menu, snapshot: agentSessions)
         self.appendRemoteSessionsMenu(to: menu, snapshot: remoteSessions)
+        self.appendSessionLabelMenu(to: menu)
         self.appendRefreshFrequencyMenu(to: menu)
         self.appendLowPowerModeMenu(to: menu)
         _ = AppendMenuW(menu, UINT(MF_SEPARATOR), 0, nil)
@@ -713,6 +715,23 @@ public final class WindowsTrayHost: @unchecked Sendable {
         }
         if attached { self.popupAgentSessionCommands = commands }
         else { _ = DestroyMenu(submenu) }
+    }
+
+    private func appendSessionLabelMenu(to menu: HMENU) {
+        guard let submenu = CreatePopupMenu() else { return }
+        let selected = WindowsSessionLabelStyle.load(self.presentationDefaults)
+        var succeeded = true
+        for (index, style) in WindowsSessionLabelStyle.allCases.enumerated() {
+            let flags = UINT(MF_STRING) | (style == selected ? UINT(MF_CHECKED) : 0)
+            let appended = style.title.withCString(encodedAs: UTF16.self) {
+                AppendMenuW(submenu, flags, Self.sessionLabelCommandBase + UINT_PTR(index), $0)
+            }
+            if appended == 0 { succeeded = false; break }
+        }
+        let attached = succeeded && "Session labels".withCString(encodedAs: UTF16.self) {
+            AppendMenuW(menu, UINT(MF_STRING | MF_POPUP), UINT_PTR(UInt(bitPattern: submenu)), $0) != 0
+        }
+        if !attached { _ = DestroyMenu(submenu) }
     }
 
     private func appendRemoteSessionsMenu(to menu: HMENU, snapshot: WindowsRemoteSessionMenuSnapshot) {
@@ -1046,6 +1065,11 @@ public final class WindowsTrayHost: @unchecked Sendable {
             return
         }
         switch command {
+        case Self.sessionLabelCommandBase, Self.sessionLabelCommandBase + 1, Self.sessionLabelCommandBase + 2:
+            let index = Int(command - Self.sessionLabelCommandBase)
+            let style = WindowsSessionLabelStyle.allCases[index]
+            self.presentationDefaults.set(style.rawValue, forKey: "agentSessionLabelStyle")
+            self.onPresentationSettingsChanged()
         case Self.remoteSettingsCommand: self.editRemoteSettings()
         case Self.remoteRefreshCommand: self.onRemoteRefresh()
         case Self.agentSessionsToggleCommand:

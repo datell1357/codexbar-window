@@ -2,8 +2,8 @@
 import Foundation
 import WinSDK
 
-/// Initial native Windows scan: live CLI identities only. Metadata correlation is deliberately
-/// separate; missing cwd/transcript information is not inferred from unrelated recent files.
+/// Windows CLI scan outcomes. Enrichment uses only explicit target argv paths; unrelated recent
+/// files, CodexBar's cwd and another process's environment are never used as a correlation shortcut.
 public struct WindowsSessionScanOutcome: Sendable {
     public enum Status: Sendable { case complete, partial, failed, cancelled }
     public let status: Status
@@ -38,6 +38,7 @@ public enum WindowsAgentSessionScanner {
         }
         var sessions: [AgentSession] = []
         var partialMessage: String?
+        var unavailableExplicitMetadata = false
         for process in snapshots.sorted(by: { $0.creationTime > $1.creationTime }) {
             guard !Task.isCancelled else { return .init(status: .cancelled, sessions: [], message: nil) }
             guard sessions.count < config.maxProcessCount else {
@@ -52,27 +53,44 @@ public enum WindowsAgentSessionScanner {
                   self.isConsoleImage(process.imagePath),
                   let identity = self.identity(imagePath: process.imagePath, arguments: self.arguments(process.commandLine))
             else { continue }
+            let hints = WindowsSessionLaunchHints.parse(provider: identity.provider, arguments: identity.arguments)
+            let metadata: WindowsExplicitSessionMetadata?
+            if identity.provider == .pi, let dialect = identity.dialect, let path = hints.sessionFile {
+                metadata = WindowsExplicitSessionMetadataReader.read(
+                    path: path, dialect: dialect, now: now, deadline: deadline)
+                unavailableExplicitMetadata = unavailableExplicitMetadata || metadata == nil
+            } else {
+                metadata = nil
+            }
+            // A selected file's saved cwd can label that session, but is not a live process-cwd observation.
+            let cwd = hints.workingDirectory
+            let projectPath = cwd ?? metadata?.cwd
             sessions.append(AgentSession(
                 id: "pid:\(process.pid):\(process.creationTicks)",
                 provider: identity.provider,
                 dialect: identity.dialect,
                 source: .cli,
-                state: config.state(lastActivityAt: nil, now: now, hasLiveProcess: true),
+                state: config.state(lastActivityAt: metadata?.modifiedAt, now: now, hasLiveProcess: true),
                 pid: pid,
-                cwd: nil,
-                projectName: nil,
+                cwd: cwd,
+                projectName: WindowsSessionLaunchHints.projectName(projectPath),
+                sessionName: metadata?.title,
                 startedAt: process.creationTime,
-                lastActivityAt: nil,
-                transcriptPath: nil,
+                lastActivityAt: metadata?.modifiedAt,
+                transcriptPath: metadata?.path,
                 host: ProcessInfo.processInfo.hostName))
         }
         guard !Task.isCancelled else { return .init(status: .cancelled, sessions: [], message: nil) }
+        if unavailableExplicitMetadata {
+            partialMessage = [partialMessage, "Some explicitly selected session headers were unavailable; PID labels are retained."]
+                .compactMap { $0 }.joined(separator: " ")
+        }
         return .init(status: partialMessage == nil ? .complete : .partial, sessions: sessions, message: partialMessage)
     }
 
     private static func identity(
         imagePath: String,
-        arguments: [String]) -> (provider: AgentSession.Provider, dialect: AgentSession.Dialect?)?
+        arguments: [String]) -> (provider: AgentSession.Provider, dialect: AgentSession.Dialect?, arguments: [String])?
     {
         guard !arguments.isEmpty else { return nil }
         var name = URL(fileURLWithPath: imagePath).lastPathComponent.lowercased()
@@ -90,18 +108,18 @@ public enum WindowsAgentSessionScanner {
             else { return nil }
             commandArguments.removeFirst()
         }
-        if commandArguments.contains(where: {
+        if commandArguments.prefix(while: { $0 != "--" }).contains(where: {
             ["--version", "-v", "--help", "-h"].contains($0) || $0.hasPrefix("--type=")
         }) { return nil }
         if let first = commandArguments.first,
            ["login", "logout", "auth", "completion", "completions", "app-server", "mcp-server", "mcp"].contains(first)
         { return nil }
         if name == "codex" || name.hasPrefix("codex-x86_64-") || name.hasPrefix("codex-aarch64-") {
-            return (.codex, nil)
+            return (.codex, nil, commandArguments)
         }
-        if name == "claude" || name == "claude-code" { return (.claude, nil) }
-        if name == "pi" { return (.pi, .pi) }
-        if name == "omp" { return (.pi, .omp) }
+        if name == "claude" || name == "claude-code" { return (.claude, nil, commandArguments) }
+        if name == "pi" { return (.pi, .pi, commandArguments) }
+        if name == "omp" { return (.pi, .omp, commandArguments) }
         return nil
     }
 

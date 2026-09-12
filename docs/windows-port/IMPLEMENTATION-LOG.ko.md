@@ -98,3 +98,25 @@
 5. 설정 저장, Win32 dialog/메뉴, actor 종료, SSH 동시성 및 실제 Windows/POSIX 실행 모두 미검증이다.
 
 다음 구현: Windows 로컬 session의 명시적 cwd/경로 옵션과 제한된 metadata를 연결해 PID-only 표시를 보강한다. 원격 대형 목록의 pagination과 native 표시 범위는 별도 단계로 진행한다.
+
+## IMPL-005 — 명시적 launch 경로·선택 세션 헤더와 label 설정
+
+상태: CODE_WRITTEN_UNVERIFIED. 빌드·컴파일·테스트·앱·실제 프로세스/파일/계정 조회·검증 스크립트를 실행하지 않았다. 계약: WIN-040/042의 부분 correlation, W03/W04 session label 설정.
+
+작성한 코드:
+
+- `WindowsSessionLaunchHints.swift`: target argv에서 Codex 절대 `--cd`/`-C`와 Pi/OMP 절대 `--session` 파일 경로를 추출한다. 알려진 옵션만 소비하고 prompt/`--` 뒤를 경로로 해석하지 않는다. 상대경로·환경변수·scanner cwd로 보완하지 않는다. 미지 옵션이나 상충하는 session selector는 PID fallback으로 남긴다.
+- 선택된 Pi/OMP JSONL의 session header와 선택적 OMP title slot을 최대32KiB 안에서 읽는 native reader를 추가했다. 하나의 file handle에서 identity/크기/mtime을 읽고 변경 중인 파일이나 최종 reparse point·비정상 header는 보강에 사용하지 않는다. file 내용은 저장하지 않는다. 임의의 최근 session 디렉터리 탐색은 추가하지 않았다.
+- `WindowsAgentSessionScanner.swift`: explicit Codex launch cwd를 project에 연결하고 Pi/OMP의 선택 파일에서 project/title/activity/transcript 정보를 부분 보강한다. Pi/OMP의 저장된 cwd는 project label용이며 live process cwd 필드에는 넣지 않는다. 기존 PID+생성 시각 ID를 유지해 native focus 수명 판정을 깨뜨리지 않는다. 읽을 수 없는 explicit header는 partial 안내와 PID fallback을 반환한다.
+- `WindowsSessionLabelStyle.swift`: 원본 persisted key의 project/descriptive/descriptiveAndProject를 제공한다. hidePersonalInfo가 우선하며 local/remote label에 같은 규칙을 사용한다.
+- `WindowsTrayHost`와 local/remote runtime: 3개 label 선택 메뉴, project/title 표시와 PID 구분을 연결했다. 기존의 “metadata 미연결” 고정 메시지를 explicit-path/selected-header 범위에 맞게 수정했다.
+
+남은 범위:
+
+1. 실제 프로세스 cwd 조회, 상대경로, UNC/직접 network drive, CLI의 모든 옵션 문법과 resumed-ID-only 세션. 현재는 명시적 drive-absolute 경로만 다룬다.
+2. Codex rollout 및 Claude transcript와 native cwd의 전수 correlation, Desktop/IDE, Pi/OMP session-dir/profile/custom root 및 최신 session_info title 갱신.
+3. selected file의 내용이 변하면 이번 보강을 생략한다. 실제 파일 write time의 안정성/활동 의미와 모든 Windows 파일 경로/ancestor junction 상황은 별도 검증이 필요하다. direct network drive와 최종 reparse 파일은 제외하지만 완전한 파일시스템 격리 경계라고 주장하지 않는다.
+4. Windows Terminal의 exact-tab focus, local/remote 대형 목록 전체 탐색, 오류 UI·현지화·DPI/접근성.
+5. 새 WinSDK/argv/header parser와 설정 변경/표시 동작 모두 미검증이다. W11 전체 또는 live-cwd 지원 완료가 아니다.
+
+다음 구현: Windows native cwd 제공 경계와 provider별 correlation을 이어서 구현한다. 안전하게 source 소유권을 확인할 수 없는 경로는 임의의 recent-file fallback으로 연결하지 않는다. remote/local 목록 pagination도 별도 구현 묶음으로 이어간다.
