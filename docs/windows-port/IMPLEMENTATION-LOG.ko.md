@@ -234,3 +234,23 @@
 4. 전체 기능 완성이나 배포 가능 판정은 하지 않는다. Windows 빌드·실행 검증은 사용자 승인 후 별도로 진행해야 한다.
 
 다음 구현: 명시적으로 지정한 Codex title source를 UUID에 연결하고 출처를 유지하는 경로를 구현한다. Claude 제목과 나머지 session UI/platform 계약도 남아 있다.
+
+## IMPL-011 — 명시적 Codex 제목 인덱스 연결
+
+상태: CODE_WRITTEN_UNVERIFIED. 빌드·컴파일·테스트·lint·앱·실제 세션 파일/프로세스/계정 조회 및 검증 스크립트를 실행하지 않았다. 계약: WIN-040/042의 session title 및 CLI source 설정.
+
+작성한 코드:
+
+- `WindowsSessionMetadataRoots`에 optional title index 경로를 추가했다. CLI `--codex-title-index` 또는 앱 환경변수 `CODEXBAR_WINDOWS_CODEX_TITLE_INDEX`로 지정한다. 기본값은 nil이고 target HOME/profile/config를 자동 탐색하지 않는다. GUI runtime도 기존 roots loader를 통해 환경 설정을 읽고 설정 snapshot 비교에 경로를 포함한다.
+- Codex root/cwd/header의 explicit UUID matching에 성공한 세션만 index의 동일 UUID 제목으로 보강한다. 먼저 기존 역할 이름을 만든 뒤 제목 조회를 수행하며 실패하면 그 이름을 유지한다. 원본 descriptiveName 조합과 Windows label/privacy 설정을 재사용한다. Claude/Pi와 신규 추론 세션에는 해당 제목을 붙이지 않는다.
+- 제목 index는 local drive의 disk/non-reparse handle로 최대1MiB 전체를 읽고, JSONL 각 행 최대64KiB 및 공통 metadata deadline/cancel 조건을 적용한다. 전체 EOF와 stable file identity/size/creation/mtime 및 최종 pathname identity를 요구한다. 이후 행의 rename을 놓칠 수 있는 prefix 결과는 사용하지 않는다.
+- id/thread_name schema가 맞는 행을 순서대로 적용한다. 같은 UUID의 마지막 항목을 사용하며 빈 마지막 이름은 이전 이름을 제거한다. 읽기 실패·크기/시간 초과·변경 중인 파일은 안내와 기존 label fallback이다. 세션 focus ID와 활동 시각을 title index로 바꾸지 않는다.
+
+남은 범위:
+
+1. 별도의 GUI title 파일 선택/해제 UI는 아직 없다. GUI 사용자는 현재 앱 시작 환경으로 경로를 지정하며 metadata 전체 기능과 Codex sessions root 설정이 필요하다.
+2. SQLite thread DB fallback, 큰 index의 안전한 증분 cache, 신규 추론 세션 제목, Claude 제목은 미구현이다. 전체 index가 schema와 크기 한도를 만족하지 않으면 제목 전체를 생략하는 보수적 구현이다.
+3. 지정한 title source가 실제 target profile에 속한다는 증명은 아니다. source 선택은 사용자 선언이며 파일 UUID 연결만 수행한다. 파일 열거/경로 전체 원자성과 동기 ReadFile 취소 지연 및 Windows 동작은 미검증이다.
+4. 공통 metadata 시간 예산을 공유하므로 base matching 이후 여유가 없으면 제목 조회를 생략한다. 전체 기능/배포 완료로 계산하지 않는다.
+
+다음 구현: Windows GUI의 title source 선택·해제와 명시적 source 표시를 연결한다. SQLite/Claude 제목 및 나머지 platform 계약은 후속 필수 범위로 유지한다.

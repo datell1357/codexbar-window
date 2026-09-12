@@ -6,11 +6,13 @@ import WinSDK
 public struct WindowsSessionMetadataRoots: Equatable, Sendable {
     public let codexSessions: String?
     public let claudeProjects: String?
+    public let codexTitleIndex: String?
     public let allowNewSessions: Bool
     public static let none = Self(codex: nil, claude: nil)
     public var isEmpty: Bool { self.codexSessions == nil && self.claudeProjects == nil }
 
-    public init(codexSessions: String?, claudeProjects: String?, allowNewSessions: Bool = false) throws {
+    public init(codexSessions: String?, claudeProjects: String?, allowNewSessions: Bool = false,
+                codexTitleIndex: String? = nil) throws {
         func normalize(_ raw: String?) throws -> String? {
             guard let raw, !raw.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
             guard let path = WindowsSessionLaunchHints.absolutePath(raw) else { throw ConfigurationError.invalidPath }
@@ -18,13 +20,14 @@ public struct WindowsSessionMetadataRoots: Equatable, Sendable {
         }
         self.codexSessions = try normalize(codexSessions)
         self.claudeProjects = try normalize(claudeProjects)
+        self.codexTitleIndex = try normalize(codexTitleIndex)
         self.allowNewSessions = allowNewSessions
     }
-    private init(codex: String?, claude: String?) { self.codexSessions = codex; self.claudeProjects = claude; self.allowNewSessions = false }
+    private init(codex: String?, claude: String?) { self.codexSessions = codex; self.claudeProjects = claude; self.allowNewSessions = false; self.codexTitleIndex = nil }
 
     public static func load(
         codexOverride: String? = nil, claudeOverride: String? = nil,
-        allowNewSessions: Bool = false,
+        allowNewSessions: Bool = false, codexTitleIndexOverride: String? = nil,
         environment: [String: String] = ProcessInfo.processInfo.environment) throws -> Self
     {
         try Self(
@@ -32,7 +35,9 @@ public struct WindowsSessionMetadataRoots: Equatable, Sendable {
                 "CODEXBAR_WINDOWS_CODEX_SESSIONS_ROOT", environment: environment),
             claudeProjects: claudeOverride ?? CodexBarPlatformPaths.environmentValue(
                 "CODEXBAR_WINDOWS_CLAUDE_PROJECTS_ROOT", environment: environment),
-            allowNewSessions: allowNewSessions)
+            allowNewSessions: allowNewSessions,
+            codexTitleIndex: codexTitleIndexOverride ?? CodexBarPlatformPaths.environmentValue(
+                "CODEXBAR_WINDOWS_CODEX_TITLE_INDEX", environment: environment))
     }
     enum ConfigurationError: LocalizedError {
         case invalidPath
@@ -69,6 +74,7 @@ enum WindowsSessionMetadataCorrelator {
             codexFiles = self.codexCandidates(root: root, ids: selectedCodexIDs, budget: budget)
         } else { codexFiles = [] }
         let codexEnumerationComplete = !budget.exhausted && !budget.rootUnavailable
+        var matchedHeaders: [Int: CodexRolloutMetadata] = [:]
         for index in output.indices {
             guard budget.hasTime else { unresolved = true; break }
             let session = output[index]
@@ -93,6 +99,7 @@ enum WindowsSessionMetadataCorrelator {
                       budget.hasTime, let after = self.fileInfo(path), before == after
                 else { unresolved = true; continue }
                 output[index].transcriptPath = path
+                matchedHeaders[index] = metadata
                 output[index].sessionName = metadata.descriptiveName(threadMetadata: nil).map(WindowsSessionLaunchHints.label)
                 output[index].lastActivityAt = min(after.modifiedAt, now)
             } else if session.provider == .claude, let root = roots.claudeProjects {
@@ -108,6 +115,19 @@ enum WindowsSessionMetadataCorrelator {
             output[index].state = config.state(lastActivityAt: output[index].lastActivityAt, now: now, hasLiveProcess: true)
         }
         var notices: [String] = []
+        if let titlePath = roots.codexTitleIndex, !matchedHeaders.isEmpty {
+            let ids = Set(matchedHeaders.values.map { $0.sessionID.lowercased() })
+            if let names = self.codexIndexNames(titlePath, ids: ids, deadline: budget.deadline) {
+                for (index, header) in matchedHeaders {
+                    output[index].sessionName = header.descriptiveName(
+                        threadMetadata: names[header.sessionID.lowercased()].map {
+                            CodexThreadMetadata(title: $0, agentPath: nil)
+                        }).map(WindowsSessionLaunchHints.label)
+                }
+            } else {
+                notices.append("The configured Codex title index was unavailable, changing, or over budget; header/project labels are retained.")
+            }
+        }
         if unresolved || budget.exhausted || budget.rootUnavailable {
             notices.append("Some metadata matches are unresolved or budget-limited; PID identity is retained.")
         }
@@ -361,6 +381,54 @@ enum WindowsSessionMetadataCorrelator {
               let after = self.fileInfo(handle: handle), before == after,
               !Task.isCancelled, Date() < deadline else { return nil }
         return (metadata, after)
+    }
+
+    /// Explicit source only: never derive CODEX_HOME or a title index from another account.
+    /// A complete stable index is required so a later rename cannot be missed by truncation.
+    private static func codexIndexNames(_ path: String, ids: Set<String>, deadline: Date) -> [String: String]? {
+        guard !Task.isCancelled, Date() < deadline,
+              let absolute = WindowsSessionLaunchHints.absolutePath(path),
+              let separator = absolute.lastIndex(of: "\\"),
+              self.directoryAllowed(String(absolute[..<separator])) else { return nil }
+        let units = Array(absolute.utf16) + [0]
+        let handle = units.withUnsafeBufferPointer {
+            CreateFileW($0.baseAddress, DWORD(GENERIC_READ), DWORD(FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE),
+                        nil, DWORD(OPEN_EXISTING), DWORD(FILE_ATTRIBUTE_NORMAL | FILE_FLAG_OPEN_REPARSE_POINT), nil)
+        }
+        guard let handle, handle != INVALID_HANDLE_VALUE else { return nil }
+        defer { CloseHandle(handle) }
+        let maximumBytes = 1024 * 1024
+        guard let before = self.fileInfo(handle: handle), before.size <= UInt64(maximumBytes) else { return nil }
+        var data = Data()
+        var reachedEOF = false
+        while data.count <= maximumBytes, !Task.isCancelled, Date() < deadline {
+            var chunk = [UInt8](repeating: 0, count: min(4096, maximumBytes + 1 - data.count))
+            var count: DWORD = 0
+            let success = chunk.withUnsafeMutableBytes {
+                ReadFile(handle, $0.baseAddress, DWORD($0.count), &count, nil)
+            }
+            guard success != 0 else { return nil }
+            if count == 0 { reachedEOF = true; break }
+            data.append(contentsOf: chunk.prefix(Int(count)))
+        }
+        guard reachedEOF, data.count <= maximumBytes, UInt64(data.count) == before.size,
+              !Task.isCancelled, Date() < deadline else { return nil }
+        var names: [String: String] = [:]
+        for line in data.split(separator: 10) {
+            guard !Task.isCancelled, Date() < deadline, line.count <= 64 * 1024,
+                  let object = try? JSONSerialization.jsonObject(with: Data(line)) as? [String: Any],
+                  let rawID = object["id"] as? String, let uuid = UUID(uuidString: rawID),
+                  let title = object["thread_name"] as? String else { return nil }
+            let id = uuid.uuidString.lowercased()
+            guard ids.contains(id) else { continue }
+            let clean = WindowsSessionLaunchHints.label(title)
+            // Append order follows the original index reader; an empty rename removes stale text.
+            names[id] = clean.isEmpty ? nil : clean
+        }
+        guard let after = self.fileInfo(handle: handle), before == after,
+              let current = self.fileInfo(absolute), current == after,
+              !Task.isCancelled, Date() < deadline else { return nil }
+        return names
     }
 
     private static func join(_ base: String, _ component: String) -> String {

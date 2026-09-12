@@ -1,6 +1,6 @@
 # Windows 전용 제품 작업 현황
 
-IMPL-010: Codex persisted role 이름과 단일 Windows handle의 bounded header reader를 연결했다. 사용자 지정 thread title source는 아직 미구현이다. 이전 IMPL-009:  기본 off인 신규 Codex/Claude 세션 metadata 추론 옵션을 작성했다. 알려진 cwd의 단일 프로세스와 생성 시각 이후 단일 파일 후보에 한정하며 추론임을 안내한다. 전체 CLI grammar·실제 profile 소유권·thread title 및 실행 검증은 남아 있다. [구현 로그](IMPLEMENTATION-LOG.ko.md) 참고.
+IMPL-011: 명시적 Codex title index의 UUID 제목을 CLI/환경 설정으로 연결했다. GUI 파일 선택과 SQLite/Claude 제목은 남아 있다. 이전 IMPL-010: Codex persisted role 이름과 단일 Windows handle의 bounded header reader를 연결했다. 사용자 지정 thread title source는 아직 미구현이다. 이전 IMPL-009:  기본 off인 신규 Codex/Claude 세션 metadata 추론 옵션을 작성했다. 알려진 cwd의 단일 프로세스와 생성 시각 이후 단일 파일 후보에 한정하며 추론임을 안내한다. 전체 CLI grammar·실제 profile 소유권·thread title 및 실행 검증은 남아 있다. [구현 로그](IMPLEMENTATION-LOG.ko.md) 참고.
 
 IMPL-007: native64 process cwd 후보 reader와 기본 off 실험 옵션/CLI flag를 작성했다. 내부 RTL layout에 의존하므로 지원 확정·배포 가능 상태로 세지 않는다. identity/길이/값 변화 guard가 있어도 실제 Windows 검증은 미실시다. [구현 로그](IMPLEMENTATION-LOG.ko.md) 참고.
 
