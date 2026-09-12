@@ -404,3 +404,22 @@
 3. SQLite, 증분 cache와 전체 Windows 기능·실행/배포 검증은 남아 있다.
 
 다음 구현: 원격 session 상태에도 snapshot 상세 보기와 host별 경계를 연결한다. source별 데이터 소유권과 기존 focus generation을 유지한다.
+
+## IMPL-020 — 원격 host snapshot 상세 보기
+
+상태: CODE_WRITTEN_UNVERIFIED. 빌드·컴파일·테스트·lint·앱·원격 실행·실제 계정/source 조회·검증 스크립트는 실행하지 않았다. 계약: WIN-010/041.
+
+작성한 코드:
+
+- 원격 runtime의 host 상태 행에 optional statusDetails를 추가했다. host 표시명, 조회 대기/실패/성공 상태, 마지막 성공 UTC 시각, 저장된 세션 수와 다음 조치를 snapshot에서 구성한다. hidePersonalInfo가 켜져 있으면 기존 Remote host N 표기를 사용한다.
+- 호스트 상태 행은 상세 보기로 선택 가능하게 하고 session focus request와 별도 map으로 분리했다. 실패한 host의 cached session 행은 기존대로 focus 비활성 상태다. 상세 조회 자체는 네트워크/원격 명령을 실행하지 않는다.
+- 로컬 상태 dialog helper를 재사용한다. popup 부착 성공 시 상세 map을 게시하고 클릭 시 먼저 소비하며, popup 종료/실패/앱 종료 정리에서 제거한다. 열린 메뉴의 snapshot을 표시한다는 안내를 유지한다.
+- raw remote error/stderr/세션 제목·경로·대화 내용은 상세 텍스트에 넣지 않는다. 표시 host는 제어문자 제거와160 scalar 제한을 적용한다.
+
+남은 범위:
+
+1. 상세는 현재 페이지에 host 상태 행이 있을 때 진입 가능하다. 페이지 중간의 세션에서 host 상세로 바로 이동하는 경로, 구조화된 오류 코드와 긴 메시지 스크롤 UI는 미구현이다.
+2. 실제 native dialog·modal lifetime·키보드/접근성·개인정보 표시·원격 상태 정확성은 미검증이다. snapshot의 last-success는 실시간 연결 보증이 아니다.
+3. SQLite, 증분 cache 및 전체 Windows 기능·실행/배포 검증은 계속 미완료다.
+
+다음 구현: 원격 host 상태와 세션 페이지 사이의 탐색을 보강하고, session slice 이후 SQLite/title source의 남은 구현을 이어간다.

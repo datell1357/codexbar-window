@@ -94,6 +94,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
     private let onAgentSessionsRefresh: @Sendable () -> Void
     private let onAgentSessionFocus: @Sendable (WindowsSessionFocusRequest) -> Void
     private var mailboxAgentSessions: WindowsSessionMenuSnapshot = .disabled
+    private var popupRemoteDetails: [UINT_PTR: String] = [:]
     private var popupSessionDetails: String?
     private var popupAgentSessionCommands: [UINT_PTR: WindowsSessionFocusRequest] = [:]
     private let onRefresh: RefreshHandler
@@ -507,6 +508,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
         self.mailboxLock.unlock()
         self.popupPageCommands.removeAll(keepingCapacity: true)
         self.popupRemoteCommands.removeAll(keepingCapacity: true)
+        self.popupRemoteDetails.removeAll(keepingCapacity: true)
         self.popupAgentSessionCommands.removeAll(keepingCapacity: true)
         self.popupSessionDetails = nil
         self.popupStatusCommands.removeAll(keepingCapacity: true)
@@ -701,6 +703,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
             _ = DestroyMenu(menu)
             self.popupPageCommands.removeAll(keepingCapacity: true)
         self.popupRemoteCommands.removeAll(keepingCapacity: true)
+        self.popupRemoteDetails.removeAll(keepingCapacity: true)
         self.popupAgentSessionCommands.removeAll(keepingCapacity: true)
         self.popupSessionDetails = nil
         self.popupStatusCommands.removeAll(keepingCapacity: true)
@@ -715,6 +718,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
         if command != 0 { self.dispatchCommand(UINT_PTR(command)) }
         self.popupPageCommands.removeAll(keepingCapacity: true)
         self.popupRemoteCommands.removeAll(keepingCapacity: true)
+        self.popupRemoteDetails.removeAll(keepingCapacity: true)
         self.popupAgentSessionCommands.removeAll(keepingCapacity: true)
         self.popupSessionDetails = nil
         self.popupStatusCommands.removeAll(keepingCapacity: true)
@@ -843,6 +847,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
     private func appendRemoteSessionsMenu(to menu: HMENU, snapshot: WindowsRemoteSessionMenuSnapshot) {
         guard let submenu = CreatePopupMenu() else { return }
         var commands: [UINT_PTR: WindowsRemoteFocusRequest] = [:]
+        var details: [UINT_PTR: String] = [:]
         func append(_ title: String, _ flags: UINT, _ command: UINT_PTR) -> Bool {
             title.withCString(encodedAs: UTF16.self) { AppendMenuW(submenu, flags, command, $0) != 0 }
         }
@@ -856,15 +861,20 @@ public final class WindowsTrayHost: @unchecked Sendable {
         }
         for (index, row) in snapshot.rows.enumerated() {
             let command = Self.remoteSessionCommandBase + UINT_PTR(index)
-            succeeded = succeeded && append(row.title, UINT(MF_STRING) | (row.isEnabled ? 0 : UINT(MF_GRAYED)), command)
-            if row.isEnabled { commands[command] = row.request }
+            let hasDetails = row.statusDetails != nil && row.request == nil
+            succeeded = succeeded && append(row.title, UINT(MF_STRING) | (row.isEnabled || hasDetails ? 0 : UINT(MF_GRAYED)), command)
+            if hasDetails { details[command] = row.statusDetails }
+            else if row.isEnabled { commands[command] = row.request }
         }
         if snapshot.enabled { succeeded = succeeded && self.appendPageControls(to: submenu, page: snapshot.page, remote: true) }
         let title = snapshot.enabled ? "Remote sessions" : "Remote sessions (off)"
         let attached = succeeded && title.withCString(encodedAs: UTF16.self) {
             AppendMenuW(menu, UINT(MF_STRING | MF_POPUP), UINT_PTR(UInt(bitPattern: submenu)), $0) != 0
         }
-        if attached { self.popupRemoteCommands = commands } else {
+        if attached {
+            self.popupRemoteCommands = commands
+            self.popupRemoteDetails = details
+        } else {
             self.popupPageCommands[Self.remotePreviousPageCommand] = nil
             self.popupPageCommands[Self.remoteNextPageCommand] = nil
             _ = DestroyMenu(submenu)
@@ -903,11 +913,14 @@ public final class WindowsTrayHost: @unchecked Sendable {
     /// Configuration guidance only. Do not touch files or probe providers while building a menu.
     /// Each row routes to an existing setting action; nothing is automatically enabled or reset.
     private func showSessionDetails() {
-        guard let details = self.popupSessionDetails, !self.remoteEditorOpen, !self.quitInvoked,
-              let window = self.window, case .idle = self.providerEditorPhase,
-              case .idle = self.codexWebSettingsEditorPhase else { return }
-        // Consume the captured popup message before entering a nested native message loop.
+        guard let details = self.popupSessionDetails else { return }
         self.popupSessionDetails = nil
+        self.showSessionMessage(details, caption: "Local CLI session status")
+    }
+
+    private func showSessionMessage(_ details: String, caption: String) {
+        guard !self.remoteEditorOpen, !self.quitInvoked, let window = self.window,
+              case .idle = self.providerEditorPhase, case .idle = self.codexWebSettingsEditorPhase else { return }
         self.remoteEditorOpen = true
         defer {
             self.remoteEditorOpen = false
@@ -915,7 +928,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
         }
         let body = "Status captured when the session menu opened. Refresh sessions to update.\n\n" + details
         body.withCString(encodedAs: UTF16.self) { text in
-            "Local CLI session status".withCString(encodedAs: UTF16.self) { title in
+            caption.withCString(encodedAs: UTF16.self) { title in
                 _ = MessageBoxW(window, text, title, UINT(MB_OK | MB_ICONINFORMATION))
             }
         }
@@ -1062,6 +1075,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
         self.mailboxAgentSessions = .disabled
         self.mailboxRemoteSessions = .disabled
         self.popupRemoteCommands.removeAll()
+        self.popupRemoteDetails.removeAll()
         self.popupPageCommands.removeAll()
         self.popupAgentSessionCommands.removeAll()
         self.popupSessionDetails = nil
@@ -1314,6 +1328,10 @@ public final class WindowsTrayHost: @unchecked Sendable {
             return
         }
         if let request = self.popupRemoteCommands[command] { self.onRemoteFocus(request); return }
+        if let details = self.popupRemoteDetails.removeValue(forKey: command) {
+            self.showSessionMessage(details, caption: "Remote host session status")
+            return
+        }
         if let request = self.popupAgentSessionCommands[command] {
             self.onAgentSessionFocus(request)
             return

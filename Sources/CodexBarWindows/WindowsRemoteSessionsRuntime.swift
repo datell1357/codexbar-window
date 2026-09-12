@@ -12,6 +12,7 @@ public struct WindowsRemoteSessionMenuItem: Sendable {
     public let title: String
     public let request: WindowsRemoteFocusRequest?
     public let isEnabled: Bool
+    public var statusDetails: String? = nil
 }
 
 public struct WindowsRemoteSessionMenuSnapshot: Sendable {
@@ -266,7 +267,16 @@ public actor WindowsRemoteSessionsRuntime {
                     let seconds = max(0, Date().timeIntervalSince(date))
                     age = seconds < 60 ? " · updated <1m ago" : " · updated \(Int(min(seconds / 60, 999999)))m ago"
                 } else { age = "" }
-                rows.append(.init(title: caption("\(hostLabel): \(health)\(age)"), request: nil, isEnabled: false))
+                let action = host.error != nil ?
+                    "Check remote host settings and connectivity, then refresh. Cached session rows cannot be focused." :
+                    (self.pendingHostIDs.contains(hostID) ? "This host is waiting for the bounded query rotation." :
+                        "Session rows reflect the last completed query. Refresh to request newer data.")
+                let plainHost = hostLabel.unicodeScalars.filter { !CharacterSet.controlCharacters.contains($0) }
+                    .prefix(160).map(String.init).joined()
+                let lastSuccess = self.lastSuccessAt[hostID].map { ISO8601DateFormatter().string(from: $0) } ?? "Never"
+                let details = "Host: \(plainHost)\nStatus: \(health)\nLast successful query: \(lastSuccess)\nStored sessions: \(host.sessions.count)\n\n\(action)"
+                rows.append(.init(title: caption("\(hostLabel): \(health)\(age) · details…"),
+                                  request: nil, isEnabled: false, statusDetails: details))
             }
             offset += 1
             for session in host.sessions {
