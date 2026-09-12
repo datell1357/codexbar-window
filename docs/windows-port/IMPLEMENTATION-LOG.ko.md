@@ -215,3 +215,22 @@
 5. thread-title DB, Claude title, file-only 세션, exact-tab focus, long-path picker, UI DPI/접근성/현지화 및 모든 Windows 빌드·실행 검증은 남아 있다. 전체 기능/배포 완료로 계산하지 않는다.
 
 다음 구현: metadata/title의 출처와 표시 경계를 이어서 구현한다. 각 구현 묶음은 검증 없이 소스·진행 문서를 함께 커밋하고 origin/main에 푸시한다.
+
+## IMPL-010 — Codex 헤더 역할 이름과 bounded Windows reader
+
+상태: CODE_WRITTEN_UNVERIFIED. 빌드·컴파일·테스트·lint·앱·프로세스/계정/세션 파일 조회·검증 스크립트는 실행하지 않았다. 계약: WIN-040/042 및 session label 표시.
+
+작성한 코드:
+
+- Windows Codex explicit UUID 및 신규 추론 경로에서 원본 `CodexRolloutMetadata.descriptiveName`을 연결했다. 이미 매칭된 같은 Codex 헤더의 persisted agent path/guardian 역할만 sessionName에 넣고 기존 Windows label style과 개인정보 숨김 설정으로 표시한다. 역할 정보가 없으면 기존 project/PID fallback을 유지한다.
+- `WindowsSessionMetadataCorrelator`의 Codex 헤더 읽기를 Windows retained handle 방식으로 교체했다. disk/non-reparse 파일에 한정하고, 첫 JSONL 레코드를 최대256KiB 및 deadline/cancel 범위에서 읽는다. 크기 한도에서 잘린 레코드는 채택하지 않는다.
+- 파일 ID/volume/size/creation/mtime을 같은 핸들에서 전후 비교하며, 호출부의 경로 기반 전후 비교도 유지한다. 읽은 파일 정보와 호출부의 사전 정보가 다르면 보강하지 않는다. process PID+creation focus ID는 유지한다.
+
+남은 범위:
+
+1. 이 이름은 헤더에 저장된 역할/agent path 표시다. 사용자 지정 Codex thread title DB/session_index 및 Claude 제목 읽기는 아직 연결하지 않았다. 임의 HOME이나 다른 profile의 title을 빌리지 않는다.
+2. native ReadFile은 동기 호출이므로 deadline 확인이 개별 OS read를 강제로 중단하는 것은 아니다. 실제 취소 지연/WinSDK signature/파일 수명/표시 동작은 미검증이다.
+3. 단일 핸들 비교가 전체 pathname 열거를 원자적 snapshot으로 만들지는 않는다. ancestor junction, 경로 재연결 및 source/profile 소유권 경계는 남는다. IMPL-009의 신규 연결은 계속 기본 off인 추론이다.
+4. 전체 기능 완성이나 배포 가능 판정은 하지 않는다. Windows 빌드·실행 검증은 사용자 승인 후 별도로 진행해야 한다.
+
+다음 구현: 명시적으로 지정한 Codex title source를 UUID에 연결하고 출처를 유지하는 경로를 구현한다. Claude 제목과 나머지 session UI/platform 계약도 남아 있다.

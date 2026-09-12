@@ -85,13 +85,15 @@ enum WindowsSessionMetadataCorrelator {
                 // Multiple copies of a selected UUID in the configured root are ambiguous.
                 guard paths.count == 1, let path = paths.first, budget.consume(),
                       let before = self.fileInfo(path),
-                      let metadata = CodexRolloutFirstLineParser.read(from: URL(fileURLWithPath: path)),
+                      let read = self.codexHeader(path, deadline: budget.deadline), before == read.info,
+                      case let metadata = read.metadata,
                       metadata.sessionID.lowercased() == id.lowercased(),
                       metadata.sessionSource == .cli || metadata.sessionSource == .unknown,
                       metadata.cwd.flatMap(WindowsSessionLaunchHints.absolutePath) == WindowsSessionLaunchHints.absolutePath(cwd),
                       budget.hasTime, let after = self.fileInfo(path), before == after
                 else { unresolved = true; continue }
                 output[index].transcriptPath = path
+                output[index].sessionName = metadata.descriptiveName(threadMetadata: nil).map(WindowsSessionLaunchHints.label)
                 output[index].lastActivityAt = min(after.modifiedAt, now)
             } else if session.provider == .claude, let root = roots.claudeProjects {
                 let folder = self.join(root, ClaudeSessionProjectMapper.escapedCWD(cwd))
@@ -149,18 +151,20 @@ enum WindowsSessionMetadataCorrelator {
             if provider == .codex {
                 let paths = self.codexCandidates(root: root, ids: [], budget: budget, freshSince: earliest)
                 guard !budget.exhausted, !budget.rootUnavailable, budget.hasTime else { continue }
-                var records: [(path: String, cwd: String, info: FileInfo)] = []
+                var records: [(path: String, cwd: String, info: FileInfo, name: String?)] = []
                 var complete = true
                 for path in paths {
                     guard budget.consume(), let before = self.fileInfo(path), before.createdAt >= earliest,
-                          let header = CodexRolloutFirstLineParser.read(from: URL(fileURLWithPath: path)),
+                          let read = self.codexHeader(path, deadline: budget.deadline), before == read.info,
+                          case let header = read.metadata,
                           UUID(uuidString: header.sessionID) != nil,
                           path.lowercased().contains(header.sessionID.lowercased()),
                           let cwd = header.cwd.flatMap(WindowsSessionLaunchHints.absolutePath),
                           budget.hasTime, let after = self.fileInfo(path), before == after
                     else { complete = false; break }
                     guard header.sessionSource == .cli || header.sessionSource == .unknown else { continue }
-                    records.append((path, cwd.lowercased(), after))
+                    records.append((path, cwd.lowercased(), after,
+                                    header.descriptiveName(threadMetadata: nil).map(WindowsSessionLaunchHints.label)))
                 }
                 guard complete else { continue }
                 for index in eligible {
@@ -172,6 +176,7 @@ enum WindowsSessionMetadataCorrelator {
                     guard candidates.count == 1, let match = candidates.first, budget.hasTime,
                           let latest = self.fileInfo(match.path), latest == match.info else { continue }
                     output[index].transcriptPath = match.path
+                    output[index].sessionName = match.name
                     output[index].lastActivityAt = match.info.modifiedAt
                     output[index].state = config.state(lastActivityAt: match.info.modifiedAt, now: now, hasLiveProcess: true)
                     inferredCount += 1
@@ -299,6 +304,11 @@ enum WindowsSessionMetadataCorrelator {
         }
         guard let handle, handle != INVALID_HANDLE_VALUE else { return nil }
         defer { CloseHandle(handle) }
+        return self.fileInfo(handle: handle)
+    }
+
+    private static func fileInfo(handle: HANDLE) -> FileInfo? {
+        guard GetFileType(handle) == DWORD(FILE_TYPE_DISK) else { return nil }
         var info = BY_HANDLE_FILE_INFORMATION()
         guard GetFileInformationByHandle(handle, &info) != 0,
               info.dwFileAttributes & DWORD(FILE_ATTRIBUTE_DIRECTORY | FILE_ATTRIBUTE_REPARSE_POINT) == 0
@@ -308,6 +318,49 @@ enum WindowsSessionMetadataCorrelator {
                         size: (UInt64(info.nFileSizeHigh) << 32) | UInt64(info.nFileSizeLow),
                         createdTicks: (UInt64(info.ftCreationTime.dwHighDateTime) << 32) | UInt64(info.ftCreationTime.dwLowDateTime),
                         modifiedTicks: (UInt64(info.ftLastWriteTime.dwHighDateTime) << 32) | UInt64(info.ftLastWriteTime.dwLowDateTime))
+    }
+
+    /// Reads the first complete JSONL record only. Header bytes and identity are observed through
+    /// one retained non-reparse disk handle; caller also checks the path before accepting the result.
+    private static func codexHeader(
+        _ path: String, deadline: Date) -> (metadata: CodexRolloutMetadata, info: FileInfo)?
+    {
+        guard !Task.isCancelled, Date() < deadline,
+              let absolute = WindowsSessionLaunchHints.absolutePath(path) else { return nil }
+        let units = Array(absolute.utf16) + [0]
+        let handle = units.withUnsafeBufferPointer {
+            CreateFileW($0.baseAddress, DWORD(GENERIC_READ), DWORD(FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE),
+                        nil, DWORD(OPEN_EXISTING), DWORD(FILE_ATTRIBUTE_NORMAL | FILE_FLAG_OPEN_REPARSE_POINT), nil)
+        }
+        guard let handle, handle != INVALID_HANDLE_VALUE else { return nil }
+        defer { CloseHandle(handle) }
+        guard let before = self.fileInfo(handle: handle) else { return nil }
+        let maximumBytes = 256 * 1024
+        var data = Data()
+        var complete = false
+        while data.count < maximumBytes, !Task.isCancelled, Date() < deadline {
+            var chunk = [UInt8](repeating: 0, count: min(4096, maximumBytes - data.count))
+            var count: DWORD = 0
+            let success = chunk.withUnsafeMutableBytes {
+                ReadFile(handle, $0.baseAddress, DWORD($0.count), &count, nil)
+            }
+            guard success != 0 else { return nil }
+            if count == 0 { complete = true; break }
+            let bytes = chunk.prefix(Int(count))
+            if let newline = bytes.firstIndex(of: 10) {
+                data.append(contentsOf: bytes.prefix(upTo: newline))
+                complete = true
+                break
+            }
+            data.append(contentsOf: bytes)
+        }
+        // A record cut off at the byte limit is never accepted as a complete header.
+        guard complete, !Task.isCancelled, Date() < deadline,
+              let line = String(data: data, encoding: .utf8),
+              let metadata = CodexRolloutFirstLineParser.parse(line),
+              let after = self.fileInfo(handle: handle), before == after,
+              !Task.isCancelled, Date() < deadline else { return nil }
+        return (metadata, after)
     }
 
     private static func join(_ base: String, _ component: String) -> String {
