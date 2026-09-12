@@ -23,6 +23,11 @@ public final class WindowsTrayHost: @unchecked Sendable {
     public typealias CodexWebSettingsSaveHandler = @Sendable (UInt64, WindowsCodexWebSettingsPatch) -> Void
     public typealias QuitHandler = @Sendable () -> Void
 
+    private static let pagePopupMessage = UINT(WM_APP) + 2
+    private static let localPreviousPageCommand = UINT_PTR(0x7520)
+    private static let localNextPageCommand = UINT_PTR(0x7521)
+    private static let remotePreviousPageCommand = UINT_PTR(0x7522)
+    private static let remoteNextPageCommand = UINT_PTR(0x7523)
     private static let sessionLabelCommandBase = UINT_PTR(0x7510)
     private static let remoteSettingsCommand = UINT_PTR(0x7502)
     private static let remoteRefreshCommand = UINT_PTR(0x7503)
@@ -64,6 +69,9 @@ public final class WindowsTrayHost: @unchecked Sendable {
         "TaskbarCreated".withCString(encodedAs: UTF16.self) { RegisterWindowMessageW($0) }
     }()
 
+    private let onLocalSessionPage: @Sendable (WindowsSessionPageRequest) -> Void
+    private let onRemoteSessionPage: @Sendable (WindowsSessionPageRequest) -> Void
+    private var popupPageCommands: [UINT_PTR: (request: WindowsSessionPageRequest, remote: Bool)] = [:]
     private let onRemoteSettingsChanged: @Sendable () -> Void
     private let onRemoteRefresh: @Sendable () -> Void
     private let onRemoteFocus: @Sendable (WindowsRemoteFocusRequest) -> Void
@@ -166,6 +174,8 @@ public final class WindowsTrayHost: @unchecked Sendable {
         onRemoteSettingsChanged: @escaping @Sendable () -> Void = {},
         onRemoteRefresh: @escaping @Sendable () -> Void = {},
         onRemoteFocus: @escaping @Sendable (WindowsRemoteFocusRequest) -> Void = { _ in },
+        onLocalSessionPage: @escaping @Sendable (WindowsSessionPageRequest) -> Void = { _ in },
+        onRemoteSessionPage: @escaping @Sendable (WindowsSessionPageRequest) -> Void = { _ in },
         onPresentationSettingsChanged: @escaping PresentationSettingsChangedHandler = {},
         onOptionalUsageSettingsChanged: @escaping OptionalUsageSettingsChangedHandler = {},
         onRefreshSettingsChanged: @escaping RefreshSettingsChangedHandler = {},
@@ -177,6 +187,8 @@ public final class WindowsTrayHost: @unchecked Sendable {
         onCodexWebSettingsSave: @escaping CodexWebSettingsSaveHandler = { _, _ in },
         onPredictivePaceWarningSettingsChanged: @escaping PredictivePaceWarningSettingsChangedHandler = { _ in })
     {
+        self.onLocalSessionPage = onLocalSessionPage
+        self.onRemoteSessionPage = onRemoteSessionPage
         self.onRemoteSettingsChanged = onRemoteSettingsChanged
         self.onRemoteRefresh = onRemoteRefresh
         self.onRemoteFocus = onRemoteFocus
@@ -296,6 +308,13 @@ public final class WindowsTrayHost: @unchecked Sendable {
     /// Publishes rows and structured provider actions atomically. The action
     /// list is copied into the next popup, preventing a refreshed snapshot from
     /// reusing command IDs that belonged to an older menu.
+    public func showSessionPage() {
+        self.mailboxLock.lock()
+        let hwnd = self.quitInvoked ? nil : self.window
+        self.mailboxLock.unlock()
+        if let hwnd { PostMessageW(hwnd, Self.pagePopupMessage, 0, 0) }
+    }
+
     public func postRemoteSessions(_ snapshot: WindowsRemoteSessionMenuSnapshot) {
         self.mailboxLock.lock()
         guard !self.quitInvoked else { self.mailboxLock.unlock(); return }
@@ -463,16 +482,17 @@ public final class WindowsTrayHost: @unchecked Sendable {
         self.iconInstalled = false
     }
 
-    private func popup() {
+    private func popup(notifyMenuOpen: Bool = true) {
         guard !self.remoteEditorOpen else { return }
         guard let hwnd = self.window, let menu = CreatePopupMenu() else { return }
-        self.onMenuOpen()
+        if notifyMenuOpen { self.onMenuOpen() }
         self.mailboxLock.lock()
         let rows = self.mailboxRows
         let menuEntries = self.mailboxMenuEntries
         let agentSessions = self.mailboxAgentSessions
         let remoteSessions = self.mailboxRemoteSessions
         self.mailboxLock.unlock()
+        self.popupPageCommands.removeAll(keepingCapacity: true)
         self.popupRemoteCommands.removeAll(keepingCapacity: true)
         self.popupAgentSessionCommands.removeAll(keepingCapacity: true)
         self.popupStatusCommands.removeAll(keepingCapacity: true)
@@ -665,7 +685,8 @@ public final class WindowsTrayHost: @unchecked Sendable {
         var point = POINT()
         guard GetCursorPos(&point) != 0 else {
             _ = DestroyMenu(menu)
-            self.popupRemoteCommands.removeAll(keepingCapacity: true)
+            self.popupPageCommands.removeAll(keepingCapacity: true)
+        self.popupRemoteCommands.removeAll(keepingCapacity: true)
         self.popupAgentSessionCommands.removeAll(keepingCapacity: true)
         self.popupStatusCommands.removeAll(keepingCapacity: true)
             self.popupDashboardCommands.removeAll(keepingCapacity: true)
@@ -677,6 +698,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
         let command = TrackPopupMenu(menu, UINT(TPM_RIGHTBUTTON | TPM_RETURNCMD), point.x, point.y, 0, hwnd, nil)
         _ = DestroyMenu(menu)
         if command != 0 { self.dispatchCommand(UINT_PTR(command)) }
+        self.popupPageCommands.removeAll(keepingCapacity: true)
         self.popupRemoteCommands.removeAll(keepingCapacity: true)
         self.popupAgentSessionCommands.removeAll(keepingCapacity: true)
         self.popupStatusCommands.removeAll(keepingCapacity: true)
@@ -702,19 +724,24 @@ public final class WindowsTrayHost: @unchecked Sendable {
             if let message = snapshot.message {
                 succeeded = succeeded && append(message, flags: UINT(MF_STRING | MF_GRAYED), command: 0)
             }
-            for (index, item) in snapshot.rows.prefix(64).enumerated() {
+            for (index, item) in snapshot.rows.enumerated() {
                 let command = Self.agentSessionCommandBase + UINT_PTR(index)
                 let flags = UINT(MF_STRING) | (item.isEnabled ? 0 : UINT(MF_GRAYED))
                 succeeded = succeeded && append(item.title, flags: flags, command: command)
                 if item.isEnabled { commands[command] = item.request }
             }
         }
-        let title = snapshot.enabled ? "Local CLI sessions (\(snapshot.rows.count))" : "Local CLI sessions"
+        if snapshot.enabled { succeeded = succeeded && self.appendPageControls(to: submenu, page: snapshot.page, remote: false) }
+        let title = snapshot.enabled ? "Local CLI sessions (\(snapshot.page.totalItems))" : "Local CLI sessions"
         let attached = succeeded && title.withCString(encodedAs: UTF16.self) {
             AppendMenuW(menu, UINT(MF_STRING | MF_POPUP), UINT_PTR(UInt(bitPattern: submenu)), $0) != 0
         }
         if attached { self.popupAgentSessionCommands = commands }
-        else { _ = DestroyMenu(submenu) }
+        else {
+            self.popupPageCommands[Self.localPreviousPageCommand] = nil
+            self.popupPageCommands[Self.localNextPageCommand] = nil
+            _ = DestroyMenu(submenu)
+        }
     }
 
     private func appendSessionLabelMenu(to menu: HMENU) {
@@ -748,16 +775,41 @@ public final class WindowsTrayHost: @unchecked Sendable {
             let title = message.replacingOccurrences(of: "&", with: "&&")
             succeeded = succeeded && append(title, UINT(MF_STRING | MF_GRAYED), 0)
         }
-        for (index, row) in snapshot.rows.prefix(128).enumerated() {
+        for (index, row) in snapshot.rows.enumerated() {
             let command = Self.remoteSessionCommandBase + UINT_PTR(index)
             succeeded = succeeded && append(row.title, UINT(MF_STRING) | (row.isEnabled ? 0 : UINT(MF_GRAYED)), command)
             if row.isEnabled { commands[command] = row.request }
         }
-        let title = snapshot.enabled ? "Remote sessions (\(snapshot.rows.count))" : "Remote sessions (off)"
+        if snapshot.enabled { succeeded = succeeded && self.appendPageControls(to: submenu, page: snapshot.page, remote: true) }
+        let title = snapshot.enabled ? "Remote sessions" : "Remote sessions (off)"
         let attached = succeeded && title.withCString(encodedAs: UTF16.self) {
             AppendMenuW(menu, UINT(MF_STRING | MF_POPUP), UINT_PTR(UInt(bitPattern: submenu)), $0) != 0
         }
-        if attached { self.popupRemoteCommands = commands } else { _ = DestroyMenu(submenu) }
+        if attached { self.popupRemoteCommands = commands } else {
+            self.popupPageCommands[Self.remotePreviousPageCommand] = nil
+            self.popupPageCommands[Self.remoteNextPageCommand] = nil
+            _ = DestroyMenu(submenu)
+        }
+    }
+
+    private func appendPageControls(to menu: HMENU, page: WindowsSessionPage, remote: Bool) -> Bool {
+        guard page.count > 1 else { return true }
+        guard AppendMenuW(menu, UINT(MF_SEPARATOR), 0, nil) != 0 else { return false }
+        let label = page.title.withCString(encodedAs: UTF16.self) {
+            AppendMenuW(menu, UINT(MF_STRING | MF_GRAYED), 0, $0)
+        }
+        guard label != 0 else { return false }
+        let options: [(String, UINT_PTR, WindowsSessionPageRequest?)] = [
+            ("Previous page", remote ? Self.remotePreviousPageCommand : Self.localPreviousPageCommand, page.previous),
+            ("Next page", remote ? Self.remoteNextPageCommand : Self.localNextPageCommand, page.next),
+        ]
+        for (title, command, request) in options {
+            let flags = UINT(MF_STRING) | (request == nil ? UINT(MF_GRAYED) : 0)
+            let result = title.withCString(encodedAs: UTF16.self) { AppendMenuW(menu, flags, command, $0) }
+            guard result != 0 else { return false }
+            if let request { self.popupPageCommands[command] = (request, remote) }
+        }
+        return true
     }
 
     private func editRemoteSettings() {
@@ -798,6 +850,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
         self.mailboxAgentSessions = .disabled
         self.mailboxRemoteSessions = .disabled
         self.popupRemoteCommands.removeAll()
+        self.popupPageCommands.removeAll()
         self.popupAgentSessionCommands.removeAll()
         self.providerEditorPhase = .idle
         self.providerEditorExpectedRequest = nil
@@ -1043,6 +1096,10 @@ public final class WindowsTrayHost: @unchecked Sendable {
     }
 
     private func dispatchCommand(_ command: UINT_PTR) {
+        if let page = self.popupPageCommands[command] {
+            if page.remote { self.onRemoteSessionPage(page.request) } else { self.onLocalSessionPage(page.request) }
+            return
+        }
         if let request = self.popupRemoteCommands[command] { self.onRemoteFocus(request); return }
         if let request = self.popupAgentSessionCommands[command] {
             self.onAgentSessionFocus(request)
@@ -1294,6 +1351,13 @@ public final class WindowsTrayHost: @unchecked Sendable {
             return DefWindowProcW(hwnd, message, wParam, lParam)
         }
         let host = Unmanaged<WindowsTrayHost>.fromOpaque(UnsafeRawPointer(bitPattern: UInt(pointer))!).takeUnretainedValue()
+        if message == Self.pagePopupMessage {
+            guard !host.quitInvoked, !host.remoteEditorOpen,
+                  case .idle = host.providerEditorPhase, case .idle = host.codexWebSettingsEditorPhase
+            else { return 0 }
+            host.popup(notifyMenuOpen: false)
+            return 0
+        }
         if message == Self.wakeMessage {
             if host.remoteEditorOpen { return 0 }
             host.drainProviderQuotaWarningEditor()

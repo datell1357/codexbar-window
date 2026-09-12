@@ -10,7 +10,7 @@ public struct WindowsRemoteFocusRequest: Sendable {
 
 public struct WindowsRemoteSessionMenuItem: Sendable {
     public let title: String
-    public let request: WindowsRemoteFocusRequest
+    public let request: WindowsRemoteFocusRequest?
     public let isEnabled: Bool
 }
 
@@ -18,6 +18,11 @@ public struct WindowsRemoteSessionMenuSnapshot: Sendable {
     public let enabled: Bool
     public let rows: [WindowsRemoteSessionMenuItem]
     public let messages: [String]
+    public let page: WindowsSessionPage
+    public init(enabled: Bool, rows: [WindowsRemoteSessionMenuItem], messages: [String],
+                page: WindowsSessionPage = .empty) {
+        self.enabled = enabled; self.rows = rows; self.messages = messages; self.page = page
+    }
     public static let disabled = Self(enabled: false, rows: [], messages: [])
 }
 
@@ -25,6 +30,8 @@ public actor WindowsRemoteSessionsRuntime {
     public typealias Publisher = @Sendable (WindowsRemoteSessionMenuSnapshot) -> Void
     private struct RefreshResult: Sendable {
         let hosts: [RemoteSessionHostResult]
+        let catalog: [RemoteSessionTarget]
+        let nextCursor: String?
         let message: String?
         let discoveryFailed: Bool
         let cancelled: Bool
@@ -35,6 +42,10 @@ public actor WindowsRemoteSessionsRuntime {
     private var started = false
     private var terminated = false
     private var generation: UInt64 = 0
+    private var pageIndex = 0
+    private var queryCursor: String?
+    private var lastSuccessAt: [String: Date] = [:]
+    private var pendingHostIDs: Set<String> = []
     private var loop: Task<Void, Never>?
     private var deferred: Task<Void, Never>?
     private var fetchTask: Task<RefreshResult, Never>?
@@ -69,12 +80,19 @@ public actor WindowsRemoteSessionsRuntime {
         guard self.started else { return }
         self.generation &+= 1
         self.fetchTask?.cancel(); self.focusTask?.cancel()
-        self.hosts = []; self.message = nil
+        self.hosts = []; self.message = nil; self.queryCursor = nil; self.pageIndex = 0
+        self.lastSuccessAt = [:]; self.pendingHostIDs = []
         self.loadSettings()
         self.queued = self.settings.enabled && self.fetchTask != nil
         self.reconcileSchedule()
         self.publish()
         if self.settings.enabled { await self.refresh() }
+    }
+
+    public func movePage(_ request: WindowsSessionPageRequest) -> Bool {
+        guard self.started, self.settings.enabled, request.generation == self.generation else { return false }
+        self.pageIndex = request.index; self.publish()
+        return true
     }
 
     public func presentationDidChange() { self.publish() }
@@ -100,17 +118,32 @@ public actor WindowsRemoteSessionsRuntime {
         guard self.fetchTask == nil else { self.queued = true; return }
         let settings = self.settings
         let generation = self.generation
-        let task = Task.detached(priority: .utility) { await Self.collect(settings: settings) }
+        let cursor = self.queryCursor
+        let task = Task.detached(priority: .utility) { await Self.collect(settings: settings, after: cursor) }
         self.fetchTask = task; self.publish()
         let result = await task.value
         self.fetchTask = nil
         if self.started, self.settings.enabled, self.generation == generation, !result.cancelled {
             let old = Dictionary(self.hosts.map { ($0.host.lowercased(), $0) }, uniquingKeysWith: { _, new in new })
-            self.hosts = result.hosts.map { host in
-                guard host.error != nil, let previous = old[host.host.lowercased()] else { return host }
-                return RemoteSessionHostResult(
-                    host: host.host, sessions: previous.sessions, error: host.error, target: host.target ?? previous.target)
+            let queried = Dictionary(result.hosts.map { ($0.host.lowercased(), $0) }, uniquingKeysWith: { _, new in new })
+            self.pendingHostIDs = []
+            self.hosts = result.catalog.map { target in
+                let previous = old[target.id].flatMap { $0.target == target ? $0 : nil }
+                if previous == nil { self.lastSuccessAt[target.id] = nil }
+                if let host = queried[target.id] {
+                    if host.error == nil {
+                        self.lastSuccessAt[target.id] = Date()
+                        return host
+                    }
+                    return RemoteSessionHostResult(host: host.host, sessions: previous?.sessions ?? [],
+                                                   error: host.error, target: target)
+                }
+                if let previous { return previous }
+                self.lastSuccessAt[target.id] = nil
+                self.pendingHostIDs.insert(target.id)
+                return RemoteSessionHostResult(host: target.host, sessions: [], error: "Awaiting query", target: target)
             }
+            self.queryCursor = result.nextCursor
             if result.discoveryFailed {
                 let current = Set(self.hosts.map { $0.host.lowercased() })
                 self.hosts += old.values.filter { !current.contains($0.host.lowercased()) }.map {
@@ -119,6 +152,8 @@ public actor WindowsRemoteSessionsRuntime {
                 }
             }
             self.hosts.sort { $0.host.localizedCaseInsensitiveCompare($1.host) == .orderedAscending }
+            let retained = Set(self.hosts.map { $0.host.lowercased() })
+            self.lastSuccessAt = self.lastSuccessAt.filter { retained.contains($0.key) }
             self.message = result.message
             self.publish()
         }
@@ -130,7 +165,7 @@ public actor WindowsRemoteSessionsRuntime {
 
     private func runDeferred() async { self.deferred = nil; await self.refresh() }
 
-    private static func collect(settings: WindowsRemoteSessionSettings) async -> RefreshResult {
+    private static func collect(settings: WindowsRemoteSessionSettings, after cursor: String?) async -> RefreshResult {
         let fetcher = RemoteSessionFetcher()
         var targets = settings.targets
         var message: String?
@@ -141,16 +176,24 @@ public actor WindowsRemoteSessionsRuntime {
                 var seen = Set(targets.map(\.id))
                 targets += discovered.filter { seen.insert($0.id).inserted }
             case let .unavailable(reason): message = reason; discoveryFailed = true
-            case .cancelled: return .init(hosts: [], message: nil, discoveryFailed: false, cancelled: true)
+            case .cancelled: return .init(hosts: [], catalog: [], nextCursor: nil, message: nil, discoveryFailed: false, cancelled: true)
             }
         }
-        if targets.count > 32 {
-            message = [message, "Showing the first 32 remote hosts; configure manual hosts to select others."]
-                .compactMap { $0 }.joined(separator: " ")
+        guard !Task.isCancelled else {
+            return .init(hosts: [], catalog: [], nextCursor: nil, message: nil, discoveryFailed: false, cancelled: true)
         }
-        guard !Task.isCancelled else { return .init(hosts: [], message: nil, discoveryFailed: false, cancelled: true) }
-        let hosts = await fetcher.fetch(targets: Array(targets.prefix(32)))
-        return .init(hosts: hosts, message: message, discoveryFailed: discoveryFailed, cancelled: Task.isCancelled)
+        let afterIndex = cursor.flatMap { id in targets.firstIndex(where: { $0.id == id }) }.map { $0 + 1 } ?? 0
+        let start = afterIndex < targets.count ? afterIndex : 0
+        let end = start + min(32, targets.count - start)
+        let batch = Array(targets[start..<end])
+        let nextCursor = end < targets.count ? batch.last?.id : nil
+        let hosts = await fetcher.fetch(targets: batch)
+        if !targets.isEmpty {
+            let progress = "Queried hosts \(start + 1)–\(end) of \(targets.count). Other hosts keep their last-known result until their turn."
+            message = [message, progress].compactMap { $0 }.joined(separator: " ")
+        }
+        return .init(hosts: hosts, catalog: targets, nextCursor: nextCursor, message: message,
+                     discoveryFailed: discoveryFailed, cancelled: Task.isCancelled)
     }
 
     public func focus(_ request: WindowsRemoteFocusRequest) async {
@@ -181,6 +224,7 @@ public actor WindowsRemoteSessionsRuntime {
         self.loop = nil; self.deferred = nil
         loop?.cancel(); deferred?.cancel(); fetch?.cancel(); focus?.cancel()
         self.hosts = []; self.message = nil; self.settings = .defaults
+        self.lastSuccessAt = [:]; self.pendingHostIDs = []; self.queryCursor = nil; self.pageIndex = 0
         self.publisher(.disabled)
         _ = await fetch?.value; _ = await focus?.value
         await loop?.value; await deferred?.value
@@ -195,25 +239,48 @@ public actor WindowsRemoteSessionsRuntime {
         let style = WindowsSessionLabelStyle.load(self.defaults)
         var messages = self.message.map { [$0] } ?? []
         if self.fetchTask != nil { messages.append("Refreshing remote sessions…") }
+        let totalItems = self.hosts.reduce(0) { $0 + 1 + $1.sessions.count }
+        let page = WindowsSessionPage(index: self.pageIndex, totalItems: totalItems, generation: self.generation)
+        self.pageIndex = page.index
         var rows: [WindowsRemoteSessionMenuItem] = []
+        var offset = 0
+        func caption(_ raw: String) -> String {
+            let plain = raw.unicodeScalars.filter { !CharacterSet.controlCharacters.contains($0) }
+                .map { String($0) }.joined()
+            return String(plain.prefix(160)).replacingOccurrences(of: "&", with: "&&")
+        }
         for (index, host) in self.hosts.enumerated() {
+            let hostID = host.host.lowercased()
             let hostLabel = hide ? "Remote host \(index + 1)" : host.host
-            if host.error != nil { messages.append("\(hostLabel): unavailable; previous rows are disabled.") }
-            else if host.sessions.isEmpty { messages.append("\(hostLabel): no sessions reported.") }
-            for session in host.sessions.prefix(32) where rows.count < 128 {
-                let detail = style.label(session, hidePersonalInfo: hide) ?? session.provider.rawValue
-                let plainTitle = "\(hostLabel) · \(detail)".unicodeScalars.filter {
-                    !CharacterSet.controlCharacters.contains($0)
-                }.map { String($0) }.joined()
-                let title = String(plainTitle.prefix(160)).replacingOccurrences(of: "&", with: "&&")
-                rows.append(.init(title: title,
-                                  request: .init(hostID: host.host.lowercased(), sessionID: session.id, generation: self.generation),
-                                  isEnabled: host.error == nil && host.target != nil))
+            if page.range.contains(offset) {
+                let health: String
+                if self.pendingHostIDs.contains(hostID) {
+                    health = "waiting for its query turn"
+                } else if host.error != nil {
+                    health = "unavailable; cached rows disabled"
+                } else {
+                    health = "\(host.sessions.count) sessions"
+                }
+                let age: String
+                if let date = self.lastSuccessAt[hostID] {
+                    let seconds = max(0, Date().timeIntervalSince(date))
+                    age = seconds < 60 ? " · updated <1m ago" : " · updated \(Int(min(seconds / 60, 999999)))m ago"
+                } else { age = "" }
+                rows.append(.init(title: caption("\(hostLabel): \(health)\(age)"), request: nil, isEnabled: false))
+            }
+            offset += 1
+            for session in host.sessions {
+                if page.range.contains(offset) {
+                    let detail = style.label(session, hidePersonalInfo: hide) ?? session.provider.rawValue
+                    rows.append(.init(title: caption("\(hostLabel) · \(detail)"),
+                                      request: WindowsRemoteFocusRequest(hostID: hostID, sessionID: session.id, generation: self.generation),
+                                      isEnabled: host.error == nil && host.target != nil))
+                }
+                offset += 1
             }
         }
         if self.hosts.isEmpty, self.fetchTask == nil, messages.isEmpty { messages.append("No remote hosts configured or discovered.") }
-        if self.hosts.reduce(0, { $0 + $1.sessions.count }) > rows.count { messages.append("The remote session menu is truncated.") }
-        self.publisher(.init(enabled: true, rows: rows, messages: messages))
+        self.publisher(.init(enabled: true, rows: rows, messages: messages, page: page))
     }
 }
 #endif

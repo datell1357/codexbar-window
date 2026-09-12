@@ -26,8 +26,8 @@
   "static_qa_status": "NOT_RUN_DURING_IMPLEMENTATION",
   "windows_runtime_status": "NOT_VALIDATED",
   "completion_claim": false,
-  "latest_completed_slice": "IMPL-005 code written: explicit Windows launch paths, selected Pi/OMP headers, and shared local/remote session label choices; unverified",
-  "next": "Implement a bounded native Windows cwd source and provider-specific metadata correlation; also complete local/remote list pagination without silent truncation.",
+  "latest_completed_slice": "IMPL-006 code written: local/remote result pagination and rotating remote host query cursor with last-success state; unverified",
+  "next": "Implement bounded native Windows cwd retrieval and provider-specific session metadata correlation; later address collection limits and large-cache policy.",
   "inventory": {
     "baseline_entries": 2844,
     "provider_ids": 69,
@@ -49,7 +49,7 @@
     "widget_provider_choices": 17
   },
   "automation_action_this_revision": "Created active thread heartbeat codexbar-windows-30 at 30-minute intervals",
-  "publication_action_this_revision": "Commit and push IMPL-005; actual commit and push output are publication evidence",
+  "publication_action_this_revision": "Commit and push IMPL-006; actual commit and push output are publication evidence",
   "historical_state_before_2026_09_12": {
     "phase": "IMPLEMENTING",
     "repository": "/Users/yeoreum/Documents/codexbar-window/fork",
@@ -123,7 +123,7 @@
   "windows_adaptations_pending": [
     "Native process cwd, Codex/Claude transcript correlation, Desktop/IDE, relative paths and full Pi/OMP roots",
     "Windows Terminal pseudoconsole and exact tab focus",
-    "Full local/remote list pagination beyond explicit limits",
+    "Collection limits beyond source/remote CLI caps, manual-host capacity and large-cache policy",
     "Settings recovery, per-process error aggregation, localization/accessibility/DPI",
     "All Windows build and runtime validation"
   ],
@@ -196,6 +196,16 @@
         "WIN-042",
         "WIN-010",
         "WIN-012"
+      ],
+      "status": "CODE_WRITTEN_UNVERIFIED",
+      "validation": "NOT_RUN_BY_USER_INSTRUCTION"
+    },
+    {
+      "id": "IMPL-006",
+      "contracts": [
+        "WIN-010",
+        "WIN-040",
+        "WIN-041"
       ],
       "status": "CODE_WRITTEN_UNVERIFIED",
       "validation": "NOT_RUN_BY_USER_INSTRUCTION"

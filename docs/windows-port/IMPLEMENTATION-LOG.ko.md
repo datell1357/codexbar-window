@@ -120,3 +120,25 @@
 5. 새 WinSDK/argv/header parser와 설정 변경/표시 동작 모두 미검증이다. W11 전체 또는 live-cwd 지원 완료가 아니다.
 
 다음 구현: Windows native cwd 제공 경계와 provider별 correlation을 이어서 구현한다. 안전하게 source 소유권을 확인할 수 없는 경로는 임의의 recent-file fallback으로 연결하지 않는다. remote/local 목록 pagination도 별도 구현 묶음으로 이어간다.
+
+## IMPL-006 — 세션 페이지와 원격 호스트 순환 조회
+
+상태: CODE_WRITTEN_UNVERIFIED. 빌드·컴파일·테스트·앱·실제 조회·검증 스크립트를 실행하지 않았다. 계약: WIN-010/040/041의 목록 접근성 및 resource-bound 조회.
+
+작성한 코드:
+
+- `WindowsSessionPage.swift`: 세대가 포함된 page request, page index/count/범위와 이전·다음 요청을 추가했다. 결과가 줄어들면 페이지를 유효 범위로 맞춘다.
+- 로컬 runtime은 수신한 세션을 32행씩 표시하며, 원격 runtime은 host 상태 행과 해당 host의 세션을 하나의 페이지 목록으로 제공한다. 기존 remote host별32/session전체128 화면 절단을 제거했다. 표시되는 페이지의 문자열만 생성한다.
+- Remote refresh는 한 번에 최대32개 host를 조회하되 마지막 host ID cursor 다음부터 이어간다. 모든 catalog host를 순환하며 새 catalog에서도 cursor가 사라졌으면 처음부터 시작한다. 실제 SSH 동시성은 이전 최대4개를 유지한다.
+- 아직 조회 전인 host와 cached host, unavailable host를 구분하고 마지막 성공 시각을 표시한다. 해당 순서에 포함되지 않은 host의 이전 결과를 보존하며, OS/CLI path가 달라진 target에는 이전 데이터·시각을 재사용하지 않는다. discovery 실패로 보존한 이전 host는 비활성화한다.
+- `WindowsTrayHost`/`WindowsMain`: local/remote 이전·다음 명령과 페이지 정보를 연결했다. 페이지 변경은 조회를 실행하지 않으며 메뉴를 다시 열 때도 menu-open refresh를 생략한다. 오래된 설정 세대의 요청은 거부하고 submenu 부착 실패/닫기/종료 시 page command 표를 정리한다.
+
+범위·남은 작업:
+
+1. 페이지는 현재 받은 결과를 모두 볼 수 있게 한 것이다. 로컬 scanner의 원본 기본 maxProcessCount64·시간 예산이나 remote CLI 자체의 반환 한도를 늘린 것은 아니다. 그 한도 초과 수집을 위한 cursor/API 확장은 별도다.
+2. 수동 host editor 최대32개 저장 제한과 256KiB 설정 크기는 유지한다. 발견된 tailnet host는 첫32개로 고정하지 않고 순환한다.
+3. 순환 중 cached 결과는 오래될 수 있어 성공 시각을 표시한다. 원격 응답 cache의 대규모 메모리 사용·보존 정책과 실제 성능은 미검증이다.
+4. native cwd·Claude/Codex correlation·Desktop/IDE·exact-tab focus, UI DPI/접근성/현지화는 여전히 미완료다.
+5. 기존 query/scan/actor 종료와 page/메뉴 수명 모두 실행 검증하지 않았다. 전체 W03/W11 완료나 배포 가능 상태로 표시하지 않는다.
+
+다음 구현: 로컬 cwd 제공 경계와 공급자별 session metadata correlation을 이어간다. 실제 native cwd가 없는 현재 explicit hint 범위를 전체 지원으로 오인하지 않는다.

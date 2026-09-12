@@ -56,6 +56,18 @@ private final class WindowsTrayApplication: @unchecked Sendable {
             guard let self else { return }
             Task { await self.remoteSessions.focus(request) }
         },
+        onLocalSessionPage: { [weak self] request in
+            guard let self else { return }
+            Task {
+                if await self.sessions.movePage(request) { self.host.showSessionPage() }
+            }
+        },
+        onRemoteSessionPage: { [weak self] request in
+            guard let self else { return }
+            Task {
+                if await self.remoteSessions.movePage(request) { self.host.showSessionPage() }
+            }
+        },
         onPresentationSettingsChanged: { [weak self] in
             guard let self else { return }
             Task { await self.runtime.presentationSettingsDidChange() }

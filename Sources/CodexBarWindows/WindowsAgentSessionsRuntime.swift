@@ -18,6 +18,13 @@ public struct WindowsSessionMenuSnapshot: Sendable {
     public let isRefreshing: Bool
     public let rows: [WindowsSessionMenuItem]
     public let message: String?
+    public let page: WindowsSessionPage
+
+    public init(enabled: Bool, isRefreshing: Bool, rows: [WindowsSessionMenuItem], message: String?,
+                page: WindowsSessionPage = .empty) {
+        self.enabled = enabled; self.isRefreshing = isRefreshing; self.rows = rows; self.message = message
+        self.page = page
+    }
 
     public static let disabled = Self(enabled: false, isRefreshing: false, rows: [], message: nil)
 }
@@ -33,6 +40,7 @@ public actor WindowsAgentSessionsRuntime {
     private var deferredRefreshTask: Task<Void, Never>?
     private var enabled = false
     private var generation: UInt64 = 0
+    private var pageIndex = 0
     private var periodicTask: Task<Void, Never>?
     private var scanTask: Task<WindowsSessionScanOutcome, Never>?
     private var focusTask: Task<SessionFocusResult, Never>?
@@ -84,6 +92,7 @@ public actor WindowsAgentSessionsRuntime {
     public func settingsDidChange() async {
         guard self.running else { return }
         self.generation &+= 1
+        self.pageIndex = 0
         self.enabled = self.defaults.object(forKey: "agentSessionsEnabled") as? Bool ?? false
         self.focusTask?.cancel()
         self.scanTask?.cancel()
@@ -96,6 +105,13 @@ public actor WindowsAgentSessionsRuntime {
         self.reconcileSchedule()
         self.publish()
         if self.enabled { await self.refresh() }
+    }
+
+    public func movePage(_ request: WindowsSessionPageRequest) -> Bool {
+        guard self.running, self.enabled, request.generation == self.generation else { return false }
+        self.pageIndex = request.index
+        self.publish()
+        return true
     }
 
     public func presentationDidChange() {
@@ -205,7 +221,9 @@ public actor WindowsAgentSessionsRuntime {
         }
         let hidePersonalInfo = self.defaults.object(forKey: "hidePersonalInfo") as? Bool ?? false
         let style = WindowsSessionLabelStyle.load(self.defaults)
-        let rows = self.sessions.prefix(64).map { session in
+        let page = WindowsSessionPage(index: self.pageIndex, totalItems: self.sessions.count, generation: self.generation)
+        self.pageIndex = page.index
+        let rows = self.sessions[page.range].map { session in
             let label = style.label(session, hidePersonalInfo: hidePersonalInfo)
             let process = "PID \(session.pid.map(String.init) ?? "—")"
             let detail = label.map { "\($0) · \(process)" } ?? process
@@ -219,7 +237,7 @@ public actor WindowsAgentSessionsRuntime {
         }
         let status = self.message ?? (self.scanTask != nil ? "Scanning local CLI sessions…" :
             (rows.isEmpty ? "No recognized local CLI sessions." : "Labels use explicit launch paths or selected session headers; live cwd detection is not connected."))
-        self.publisher(.init(enabled: true, isRefreshing: self.scanTask != nil, rows: rows, message: status))
+        self.publisher(.init(enabled: true, isRefreshing: self.scanTask != nil, rows: rows, message: status, page: page))
     }
 }
 #endif
