@@ -71,7 +71,7 @@ enum WindowsSessionMetadataCorrelator {
         let selectionCounts = Dictionary(grouping: sessions.compactMap(selectionKey), by: { $0 }).mapValues(\.count)
         var output = sessions
         var unresolved = false
-        var claudeTitlesUnavailable = false
+        var claudeTitleFailures: Set<TitleReadFailure> = []
         let selectedCodexIDs = Set(sessions.filter { $0.provider == .codex && $0.cwd != nil }
             .compactMap { requestedIDs[$0.id] })
         let codexFiles: [String]
@@ -117,29 +117,34 @@ enum WindowsSessionMetadataCorrelator {
                 output[index].transcriptPath = path
                 output[index].lastActivityAt = min(info.modifiedAt, now)
                 if roots.readClaudeTitles {
-                    if let names = self.stableTitleNames(path, ids: [id.lowercased()], deadline: budget.deadline, claude: true),
-                       let latest = self.fileInfo(path), latest == info {
+                    do {
+                        let names = try self.stableTitleNames(path, ids: [id.lowercased()], deadline: budget.deadline, claude: true)
+                        guard let latest = self.fileInfo(path), latest == info else { throw TitleReadFailure.changed }
                         output[index].sessionName = names[id.lowercased()]
-                    } else { claudeTitlesUnavailable = true }
+                    } catch {
+                        claudeTitleFailures.insert((error as? TitleReadFailure) ?? .unavailable)
+                    }
                 }
             }
             output[index].state = config.state(lastActivityAt: output[index].lastActivityAt, now: now, hasLiveProcess: true)
         }
         var notices: [String] = []
-        if claudeTitlesUnavailable {
-            notices.append("Some Claude title records were unavailable, changing, or over budget; project labels are retained.")
+        for failure in TitleReadFailure.allCases where claudeTitleFailures.contains(failure) {
+            notices.append("Claude titles: \(failure.message) Project labels are retained.")
         }
         if let titlePath = roots.codexTitleIndex, !matchedHeaders.isEmpty {
             let ids = Set(matchedHeaders.values.map { $0.sessionID.lowercased() })
-            if let names = self.stableTitleNames(titlePath, ids: ids, deadline: budget.deadline) {
+            do {
+                let names = try self.stableTitleNames(titlePath, ids: ids, deadline: budget.deadline)
                 for (index, header) in matchedHeaders {
                     output[index].sessionName = header.descriptiveName(
                         threadMetadata: names[header.sessionID.lowercased()].map {
                             CodexThreadMetadata(title: $0, agentPath: nil)
                         }).map(WindowsSessionLaunchHints.label)
                 }
-            } else {
-                notices.append("The configured Codex title index was unavailable, changing, or over budget; header/project labels are retained.")
+            } catch {
+                let failure = (error as? TitleReadFailure) ?? .unavailable
+                notices.append("Codex titles: \(failure.message) Header/project labels are retained.")
             }
         }
         if unresolved || budget.exhausted || budget.rootUnavailable {
@@ -399,21 +404,42 @@ enum WindowsSessionMetadataCorrelator {
 
     /// Explicit source only: never derive CODEX_HOME or a title index from another account.
     /// A complete stable index is required so a later rename cannot be missed by truncation.
+    private enum TitleReadFailure: Error, Hashable, CaseIterable {
+        case unavailable, fileLimit, lineLimit, format, changed, deadline, cancelled
+        var message: String {
+            switch self {
+            case .unavailable: "The configured source cannot be read as a local regular file. Check its location and access."
+            case .fileLimit: "The source exceeds the current 1 MiB reader limit. Large-file support is pending."
+            case .lineLimit: "A record exceeds the current 64 KiB line limit."
+            case .format: "The source contains incomplete or unsupported title records."
+            case .changed: "The source changed during reading; a later refresh can retry."
+            case .deadline: "The metadata scan time budget was exhausted."
+            case .cancelled: "Title reading was cancelled."
+            }
+        }
+    }
+
+    private static func checkTitleDeadline(_ deadline: Date) throws {
+        if Task.isCancelled { throw TitleReadFailure.cancelled }
+        if Date() >= deadline { throw TitleReadFailure.deadline }
+    }
+
     private static func stableTitleNames(
-        _ path: String, ids: Set<String>, deadline: Date, claude: Bool = false) -> [String: String]? {
-        guard !Task.isCancelled, Date() < deadline,
-              let absolute = WindowsSessionLaunchHints.absolutePath(path),
+        _ path: String, ids: Set<String>, deadline: Date, claude: Bool = false) throws -> [String: String] {
+        try self.checkTitleDeadline(deadline)
+        guard let absolute = WindowsSessionLaunchHints.absolutePath(path),
               let separator = absolute.lastIndex(of: "\\"),
-              self.directoryAllowed(String(absolute[..<separator])) else { return nil }
+              self.directoryAllowed(String(absolute[..<separator])) else { throw TitleReadFailure.unavailable }
         let units = Array(absolute.utf16) + [0]
         let handle = units.withUnsafeBufferPointer {
             CreateFileW($0.baseAddress, DWORD(GENERIC_READ), DWORD(FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE),
                         nil, DWORD(OPEN_EXISTING), DWORD(FILE_ATTRIBUTE_NORMAL | FILE_FLAG_OPEN_REPARSE_POINT), nil)
         }
-        guard let handle, handle != INVALID_HANDLE_VALUE else { return nil }
+        guard let handle, handle != INVALID_HANDLE_VALUE else { throw TitleReadFailure.unavailable }
         defer { CloseHandle(handle) }
         let maximumBytes = 1024 * 1024
-        guard let before = self.fileInfo(handle: handle), before.size <= UInt64(maximumBytes) else { return nil }
+        guard let before = self.fileInfo(handle: handle) else { throw TitleReadFailure.unavailable }
+        guard before.size <= UInt64(maximumBytes) else { throw TitleReadFailure.fileLimit }
         var data = Data()
         var reachedEOF = false
         while data.count <= maximumBytes, !Task.isCancelled, Date() < deadline {
@@ -422,31 +448,35 @@ enum WindowsSessionMetadataCorrelator {
             let success = chunk.withUnsafeMutableBytes {
                 ReadFile(handle, $0.baseAddress, DWORD($0.count), &count, nil)
             }
-            guard success != 0 else { return nil }
+            guard success != 0 else { throw TitleReadFailure.unavailable }
             if count == 0 { reachedEOF = true; break }
             data.append(contentsOf: chunk.prefix(Int(count)))
         }
-        guard reachedEOF, data.count <= maximumBytes, UInt64(data.count) == before.size,
-              !Task.isCancelled, Date() < deadline else { return nil }
+        try self.checkTitleDeadline(deadline)
+        guard data.count <= maximumBytes else { throw TitleReadFailure.fileLimit }
+        guard reachedEOF, UInt64(data.count) == before.size else { throw TitleReadFailure.changed }
         var names: [String: String] = [:]
         for line in data.split(separator: 10) {
-            guard !Task.isCancelled, Date() < deadline, line.count <= 64 * 1024,
-                  let object = try? JSONSerialization.jsonObject(with: Data(line)) as? [String: Any] else { return nil }
+            try self.checkTitleDeadline(deadline)
+            guard line.count <= 64 * 1024 else { throw TitleReadFailure.lineLimit }
+            guard let object = try? JSONSerialization.jsonObject(with: Data(line)) as? [String: Any]
+            else { throw TitleReadFailure.format }
             // Transcript bytes may include conversation records; only typed title metadata is used.
             // Never derive a title from prompts, assistant messages, summaries or tool output.
             if claude, object["type"] as? String != "custom-title" { continue }
             guard let rawID = object[claude ? "sessionId" : "id"] as? String,
                   let uuid = UUID(uuidString: rawID),
-                  let title = object[claude ? "customTitle" : "thread_name"] as? String else { return nil }
+                  let title = object[claude ? "customTitle" : "thread_name"] as? String else { throw TitleReadFailure.format }
             let id = uuid.uuidString.lowercased()
             guard ids.contains(id) else { continue }
             let clean = WindowsSessionLaunchHints.label(title)
             // Append order follows the original index reader; an empty rename removes stale text.
             names[id] = clean.isEmpty ? nil : clean
         }
-        guard let after = self.fileInfo(handle: handle), before == after,
-              let current = self.fileInfo(absolute), current == after,
-              !Task.isCancelled, Date() < deadline else { return nil }
+        try self.checkTitleDeadline(deadline)
+        guard let after = self.fileInfo(handle: handle), let current = self.fileInfo(absolute)
+        else { throw TitleReadFailure.unavailable }
+        guard before == after, current == after else { throw TitleReadFailure.changed }
         return names
     }
 

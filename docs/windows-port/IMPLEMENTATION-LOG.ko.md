@@ -292,3 +292,21 @@
 - source/profile 소유권, filesystem 전체 원자성, 동기 ReadFile 취소 지연, 큰 파일의 안전한 tail/incremental 처리, 자동 제목/summary fallback, SQLite와 신규 추론 제목은 남아 있다. 전체 기능 또는 배포 완료로 판정하지 않는다.
 
 다음 구현: session metadata의 큰 파일 처리와 source 진단을 보강하되 부분 읽기로 오래된 제목을 확정하지 않는 경계를 유지한다. 나머지 Windows platform 계약도 계속 필수 범위로 추적한다.
+
+## IMPL-014 — 제목 source 실패 원인별 진단
+
+상태: CODE_WRITTEN_UNVERIFIED. 빌드·컴파일·테스트·lint·앱·실계정/세션 파일 조회·검증 스크립트를 실행하지 않았다. 계약: WIN-010/040/042.
+
+작성한 코드:
+
+- 공통 stable title reader의 nil 실패를 typed error로 분리했다. source 접근/파일 유형, 전체1MiB 제한, 행64KiB 제한, 형식 오류, 읽는 동안 변경, 시간 예산, 취소를 구분한다.
+- Codex와 Claude 제목 안내를 공급자별 원인 메시지로 연결했다. Claude에서 여러 세션에 같은 실패가 발생하면 Set과 고정 case 순서로 한 번만 표시한다. 경로·제목·대화 내용·raw OS error를 메시지에 넣지 않는다.
+- 제목 보강에 실패하면 기존 역할/프로젝트 label을 유지한다. 큰 파일에는 현재 지원 제한임을 명시하며 파일 삭제/수정이나 강제 읽기를 권하지 않는다. 기존 전체 EOF/identity 확인 및 크기 한도를 유지한다.
+
+남은 범위:
+
+1. 이번 묶음은 진단 개선이며 큰 파일 읽기 지원을 구현한 것은 아니다. 제한된 tail/incremental reader와 변경·rename 처리 설계/구현이 남아 있다.
+2. 실제 Windows 오류 분류, 취소 지연, 트레이 메시지 길이·접근성·현지화는 미검증이다. 취소된 전체 scan은 기존 scanner/runtime의 취소 처리로 결과가 폐기될 수 있다.
+3. SQLite, 신규 추론 제목, source/profile 소유권과 전체 Windows 기능·배포 검증은 계속 미완료다.
+
+다음 구현: 큰 파일 제목 읽기를 위한 bounded suffix 처리와 완전한 레코드 경계를 연결한다. 부분 데이터에서 발견되지 않은 제목을 확정하지 않는 정책을 유지한다.
