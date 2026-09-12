@@ -23,6 +23,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
     public typealias CodexWebSettingsSaveHandler = @Sendable (UInt64, WindowsCodexWebSettingsPatch) -> Void
     public typealias QuitHandler = @Sendable () -> Void
 
+    private static let claudeTitlesCommand = UINT_PTR(0x752E)
     private static let codexTitleFolderCommand = UINT_PTR(0x752B)
     private static let clearCodexTitleCommand = UINT_PTR(0x752C)
     private static let disableCodexTitleCommand = UINT_PTR(0x752D)
@@ -734,6 +735,10 @@ public final class WindowsTrayHost: @unchecked Sendable {
         let correlate = self.presentationDefaults.object(forKey: "windowsSessionMetadataEnabled") as? Bool ?? false
         succeeded = succeeded && append("Match session metadata", flags: UINT(MF_STRING) | (correlate ? UINT(MF_CHECKED) : 0),
                                         command: Self.sessionMetadataToggleCommand)
+        let claudeTitles = self.presentationDefaults.object(forKey: "windowsClaudeSessionTitlesEnabled") as? Bool ?? false
+        succeeded = succeeded && append("Read Claude transcript titles (experimental)",
+                                        flags: UINT(MF_STRING) | (claudeTitles ? UINT(MF_CHECKED) : 0),
+                                        command: Self.claudeTitlesCommand)
         let inferNew = self.presentationDefaults.object(forKey: "windowsInferNewSessionMetadataEnabled") as? Bool ?? false
         succeeded = succeeded && append("Infer new-session metadata (experimental)",
                                         flags: UINT(MF_STRING) | (inferNew ? UINT(MF_CHECKED) : 0),
@@ -1246,6 +1251,10 @@ public final class WindowsTrayHost: @unchecked Sendable {
         case Self.inferNewSessionMetadataCommand:
             let value = self.presentationDefaults.object(forKey: "windowsInferNewSessionMetadataEnabled") as? Bool ?? false
             self.presentationDefaults.set(!value, forKey: "windowsInferNewSessionMetadataEnabled")
+            self.sessionMetadataSettingsChanged()
+        case Self.claudeTitlesCommand:
+            let enabled = self.presentationDefaults.object(forKey: "windowsClaudeSessionTitlesEnabled") as? Bool ?? false
+            self.presentationDefaults.set(!enabled, forKey: "windowsClaudeSessionTitlesEnabled")
             self.sessionMetadataSettingsChanged()
         case Self.codexTitleFolderCommand: self.chooseCodexTitleFolder()
         case Self.clearCodexTitleCommand:

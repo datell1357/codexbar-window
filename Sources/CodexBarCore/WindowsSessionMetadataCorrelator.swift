@@ -7,12 +7,13 @@ public struct WindowsSessionMetadataRoots: Equatable, Sendable {
     public let codexSessions: String?
     public let claudeProjects: String?
     public let codexTitleIndex: String?
+    public let readClaudeTitles: Bool
     public let allowNewSessions: Bool
     public static let none = Self(codex: nil, claude: nil)
     public var isEmpty: Bool { self.codexSessions == nil && self.claudeProjects == nil }
 
     public init(codexSessions: String?, claudeProjects: String?, allowNewSessions: Bool = false,
-                codexTitleIndex: String? = nil) throws {
+                codexTitleIndex: String? = nil, readClaudeTitles: Bool = false) throws {
         func normalize(_ raw: String?) throws -> String? {
             guard let raw, !raw.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
             guard let path = WindowsSessionLaunchHints.absolutePath(raw) else { throw ConfigurationError.invalidPath }
@@ -21,13 +22,15 @@ public struct WindowsSessionMetadataRoots: Equatable, Sendable {
         self.codexSessions = try normalize(codexSessions)
         self.claudeProjects = try normalize(claudeProjects)
         self.codexTitleIndex = try normalize(codexTitleIndex)
+        self.readClaudeTitles = readClaudeTitles
         self.allowNewSessions = allowNewSessions
     }
-    private init(codex: String?, claude: String?) { self.codexSessions = codex; self.claudeProjects = claude; self.allowNewSessions = false; self.codexTitleIndex = nil }
+    private init(codex: String?, claude: String?) { self.codexSessions = codex; self.claudeProjects = claude; self.allowNewSessions = false; self.codexTitleIndex = nil; self.readClaudeTitles = false }
 
     public static func load(
         codexOverride: String? = nil, claudeOverride: String? = nil,
         allowNewSessions: Bool = false, codexTitleIndexOverride: String? = nil,
+        readClaudeTitles: Bool = false,
         environment: [String: String] = ProcessInfo.processInfo.environment) throws -> Self
     {
         try Self(
@@ -37,7 +40,8 @@ public struct WindowsSessionMetadataRoots: Equatable, Sendable {
                 "CODEXBAR_WINDOWS_CLAUDE_PROJECTS_ROOT", environment: environment),
             allowNewSessions: allowNewSessions,
             codexTitleIndex: codexTitleIndexOverride ?? CodexBarPlatformPaths.environmentValue(
-                "CODEXBAR_WINDOWS_CODEX_TITLE_INDEX", environment: environment))
+                "CODEXBAR_WINDOWS_CODEX_TITLE_INDEX", environment: environment),
+            readClaudeTitles: readClaudeTitles)
     }
     enum ConfigurationError: LocalizedError {
         case invalidPath
@@ -67,6 +71,7 @@ enum WindowsSessionMetadataCorrelator {
         let selectionCounts = Dictionary(grouping: sessions.compactMap(selectionKey), by: { $0 }).mapValues(\.count)
         var output = sessions
         var unresolved = false
+        var claudeTitlesUnavailable = false
         let selectedCodexIDs = Set(sessions.filter { $0.provider == .codex && $0.cwd != nil }
             .compactMap { requestedIDs[$0.id] })
         let codexFiles: [String]
@@ -108,16 +113,25 @@ enum WindowsSessionMetadataCorrelator {
                 guard budget.consume(), self.directoryAllowed(folder), let info = self.fileInfo(path) else {
                     unresolved = true; continue
                 }
-                // Only filename, UUID, parent project mapping and file metadata; no Claude body read.
+                // Base matching uses only filename, UUID, parent project mapping and file metadata.
                 output[index].transcriptPath = path
                 output[index].lastActivityAt = min(info.modifiedAt, now)
+                if roots.readClaudeTitles {
+                    if let names = self.stableTitleNames(path, ids: [id.lowercased()], deadline: budget.deadline, claude: true),
+                       let latest = self.fileInfo(path), latest == info {
+                        output[index].sessionName = names[id.lowercased()]
+                    } else { claudeTitlesUnavailable = true }
+                }
             }
             output[index].state = config.state(lastActivityAt: output[index].lastActivityAt, now: now, hasLiveProcess: true)
         }
         var notices: [String] = []
+        if claudeTitlesUnavailable {
+            notices.append("Some Claude title records were unavailable, changing, or over budget; project labels are retained.")
+        }
         if let titlePath = roots.codexTitleIndex, !matchedHeaders.isEmpty {
             let ids = Set(matchedHeaders.values.map { $0.sessionID.lowercased() })
-            if let names = self.codexIndexNames(titlePath, ids: ids, deadline: budget.deadline) {
+            if let names = self.stableTitleNames(titlePath, ids: ids, deadline: budget.deadline) {
                 for (index, header) in matchedHeaders {
                     output[index].sessionName = header.descriptiveName(
                         threadMetadata: names[header.sessionID.lowercased()].map {
@@ -385,7 +399,8 @@ enum WindowsSessionMetadataCorrelator {
 
     /// Explicit source only: never derive CODEX_HOME or a title index from another account.
     /// A complete stable index is required so a later rename cannot be missed by truncation.
-    private static func codexIndexNames(_ path: String, ids: Set<String>, deadline: Date) -> [String: String]? {
+    private static func stableTitleNames(
+        _ path: String, ids: Set<String>, deadline: Date, claude: Bool = false) -> [String: String]? {
         guard !Task.isCancelled, Date() < deadline,
               let absolute = WindowsSessionLaunchHints.absolutePath(path),
               let separator = absolute.lastIndex(of: "\\"),
@@ -416,9 +431,13 @@ enum WindowsSessionMetadataCorrelator {
         var names: [String: String] = [:]
         for line in data.split(separator: 10) {
             guard !Task.isCancelled, Date() < deadline, line.count <= 64 * 1024,
-                  let object = try? JSONSerialization.jsonObject(with: Data(line)) as? [String: Any],
-                  let rawID = object["id"] as? String, let uuid = UUID(uuidString: rawID),
-                  let title = object["thread_name"] as? String else { return nil }
+                  let object = try? JSONSerialization.jsonObject(with: Data(line)) as? [String: Any] else { return nil }
+            // Transcript bytes may include conversation records; only typed title metadata is used.
+            // Never derive a title from prompts, assistant messages, summaries or tool output.
+            if claude, object["type"] as? String != "custom-title" { continue }
+            guard let rawID = object[claude ? "sessionId" : "id"] as? String,
+                  let uuid = UUID(uuidString: rawID),
+                  let title = object[claude ? "customTitle" : "thread_name"] as? String else { return nil }
             let id = uuid.uuidString.lowercased()
             guard ids.contains(id) else { continue }
             let clean = WindowsSessionLaunchHints.label(title)

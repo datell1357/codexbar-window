@@ -273,3 +273,22 @@
 3. SQLite fallback, Claude 제목, 신규 추론 세션의 제목, 큰 index cache와 source/profile 소유권 검증은 남아 있다. GUI DPI/접근성/현지화 및 Windows 실행 검증도 미완료다.
 
 다음 구현: Claude의 명시적으로 매칭된 transcript에서 제목 metadata를 읽는 경로와 별도 opt-in 설정을 연결한다. 대화 본문을 제목으로 추정하는 동작은 별도 계약 없이 추가하지 않는다.
+
+## IMPL-013 — opt-in Claude custom-title metadata
+
+상태: CODE_WRITTEN_UNVERIFIED. 빌드·컴파일·테스트·lint·앱·실제 세션 파일/계정/프로세스 조회·검증 스크립트를 실행하지 않았다. 계약: WIN-010/012/040/042.
+
+작성한 코드:
+
+- GUI `Read Claude transcript titles (experimental)`와 CLI `--claude-titles`를 추가했다. 기본 false이고 metadata roots snapshot에 포함한다. GUI 옵션 변경은 기존 scan 취소·보강값 제거·늦은 결과 차단 경로를 사용한다.
+- declared Claude root+known cwd+explicit UUID에 성공한 세션만 대상으로 한다. 신규 추론 결과는 제목 읽기에 포함하지 않는다. UUID가 같은 type=custom-title/sessionId/customTitle 레코드의 마지막 이름을 사용하며 빈 이름은 기존 이름을 제거한다.
+- Codex stable title index reader를 공통 title reader로 확장했다. 파일 전체 최대1MiB, 행 최대64KiB, 동일 handle 전후 파일 정보와 최종 pathname 정보, deadline/cancel 범위를 유지한다. read 이후 base matching 파일 정보와도 비교한다.
+- opt-in 시 transcript bytes에 대화 레코드가 포함될 수 있다. 제목 타입 외 레코드는 제목으로 사용하지 않고 저장/로그로 내보내지 않는다. prompt/assistant/tool output/summary로 이름을 추정하지 않는다. 실패하면 프로젝트 이름을 유지하고 상태 문구로 알린다.
+
+형식 근거와 한계:
+
+- 원본 fork의 source 검색에는 Claude custom-title reader가 없었다. Anthropic Claude Code 공식 저장소의 사용자 재현 보고 #67189에 기재된 JSONL 예시를 참고했다: https://github.com/anthropics/claude-code/issues/67189 . 이는 공식 안정 schema 보장이 아닌 관찰된 형식이며 실험 옵션으로 유지한다.
+- 큰 transcript/긴 JSONL 행/형식 변경/진행 중 파일 변경/시간 예산 소진은 제목을 생략한다. 실제 지원률과 Windows 동작은 미검증이다.
+- source/profile 소유권, filesystem 전체 원자성, 동기 ReadFile 취소 지연, 큰 파일의 안전한 tail/incremental 처리, 자동 제목/summary fallback, SQLite와 신규 추론 제목은 남아 있다. 전체 기능 또는 배포 완료로 판정하지 않는다.
+
+다음 구현: session metadata의 큰 파일 처리와 source 진단을 보강하되 부분 읽기로 오래된 제목을 확정하지 않는 경계를 유지한다. 나머지 Windows platform 계약도 계속 필수 범위로 추적한다.

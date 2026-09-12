@@ -22,7 +22,8 @@ extension CodexBarCLI {
                 codexOverride: values.options["codexSessionRoot"]?.last,
                 claudeOverride: values.options["claudeProjectRoot"]?.last,
                 allowNewSessions: values.flags.contains("inferNewSessions"),
-                codexTitleIndexOverride: values.options["codexTitleIndex"]?.last)
+                codexTitleIndexOverride: values.options["codexTitleIndex"]?.last,
+                readClaudeTitles: values.flags.contains("claudeTitles"))
         } catch {
             Self.writeStderr("Invalid Windows session metadata root. Use an absolute local drive path.\n")
             Self.platformExit(64)
@@ -135,6 +136,8 @@ struct SessionsOptions: CommanderParsable {
     var nativeCwd: Bool = false
     @Flag(name: .long("infer-new-sessions"), help: "Opt in to heuristic new-session metadata matching within explicit roots")
     var inferNewSessions: Bool = false
+    @Flag(name: .long("claude-titles"), help: "Read custom-title metadata from explicitly matched Claude transcripts (experimental)")
+    var claudeTitles: Bool = false
     @Option(name: .long("codex-session-root"), help: "Explicit Codex sessions folder for selected UUID metadata matching")
     var codexSessionRoot: String?
     @Option(name: .long("codex-title-index"), help: "Explicit Codex session_index.jsonl for selected UUID titles (maximum 1 MiB)")
