@@ -2,7 +2,7 @@
 import Foundation
 import WinSDK
 
-/// A point-in-time description of an Antigravity-related process.  All fields
+/// A point-in-time description of a scoped Windows process candidate. All fields
 /// are collected from the same PID enumeration pass and are ordered by PID.
 package struct WindowsProcessSnapshot: Sendable {
     package let pid: UInt32
@@ -10,6 +10,21 @@ package struct WindowsProcessSnapshot: Sendable {
     package let commandLine: String
     package let owner: ProcessOwnerIdentity
     package let creationTime: Date
+    package let creationTicks: UInt64
+    package let parentPID: UInt32
+
+    package init(
+        pid: UInt32, imagePath: String, commandLine: String, owner: ProcessOwnerIdentity,
+        creationTime: Date, creationTicks: UInt64 = 0, parentPID: UInt32 = 0)
+    {
+        self.pid = pid
+        self.imagePath = imagePath
+        self.commandLine = commandLine
+        self.owner = owner
+        self.creationTime = creationTime
+        self.creationTicks = creationTicks
+        self.parentPID = parentPID
+    }
 }
 
 /// Native process discovery for Windows.  The implementation deliberately
@@ -19,7 +34,21 @@ package enum WindowsProcessEnumerator {
     private static let maximumCommandLineBytes = 128 * 1024
     private static let maximumRetries = 3
 
-    package static func snapshots(deadline: Date? = nil) async throws -> [WindowsProcessSnapshot] {
+    package enum Scope: Equatable, Sendable {
+        case antigravity
+        case agentSessions
+    }
+
+    package static func snapshots(
+        deadline: Date? = nil,
+        scope: Scope = .antigravity) async throws -> [WindowsProcessSnapshot]
+    {
+        let requiredOwner: ProcessOwnerIdentity?
+        if scope == .agentSessions {
+            requiredOwner = try ProcessOwnerIdentity.current()
+        } else {
+            requiredOwner = nil
+        }
         try Self.check(deadline)
         guard let snapshot = CreateToolhelp32Snapshot(DWORD(TH32CS_SNAPPROCESS), 0),
               snapshot != INVALID_HANDLE_VALUE
@@ -29,7 +58,7 @@ package enum WindowsProcessEnumerator {
 
         var entry = PROCESSENTRY32W()
         entry.dwSize = DWORD(MemoryLayout<PROCESSENTRY32W>.size)
-        var pids: [(UInt32, String)] = []
+        var pids: [(UInt32, UInt32)] = []
         var result = Process32FirstW(snapshot, &entry)
         let firstError = result == 0 ? GetLastError() : ERROR_SUCCESS
         try Self.check(deadline)
@@ -38,8 +67,8 @@ package enum WindowsProcessEnumerator {
         }
         while result != 0 {
             try Self.check(deadline)
-            if let name = Self.utf16String(entry.szExeFile), Self.isCandidatePath(name) {
-                pids.append((entry.th32ProcessID, name))
+            if let name = Self.utf16String(entry.szExeFile), Self.isCandidatePath(name, scope: scope) {
+                pids.append((entry.th32ProcessID, entry.th32ParentProcessID))
             }
             result = Process32NextW(snapshot, &entry)
             let nextError = result == 0 ? GetLastError() : ERROR_SUCCESS
@@ -52,7 +81,7 @@ package enum WindowsProcessEnumerator {
         let query = try Self.ntQueryInformationProcess()
         try Self.check(deadline)
         var snapshots: [WindowsProcessSnapshot] = []
-        for (pid, _) in pids.sorted(by: { $0.0 < $1.0 }) {
+        for (pid, parentPID) in pids.sorted(by: { $0.0 < $1.0 }) {
             try Self.check(deadline)
             let process = OpenProcess(DWORD(PROCESS_QUERY_LIMITED_INFORMATION), 0, pid)
             guard let process, process != INVALID_HANDLE_VALUE else {
@@ -64,13 +93,14 @@ package enum WindowsProcessEnumerator {
 
             let image = Self.imagePath(process)
             try Self.check(deadline)
-            guard let image, Self.isCandidatePath(image) else { continue }
+            guard let image, Self.isCandidatePath(image, scope: scope) else { continue }
             let owner = try? WindowsProcessOwnerIdentity.identity(forProcessHandle: process)
             try Self.check(deadline)
-            guard let owner else { continue }
-            let creationTime = Self.creationTime(process)
+            guard let owner, requiredOwner == nil || requiredOwner == owner else { continue }
+            let creationTicks = Self.creationTicks(process)
             try Self.check(deadline)
-            guard let creationTime else { continue }
+            guard let creationTicks else { continue }
+            let creationTime = Date(timeIntervalSince1970: Double(creationTicks) / 10_000_000 - 11_644_473_600)
             let command: String
             do {
                 command = try await Self.commandLine(process, query: query, deadline: deadline)
@@ -78,7 +108,9 @@ package enum WindowsProcessEnumerator {
             catch ProcessEnumeratorError.timedOut { throw ProcessEnumeratorError.timedOut }
             catch { continue }
             try Self.check(deadline)
-            snapshots.append(WindowsProcessSnapshot(pid: pid, imagePath: image, commandLine: command, owner: owner, creationTime: creationTime))
+            snapshots.append(WindowsProcessSnapshot(
+                pid: pid, imagePath: image, commandLine: command, owner: owner,
+                creationTime: creationTime, creationTicks: creationTicks, parentPID: parentPID))
         }
         try Self.check(deadline)
         return snapshots
@@ -94,11 +126,15 @@ package enum WindowsProcessEnumerator {
         if let deadline, Date() >= deadline { throw ProcessEnumeratorError.timedOut }
     }
 
-    private static func isCandidatePath(_ path: String) -> Bool {
+    private static func isCandidatePath(_ path: String, scope: Scope) -> Bool {
         let lower = path.lowercased()
-        if lower.contains("antigravity") { return true }
+        if scope == .antigravity, lower.contains("antigravity") { return true }
         var base = URL(fileURLWithPath: lower).lastPathComponent
         if base.hasSuffix(".exe") { base.removeLast(4) }
+        if scope == .agentSessions {
+            return ["codex", "claude", "claude-code", "pi", "omp", "node", "bun"].contains(base) ||
+                base.hasPrefix("codex-x86_64-") || base.hasPrefix("codex-aarch64-")
+        }
         return base.hasPrefix("language_server") || base.hasPrefix("language-server") ||
             ["agy", "antigravity-cli", "antigravity_cli", "node", "bun"].contains(base)
     }
@@ -118,11 +154,11 @@ package enum WindowsProcessEnumerator {
         return String(decoding: buffer.prefix(Int(length)), as: UTF16.self)
     }
 
-    private static func creationTime(_ handle: HANDLE) -> Date? {
+    private static func creationTicks(_ handle: HANDLE) -> UInt64? {
         var created = FILETIME(); var exit = FILETIME(); var kernel = FILETIME(); var user = FILETIME()
         guard GetProcessTimes(handle, &created, &exit, &kernel, &user) != 0 else { return nil }
         let ticks = (UInt64(created.dwHighDateTime) << 32) | UInt64(created.dwLowDateTime)
-        return Date(timeIntervalSince1970: (Double(ticks) / 10_000_000) - 11_644_473_600)
+        return ticks
     }
 
     private typealias NtQuery = @convention(c) (HANDLE?, UInt32, UnsafeMutableRawPointer?, UInt32, UnsafeMutablePointer<UInt32>?) -> Int32

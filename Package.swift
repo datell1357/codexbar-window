@@ -117,6 +117,8 @@ let package = Package(
                 ],
                 linkerSettings: sqlite3LinkerSettings + [
                     .linkedLibrary("Advapi32", .when(platforms: [.custom("windows")])),
+                    .linkedLibrary("Shell32", .when(platforms: [.custom("windows")])),
+                    .linkedLibrary("User32", .when(platforms: [.custom("windows")])),
                     .linkedLibrary("Iphlpapi", .when(platforms: [.custom("windows")])),
                     .linkedFramework("JavaScriptCore", .when(platforms: [.macOS])),
                 ]),

@@ -96,6 +96,10 @@ public struct LocalAgentSessionScanner: Sendable {
         environment: [String: String] = ProcessInfo.processInfo.environment,
         includeFileOnlySessions: Bool = true) async -> [AgentSession]
     {
+        #if os(Windows)
+        // Windows owns process discovery and never falls through to ps/lsof or /proc.
+        return await WindowsAgentSessionScanner.scan(config: self.config, now: now)
+        #else
         let allProcesses = if let processOutputProvider = self.processOutputProvider {
             await AgentPSOutputParser.parse(processOutputProvider(environment))
         } else {
@@ -186,6 +190,7 @@ public struct LocalAgentSessionScanner: Sendable {
                 threadMetadata: threadMetadata,
                 piFamilySessions: piFamilySessions),
             directoryBudget: &directoryBudget)
+        #endif
     }
 
     public static func shouldScanSessionMetadata(

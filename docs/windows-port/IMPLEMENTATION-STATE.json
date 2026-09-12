@@ -26,8 +26,8 @@
   "static_qa_status": "NOT_RUN_DURING_IMPLEMENTATION",
   "windows_runtime_status": "NOT_VALIDATED",
   "completion_claim": false,
-  "latest_completed_slice": "IMPL-001 code written: remote OS transport and plugin nowMillis type; unverified and not full feature completion",
-  "next": "Implement Windows local session scanning and CLI/native focus, then connect session settings/list/error handling to Windows runtime/tray.",
+  "latest_completed_slice": "IMPL-002 code written: Windows CLI process session identities and conservative window activation; unverified, partial W11",
+  "next": "Add structured Windows scan outcomes and native runtime/tray session settings, refresh, error and focus handling; then implement cwd/transcript correlation.",
   "inventory": {
     "baseline_entries": 2844,
     "provider_ids": 69,
@@ -49,7 +49,7 @@
     "widget_provider_choices": 17
   },
   "automation_action_this_revision": "Created active thread heartbeat codexbar-windows-30 at 30-minute intervals",
-  "publication_action_this_revision": "Publish accumulated plan documentation and IMPL-001 code; use git history and actual push output for publication evidence",
+  "publication_action_this_revision": "Commit and push IMPL-002; use git log and successful push output as publication evidence",
   "historical_state_before_2026_09_12": {
     "phase": "IMPLEMENTING",
     "repository": "/Users/yeoreum/Documents/codexbar-window/fork",
@@ -121,9 +121,10 @@
     }
   ],
   "windows_adaptations_pending": [
-    "Windows local session scanner and real window/terminal focus",
-    "Native Windows session settings, tray, refresh and error presentation",
-    "Remote OS/path native editor and all transport runtime validation"
+    "Windows scan error/partial outcome reporting and native session settings/tray integration",
+    "cwd/transcript/project/activity correlation and Desktop/IDE process support",
+    "Windows Terminal pseudoconsole and exact tab focus",
+    "All Windows build and runtime validation"
   ],
   "automation": {
     "id": "codexbar-windows-30",
@@ -146,6 +147,18 @@
         "BC-023",
         "WIN-047",
         "SA-04"
+      ],
+      "status": "CODE_WRITTEN_UNVERIFIED",
+      "validation": "NOT_RUN_BY_USER_INSTRUCTION"
+    },
+    {
+      "id": "IMPL-002",
+      "contracts": [
+        "WIN-040",
+        "WIN-041",
+        "WIN-042",
+        "BC-020",
+        "BC-021"
       ],
       "status": "CODE_WRITTEN_UNVERIFIED",
       "validation": "NOT_RUN_BY_USER_INSTRUCTION"

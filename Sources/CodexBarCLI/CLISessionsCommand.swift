@@ -41,7 +41,7 @@ extension CodexBarCLI {
             Self.platformExit(1)
         }
 
-        #if os(macOS)
+        #if os(macOS) || os(Windows)
         let result = await MainActor.run {
             SessionWindowFocuser.focus(session)
         }
@@ -53,7 +53,7 @@ extension CodexBarCLI {
             Self.platformExit(2)
         }
         #else
-        Self.writeStderr("Session focus is only available on macOS.\n")
+        Self.writeStderr("Session focus is not supported on this platform.\n")
         Self.platformExit(2)
         #endif
     }

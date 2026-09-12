@@ -1,13 +1,13 @@
-#if os(macOS)
-import AppKit
-import ApplicationServices
-import Foundation
-
 public enum SessionFocusResult: Equatable, Sendable {
     case focused
     case activatedApplicationOnly
     case failed
 }
+
+#if os(macOS)
+import AppKit
+import ApplicationServices
+import Foundation
 
 @MainActor
 public enum SessionWindowFocuser {
