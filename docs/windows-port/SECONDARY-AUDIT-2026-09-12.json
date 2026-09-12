@@ -1,0 +1,457 @@
+{
+  "baseline": "928166f899471bbdcb72210641cdec91324d0154",
+  "revision": "2026-09-12-secondary-audit",
+  "status": "PASS_DEFINED_CHECKS",
+  "registry_chain": [
+    {
+      "provider_id": "codex",
+      "core_registration": "CodexProviderDescriptor",
+      "app_registration": "CodexProviderImplementation"
+    },
+    {
+      "provider_id": "openai",
+      "core_registration": "OpenAIAPIProviderDescriptor",
+      "app_registration": "OpenAIAPIProviderImplementation"
+    },
+    {
+      "provider_id": "azureopenai",
+      "core_registration": "AzureOpenAIProviderDescriptor",
+      "app_registration": "AzureOpenAIProviderImplementation"
+    },
+    {
+      "provider_id": "claude",
+      "core_registration": "ClaudeProviderDescriptor",
+      "app_registration": "ClaudeProviderImplementation"
+    },
+    {
+      "provider_id": "clinepass",
+      "core_registration": "ClinePassProviderDescriptor",
+      "app_registration": "ClinePassProviderImplementation"
+    },
+    {
+      "provider_id": "cursor",
+      "core_registration": "CursorProviderDescriptor",
+      "app_registration": "CursorProviderImplementation"
+    },
+    {
+      "provider_id": "opencode",
+      "core_registration": "OpenCodeProviderDescriptor",
+      "app_registration": "OpenCodeProviderImplementation"
+    },
+    {
+      "provider_id": "opencodego",
+      "core_registration": "OpenCodeGoProviderDescriptor",
+      "app_registration": "OpenCodeGoProviderImplementation"
+    },
+    {
+      "provider_id": "alibaba",
+      "core_registration": "AlibabaCodingPlanProviderDescriptor",
+      "app_registration": "AlibabaCodingPlanProviderImplementation"
+    },
+    {
+      "provider_id": "alibabatokenplan",
+      "core_registration": "AlibabaTokenPlanProviderDescriptor",
+      "app_registration": "AlibabaTokenPlanProviderImplementation"
+    },
+    {
+      "provider_id": "qwencloud",
+      "core_registration": "QwenCloudProviderDescriptor",
+      "app_registration": "QwenCloudProviderImplementation"
+    },
+    {
+      "provider_id": "factory",
+      "core_registration": "FactoryProviderDescriptor",
+      "app_registration": "FactoryProviderImplementation"
+    },
+    {
+      "provider_id": "fireworks",
+      "core_registration": "FireworksProviderDescriptor",
+      "app_registration": "FireworksProviderImplementation"
+    },
+    {
+      "provider_id": "gemini",
+      "core_registration": "GeminiProviderDescriptor",
+      "app_registration": "GeminiProviderImplementation"
+    },
+    {
+      "provider_id": "antigravity",
+      "core_registration": "AntigravityProviderDescriptor",
+      "app_registration": "AntigravityProviderImplementation"
+    },
+    {
+      "provider_id": "copilot",
+      "core_registration": "CopilotProviderDescriptor",
+      "app_registration": "CopilotProviderImplementation"
+    },
+    {
+      "provider_id": "devin",
+      "core_registration": "DevinProviderDescriptor",
+      "app_registration": "DevinProviderImplementation"
+    },
+    {
+      "provider_id": "zai",
+      "core_registration": "ZaiProviderDescriptor",
+      "app_registration": "ZaiProviderImplementation"
+    },
+    {
+      "provider_id": "minimax",
+      "core_registration": "MiniMaxProviderDescriptor",
+      "app_registration": "MiniMaxProviderImplementation"
+    },
+    {
+      "provider_id": "manus",
+      "core_registration": "ManusProviderDescriptor",
+      "app_registration": "ManusProviderImplementation"
+    },
+    {
+      "provider_id": "kimi",
+      "core_registration": "KimiProviderDescriptor",
+      "app_registration": "KimiProviderImplementation"
+    },
+    {
+      "provider_id": "kilo",
+      "core_registration": "KiloProviderDescriptor",
+      "app_registration": "KiloProviderImplementation"
+    },
+    {
+      "provider_id": "kiro",
+      "core_registration": "KiroProviderDescriptor",
+      "app_registration": "KiroProviderImplementation"
+    },
+    {
+      "provider_id": "vertexai",
+      "core_registration": "VertexAIProviderDescriptor",
+      "app_registration": "VertexAIProviderImplementation"
+    },
+    {
+      "provider_id": "augment",
+      "core_registration": "AugmentProviderDescriptor",
+      "app_registration": "AugmentProviderImplementation"
+    },
+    {
+      "provider_id": "jetbrains",
+      "core_registration": "JetBrainsProviderDescriptor",
+      "app_registration": "JetBrainsProviderImplementation"
+    },
+    {
+      "provider_id": "moonshot",
+      "core_registration": "MoonshotProviderDescriptor",
+      "app_registration": "MoonshotProviderImplementation"
+    },
+    {
+      "provider_id": "amp",
+      "core_registration": "AmpProviderDescriptor",
+      "app_registration": "AmpProviderImplementation"
+    },
+    {
+      "provider_id": "t3chat",
+      "core_registration": "T3ChatProviderDescriptor",
+      "app_registration": "T3ChatProviderImplementation"
+    },
+    {
+      "provider_id": "ollama",
+      "core_registration": "OllamaProviderDescriptor",
+      "app_registration": "OllamaProviderImplementation"
+    },
+    {
+      "provider_id": "synthetic",
+      "core_registration": "SyntheticProviderDescriptor",
+      "app_registration": "SyntheticProviderImplementation"
+    },
+    {
+      "provider_id": "openrouter",
+      "core_registration": "OpenRouterProviderDescriptor",
+      "app_registration": "OpenRouterProviderImplementation"
+    },
+    {
+      "provider_id": "elevenlabs",
+      "core_registration": "ElevenLabsProviderDescriptor",
+      "app_registration": "ElevenLabsProviderImplementation"
+    },
+    {
+      "provider_id": "warp",
+      "core_registration": "WarpProviderDescriptor",
+      "app_registration": "WarpProviderImplementation"
+    },
+    {
+      "provider_id": "windsurf",
+      "core_registration": "WindsurfProviderDescriptor",
+      "app_registration": "WindsurfProviderImplementation"
+    },
+    {
+      "provider_id": "zed",
+      "core_registration": "ZedProviderDescriptor",
+      "app_registration": "ZedProviderImplementation"
+    },
+    {
+      "provider_id": "perplexity",
+      "core_registration": "PerplexityProviderDescriptor",
+      "app_registration": "PerplexityProviderImplementation"
+    },
+    {
+      "provider_id": "mimo",
+      "core_registration": "MiMoProviderDescriptor",
+      "app_registration": "MiMoProviderImplementation"
+    },
+    {
+      "provider_id": "doubao",
+      "core_registration": "DoubaoProviderDescriptor",
+      "app_registration": "DoubaoProviderImplementation"
+    },
+    {
+      "provider_id": "sakana",
+      "core_registration": "SakanaProviderDescriptor",
+      "app_registration": "SakanaProviderImplementation"
+    },
+    {
+      "provider_id": "abacus",
+      "core_registration": "AbacusProviderDescriptor",
+      "app_registration": "AbacusProviderImplementation"
+    },
+    {
+      "provider_id": "mistral",
+      "core_registration": "MistralProviderDescriptor",
+      "app_registration": "MistralProviderImplementation"
+    },
+    {
+      "provider_id": "deepseek",
+      "core_registration": "DeepSeekProviderDescriptor",
+      "app_registration": "DeepSeekProviderImplementation"
+    },
+    {
+      "provider_id": "deepinfra",
+      "core_registration": "DeepInfraProviderDescriptor",
+      "app_registration": "DeepInfraProviderImplementation"
+    },
+    {
+      "provider_id": "codebuff",
+      "core_registration": "CodebuffProviderDescriptor",
+      "app_registration": "CodebuffProviderImplementation"
+    },
+    {
+      "provider_id": "crof",
+      "core_registration": "CrofProviderDescriptor",
+      "app_registration": "CrofProviderImplementation"
+    },
+    {
+      "provider_id": "venice",
+      "core_registration": "VeniceProviderDescriptor",
+      "app_registration": "VeniceProviderImplementation"
+    },
+    {
+      "provider_id": "commandcode",
+      "core_registration": "CommandCodeProviderDescriptor",
+      "app_registration": "CommandCodeProviderImplementation"
+    },
+    {
+      "provider_id": "qoder",
+      "core_registration": "QoderProviderDescriptor",
+      "app_registration": "QoderProviderImplementation"
+    },
+    {
+      "provider_id": "stepfun",
+      "core_registration": "StepFunProviderDescriptor",
+      "app_registration": "StepFunProviderImplementation"
+    },
+    {
+      "provider_id": "bedrock",
+      "core_registration": "BedrockProviderDescriptor",
+      "app_registration": "BedrockProviderImplementation"
+    },
+    {
+      "provider_id": "grok",
+      "core_registration": "GrokProviderDescriptor",
+      "app_registration": "GrokProviderImplementation"
+    },
+    {
+      "provider_id": "groq",
+      "core_registration": "GroqProviderDescriptor",
+      "app_registration": "GroqProviderImplementation"
+    },
+    {
+      "provider_id": "llmproxy",
+      "core_registration": "LLMProxyProviderDescriptor",
+      "app_registration": "LLMProxyProviderImplementation"
+    },
+    {
+      "provider_id": "litellm",
+      "core_registration": "LiteLLMProviderDescriptor",
+      "app_registration": "LiteLLMProviderImplementation"
+    },
+    {
+      "provider_id": "deepgram",
+      "core_registration": "DeepgramProviderDescriptor",
+      "app_registration": "DeepgramProviderImplementation"
+    },
+    {
+      "provider_id": "poe",
+      "core_registration": "PoeProviderDescriptor",
+      "app_registration": "PoeProviderImplementation"
+    },
+    {
+      "provider_id": "chutes",
+      "core_registration": "ChutesProviderDescriptor",
+      "app_registration": "ChutesProviderImplementation"
+    },
+    {
+      "provider_id": "neuralwatt",
+      "core_registration": "NeuralWattProviderDescriptor",
+      "app_registration": "NeuralWattProviderImplementation"
+    },
+    {
+      "provider_id": "clawrouter",
+      "core_registration": "ClawRouterProviderDescriptor",
+      "app_registration": "ClawRouterProviderImplementation"
+    },
+    {
+      "provider_id": "longcat",
+      "core_registration": "LongCatProviderDescriptor",
+      "app_registration": "LongCatProviderImplementation"
+    },
+    {
+      "provider_id": "sub2api",
+      "core_registration": "Sub2APIProviderDescriptor",
+      "app_registration": "Sub2APIProviderImplementation"
+    },
+    {
+      "provider_id": "wayfinder",
+      "core_registration": "WayfinderProviderDescriptor",
+      "app_registration": "WayfinderProviderImplementation"
+    },
+    {
+      "provider_id": "zenmux",
+      "core_registration": "ZenMuxProviderDescriptor",
+      "app_registration": "ZenMuxProviderImplementation"
+    },
+    {
+      "provider_id": "aiand",
+      "core_registration": "AiAndProviderDescriptor",
+      "app_registration": "AiAndProviderImplementation"
+    },
+    {
+      "provider_id": "zoommate",
+      "core_registration": "ZoomMateProviderDescriptor",
+      "app_registration": "ZoomMateProviderImplementation"
+    },
+    {
+      "provider_id": "xai",
+      "core_registration": "XAIProviderDescriptor",
+      "app_registration": "XAIProviderImplementation"
+    },
+    {
+      "provider_id": "notion",
+      "core_registration": "NotionProviderDescriptor",
+      "app_registration": "NotionProviderImplementation"
+    },
+    {
+      "provider_id": "ibmbob",
+      "core_registration": "IBMBobProviderDescriptor",
+      "app_registration": "IBMBobProviderImplementation"
+    }
+  ],
+  "provider_mode_backlinks_complete": 69,
+  "other_provider_mode_backlinks": 0,
+  "plugin_optional_declarations_covered": 41,
+  "plugin_generic_methods_covered": 4,
+  "plugin_schema_rows": 116,
+  "provider_extension_keys": [
+    {
+      "key": "accountSlug",
+      "paths": [
+        "Sources/CodexBarCore/Providers/Fireworks/FireworksProviderConfig.swift"
+      ]
+    },
+    {
+      "key": "antigravityPrioritizeExhaustedQuotas",
+      "paths": [
+        "Sources/CodexBarCore/Providers/Antigravity/AntigravityProviderConfig.swift"
+      ]
+    },
+    {
+      "key": "apiKeyRegion",
+      "paths": [
+        "Sources/CodexBarCore/Providers/Moonshot/MoonshotProviderConfig.swift"
+      ]
+    },
+    {
+      "key": "awsAuthMode",
+      "paths": [
+        "Sources/CodexBarCore/Providers/Bedrock/BedrockProviderConfig.swift"
+      ]
+    },
+    {
+      "key": "awsProfile",
+      "paths": [
+        "Sources/CodexBarCore/Providers/Bedrock/BedrockProviderConfig.swift"
+      ]
+    },
+    {
+      "key": "claudeSwapEnabled",
+      "paths": [
+        "Sources/CodexBarCore/Providers/Claude/ClaudeProviderConfig.swift"
+      ]
+    },
+    {
+      "key": "claudeSwapExecutablePath",
+      "paths": [
+        "Sources/CodexBarCore/Providers/Claude/ClaudeProviderConfig.swift"
+      ]
+    },
+    {
+      "key": "claudeSwapShowSingleAccount",
+      "paths": [
+        "Sources/CodexBarCore/Providers/Claude/ClaudeProviderConfig.swift"
+      ]
+    },
+    {
+      "key": "codexActiveSource",
+      "paths": [
+        "Sources/CodexBarCore/Providers/Codex/CodexProviderConfig.swift"
+      ]
+    },
+    {
+      "key": "codexProfileHomePaths",
+      "paths": [
+        "Sources/CodexBarCore/Providers/Codex/CodexProviderConfig.swift"
+      ]
+    },
+    {
+      "key": "deepseekProfileID",
+      "paths": [
+        "Sources/CodexBarCore/Providers/DeepSeek/DeepSeekProviderConfig.swift"
+      ]
+    },
+    {
+      "key": "deepseekProfileScope",
+      "paths": [
+        "Sources/CodexBarCore/Providers/DeepSeek/DeepSeekProviderConfig.swift"
+      ]
+    },
+    {
+      "key": "kiloEnabledOrganizationIDs",
+      "paths": [
+        "Sources/CodexBarCore/Providers/Kilo/KiloProviderConfig.swift"
+      ]
+    },
+    {
+      "key": "kiloKnownOrganizations",
+      "paths": [
+        "Sources/CodexBarCore/Providers/Kilo/KiloProviderConfig.swift"
+      ]
+    }
+  ],
+  "environment_alias_arrays_covered": 27,
+  "unmapped_raw_ui_event_lines": [],
+  "known_baseline_contract_discrepancies": [
+    {
+      "id": "SA-04",
+      "item": "ctx.date.nowMillis exists in prelude but not d.ts",
+      "plan_group": "WIN-047",
+      "resolution": "Preserve runtime behavior; align Windows shipped authoring types during implementation; do not claim source bug fixed here"
+    }
+  ],
+  "feature_groups": 72,
+  "obligation_count": 8563,
+  "all_files_semantically_verified": false,
+  "windows_execution": "NOT_RUN"
+}

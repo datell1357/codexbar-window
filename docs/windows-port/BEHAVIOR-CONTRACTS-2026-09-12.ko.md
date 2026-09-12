@@ -1,0 +1,31 @@
+# 입력·예상 결과 기반 구현 계약
+
+3차 소스 대조에서 보강한 25개 사례다. Python 검사는 원본 anchor/blob과 선언을 대조할 뿐 아래 동작을 실행한 테스트가 아니다. Windows 구현 후 해당 fixture와 실제 동작 증거를 연결해야 한다.
+
+| ID / 기능군 | 상황 | 기대 결과 | 근거 |
+|---|---|---|---|
+| BC-001 / WIN-036 | 위젯 provider 선택 17개: 일반 provider 위젯 설정 열기 | codex, claude, gemini, alibaba, alibabatokenplan, qwencloud, antigravity, cursor, zai, copilot, devin, minimax, kilo, opencode, opencodego, mistral, kimi 전부 선택 가능. 원본의 12개 문서 목록을 사용하지 않음. | `Sources/CodexBarWidget/CodexBarWidgetProvider.swift:6` |
+| BC-002 / WIN-038 | Burn Down provider/window 선택: Burn Down/Combined 설정 | provider Codex/Claude; session/weekly; 기본 Codex 및 session. Combined는 provider만 선택하고 양 window를 함께 표시. | `Sources/CodexBarWidget/BurnDownWidgetProvider.swift:7` |
+| BC-003 / WIN-037 | Metric 종류 3개: Metric 위젯 설정 | credits/todayCost/last30DaysCost, 기본 credits; unknown cost를 0으로 만들지 않음. | `Sources/CodexBarWidget/CodexBarWidgetProvider.swift:60` |
+| BC-004 / WIN-039 | 위젯별 크기와 설정 독립성: 6종 위젯 추가/크기/다중 인스턴스 | Switcher/Usage S/M/L, History M/L, Metric S, BurnDown/Combined M의 정보 밀도 대응. Switcher 공유 선택과 Usage 인스턴스별 선택은 별도. Windows 크기 이름 자체의 동일성은 요구하지 않음. | `Sources/CodexBarWidget/CodexBarWidgetBundle.swift:16` |
+| BC-005 / WIN-069 | 신규 설치 refresh 기본값: 기존 config/설치 marker/refresh 설정 모두 없음 | adaptive를 선택하고 저장; activity consent는 undecided이며 자동 scanner 활성화 아님. | `Sources/CodexBar/SettingsStore.swift:759` |
+| BC-006 / WIN-069 | 기존 설치·invalid refresh fallback: 기존 config/marker 있고 refresh 없음 또는 invalid 문자열/비문자열 | fiveMinutes를 선택하고 저장. 잘못된 값을 신규 설치로 오인하지 않음. | `Sources/CodexBar/SettingsStore.swift:759` |
+| BC-007 / WIN-069 | 저장된 유효 refresh 값 우선: 유효한 저장 frequency와 신규/기존 marker 조합 | 저장 frequency를 유지한다. 모든 유효 enum case에 대해 복원. | `Sources/CodexBar/SettingsStore.swift:759` |
+| BC-008 / WIN-031 | agent-aware consent: adaptiveAgentAware 선택, undecided/declined/allowed 또는 malformed consent | allowed일 때만 활동 스캔. malformed는 undecided. Windows scanner 구현이 없는 상태를 allowed만으로 작동 중이라고 표시하지 않음. | `Sources/CodexBar/SettingsStore.swift:791` |
+| BC-009 / WIN-069 | 저전력 legacy migration: 유효 off/on/automatic 또는 legacy bool 또는 없음 | 유효 값 유지; legacy true→on, false/없음→off. automatic으로 임의 변경하지 않음. | `Sources/CodexBar/SettingsStore.swift:777` |
+| BC-010 / WIN-033 | 알림 기본값: 관련 설정이 없는 일반 실행 | status/sessionQuota=true, quotaWarning/predictive=false, session/weekly threshold control와 sound=true, onScreenAlert=false. 저장 여부의 test-only 분기와 런타임 의미 구분. | `Sources/CodexBar/SettingsStore.swift:804` |
+| BC-011 / WIN-044 | TOON은 usage 전용: usage --format toon 또는 명령 생략 --format toon | usage JSON fetch/model 경로를 사용하되 성공과 오류 출력 모두 TOON. 다른 명령으로 확장하지 않음. | `Sources/CodexBarCLI/CLIOutputPreferences.swift:80` |
+| BC-012 / WIN-044 | TOON의 비-usage 처리: cost/config/cache/hooks/diagnose 등 --format toon, --json 있음/없음 | 원본상 인식하지 않는 형식: --json 없으면 text, 있으면 json. TOON으로 출력하지 않음. | `Sources/CodexBarCLI/CLIOutputPreferences.swift:89` |
+| BC-013 / WIN-044 | 출력 우선순위와 parse 실패: 반복 --format, --format=toon, --json, --json-only, parser 오류 | 마지막 --format 값만 판정한다. 유효하면 그 값, 인식 불가이면 JSON shortcut 여부에 따라 json/text로 fallback하며 앞선 유효 --format으로 돌아가지 않는다. bootstrap/파싱 후의 TOON 판정과 오류 형식을 일치시키고 에러를 중복 출력하지 않는다. | `Sources/CodexBarCLI/CLIOutputPreferences.swift:36` |
+| BC-014 / WIN-043 | Guard 경계값: remaining 10 / 9.9, threshold 10 | 10은 ok/exit0, 9.9는 blocked/exit1. >= 비교를 >로 바꾸지 않음. | `Sources/CodexBarCLI/CLIGuardCommand.swift:55` |
+| BC-015 / WIN-043 | Guard unknown·fail-open: 조회 실패/사용 가능 quota 없음, fail-open false/true | decision은 둘 다 unknown; false→exit69, true→exit0. fail-open의 exit0을 정상 quota 증거로 표시하지 않음. | `Sources/CodexBarCLI/CLIGuardCommand.swift:55` |
+| BC-016 / WIN-043 | Guard synthetic quota 거부: window 없음 또는 synthetic placeholder | remaining unavailable. 가짜 100% 여유로 판단해 gate를 통과시키지 않음. | `Sources/CodexBarCLI/CLIGuardCommand.swift:86` |
+| BC-017 / WIN-043 | Guard 인수와 timeout: provider 누락/복수; NaN/범위 밖; timeout 0/86400 | 단일 provider 필수, invalid 인수 exit64; remaining finite 0...100/default10; timeout finite0...86400/default60, 0은 전체 timeout 비활성. | `Sources/CodexBarCLI/CLIGuardCommand.swift:161` |
+| BC-018 / WIN-027 | Spend export schema와 화면 모델 구분: 프로젝트·세션 행이 포함된 화면 모델의 Copy/Export JSON | 원본 DTO는 requestedDays/selectedDay/groups/hiddenSourceIDs 및 currency/provider/model 합계를 직렬화. projects/sessions를 포함한 화면 전체 모델이나 dashboard-v1과 동일하지 않음. | `Sources/CodexBar/PreferencesSpendDashboardPane.swift:1189` |
+| BC-019 / WIN-027 | Spend export 취소·파일 이름·원자적 저장: 7일/all-time export, 경로 선택 취소 또는 쓰기 실패 | UTF-8 pretty/sorted JSON+ISO8601; 원본 기간 기반 파일명; 취소 시 쓰기 없음, 오류 실패 반환, 성공 atomic write. | `Sources/CodexBar/PreferencesSpendDashboardPane.swift:1255` |
+| BC-020 / WIN-041 | Windows peer 탐색 추가: online Windows Tailscale peer와 local/offline/duplicate peers | 원본은 macOS/linux만 허용. Windows host metadata를 보존하고 Windows peer도 지원하도록 필터 수정. local/offline/duplicate 거부와 OS 정보 없는 경우의 명시적 host 설정을 유지. | `Sources/CodexBarCore/RemoteSessionFetcher.swift:29` |
+| BC-021 / WIN-041 | 원격 OS별 실행 명령: Windows 및 POSIX remote에 session list/focus 요청 | 원본 sh -lc와 Mac bundle fallback을 Windows remote에 사용하지 않음. 발견한 OS 또는 명시적 host 설정으로 shell/CLI locator 선택, JSON v2→v1 compatibility, 인수 quoting·deadline·실패 전달을 검증. | `Sources/CodexBarCore/RemoteSessionFetcher.swift:163` |
+| BC-022 / WIN-041 | Tailscale 실패와 빈 결과 구분: 첫 candidate invalid/NeedsLogin 또는 유효한 empty Peer | invalid는 다음 candidate, 유효 empty는 정상 결과로 탐색 종료. 첫 결과가 비었다고 무조건 다음으로 가지 않음. | `Sources/CodexBarCore/RemoteSessionFetcher.swift:126` |
+| BC-023 / WIN-041 | 원격 host/session 문자열 검증: option 형태/공백/control 포함 host, 특수문자 sessionID | 원본 host 거부 정책 유지. Windows/POSIX별 shell quoting 검증. 실패를 focus 성공으로 표시하지 않음. | `Sources/CodexBarCore/RemoteSessionFetcher.swift:163` |
+| BC-024 / WIN-047 | 플러그인 costUsage 경계: historyDays 366/367; entries 10000/10001; invalid date/currency/token | 최대366일·10000행, uppercase 3문자 currency·유효 YYYY-MM-DD·정수/finite/JS-safe sum 검사. 365일 앱 scan window와 구분하며 초과를 조용히 자르지 않음. | `Sources/CodexBarCore/Plugins/ProviderPluginSnapshotMapper.swift:278` |
+| BC-025 / WIN-009 | 레이아웃 선택지·조건식: 모든 metric/comparison/combinator/direction/lane/token·preset 선택 및 저장 복원 | 18개 conditional metric, >=/>/<=/<, and/or, used/remaining, scopedWeekly/lanePercent/hidden/conditional 토큰까지 유지. 숫자 하나/percent+reset 템플릿만으로 완료하지 않음. | `Sources/CodexBar/MenuBarLayout.swift:13` |

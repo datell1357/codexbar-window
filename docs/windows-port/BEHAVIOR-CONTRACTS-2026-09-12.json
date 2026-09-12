@@ -1,0 +1,431 @@
+{
+  "baseline": "928166f899471bbdcb72210641cdec91324d0154",
+  "method": "Authored input/expected behavior contracts anchored to source and selected original test files; not executed tests",
+  "contracts": [
+    {
+      "id": "BC-001",
+      "group": "WIN-036",
+      "title": "위젯 provider 선택 17개",
+      "input": "일반 provider 위젯 설정 열기",
+      "expected": "codex, claude, gemini, alibaba, alibabatokenplan, qwencloud, antigravity, cursor, zai, copilot, devin, minimax, kilo, opencode, opencodego, mistral, kimi 전부 선택 가능. 원본의 12개 문서 목록을 사용하지 않음.",
+      "kind": "PRESERVE_BASELINE",
+      "source": {
+        "path": "Sources/CodexBarWidget/CodexBarWidgetProvider.swift",
+        "line": 6,
+        "anchor": "enum ProviderChoice",
+        "blob": "dbcde16a3d39e855276fc2b277095b737155c313"
+      },
+      "test_source": "Tests/CodexBarTests/WidgetProviderChoiceTests.swift",
+      "implementation": "NOT_VERIFIED",
+      "execution": "NOT_RUN"
+    },
+    {
+      "id": "BC-002",
+      "group": "WIN-038",
+      "title": "Burn Down provider/window 선택",
+      "input": "Burn Down/Combined 설정",
+      "expected": "provider Codex/Claude; session/weekly; 기본 Codex 및 session. Combined는 provider만 선택하고 양 window를 함께 표시.",
+      "kind": "PRESERVE_BASELINE",
+      "source": {
+        "path": "Sources/CodexBarWidget/BurnDownWidgetProvider.swift",
+        "line": 7,
+        "anchor": "enum BurnProviderChoice",
+        "blob": "458cb44d10f452044862d379f212f7314b64a63f"
+      },
+      "test_source": null,
+      "implementation": "NOT_VERIFIED",
+      "execution": "NOT_RUN"
+    },
+    {
+      "id": "BC-003",
+      "group": "WIN-037",
+      "title": "Metric 종류 3개",
+      "input": "Metric 위젯 설정",
+      "expected": "credits/todayCost/last30DaysCost, 기본 credits; unknown cost를 0으로 만들지 않음.",
+      "kind": "PRESERVE_BASELINE",
+      "source": {
+        "path": "Sources/CodexBarWidget/CodexBarWidgetProvider.swift",
+        "line": 60,
+        "anchor": "enum CompactMetric",
+        "blob": "dbcde16a3d39e855276fc2b277095b737155c313"
+      },
+      "test_source": null,
+      "implementation": "NOT_VERIFIED",
+      "execution": "NOT_RUN"
+    },
+    {
+      "id": "BC-004",
+      "group": "WIN-039",
+      "title": "위젯별 크기와 설정 독립성",
+      "input": "6종 위젯 추가/크기/다중 인스턴스",
+      "expected": "Switcher/Usage S/M/L, History M/L, Metric S, BurnDown/Combined M의 정보 밀도 대응. Switcher 공유 선택과 Usage 인스턴스별 선택은 별도. Windows 크기 이름 자체의 동일성은 요구하지 않음.",
+      "kind": "PRESERVE_BASELINE",
+      "source": {
+        "path": "Sources/CodexBarWidget/CodexBarWidgetBundle.swift",
+        "line": 16,
+        "anchor": "struct CodexBarSwitcherWidget",
+        "blob": "0620a59fcafde6c4d55480223a67f440b7dc239d"
+      },
+      "test_source": null,
+      "implementation": "NOT_VERIFIED",
+      "execution": "NOT_RUN"
+    },
+    {
+      "id": "BC-005",
+      "group": "WIN-069",
+      "title": "신규 설치 refresh 기본값",
+      "input": "기존 config/설치 marker/refresh 설정 모두 없음",
+      "expected": "adaptive를 선택하고 저장; activity consent는 undecided이며 자동 scanner 활성화 아님.",
+      "kind": "PRESERVE_BASELINE",
+      "source": {
+        "path": "Sources/CodexBar/SettingsStore.swift",
+        "line": 759,
+        "anchor": "private static func loadRefreshFrequency",
+        "blob": "ccb4c6e14c84aebb7938d14e3324a4eb4d979daf"
+      },
+      "test_source": "Tests/CodexBarTests/SettingsStoreRefreshDefaultTests.swift",
+      "implementation": "NOT_VERIFIED",
+      "execution": "NOT_RUN"
+    },
+    {
+      "id": "BC-006",
+      "group": "WIN-069",
+      "title": "기존 설치·invalid refresh fallback",
+      "input": "기존 config/marker 있고 refresh 없음 또는 invalid 문자열/비문자열",
+      "expected": "fiveMinutes를 선택하고 저장. 잘못된 값을 신규 설치로 오인하지 않음.",
+      "kind": "PRESERVE_BASELINE",
+      "source": {
+        "path": "Sources/CodexBar/SettingsStore.swift",
+        "line": 759,
+        "anchor": "private static func loadRefreshFrequency",
+        "blob": "ccb4c6e14c84aebb7938d14e3324a4eb4d979daf"
+      },
+      "test_source": "Tests/CodexBarTests/SettingsStoreRefreshDefaultTests.swift",
+      "implementation": "NOT_VERIFIED",
+      "execution": "NOT_RUN"
+    },
+    {
+      "id": "BC-007",
+      "group": "WIN-069",
+      "title": "저장된 유효 refresh 값 우선",
+      "input": "유효한 저장 frequency와 신규/기존 marker 조합",
+      "expected": "저장 frequency를 유지한다. 모든 유효 enum case에 대해 복원.",
+      "kind": "PRESERVE_BASELINE",
+      "source": {
+        "path": "Sources/CodexBar/SettingsStore.swift",
+        "line": 759,
+        "anchor": "private static func loadRefreshFrequency",
+        "blob": "ccb4c6e14c84aebb7938d14e3324a4eb4d979daf"
+      },
+      "test_source": "Tests/CodexBarTests/SettingsStoreRefreshDefaultTests.swift",
+      "implementation": "NOT_VERIFIED",
+      "execution": "NOT_RUN"
+    },
+    {
+      "id": "BC-008",
+      "group": "WIN-031",
+      "title": "agent-aware consent",
+      "input": "adaptiveAgentAware 선택, undecided/declined/allowed 또는 malformed consent",
+      "expected": "allowed일 때만 활동 스캔. malformed는 undecided. Windows scanner 구현이 없는 상태를 allowed만으로 작동 중이라고 표시하지 않음.",
+      "kind": "PRESERVE_BASELINE",
+      "source": {
+        "path": "Sources/CodexBar/SettingsStore.swift",
+        "line": 791,
+        "anchor": "private static func loadAdaptiveActivityScanConsent",
+        "blob": "ccb4c6e14c84aebb7938d14e3324a4eb4d979daf"
+      },
+      "test_source": "Tests/CodexBarTests/SettingsStoreRefreshDefaultTests.swift",
+      "implementation": "NOT_VERIFIED",
+      "execution": "NOT_RUN"
+    },
+    {
+      "id": "BC-009",
+      "group": "WIN-069",
+      "title": "저전력 legacy migration",
+      "input": "유효 off/on/automatic 또는 legacy bool 또는 없음",
+      "expected": "유효 값 유지; legacy true→on, false/없음→off. automatic으로 임의 변경하지 않음.",
+      "kind": "PRESERVE_BASELINE",
+      "source": {
+        "path": "Sources/CodexBar/SettingsStore.swift",
+        "line": 777,
+        "anchor": "private static func loadLowPowerModePreference",
+        "blob": "ccb4c6e14c84aebb7938d14e3324a4eb4d979daf"
+      },
+      "test_source": null,
+      "implementation": "NOT_VERIFIED",
+      "execution": "NOT_RUN"
+    },
+    {
+      "id": "BC-010",
+      "group": "WIN-033",
+      "title": "알림 기본값",
+      "input": "관련 설정이 없는 일반 실행",
+      "expected": "status/sessionQuota=true, quotaWarning/predictive=false, session/weekly threshold control와 sound=true, onScreenAlert=false. 저장 여부의 test-only 분기와 런타임 의미 구분.",
+      "kind": "PRESERVE_BASELINE",
+      "source": {
+        "path": "Sources/CodexBar/SettingsStore.swift",
+        "line": 804,
+        "anchor": "private static func loadNotificationDefaults",
+        "blob": "ccb4c6e14c84aebb7938d14e3324a4eb4d979daf"
+      },
+      "test_source": null,
+      "implementation": "NOT_VERIFIED",
+      "execution": "NOT_RUN"
+    },
+    {
+      "id": "BC-011",
+      "group": "WIN-044",
+      "title": "TOON은 usage 전용",
+      "input": "usage --format toon 또는 명령 생략 --format toon",
+      "expected": "usage JSON fetch/model 경로를 사용하되 성공과 오류 출력 모두 TOON. 다른 명령으로 확장하지 않음.",
+      "kind": "PRESERVE_BASELINE",
+      "source": {
+        "path": "Sources/CodexBarCLI/CLIOutputPreferences.swift",
+        "line": 80,
+        "anchor": "static func commandSupportsToon",
+        "blob": "ffb6702bc4221a2bf86edee91beb20f320cd59a1"
+      },
+      "test_source": "Tests/CodexBarTests/CLIOutputTests.swift",
+      "implementation": "NOT_VERIFIED",
+      "execution": "NOT_RUN"
+    },
+    {
+      "id": "BC-012",
+      "group": "WIN-044",
+      "title": "TOON의 비-usage 처리",
+      "input": "cost/config/cache/hooks/diagnose 등 --format toon, --json 있음/없음",
+      "expected": "원본상 인식하지 않는 형식: --json 없으면 text, 있으면 json. TOON으로 출력하지 않음.",
+      "kind": "PRESERVE_BASELINE",
+      "source": {
+        "path": "Sources/CodexBarCLI/CLIOutputPreferences.swift",
+        "line": 89,
+        "anchor": "static func resolveOutputFormat(",
+        "blob": "ffb6702bc4221a2bf86edee91beb20f320cd59a1"
+      },
+      "test_source": "Tests/CodexBarTests/CLIOutputTests.swift",
+      "implementation": "NOT_VERIFIED",
+      "execution": "NOT_RUN"
+    },
+    {
+      "id": "BC-013",
+      "group": "WIN-044",
+      "title": "출력 우선순위와 parse 실패",
+      "input": "반복 --format, --format=toon, --json, --json-only, parser 오류",
+      "expected": "마지막 --format 값만 판정한다. 유효하면 그 값, 인식 불가이면 JSON shortcut 여부에 따라 json/text로 fallback하며 앞선 유효 --format으로 돌아가지 않는다. bootstrap/파싱 후의 TOON 판정과 오류 형식을 일치시키고 에러를 중복 출력하지 않는다.",
+      "kind": "PRESERVE_BASELINE",
+      "source": {
+        "path": "Sources/CodexBarCLI/CLIOutputPreferences.swift",
+        "line": 36,
+        "anchor": "static func from(argv:",
+        "blob": "ffb6702bc4221a2bf86edee91beb20f320cd59a1"
+      },
+      "test_source": "Tests/CodexBarTests/CLIOutputTests.swift",
+      "implementation": "NOT_VERIFIED",
+      "execution": "NOT_RUN"
+    },
+    {
+      "id": "BC-014",
+      "group": "WIN-043",
+      "title": "Guard 경계값",
+      "input": "remaining 10 / 9.9, threshold 10",
+      "expected": "10은 ok/exit0, 9.9는 blocked/exit1. >= 비교를 >로 바꾸지 않음.",
+      "kind": "PRESERVE_BASELINE",
+      "source": {
+        "path": "Sources/CodexBarCLI/CLIGuardCommand.swift",
+        "line": 55,
+        "anchor": "static func evaluateGuard",
+        "blob": "87d1a7d51b2a13935b662b5adb57ab5a61aebf38"
+      },
+      "test_source": "TestsLinux/CLIGuardDecisionTests.swift",
+      "implementation": "NOT_VERIFIED",
+      "execution": "NOT_RUN"
+    },
+    {
+      "id": "BC-015",
+      "group": "WIN-043",
+      "title": "Guard unknown·fail-open",
+      "input": "조회 실패/사용 가능 quota 없음, fail-open false/true",
+      "expected": "decision은 둘 다 unknown; false→exit69, true→exit0. fail-open의 exit0을 정상 quota 증거로 표시하지 않음.",
+      "kind": "PRESERVE_BASELINE",
+      "source": {
+        "path": "Sources/CodexBarCLI/CLIGuardCommand.swift",
+        "line": 55,
+        "anchor": "static func evaluateGuard",
+        "blob": "87d1a7d51b2a13935b662b5adb57ab5a61aebf38"
+      },
+      "test_source": "TestsLinux/CLIGuardDecisionTests.swift",
+      "implementation": "NOT_VERIFIED",
+      "execution": "NOT_RUN"
+    },
+    {
+      "id": "BC-016",
+      "group": "WIN-043",
+      "title": "Guard synthetic quota 거부",
+      "input": "window 없음 또는 synthetic placeholder",
+      "expected": "remaining unavailable. 가짜 100% 여유로 판단해 gate를 통과시키지 않음.",
+      "kind": "PRESERVE_BASELINE",
+      "source": {
+        "path": "Sources/CodexBarCLI/CLIGuardCommand.swift",
+        "line": 86,
+        "anchor": "static func guardRemainingHeadroom",
+        "blob": "87d1a7d51b2a13935b662b5adb57ab5a61aebf38"
+      },
+      "test_source": "TestsLinux/CLIGuardDecisionTests.swift",
+      "implementation": "NOT_VERIFIED",
+      "execution": "NOT_RUN"
+    },
+    {
+      "id": "BC-017",
+      "group": "WIN-043",
+      "title": "Guard 인수와 timeout",
+      "input": "provider 누락/복수; NaN/범위 밖; timeout 0/86400",
+      "expected": "단일 provider 필수, invalid 인수 exit64; remaining finite 0...100/default10; timeout finite0...86400/default60, 0은 전체 timeout 비활성.",
+      "kind": "PRESERVE_BASELINE",
+      "source": {
+        "path": "Sources/CodexBarCLI/CLIGuardCommand.swift",
+        "line": 161,
+        "anchor": "private static func exitGuardArgumentError",
+        "blob": "87d1a7d51b2a13935b662b5adb57ab5a61aebf38"
+      },
+      "test_source": "TestsLinux/CLIGuardDecisionTests.swift",
+      "implementation": "NOT_VERIFIED",
+      "execution": "NOT_RUN"
+    },
+    {
+      "id": "BC-018",
+      "group": "WIN-027",
+      "title": "Spend export schema와 화면 모델 구분",
+      "input": "프로젝트·세션 행이 포함된 화면 모델의 Copy/Export JSON",
+      "expected": "원본 DTO는 requestedDays/selectedDay/groups/hiddenSourceIDs 및 currency/provider/model 합계를 직렬화. projects/sessions를 포함한 화면 전체 모델이나 dashboard-v1과 동일하지 않음.",
+      "kind": "PRESERVE_BASELINE",
+      "source": {
+        "path": "Sources/CodexBar/PreferencesSpendDashboardPane.swift",
+        "line": 1189,
+        "anchor": "struct SpendDashboardExportPayload",
+        "blob": "2c0c65774e8bf73e111868d2f129cb4f9c25e352"
+      },
+      "test_source": "Tests/CodexBarTests/SpendDashboardExportTests.swift",
+      "implementation": "NOT_VERIFIED",
+      "execution": "NOT_RUN"
+    },
+    {
+      "id": "BC-019",
+      "group": "WIN-027",
+      "title": "Spend export 취소·파일 이름·원자적 저장",
+      "input": "7일/all-time export, 경로 선택 취소 또는 쓰기 실패",
+      "expected": "UTF-8 pretty/sorted JSON+ISO8601; 원본 기간 기반 파일명; 취소 시 쓰기 없음, 오류 실패 반환, 성공 atomic write.",
+      "kind": "PRESERVE_BASELINE",
+      "source": {
+        "path": "Sources/CodexBar/PreferencesSpendDashboardPane.swift",
+        "line": 1255,
+        "anchor": "enum SpendDashboardJSONExporter",
+        "blob": "2c0c65774e8bf73e111868d2f129cb4f9c25e352"
+      },
+      "test_source": "Tests/CodexBarTests/SpendDashboardExportTests.swift",
+      "implementation": "NOT_VERIFIED",
+      "execution": "NOT_RUN"
+    },
+    {
+      "id": "BC-020",
+      "group": "WIN-041",
+      "title": "Windows peer 탐색 추가",
+      "input": "online Windows Tailscale peer와 local/offline/duplicate peers",
+      "expected": "원본은 macOS/linux만 허용. Windows host metadata를 보존하고 Windows peer도 지원하도록 필터 수정. local/offline/duplicate 거부와 OS 정보 없는 경우의 명시적 host 설정을 유지.",
+      "kind": "WINDOWS_ADAPTATION_REQUIRED",
+      "source": {
+        "path": "Sources/CodexBarCore/RemoteSessionFetcher.swift",
+        "line": 29,
+        "anchor": "package static func parseHosts",
+        "blob": "9de783b6efbd4610af966bec5adf05e95a3c608c"
+      },
+      "test_source": "Tests/CodexBarTests/TailscaleSessionTests.swift",
+      "implementation": "NOT_VERIFIED",
+      "execution": "NOT_RUN"
+    },
+    {
+      "id": "BC-021",
+      "group": "WIN-041",
+      "title": "원격 OS별 실행 명령",
+      "input": "Windows 및 POSIX remote에 session list/focus 요청",
+      "expected": "원본 sh -lc와 Mac bundle fallback을 Windows remote에 사용하지 않음. 발견한 OS 또는 명시적 host 설정으로 shell/CLI locator 선택, JSON v2→v1 compatibility, 인수 quoting·deadline·실패 전달을 검증.",
+      "kind": "WINDOWS_ADAPTATION_REQUIRED",
+      "source": {
+        "path": "Sources/CodexBarCore/RemoteSessionFetcher.swift",
+        "line": 163,
+        "anchor": "public func focus(",
+        "blob": "9de783b6efbd4610af966bec5adf05e95a3c608c"
+      },
+      "test_source": "Tests/CodexBarTests/TailscaleSessionTests.swift",
+      "implementation": "NOT_VERIFIED",
+      "execution": "NOT_RUN"
+    },
+    {
+      "id": "BC-022",
+      "group": "WIN-041",
+      "title": "Tailscale 실패와 빈 결과 구분",
+      "input": "첫 candidate invalid/NeedsLogin 또는 유효한 empty Peer",
+      "expected": "invalid는 다음 candidate, 유효 empty는 정상 결과로 탐색 종료. 첫 결과가 비었다고 무조건 다음으로 가지 않음.",
+      "kind": "PRESERVE_BASELINE",
+      "source": {
+        "path": "Sources/CodexBarCore/RemoteSessionFetcher.swift",
+        "line": 126,
+        "anchor": "package static func firstDiscoveredHosts",
+        "blob": "9de783b6efbd4610af966bec5adf05e95a3c608c"
+      },
+      "test_source": "Tests/CodexBarTests/TailscaleSessionTests.swift",
+      "implementation": "NOT_VERIFIED",
+      "execution": "NOT_RUN"
+    },
+    {
+      "id": "BC-023",
+      "group": "WIN-041",
+      "title": "원격 host/session 문자열 검증",
+      "input": "option 형태/공백/control 포함 host, 특수문자 sessionID",
+      "expected": "원본 host 거부 정책 유지. Windows/POSIX별 shell quoting 검증. 실패를 focus 성공으로 표시하지 않음.",
+      "kind": "PRESERVE_BASELINE",
+      "source": {
+        "path": "Sources/CodexBarCore/RemoteSessionFetcher.swift",
+        "line": 163,
+        "anchor": "public func focus(",
+        "blob": "9de783b6efbd4610af966bec5adf05e95a3c608c"
+      },
+      "test_source": "Tests/CodexBarTests/TailscaleSessionTests.swift",
+      "implementation": "NOT_VERIFIED",
+      "execution": "NOT_RUN"
+    },
+    {
+      "id": "BC-024",
+      "group": "WIN-047",
+      "title": "플러그인 costUsage 경계",
+      "input": "historyDays 366/367; entries 10000/10001; invalid date/currency/token",
+      "expected": "최대366일·10000행, uppercase 3문자 currency·유효 YYYY-MM-DD·정수/finite/JS-safe sum 검사. 365일 앱 scan window와 구분하며 초과를 조용히 자르지 않음.",
+      "kind": "PRESERVE_BASELINE",
+      "source": {
+        "path": "Sources/CodexBarCore/Plugins/ProviderPluginSnapshotMapper.swift",
+        "line": 278,
+        "anchor": "private static func costUsage(",
+        "blob": "71815e0815eeb2dc51e4c06cac2bd18cf7309c7f"
+      },
+      "test_source": null,
+      "implementation": "NOT_VERIFIED",
+      "execution": "NOT_RUN"
+    },
+    {
+      "id": "BC-025",
+      "group": "WIN-009",
+      "title": "레이아웃 선택지·조건식",
+      "input": "모든 metric/comparison/combinator/direction/lane/token·preset 선택 및 저장 복원",
+      "expected": "18개 conditional metric, >=/>/<=/<, and/or, used/remaining, scopedWeekly/lanePercent/hidden/conditional 토큰까지 유지. 숫자 하나/percent+reset 템플릿만으로 완료하지 않음.",
+      "kind": "PRESERVE_BASELINE",
+      "source": {
+        "path": "Sources/CodexBar/MenuBarLayout.swift",
+        "line": 13,
+        "anchor": "enum MenuBarConditionalMetric",
+        "blob": "28b62e6cd1ae6d1cc2a301128ba1c56ee7ef8289"
+      },
+      "test_source": "Tests/CodexBarTests/MenuBarLayoutTests.swift",
+      "implementation": "NOT_VERIFIED",
+      "execution": "NOT_RUN"
+    }
+  ]
+}

@@ -1,9 +1,13 @@
 {
-  "phase": "IMPLEMENTING",
-  "repository": "/Users/yeoreum/Documents/codexbar-window/fork",
+  "phase": "IMPLEMENTING_WINDOWS_ONLY_UNVERIFIED",
+  "plan_revision": "2026-09-12-tertiary-audit",
+  "repository_url": "https://github.com/datell1357/codexbar-window",
   "baseline": "928166f899471bbdcb72210641cdec91324d0154",
-  "authorization": "User explicitly authorized implementation and recurring code-comparison QA on 2026-09-09",
-  "verification_policy": "STATIC_CODE_COMPARISON_ONLY",
+  "inspected_head": "80f6b484b0388877a3cf5f886aa0ad850c59779c",
+  "current_plan": "docs/windows-port/WINDOWS-PORT-PLAN.ko.md",
+  "product_goal": "All Mac-original features feasible on Windows, delivered as a Windows-only product",
+  "current_turn_scope": "Implementation only on macOS, no code validation; user explicitly authorizes commit and push after each implementation batch",
+  "verification_policy": "IMPLEMENTATION_ONLY_NO_VALIDATION",
   "forbidden_validation": [
     "build",
     "test execution",
@@ -14,47 +18,148 @@
     "remote Windows execution",
     "swift package dump-package",
     "swiftc -parse",
-    "all compiler/manifest evaluation commands"
+    "all compiler/manifest evaluation commands",
+    "make check or formatting/lint validation",
+    "documentation audit/validation scripts",
+    "git diff --check"
   ],
-  "automation_id": "codexbar-windows-qa",
-  "interval_minutes": 10,
-  "current_lanes": [
+  "static_qa_status": "NOT_RUN_DURING_IMPLEMENTATION",
+  "windows_runtime_status": "NOT_VALIDATED",
+  "completion_claim": false,
+  "latest_completed_slice": "IMPL-001 code written: remote OS transport and plugin nowMillis type; unverified and not full feature completion",
+  "next": "Implement Windows local session scanning and CLI/native focus, then connect session settings/list/error handling to Windows runtime/tray.",
+  "inventory": {
+    "baseline_entries": 2844,
+    "provider_ids": 69,
+    "feature_groups": 72,
+    "exhaustive_semantic_review": false,
+    "atomic_feature_denominator": null,
+    "provider_mode_contracts": 163,
+    "settings_state_fields": 91,
+    "cli_option_declarations": 169,
+    "unassigned_source_paths": 0,
+    "source_obligations": 8563,
+    "plugin_schema_rows": 116,
+    "provider_extension_keys": 14,
+    "environment_alias_arrays": 27,
+    "provider_mode_backlinks_checked": 69,
+    "source_surface_catalogue_status": "DEFINED_EXTRACTION_CATEGORIES_RECONCILED",
+    "enumerated_choice_rows": 412,
+    "behavior_contracts": 25,
+    "widget_provider_choices": 17
+  },
+  "automation_action_this_revision": "Created active thread heartbeat codexbar-windows-30 at 30-minute intervals",
+  "publication_action_this_revision": "Publish accumulated plan documentation and IMPL-001 code; use git history and actual push output for publication evidence",
+  "historical_state_before_2026_09_12": {
+    "phase": "IMPLEMENTING",
+    "repository": "/Users/yeoreum/Documents/codexbar-window/fork",
+    "baseline": "928166f899471bbdcb72210641cdec91324d0154",
+    "authorization": "User explicitly authorized implementation and recurring code-comparison QA on 2026-09-09",
+    "verification_policy": "STATIC_CODE_COMPARISON_ONLY",
+    "forbidden_validation": [
+      "build",
+      "test execution",
+      "application execution",
+      "provider probes",
+      "keychain access",
+      "performance measurement",
+      "remote Windows execution",
+      "swift package dump-package",
+      "swiftc -parse",
+      "all compiler/manifest evaluation commands"
+    ],
+    "automation_id": "codexbar-windows-qa",
+    "interval_minutes": 10,
+    "current_lanes": [
+      {
+        "id": "predictive_owner_contract_157",
+        "status": "READ_ONLY_CONTRACT_IN_PROGRESS",
+        "scope": "Predictive-only account identity helper without changing session/threshold keys"
+      }
+    ],
+    "static_qa_status": "SCOPED_REVIEW_155_APPROVED_FULL_PARITY_INCOMPLETE",
+    "windows_runtime_status": "NOT_RUN_BY_USER_INSTRUCTION",
+    "completion_claim": false,
+    "next": "Implement predictive ownership from157; shared candidate app wiring reviewed, Windows history/runtime still pending.",
+    "last_batch": "predictive-candidates-153-156",
+    "completed_source_changes": [
+      "Windows package dependency wiring (partial)",
+      "QuickJS watchdog Windows monotonic clock",
+      "QuickJS user config recognition",
+      "Windows config/plugin data paths",
+      "Windows executable resource lookup",
+      "Windows Credential Manager cache adapter",
+      "Windows SweetCookieKit package/product exclusion and macOS import guards (static comparison only)",
+      "Credential enumeration excludes non-generic entries"
+    ],
+    "remaining_blockers": [
+      "Windows native browser/cookie implementation; SweetCookieKit exclusion reviewed statically only",
+      "SQLite Windows distribution",
+      "process tree/PTY/socket Windows adapters",
+      "provider-specific credentials/browser imports",
+      "app runtime extraction and native Windows UI",
+      "widgets/iCloud/service access and installation/update",
+      "whole-source feature contract coverage"
+    ],
+    "process_candidate": "CONNECTED_PARTIAL_STATIC_ONLY",
+    "publication": {
+      "remote": "windows",
+      "url": "https://github.com/datell1357/codexbar-window",
+      "branch": "main",
+      "authorization": "User authorized per-step commit and push",
+      "actions": "disabled to preserve static-only validation"
+    }
+  },
+  "scope_audit": "docs/windows-port/TERTIARY-AUDIT-2026-09-12.ko.md",
+  "known_original_discrepancies": [
     {
-      "id": "predictive_owner_contract_157",
-      "status": "READ_ONLY_CONTRACT_IN_PROGRESS",
-      "scope": "Predictive-only account identity helper without changing session/threshold keys"
+      "id": "SA-04",
+      "item": "ctx.date.nowMillis absent from original d.ts",
+      "resolution": "Declaration added in IMPL-001 to match existing runtime; no build/type/runtime validation",
+      "implemented": true,
+      "validation": "NOT_RUN"
     }
   ],
-  "static_qa_status": "SCOPED_REVIEW_155_APPROVED_FULL_PARITY_INCOMPLETE",
-  "windows_runtime_status": "NOT_RUN_BY_USER_INSTRUCTION",
-  "completion_claim": false,
-  "next": "Implement predictive ownership from157; shared candidate app wiring reviewed, Windows history/runtime still pending.",
-  "last_batch": "predictive-candidates-153-156",
-  "completed_source_changes": [
-    "Windows package dependency wiring (partial)",
-    "QuickJS watchdog Windows monotonic clock",
-    "QuickJS user config recognition",
-    "Windows config/plugin data paths",
-    "Windows executable resource lookup",
-    "Windows Credential Manager cache adapter",
-    "Windows SweetCookieKit package/product exclusion and macOS import guards (static comparison only)",
-    "Credential enumeration excludes non-generic entries"
+  "windows_adaptations_pending": [
+    "Windows local session scanner and real window/terminal focus",
+    "Native Windows session settings, tray, refresh and error presentation",
+    "Remote OS/path native editor and all transport runtime validation"
   ],
-  "remaining_blockers": [
-    "Windows native browser/cookie implementation; SweetCookieKit exclusion reviewed statically only",
-    "SQLite Windows distribution",
-    "process tree/PTY/socket Windows adapters",
-    "provider-specific credentials/browser imports",
-    "app runtime extraction and native Windows UI",
-    "widgets/iCloud/service access and installation/update",
-    "whole-source feature contract coverage"
+  "automation": {
+    "id": "codexbar-windows-30",
+    "kind": "heartbeat",
+    "status": "ACTIVE",
+    "interval_minutes": 30,
+    "report_each_run": true,
+    "continue_implementation": true,
+    "commit_and_push_each_batch": true
+  },
+  "implementation_log": "docs/windows-port/IMPLEMENTATION-LOG.ko.md",
+  "implementation_batches": [
+    {
+      "id": "IMPL-001",
+      "contracts": [
+        "WIN-041",
+        "BC-020",
+        "BC-021",
+        "BC-022",
+        "BC-023",
+        "WIN-047",
+        "SA-04"
+      ],
+      "status": "CODE_WRITTEN_UNVERIFIED",
+      "validation": "NOT_RUN_BY_USER_INSTRUCTION"
+    }
   ],
-  "process_candidate": "CONNECTED_PARTIAL_STATIC_ONLY",
-  "publication": {
-    "remote": "windows",
-    "url": "https://github.com/datell1357/codexbar-window",
+  "publication_policy": {
+    "enabled": true,
+    "remote": "origin",
+    "repository_url": "https://github.com/datell1357/codexbar-window",
     "branch": "main",
-    "authorization": "User authorized per-step commit and push",
-    "actions": "disabled to preserve static-only validation"
+    "per_implementation_batch": true,
+    "force_push": false,
+    "empty_commits": false,
+    "report_commit_and_push_status": true,
+    "validation": "NOT_RUN_BY_USER_INSTRUCTION"
   }
 }

@@ -1,143 +1,165 @@
-# CodexBar 포크 기반 Windows 이식 계획
+# Windows 전용 CodexBar 구현 계획 — 2026-09-12 개정
 
-작성일: 2026-09-09. 계획 개정본이며 제품 구현·빌드·전체 의미 분석 완료 보고가 아니다.
+**현재 실행 지시:** 사용자가 구현을 승인했다. 이 macOS 로컬에서는 구현만 하고 검증은 실행하지 않는다. 30분마다 보고하고 계속하는 heartbeat를 설정했다. 사용자는 매 구현 묶음의 commit/push도 승인했다. 현재 origin(main)은 datell1357/codexbar-window이며 강제 푸시 없이 게시하고 결과를 보고한다. 과거의 commit/push 금지 문구는 당시 작업 범위 기록으로만 해석한다. 진행은 [구현 로그](IMPLEMENTATION-LOG.ko.md)에 기록한다. 아래의 분석 전용 문구는 계획 작성 당시의 이력이며 이번 구현 승인을 제한하지 않는다.
 
-## 1. 결정과 기준
+상태: SOURCE_SCOPE_TERTIARY_REVIEWED / 구현·실행 검증 미완료. 1·2·3차에서 지정한 추출 범주·등록·동적 연결을 대조하고 발견한 계획/추적 결함을 보완했다. 전체 코드 의미 검증 또는 모든 암묵적 기능의 누락 부재를 뜻하지 않는다. 기준 원본 `928166f899471bbdcb72210641cdec91324d0154`, 조사한 Windows HEAD `80f6b484b0388877a3cf5f886aa0ad850c59779c`.
 
-GitHub 포크: https://github.com/datell1357/CodexBar — GitHub API의 isFork=true 및 parent=steipete/CodexBar 확인.
-로컬 작업 대상: `/Users/yeoreum/Documents/codexbar-window/fork`.
-고정 커밋: `928166f899471bbdcb72210641cdec91324d0154`.
+이 문서가 현재 계획이다. [9월 9일 계획](WINDOWS-PORT-PLAN-2026-09-09.archived.ko.md)은 이력으로 보존하며, macOS/Linux 제품 유지와 원본 코드 보존 자체를 목표로 삼았던 정책은 대체한다. 기존 QA의 좁은 범위 승인 기록은 유효한 참고 증거지만 새 제품 완료를 뜻하지 않는다.
 
-**이 포크에서 원본 Swift 코어·공급자·플러그인·CLI·테스트를 최대한 유지하고 Windows 플랫폼 계층과 네이티브 UI를 추가한다.** 이전의 Windows 참조 포트 기반 Rust/Tauri 재구현 권고는 대체한다. `windows-reference`는 비교 자료로만 남긴다. 원본의 macOS와 Linux 경로도 유지하며 향후 upstream 변경을 받아들일 수 있도록 플랫폼 변경을 집중시킨다.
+## 1. 제품 목표와 필수 원칙
 
-포크는 코드를 재사용할 출발점이지 Windows 실행 파일이 아니다. 현재 Package.swift는 앱/위젯/WebProbe/Watchdog를 macOS에서만 생성한다. Core에도 POSIX 및 Apple API 경로가 남아 있다. 따라서 코어의 Windows 컴파일과 핵심 어댑터 실증이 첫 구현 단계다. 전체 기능 범위는 유지하되 OS 표현과 서비스 상호운용의 차이를 숨기지 않는다.
+**Mac 원본에서 제공하는 기능 중 Windows에서 구현 가능한 기능을 모두 제공하는 Windows 전용 프로그램을 만든다.** 어려움·미구현·시간 부족을 OS 불가능으로 분류하지 않는다. 핵심 공급자만 제공하는 MVP로 완료 범위를 축소하지 않는다.
 
-## 2. 기존 분석 이관과 완전성
+- Windows 설치·실행·업데이트에 Mac, Xcode, WSL, 사용자가 설치하는 Swift 개발 도구를 요구하지 않는다. 필요한 런타임은 배포물이 책임진다.
+- Mac 화면의 픽셀 복제가 아닌 기능·계정 의미·설정·오류 복구·자동화 계약의 동등성이 목표다. 메뉴바 기능은 Windows 트레이/팝업/상시 표시 패널로 제공한다.
+- Windows 배포물과 최종 활성 빌드 그래프에서 AppKit, SwiftUI, WidgetKit, Keychain, Sparkle, Mac helpers·entitlements·appcast·Homebrew 패키징을 제거한다.
+- Swift는 OS가 아닌 구현 언어다. 기존 계산·파서·QuickJS host를 Windows에서 사용하는 것은 가능하다. **이번 개정은 전체 언어 재작성 승인이 아니며, Swift 공용 로직은 Windows 검증 조건부로 재사용한다.** 언어 파일 확장자를 이유로 기능을 버리지 않는다.
+- Mac 소스는 기능 추출이 끝날 때까지 비교 자료다. 의존 소비자·리소스·테스트 이전이 끝난 단위만 활성 트리에서 제거한다. Git 원본 이력과 라이선스는 보존한다. 이번 작업에서는 제품 소스를 삭제하지 않았다.
+- 사용자 목표의 “완벽”은 아래의 추적 가능한 완료 조건으로 다룬다. 무결함·미래 서비스 변경에도 영구 동작을 보장한다고 표현하지 않는다.
 
-포크의 Git 추적 항목은 2,844개이며 SOURCE-MANIFEST.json에 mode·blob hash와 함께 기록했다. 이는 읽기/의미 검토 완료 수가 아니다.
-이전 기준 `0cb8c425e2ea5ccf8fc19d1d39ecaa650d8a8b40`에서 74개 파일이 변경됐다. 기존 기능 후보 569행을 FEATURE-MIGRATION.json에 보존했다. 직접 참조 파일이 바뀐 행은 71개, 사라진 참조 경로를 가진 행은 0개다. 간접 호출 영향과 새 기능까지 이 수치로 검증한 것은 아니다.
+## 2. 전수 기능 표면 감사와 계획 책임 확정
 
-모든 행은 REVALIDATE_ON_FORK다. 예전 Rust 파일·줄 번호·테스트 계획을 새 포크의 구현 근거로 사용하지 않는다. BASELINE-DELTA.json의 변경 파일부터 검토하되 나머지 파일도 미검토 상태를 유지한다. 기존 후보 수 569를 전체 기능의 확정 분모로 사용하지 않는다.
+[3차 검토·조치](TERTIARY-AUDIT-2026-09-12.ko.md)와 [입력/예상 결과 계약](BEHAVIOR-CONTRACTS-2026-09-12.ko.md)을 추가했다. [1차 감사 결과](FULL-COVERAGE-AUDIT-2026-09-12.ko.md)와 [추가 감사·조치](SECONDARY-AUDIT-2026-09-12.ko.md)가 판정 근거다. 추가 감사에서 mode 역참조, plugin optional/generic, 확장 JSON, alias 배열, runtime hook 추적을 보완했다. 최초 [소스 분석](SOURCE-ANALYSIS-2026-09-12.ko.md)은 이력으로 보존한다.
 
-새 기능 계약은 다음을 갖는다: 원본 commit/path/symbol, 사용자 진입점, 조건·기본값, 계정·인증 소유권, 성공·실패·빈 상태, 부수 효과, Swift 보존/추출/OS 대체 결정, 계획 모듈·인터페이스, fixture 입력/기대 출력, Windows 실증, 미해결 조건, 독립 검토 결과.
+원본 2,844개 Git 항목을 분류했고 Sources 코드 1,204개를 포함한 텍스트 2,554개를 스캔했다. 69개 공급자의 163개 source mode, 91개 SettingsDefaultsState 필드, 169개 CLI 옵션/인수 선언, 19개 메뉴 action, 6개 Hook 이벤트 및 위젯/플러그인/런타임/플랫폼 경로를 추적했다. 기존 54개 기능군은 **72개**로 보완했다. 파일의 계획 책임 미분류는 0개다.
 
-생성물·vendored·문서·리소스·테스트·배포 파일도 분류한다. 생성물은 생성기와 결과 일치, vendored는 호출 계약과 플랫폼 빌드, 리소스는 실제 소비자를 확인한다. 경로가 존재한다는 검사만으로 의미 분석 완료 처리하지 않는다.
+상세 계약은 [기능군](FEATURE-CONTRACTS-2026-09-12.ko.md), [설정](SETTINGS-COVERAGE-2026-09-12.ko.md), [CLI](CLI-COVERAGE-2026-09-12.ko.md), [공급자](PROVIDER-MATRIX-2026-09-12.ko.md), `SURFACE-OBLIGATIONS-2026-09-12.jsonl` 및 `FILE-COVERAGE-2026-09-12.tsv`에 있다. 각 source obligation은 원본 blob/line, Windows 목적지, 수락 조건을 갖는다. 테스트 소스 1,052개의 참조 후보는 `TEST-TRACEABILITY-2026-09-12.json`에 연결했다.
 
-## 3. 코드 구조와 책임
+범위 연결 완료를 모든 함수의 의미 검토/Windows 실행 성공으로 표현하지 않는다. 8,563개 source 의무 항목은 사용처/선언/분기의 중복을 포함하므로 기능 수나 완성률 분모가 아니다. 간접 생성/암묵적 경로가 구현 중 발견되면 같은 규칙으로 추가한다. 기존 569개 후보 ledger는 checkout에 없지만 이번 감사는 그 목록에 의존하지 않고 고정 원본에서 다시 추출했다. 향후 확보하면 historical crosswalk 자료로 사용한다.
 
-| 영역 | 원본 근거(포크 상대 경로) | 구현 방식 |
+## 3. 기술 구조 결정
+
+계획 기본안은 **Windows 네이티브 UI + Windows용 Swift Core/Runtime + QuickJS**다. 기존 Win32 트레이는 유지·보강하고, 전체 설정/대시보드는 C# WinUI 3 프런트엔드를 기본안으로 둔다. 언어 재작성 비용보다 이미 축적된 도메인 계약 보존을 우선한다. WinUI 의존성 추가와 구현은 후속 작업이며 현재 설치하지 않는다.
+
+공용 코어의 Windows 실증 실패가 지속될 경우에만 해당 모듈의 C#/Rust 대체를 비교한다. 대체 시 원본 fixture와 저장 schema·CLI·plugin 계약을 통과시켜야 하며 전체 재작성으로 조용히 범위를 바꾸지 않는다.
+
+### 책임과 계획 디렉터리
+
+기능별 세부 목적지는 FEATURE-CONTRACTS의 windows_destination이다. source obligation ID별로 Windows 파일/symbol·fixture·검증 결과를 작성하며, 기존 구현 코드는 QA의 실제 범위만 연결한다.
+
+| 계층 | 책임 | 현재 근거 / 계획 목적지 |
 |---|---|---|
-| 공급자·계산·파서 | Sources/CodexBarCore/Providers, Vendored, Plugins | Swift 보존. 플랫폼 호출만 주입 가능한 어댑터로 분리 |
-| 갱신 알고리즘 | Sources/AdaptiveRefreshCore, AdaptiveReplayKit | 동일 알고리즘·replay 보존. OS 전력/활동 신호만 교체 |
-| 앱 상태·설정·메뉴 모델 | Sources/CodexBar/UsageStore*, SettingsStore*, MenuDescriptor* | AppKit/SwiftUI와 섞인 비즈니스 로직을 공용 런타임 타깃으로 이동. Core만 공유해서 앱 동작이 빠지는 것을 방지 |
-| CLI·HTTP | Sources/CodexBarCLI | 명령·옵션·JSON·오류·종료 코드 보존. 프로세스/신호/socket 부분을 Windows로 대응 |
-| UI | Sources/CodexBar, Sources/CodexBarWidget | C++/Win32 트레이와 WinUI 3 화면을 기본 설계로 제안. Windows Widgets 공급자는 별도 OS 호스트로 구현 |
-| 플러그인 엔진 | Sources/CQuickJS, Core/Plugins/QuickJSProviderPluginEngine.swift | 기존 QuickJS·TS transpiler·host API 유지. Node/Chromium을 플러그인 때문에 상주시킬 필요 없음 |
-| macOS 전용 서비스 | Sources/CodexBarCore/Host, Sources/CodexBar/Sync, Sources/CodexBarClaudeWebProbe, Sources/CodexBarClaudeWatchdog | Windows 어댑터 또는 동등 기능 보조 프로그램 |
+| Windows host | 단일 인스턴스, 트레이, 메시지 루프, 전력, 알림, 종료 | `Sources/CodexBarWindows` 유지 후 host/runtime 분리 |
+| Domain/Core | 공급자·계정 소유권·quota·cost·history·plugin·sync 모델 | `Sources/CodexBarCore`, `AdaptiveRefreshCore` |
+| Windows runtime | Settings/UsageStore에 남은 상태·스케줄·계정·비용·hooks 연결 | 계획 `Sources/CodexBarRuntime` |
+| Native UI | 설정, 계정, 상세 팝업, 차트, 진단, 접근성 | 계획 `Windows/App` |
+| Widgets host | 6종 위젯, 선택/다중 인스턴스/갱신 | 계획 `Windows/Widgets` |
+| 인증 helper | 필요한 동안만 WebView2, 로그인 취소·계정 분리 | 계획 `Windows/AuthHost` |
+| CLI | 원본 명령·출력·종료 계약, GUI 없이 실행 | `Sources/CodexBarCLI` |
+| 배포·검증 | MSIX/설치, 업데이트, fixtures, Windows 테스트 | 계획 `Windows/Packaging`, `TestsWindows` |
 
-예정 디렉터리(아직 생성/구현하지 않음): Sources/CodexBarRuntime, Sources/CodexBarWindowsHost, Sources/CodexBarWindowsBridge, Windows/App, Windows/Widgets, TestsWindows.
+UI↔backend는 사용자 ACL이 제한된 **버전 있는 named pipe**를 계획 기본안으로 정한다. 기존 Swift 트레이/backend 프로세스 하나가 코어·스케줄러·캐시를 소유하고, 창은 필요할 때 시작한다. 직접 Swift 객체를 C#에 노출하지 않는다. G1에서 시작 시간·배포 비용을 확인한다. C ABI는 그 결과가 부적합할 때 검토할 대안이며 동시 구현하지 않는다.
 
-UI→Swift 연결은 G1에서 C ABI와 named-pipe backend를 비교해 확정한다. C ABI 후보에서는 다음 계약을 사용한다. 요청/응답은 버전 있는 UTF-8 JSON DTO를 기본으로 하고 dispose 함수로 메모리 소유권을 명시한다. async 작업은 request ID·취소·완료 callback, 상태 변경은 generation을 포함한 snapshot으로 전달한다. Swift 객체 포인터를 UI에 노출하지 않는다. UI callback은 UI 스레드로 전달하고 종료 시 구독을 해제한다. 고빈도 복사를 피하도록 변경 snapshot만 전달한다.
+IPC 계약: protocolVersion, requestID, generation, method, payload, structured error; 크기·동시 요청 상한, handshake, 사용자 확인, 취소·재연결·역순 응답 처리, 종료 drain. 화면 snapshot에는 비밀 원문을 싣지 않는다. 비밀 교체 요청은 로그/진단에서 배제하고 저장 결과만 반환한다. 창을 닫아도 backend가 중복 생성되지 않게 한다. Widgets는 비밀 없는 원자적 snapshot을 읽는다. CLI는 독립 실행을 유지하며 앱과 계정별 저장 lock을 공유한다.
 
-G1에서 ABI 안정성과 성능을 통과하면 트레이·UI는 같은 프로세스에서 코어 하나를 사용한다. 불가하면 Swift backend 하나를 별도 프로세스로 두고 같은 DTO로 통신한다. 위젯은 비밀 없는 원자적 snapshot을 읽는다. 독립 CLI는 원본의 단독 실행을 유지한다. 앱과 CLI가 동시에 저장·인증 갱신할 경우 계정별 lock, 원자적 저장, 소유권 검증이 필요하다. 앱 실행을 CLI의 필수 조건으로 만들지 않는다. 상주 HTTP 서버는 기본값이 아니다.
+기본 저장 위치는 LOCALAPPDATA/CodexBar. 일반 설정·캐시·이력·로그를 구분하고 앱 소유 비밀은 Credential Manager 또는 사용자 DPAPI 보호 파일로 분리한다. 기존 config의 평문 비밀은 버전 migration으로 이전하며 실패 시 기존 데이터 보존, 성공 확인 후 명시된 정리 절차를 적용한다. 외부 CLI 소유 auth 파일은 그 도구의 계약을 따르고 앱 마음대로 형식을 바꾸지 않는다.
 
-## 4. 전체 기능 작업 묶음
+## 4. 기능 범위: 모두 필수
 
-아래는 구현 작업 목차다. 569개 후보의 개별 계약 검증을 대신하지 않는다.
+W01~W16은 작업 묶음이다. 세부 수락 항목은 FEATURE-CONTRACTS의 ID를 기준으로 분할한다. 원본에서 지원하지 않는 provider×기능 조합을 새 요구로 만들어 부풀리지 않는다. 반대로 원본이 지원하는 조합은 조용히 생략하지 않는다.
 
-| 작업 | 포함 범위 | 계획 구현·검증 책임 |
+| ID | 필수 결과 | 작업·수락 조건 |
 |---|---|---|
-| W01 공급자 전체 | docs/provider-ids.md의 69개 전부, 각 인증·조회 소스·조직·지역·플랜·endpoint·추가 한도 | Core 담당: descriptor/fetch planner/credential/UI 소비자를 연결하고 provider×source×account×outcome fixture 대조. ID만 등록해서 완료하지 않음 |
-| W02 계정 | Codex managed/system/profile/workspace, Claude swap, 토큰 계정·전환·재인증·ownership | Auth 담당: Credential Manager/DPAPI 저장 제안, 외부 CLI 소유 credential 갱신 규칙 유지. 동시 갱신·오계정·로그아웃·권한 거부 시험 |
-| W03 트레이 | 개별/통합 아이콘, Overview, 최고 사용량, 잔여/사용, 조건식·두 줄·override·단축키·동작 메뉴 | UI 담당: 원본 표시 모델 재사용, 아이콘/팝업/선택형 텍스트 패널. 가변폭 메뉴바 동일성은 별도 게이트 |
-| W04 설정 | 모든 pane·검색·언어·통화·provider 순서·초기 감지·PII·터미널·기본값·migration | Runtime/UI 담당: 설정 키 인벤토리와 화면 control 양방향 대조, 저장/재시작/이전 설정 fixture |
-| W05 사용량·예측 | primary/secondary/tertiary/extra, credits/reset/freshness, pace·작업일·ETA | Core 담당: 원본 계산 보존. timezone/DST·분모 0·누락과 0·초과·stale 대조 |
-| W06 비용 | 로컬/원격 비용, Codex/Claude/pi/OMP/OpenCodex 등, 증분 캐시·가격·보존·출처 | Core 담당: 파서와 저장 의미 보존. 중복·fan-out·overflow·부분 쓰기·회전·재시작·crash fixture |
-| W07 대시보드 | 7/30/90/all, 모델·프로젝트·세션, 차트/heatmap·비교·coverage·catch-up·pause/resume·공유 | UI/Core 담당: 동일 집계, native chart/export. clipboard/PNG/JSON 저장까지 검증. 라이브러리만 있는 CSV는 출시 UI로 잘못 소개하지 않음 |
-| W08 갱신 | manual/fixed/adaptive/agent-aware·동의·메뉴 열기·저전력·cancel/dedupe·절전 복귀 | Runtime 담당: Windows 전력/활동 이벤트와 원본 decision table 연결; replay와 절전/복귀 실증 |
-| W09 알림 | 장애/component·소진/복구/임계/예측·sound/overlay·reset confetti | UI/Host 담당: Windows 알림·렌더링; 전이별 중복 방지와 클릭 동작·알림 권한 거부 시험 |
-| W10 위젯 | Switcher/Usage/History/Metric/Burn Down/Combined Burn Down, 선택·크기·인스턴스·stale/empty | Widgets 담당: 원본 snapshot/계산 공유. 실제 Widgets Board 설치·선택·다중 인스턴스·갱신 증거 필요 |
-| W11 Sessions | Codex/Claude/pi/OMP 로컬 탐색, active/idle·제목·프라이버시, SSH/Tailscale 원격·버전·focus | Host 담당: Windows 프로세스/터미널 연결, 원격 JSON 유지. 미지원 터미널 focus를 성공 처리하지 않음 |
-| W12 CLI/HTTP | usage/cards/cost/dashboard/serve/sessions/guard/config/cache/cookie/hooks/plugins/diagnose 및 하위 옵션 | CLI 담당: help/기본값/출력/schema/exit/인증/route·stream·중단 계약 golden 대조. Winsock/신호 대응 |
-| W13 Hooks | 이벤트·규칙·조건·enable/test/watch, stdin JSON·환경변수·timeout | Host 담당: 원본 이벤트 유지, 기본은 원본처럼 shell 없이 executable/arguments 직접 실행·Windows quoting·Job Object 종료. bash 스크립트 자체의 자동 호환은 별도 |
-| W14 Plugins | JS/TS 설치/승인/설정/업데이트/비활성/제거, 동적 ID·cache·HTTP/cookie/secret·오류 | Plugins 담당: 기존 engine와 정책 보존. ABI·정수·시간대·메모리/시간 제한·stale snapshot golden |
-| W15 Sync/Fleet | portable settings·선택 secrets·usage/account snapshot·장치·충돌·삭제 marker·offline | Sync 담당: 원본 schema 보존. CloudKit 접근권과 macOS 상호운용 실증 전 완성 판정 금지 |
-| W16 운영 | 자동 시작·stable/beta·설치/CLI PATH·업데이트·진단/redaction·cache·replay·접근성 | Release 담당: 별도 Windows 서명/배포 feed, 업데이트 실패/rollback/uninstall·키보드/DPI/screenreader 시험 |
+| W01 | 69개 공급자 전부 | provider×source×account×org/region×outcome 행. API/OAuth/CLI/RPC/PTY/web/local의 설정 노출·선택·fallback·버전·오류까지 대응 |
+| W02 | 계정 추가/수정/삭제/선택/동시 표시/재인증 | Codex managed/system/profile/workspace/PAT, Claude swap, token 계정, 외부 credential 소유권, 계정별 cache/history 격리 |
+| W03 | 트레이·Overview·상세·표시 레이아웃 | 개별/통합, 최고 사용량, quota 선택, 두 줄/token/조건식/override, reorder, shortcut, 계정/플랜/status/credits/details·actions |
+| W04 | 모든 설정과 Windows 기본 UX | general/providers/display/menu/notifications/advanced/hooks/plugins/sync/about/debug/spend, 검색·언어·통화·PII·저장·migration |
+| W05 | 사용량·예측·리셋 | raw/표시 quota 구분, 0/nil/stale, 학습 이력·workday·ETA·신뢰도·소유권·authorized backfill, reset credit 확인·사용·만료 알림, routines/model weekly/Spark 필터, 프로젝트/모델 내부 분석 API |
+| W06 | 원본이 제공하는 비용·스토리지 조회 | descriptor의 12개 cost capability와 OpenCodex/Pi/OMP를 포함한 모든 원본 cost source, 증분·회전·중복·fan-out·가격·통화·시간대·재시작·catch-up·저장 용량 |
+| W07 | Usage & Spend + 웹 quota 대시보드 | 서로 다른 데이터 모델 유지; 기간/모델/프로젝트/세션/heatmap/비교/coverage/공유/내보내기, web enrichment/크레딧/이력, Buy Credits 사용자 결제 창, Share Stats 카드 |
+| W08 | 전체 refresh 정책 | manual/fixed/adaptive/agent-aware, opt-in scanner, menu wake, reset boundary, 저전력·절전 복귀·취소·중복·startup retry |
+| W09 | 상태·quota·예측 알림과 celebration | source/account/reset-cycle별 중복 억제, sound/overlay/Windows 알림, click/설정/언어/권한·집중 모드/실패 정책 |
+| W10 | 6종 위젯 | Switcher/Usage/History/Metric/Burn Down/Combined, 일반 provider 17개·BurnDown 2개 선택 범위·공유 선택/독립 인스턴스·stale/empty·snapshot |
+| W11 | 세션 탐색·상태·focus·원격 | Codex/Claude/pi/OMP, PID 생명주기, metadata budget/privacy, terminal/editor별 focus, SSH/Tailscale v2→v1 협상·Windows peer 탐색·상대 OS별 실행 adapter |
+| W12 | CLI/HTTP 전체 | usage/cards/cost/dashboard/serve/sessions/guard/config/cache/cookie/hooks/plugins/diagnose와 모든 하위 옵션·JSON/TOON/text/exit·Host/Bearer·cancel |
+| W13 | Hooks 전체 | 이벤트 발생→규칙→조건→실행→결과, stdin JSON/env/timeout/process tree, 기본 shell 없는 실행, PowerShell/cmd/선택 WSL 구분 |
+| W14 | Plugins 전체 | JS/TS 설치·검증·승인·설정·재승인·갱신·재검색·비활성·삭제, QuickJS 제한·HTTP/secret/cookie·generic UI·CLI 정책 |
+| W15 | 동기화·fleet 사용자 기능 | opt-in 설정·선택 비밀·장치/계정 snapshot, schema·충돌·삭제·offline·장치 해제; 원본 iCloud 상호운용은 별도 조건부 계약 |
+| W16 | Windows 제품 운영 | 설치·자동 시작·CLI PATH·stable/beta·서명·업데이트·실패 복구·삭제·진단·라이선스·DPI/키보드/screenreader |
 
-69개 ID(독립 지원 대상): codex, openai, azureopenai, claude, clinepass, cursor, opencode, opencodego, alibaba, alibabatokenplan, qwencloud, factory, fireworks, gemini, antigravity, copilot, devin, zai, minimax, manus, kimi, kilo, kiro, vertexai, augment, jetbrains, moonshot, amp, t3chat, ollama, synthetic, openrouter, elevenlabs, warp, windsurf, zed, perplexity, mimo, doubao, sakana, abacus, mistral, deepseek, deepinfra, codebuff, crof, venice, commandcode, qoder, stepfun, bedrock, grok, groq, llmproxy, litellm, deepgram, poe, chutes, neuralwatt, clawrouter, longcat, sub2api, wayfinder, zenmux, aiand, zoommate, xai, notion, ibmbob.
+## 5. Windows 가능성 판정과 예외 규칙
 
-## 5. 먼저 해결할 플랫폼 게이트
+판정은 REQUIRED_PORT / REQUIRED_WINDOWS_EQUIVALENT / EXTERNAL_DEPENDENCY_UNRESOLVED / PROVEN_OS_ONLY로 구분한다. UNRESOLVED는 미완료이며 분모에서 빼지 않는다. PROVEN_OS_ONLY에는 원본 동작, 공식 플랫폼 근거, 검토한 대안, 사용자 가치 보존 여부를 반드시 남긴다. 예외·대체 UX는 사용자 결정 전까지 승인된 것으로 표시하지 않는다.
 
-- G1 빌드/연결: Swift Windows 툴체인으로 Core·CLI·QuickJS·SQLite·Crypto·Commander·SwiftLog·SweetCookieKit를 빌드하고 fixture 실행. Package.swift의 macOS 전용 의존성 resolution도 분리. UI에서 C ABI로 fetch fixture→snapshot→cancel→dispose 1,000회 검증. 성공 전 재사용 비율·패키지 크기 확약 금지.
-- G2 프로세스: Host/Process/SubprocessRunner.swift의 pid_t/SIGTERM/SIGKILL/usleep/kill, PTY·spawn 경로는 Windows process/Job Object/ConPTY로 구현. 공백/한글/따옴표 인자, 자식·손자 timeout, stdout/stderr 동시 포화, credential mutation 중 취소 계약 검증.
-- G3 저장·인증: Security/Keychain·파일 잠금·atomic rename·ACL·브라우저 profile/암호화 차이 점검. OAuth 앱 등록/redirect/외부 CLI 소유권도 포함. Chrome/Edge/Firefox의 실제 지원 버전별 자동 로그인 가져오기 성공/잠김/거부를 분리. 수동 토큰만 되고 자동 가져오기가 안 되면 해당 기능은 미완료.
-- G4 브라우저: WebKit probe를 필요할 때만 WebView2 호스트로 대응하는 후보. 원본 cookie transaction·조직 검증·Cloudflare·renewal 실패의 롤백을 보존. 사용자 브라우저와 WebView2 세션이 같다고 가정하지 않음. 자동화에 의해 서비스가 차단되면 미해결로 기록.
-- G5 Sync: Sources/CodexBar/Sync/CloudSyncEngine.swift의 CloudKit container·entitlement·인증·레코드·암호화 계약을 확인하고 접근 가능한 테스트 container에서 Windows↔macOS 왕복/충돌/삭제를 실증. 포크만으로 원저자 container 접근권을 얻지 못함. 권한/SDK 경로 불가 시 원본 iCloud 연동은 BLOCKED; 별도 backend를 동등 연동 완료로 바꾸지 않음.
-- G6 위젯/가변폭: 실제 Windows Widgets Board에서 6종의 표시·선택·상태 갱신을 시험한다. Windows 트레이 아이콘에 macOS 가변폭 메뉴바를 그대로 구현한다고 약속하지 않는다. 모든 토큰/조건식은 보존하되 별도 패널 제안을 사용자에게 보여 동등 UX 수용 여부를 결정한다. 정확한 OS 동일성을 요구하면 제한을 남긴다.
-- G7 배포/터미널: clean Windows에서 설치·실행·CLI PATH·자동 시작·업데이트·복구를 검증한다. terminal별 session focus, PowerShell/cmd 및 선택적 WSL hook 경로를 구분한다. WSL은 앱 실행의 필수 전제가 아니다.
+- **메뉴바/위젯:** 원본 기능은 Windows에서 구현할 수 있는 UI 기능이다. 트레이에 가변폭 텍스트를 억지로 삽입하지 않고 상세 팝업·고정 패널에서 전체 token layout을 제공한다. Windows Widgets API로 6종을 구현한다. OS가 허용하는 크기·갱신 주기는 실제 검증하고 동등 UX 결정 기록을 남긴다.
+- **브라우저 인증:** Chrome/Edge 자동 import는 App-Bound Encryption 및 세션 바인딩에 따라 제약될 수 있다. 보호 해제·관리자 권한 요구·브라우저 보안 우회를 제품 전제로 삼지 않는다. 지원되는 API/OAuth/device login, 앱 소유 WebView2 로그인, 허용된 profile import를 provider별로 평가한다. WebView2는 기존 Edge 로그인과 별도 저장소다. 수동 쿠키만 제공하고 자동 import 완료라고 표시하지 않는다. 대체 로그인 성공과 기존 브라우저 세션 가져오기 성공은 별도 계약이다.
+- **Sync/Fleet:** Windows 장치 간 설정·snapshot 동기화 기능은 구현 대상으로 유지한다. 기본 조사안은 앱 소유 서비스/사용자 지정 endpoint와 명시적 장치 pairing 및 종단간 비밀 보호다. 서버 운영·인증·비용·키 복구 정책은 D03 결정 사항이며 이번에 서비스 개설하지 않는다. 파일 동기화만으로 실시간 fleet 완료라 하지 않는다.
+- **기존 iCloud 연동:** 원본 `iCloud.com.steipete.codexbar` private DB와 `encryptedValues`를 사용한다. CloudKit 웹 API가 있다는 사실만으로 같은 container나 암호화 필드 접근이 되는 것은 아니다. container 권한·web services·사용자 auth·암호화 의미를 확인한다. 새 backend가 동기화 가치를 제공하더라도 원본 iCloud 데이터와 상호운용 완료를 주장하지 않는다.
+- **Mac 도구/OS 표현:** Safari 자동 가져오기, Mac terminal focus, AppKit/WidgetKit·Keychain·Sparkle 구현 자체는 Windows에 그대로 제공할 대상이 아니다. 해당 사용자 기능은 Windows 브라우저·터미널·저장·알림·업데이트 대응으로 남긴다. 서비스가 Windows용 로컬 앱을 제공하지 않으면 원격/API 가능성을 먼저 조사한다.
 
-G1 실패 시: OS 어댑터 또는 C ABI 포장 범위를 줄여 해결하고 실패 원인을 기록한다. Swift core 자체가 실용적으로 성립하지 않을 때만 언어 재작성 대안을 별도 비교한다. 분석만으로 Rust 전체 재작성으로 되돌리지 않는다.
+## 6. 실행 순서와 산출물
 
-## 6. 경량화 설계와 측정 계약
+| 단계 | 선행 조건 | 작업 | 완료 산출물 |
+|---|---|---|---|
+| P0 원본 기능 표면 대조 | 지정한 1·2·3차 범주 대조 완료; 전체 의미 인증 아님 | 72개 기능군·69/163 provider mode·91 state·169 CLI 옵션과 source obligations 연결. 구현 중 새 발견은 하위 ID 추가 | FULL-COVERAGE-AUDIT 및 파일 책임 미분류 0; 실행 미완료 상태 보존 |
+| P1 Windows 실행 기반 | 검증 허용 시 시작 | Windows Core/CLI/QuickJS/SQLite/Crypto/Commander 빌드, 설치 fixture, tray→fetch→UI→cancel→exit, IPC·WinUI 연결 | 재현 가능한 Windows 빌드/설치·실행 로그; 의존성 버전/배포 manifest |
+| P2 런타임·인증·저장 | P0 관련 계약, P1 | Mac UsageStore/SettingsStore의 도메인 로직 추출, Windows 계정/lock/atomic write/credential migration, login와 ConPTY | 계정 혼선·취소·경합·복구 fixture 통과 |
+| P3 모든 공급자와 비용 | P2 | 69 provider×source 계약, 모든 cost/local source·plugin·CLI/hook 연결 | 행별 Windows 구현/정적 QA/fixture/실계정 증거 |
+| P4 모든 UI·위젯·세션·Sync | P2, 관련 P3 데이터 | 설정·트레이·전체 대시보드·접근성·위젯·원격·sync 구현 | UI action과 저장·조회 양방향 증거, 확정된 외부 제약 |
+| P5 Windows 전용 정리 | 이전할 각 기능 증거 | Mac 제품 target/import/resource/helpers/scripts 제거, 테스트 이동, README·installer 재작성 | Windows-only build graph·package allowlist, 보존된 원본 비교 이력 |
+| P6 정식 배포 판정 | 모든 필수 항목 | clean Windows·회귀·장시간·성능·보안 경계·업데이트/복구/삭제 | release checklist와 artifact hashes, 미완료 필수 0 |
 
-상주 대상은 native tray와 공유 코어 하나. 설정/대시보드 창은 열 때 생성하고 닫으면 자원 해제. WebView2는 웹 인증에 필요한 동안만 실행. QuickJS는 필요한 작업의 제한된 worker에만 생성하고 idle 해제하는 정책을 추가할 계획이다. 공급자가 비활성이면 timer/network/scan 작업을 시작하지 않는다. 기능 선택지는 모두 제공한다.
+P0에서 확인한 누락을 위 추적표에 반영했다. P1에서 발견한 위험을 뒤 단계까지 숨기지 않는다. 순서는 검증 가능한 작업 순서이지 기능 축소가 아니다. 실행 검증이 금지된 동안에는 P0와 정적 구현만 가능하며 P1 통과나 배포 가능 판정을 내리지 않는다.
 
-단일 스케줄러·중복 요청 합치기·동시성 상한·증분 파일 읽기·제한된 cache/history를 사용한다. 버퍼/worker 제한이 원본 결과를 잘라먹지 않도록 출력 초과 오류와 재시도 계약을 보존한다. upstream의 전체 로그/캐시 의미를 검증하기 전 저장 엔진을 통째로 SQLite로 바꾸지 않는다.
+현재 사용자는 **분석과 계획 수정**을 요청했다. 이번 변경은 문서·추적 자료이며 빌드/컴파일러/테스트/앱/실계정/원격 Windows 실행이나 CI 활성화, commit/push를 하지 않는다. 과거 자동화의 10분 간격은 이력이며 이번 계획을 실행하는 자동화를 새로 만들지 않는다.
 
-미측정 제안 목표: Windows 11 x64, 4 logical cores/8GB, Release 빌드에서 3개 대표 공급자 활성·60초 기본 갱신·화면 닫힘·10분 안정화 후 30분 측정. 앱과 모든 자식의 합계 private working set p95 ≤100MiB, 총 CPU 시간/(관찰시간×logical cores) ≤0.5%, 열기 반응 p95 ≤200ms. 모든 공급자 등록/3개 활성과 69개 활성 부하를 따로 측정하고 후자 결과를 전자 예산으로 홍보하지 않는다.
+## 7. 검증·배포 완료 게이트
 
-창 열림/웹 인증 중 peak, 창 닫고 60초 뒤 잔류 프로세스·메모리, 8시간 추세, 절전 복귀, 대형 로그 catch-up을 별도 측정한다. 목표 미달 시 trace로 원인→수명/캐시/복사 최적화→같은 fixture 결과/부하 재측정. 기능·정확도 삭제로 예산을 맞추지 않는다. 숫자는 측정 결과나 보장값이 아니다.
+- G0 범위: 69개 ID 포함, 모든 source/account/settings/action 계약 연결, 원본 기능 미분류 0. 파일 수만으로 통과하지 않는다.
+- G1 도구체인: Windows에서 Core/CLI/host/UI/QuickJS/SQLite 및 런타임 배포 성공. macOS build 성공은 대체 증거가 아니다.
+- G2 OS: 한글·공백·긴 경로, quoting, 자식/손자 종료, stdout/stderr 포화, ConPTY, Winsock, sleep/resume, multi-monitor/DPI, 비관리자 계정.
+- G3 데이터·인증: 0/nil/초과/stale, DST/timezone, 계정 교체 중 응답, 만료/거부/429/timeout/cancel, atomic save·crash·회전, 평문 노출·로그 redaction, plugin 승인 경계.
+- G4 제품: 모든 native 설정 저장/복원, UI→runtime→저장→재실행, 6종 위젯, 원격 focus, 동기화 충돌·삭제·offline·키 복구, 접근성/현지화.
+- G5 운영: 개발 도구 없는 clean Windows에서 설치·실행·CLI PATH·자동 시작·signed update·중단/rollback·uninstall. 외부 데이터 삭제는 제품에서 사용자 선택으로 구분한다.
+- G6 부하: 원본 100MiB/0.5% CPU/200ms 목표는 미측정 목표로 유지. 전체 프로세스 합계·3개 활성/69개 활성 구분, 8시간 이력·절전 복귀·대형 비용 로그·인증 창 종료 후 잔류를 측정한다. 기능 삭제로 목표를 맞추지 않는다.
 
-## 7. 실행 순서와 완료 판정
+Windows 11 x64를 첫 검증 대상으로 잡는다. 지원 최소 OS/build와 ARM64는 D01에서 명시적으로 확정하고 검증 전 지원을 주장하지 않는다. 테스트 코드는 기능 회귀 fixture를 이관한다. Mac-only tests가 제외됐다는 이유로 그 테스트가 지키던 기능까지 삭제하지 않는다.
 
-1. 기준 고정·기존 후보 이관·delta 검토 → 모든 변경 파일의 영향과 미검토 항목 기록.
-2. G1~G7 중 기술 위험을 작은 prototype으로 병렬 실증 → 성공/실패/대안/소유자 기록. 이 단계는 향후 구현 승인 후 실행.
-3. Core/CLI 공유와 Host 어댑터 → 원본 parser/plugin/replay fixture를 양 OS에서 비교.
-4. 앱 runtime 추출과 계정/갱신/비용 통합 → 기존 macOS 회귀 + Windows 상태/동시성 검증.
-5. W01~W16 화면·통합을 구현 → 각 기능 ID의 정상/오류/빈 상태·설정 저장·실사용 증거 연결.
-6. 독립 기능 검토·Windows 전체 회귀·성능·설치/업데이트 → 남은 BLOCKED를 공개하고 full parity 여부 판정.
+FULL_WINDOWS_PRODUCT = G0~G6 통과 + Windows에서 가능한 필수 기능 전부 구현 + unresolved 항목의 근거/결정 종결 + 패키지에 Mac 의존 없음. 제한적 preview는 full completion과 다르며 최종 목표를 대신하지 않는다.
 
-단계는 우선순위이며 기능을 버리는 MVP 범위가 아니다. 날짜/주수는 G1~G7 결과와 작업량 검증 후 산정한다.
-계획 OK: 모든 추적 파일 검토/분류, 발견된 기능 계약의 실행 가능한 계획, 플랫폼 결정·선행 실증 절차, 독립 필수 수정 0. 제품 FULL_PARITY: 모든 필수 기능의 Windows 증거와 동등 UX 결정, 회귀/성능/배포 검증까지 통과. 두 판정을 구분한다.
+## 8. 진행률과 결정 대장
 
-현재: 포크 확인/계획 개정/기계적 후보 이관 완료. 전체 의미 검토·Windows 빌드·실계정·성능·독립 승인 미완료. 계획 판정은 NOT_OK를 유지한다. 이 문서 작성은 앱 구현이나 commit/push/PR 승인이 아니다.
+상태 축을 분리한다: contract / implementation / static_review / windows_fixture / live_integration / release. 좁은 QA APPROVE를 implementation 또는 release 완료로 자동 승격하지 않는다. 기능 분모 확정 전 백분율을 발표하지 않는다. 확정 후에도 각 축의 완료 수와 제외 근거를 별도로 표시한다.
 
-## 8. 이번 기준 변경의 우선 회귀 대상
+| 결정 | 기본안 | 확정에 필요한 증거 |
+|---|---|---|
+| D01 지원 환경 | Windows 11 x64 우선 | 최소 build·ARM64·Widgets/SDK 조건 및 clean install 결과 |
+| D02 UI/코어 연결 | WinUI 3 + Swift backend named pipe | toolchain, lifecycle, IPC 보안, 시작/메모리·패키징 G1 |
+| D03 Sync/Fleet | Windows 독립 sync backend, iCloud 호환 별도 | 운영 주체/인증/비용/암호화·복구 및 CloudKit 권한 확인 |
+| D04 browser login | provider별 허용된 자동 import 또는 별도 앱 로그인 | 브라우저 버전·보호 상태·provider auth 성공/실패, 대체 UX 결정 |
+| D05 배포 | 서명 MSIX를 우선 평가 | Widgets identity, CLI alias/startup/update 제한; 필요 시 EXE + identity 대안 |
+| D06 OS 표현 | tray + popup + 선택적 상시 패널, native Widgets | 원본 표시/action 모두 접근 가능, 키보드/DPI 및 사용자 동등 UX 판단 |
 
-74개 변경 파일 중 CLI renderer의 unavailable percentage/막대 생략/Antigravity named quota lanes, Bedrock region 설정, Claude swap compact 계정 표시, MiniMax transport identity, MiMo local fallback, token account 갱신, 비용 whitespace/cache replacement·OpenCodex fan-out/overflow를 우선 추적한다. SubprocessRunner timeout의 정수 변환/overflow 의미도 Windows adapter에 보존한다. 관련 변경 테스트는 BASELINE-DELTA.json의 Tests 경로를 기준으로 연결한다.
+다음 구현은 source obligation을 작업 ID로 사용해 기존 Windows 코드/QA206의 충족 범위와 미완료 web history/auth/cache를 연결하는 것이다. 원본 표면을 다시 후보 목록부터 만드는 작업은 반복하지 않는다. Windows 실행 검증을 시작할 수 있을 때는 전체 코드 작성 완료를 기다리지 않고 P1부터 진행한다.
 
-플러그인 앱 연결에는 JavaScriptCore import 조건으로 감싼 경로도 있으므로 QuickJS 코어가 빌드된다고 설정·메뉴·갱신 연결까지 동작한다고 보지 않는다. UsageStore+UserPlugins.swift, PreferencesPluginsPane.swift, StatusItemController+UserPlugins.swift의 플랫폼 조건과 TestsPlugin을 함께 검증한다. CLI text/cards/JSON/TOON, HTTP Host allowlist/Bearer/timeout, hooks의 직접 실행 계약도 회귀 대상이다.
+## 9. 전수 감사에서 추가로 고정한 구현 규칙
 
-## 9. 추가 소스 검토에서 확인한 숨은 실패 경로
+2차 상세 조건 SA-01~09는 [추가 감사 문서](SECONDARY-AUDIT-2026-09-12.ko.md)를 따른다. 기능군 72개는 유지하며 기존 계약의 누락을 보완했다.
 
-- Config/CodexBarConfig.swift의 provider instance 인식도 canImport(JavaScriptCore)에 묶인 경로를 점검한다. UI 가드만 바꿔서는 QuickJS-only 환경에서 사용자 플러그인 설정이 유지되지 않을 수 있다. config load/save/restart fixture를 G1/W14에 포함한다.
-- CQuickJS/CQuickJSHost.c의 clock_gettime/CLOCK_MONOTONIC 기반 watchdog를 Windows 단조 시계로 대응한다. vendored QuickJS의 _WIN32 존재만으로 host가 빌드된다고 판정하지 않는다.
-- SweetCookieKit는 Core의 무조건 의존성이다. Windows dependency resolution/compile을 따로 확인하고, 불가하면 macOS dependency로 한정하고 cookie host 인터페이스에 Windows 구현을 연결한다.
-- BrowserDetection/BrowserCookieImportOrder/KeychainCacheStore의 비-macOS stub은 compile 성공 뒤 기능이 조용히 꺼질 수 있는 경로다. 지원 provider의 Windows capability가 false로 떨어지는 사례를 실패 fixture로 만든다.
-- SQLite C modulemap/import library/runtime DLL, WAL lock·crash recovery, exe 상대 리소스, config/plugin approval 경로를 clean Windows/non-ASCII 사용자명에서 검사한다.
+- WIN-055~072의 18개 세분화 계약은 기존 W01~W16에 포함되는 필수 작업이다. 시스템 계정 승격 보존, 만료 알림, 구매 창, 추가 quota, OpenCodex 집계, 공급자 login/editor, 복구, replay/진단, 리소스와 Sync 제외 필드를 생략하지 않는다.
+- 원본 `CodexWorkspacesMenuAvailability`는 DEBUG+환경변수에서만 켜지고 release는 false이며 창은 빈 shell이다. 내부 indexer/model/CSV API는 보존 대상으로 추적하되 이미 완성된 원본 출시 UI로 집계하지 않는다. 새 완성형 Workspaces 화면은 기존 기능 이식과 구분한다.
+- CLI source의 `api/cli/web`는 transport와 같지 않다. 예를 들어 로컬 파일 조회가 cli 모드에 노출될 수 있다. 등록된 모드·실제 planner·app/CLI·선택 계정 분기를 함께 유지한다.
+- 설정 비밀을 Windows 보호 저장소로 옮길 때 config schema/CLI dump·set-api-key·환경변수·plugin secret lookup을 깨뜨리지 않는다. `config dump --show-secrets` 같은 명시적 조회 계약은 별도 처리하고 기본 dump/로그/UI snapshot은 redaction을 유지한다.
+- 로그는 Windows 사용자 데이터 경로로 옮기며 file logging·레벨·JSON stderr·크기 제한·redaction을 보존한다. packaged resource smoke는 개발 checkout을 사용할 수 없는 환경에서도 실행되도록 Windows에 대응한다. source fixture가 있는 Mac-only 테스트를 build exclusion만으로 지우지 않는다.
+- docs/providers 같은 요약과 고정 소스가 다르면 원본 소스·호출부·테스트를 기준으로 판단하고 차이를 감사 기록에 남긴다. 새 provider/server 지원을 임의로 추측하거나 보호된 인증 경로를 우회하지 않는다.
 
-C ABI 단일 프로세스 설계와 별도 Swift backend + named-pipe 설계를 G1에서 비교한다. 기본안은 위의 C ABI이나, async 수명/패키징/크래시 격리 비용이 크면 UI→backend 요청·snapshot 구독을 버전 있는 named-pipe 계약으로 옮긴다. 후자도 코어 하나와 공유 캐시를 유지하고 사용자 ACL·메시지 크기·취소·재연결·버전 handshake를 검증한다. 기존 dashboard-v1 payload는 읽기 DTO 후보일 뿐 설정/계정/refresh 명령 API 전체를 대신하지 않는다. 비교 결과는 동일 기능 fixture, 전체 프로세스 메모리/CPU/시작시간/설치 크기로 결정하고 IPC가 무조건 무겁거나 DLL이 무조건 가볍다고 가정하지 않는다.
+## 10. 이차 감사에서 고정한 동적 계약과 판정
 
-## 10. 아키텍처 검토 반영: G1의 결정 산출물
+- provider ID, Core bootstrap, app implementation bootstrap의 69개 연결을 보존한다. 각 provider JSON은 자기 source mode 의무를 모두 역참조하고, 공유 폴더의 다른 provider 모드를 포함하지 않는다.
+- plugin `?`는 응답 값 생략 가능성을 뜻한다. 해당 값이 있을 때의 기능까지 선택 구현으로 취급하지 않는다. generic HTTP/cache/JWT 메서드·costUsage·재생량·만료시각·identity-only 반환을 그대로 지원한다.
+- `ctx.date.nowMillis()`는 원본 runtime에 있고 d.ts에는 없다. Windows 배포용 선언을 runtime과 일치시키는 작업을 포함한다. 현재 원본 코드가 수정됐거나 검증됐다고 보고하지 않는다.
+- provider extension JSON은 고정 UI 필드 외의 unknown non-null 값도 보존한다. 14개 typed key·nil 제거·정수/실수 타입·null/충돌 처리를 fixture로 검증한다. `.secretWorkspace` binding의 비밀 로그 정책도 유지한다.
+- 환경변수는 별칭 배열의 순서·상징 상수·소문자 지원·account injection/scrub까지 계약이다. Windows 환경의 casing 충돌/동시에 여러 alias/endpoint override 상황을 포함한다.
+- provider의 settings observation, typed snapshot provider-ID/type 검사, protocol defaults, login capability, start/stop/failure/recovery callback을 runtime에 연결한다. 특히 Augment keepalive와 forceSessionRefresh를 macOS guard 제거만으로 완료하지 않는다.
+- OpenRouter management-auth 예외는 원본의 first-party ID·secure key·GET·HTTPS·정확한 host/path·port/userinfo/fragment 거부 조건을 지킨다. authoring API 정리 중 일반 user plugin 권한으로 확대하지 않는다.
+- 파일 책임 미분류 0은 파일 분류 결과다. 전수 기능 의미 검증 완료 boolean은 두지 않는다. 추출 범주 검사 통과, 원본 불일치, 구현 상태, Windows 실행 상태를 별도로 기록한다.
 
-C ABI 선택 시 x64 calling convention, export symbol, ABI version/size, status/error code, UTF-8 buffer의 명시적 길이, Swift allocate/free 쌍을 고정한다. callback context 수명·재진입 규칙·cancel race·DLL unload 전 drain을 문서화하고 concurrent subscribe/cancel/shutdown stress를 수행한다. Swift trap은 동일 프로세스 UI도 종료시키므로 장애 격리가 필요하면 named-pipe backend를 선택한다. Swift runtime DLL 배포/업데이트 원자성도 실증한다. 1,000회 순차 호출 통과만으로 확정하지 않는다.
+## 11. 3차 검토로 고정한 행동 및 OS 적응
 
-SQLite는 G1에서 pinned amalgamation 정적 링크와 pinned DLL/import-lib를 비교해 하나를 선택한다. 선택 결과에는 버전·라이선스·업데이트 방법·DLL 검색 경로·WAL 동시 app/CLI·한글 경로 증거를 남긴다.
+[3차 검토](TERTIARY-AUDIT-2026-09-12.ko.md)와 BC-001~025를 P1~P4의 필수 fixture 입력으로 사용한다. 단순 source/옵션/선택 control 존재만으로 완료하지 않는다.
 
-Host 경계 후보: ProcessLauncher, ProcessTreeController, InteractiveTerminal, CredentialStore, BrowserProfileLocator, BrowserSecretDecryptor, SocketListener, ExecutableLocator, ApplicationDataPaths, WindowFocuser, PowerSignals, Notifier. 이는 생성 완료한 API가 아니라 실제 호출부를 묶을 책임 목록이다. 필요 없는 추상화는 만들지 않고 WinSDK 호출이 provider 파서 안으로 퍼지지 않도록 한다.
-
-기본 데이터 경로 제안은 LOCALAPPDATA/CodexBar이며 portable config override를 보존한다. W02/W14의 APPDATA 표기는 Windows 사용자 데이터 경로 후보를 뜻한다. G1에서 최종 경로/마이그레이션/리소스 resolver를 확정하고 비밀 저장을 roaming에 의존시키지 않는다.
-
-## 11. 계획 검토의 남은 작업과 실행 경계
-
-현재 승인된 실행 범위는 분석 문서 수정이다. G1~G7 prototype도 아직 실행 승인이 없으며, 향후 구현 지시 후 시작한다. W01~W16의 본 구현 착수 조건은 해당 기능의 포크 기준 계약·의존성·실행 가능한 검증 계획 및 독립 필수 수정 종결이다. 전체 기능 계획이 OK라는 보고는 모든 기능과 전체 repo 검토 게이트가 통과한 후에만 한다.
-
-다음 분석 담당은 영역별 원본 분석자(Core/providers, UI/runtime, CLI/integrations, build/dependencies)이며 통합 담당이 feature ID와 source coverage를 연결하고 별도 검토자가 판정한다. 산출물은 fork-parity 아래의 개별 기능 계약 ledger와 파일별 검토 ledger다. 기존 569행 각각에 entrypoint/settings/error/test/Windows adapter를 채우고 새 발견 기능은 새 ID로 추가한다. 74개 변경 파일은 직접 참조뿐 아니라 호출자·소비자·테스트에 대한 영향 연결을 남긴다. 미연결 entrypoint/설정/오류·미분류 tracked file·미해결 독립 필수 수정이 모두 0일 때 분석을 종결한다. 파일 수/후보 수 감소만으로 의미 검토를 통과시키지 않는다.
-
-독립 검토 결과: 방향은 유효하나 실행 준비된 전체 이식 계획은 아직 NOT_OK. 경로 표기·프로세스 결정의 조건부 표현·실행 경계·다음 분석 산출물에 대한 지적을 반영했다. 나머지 전수 계약 검토는 미완료이며 이 개정본을 최종 승인으로 표시하지 않는다.
-
-## 12. 사용자 실행 승인 및 검증 조건 변경 (2026-09-09)
-
-사용자가 이 계획에 따른 구현을 명시적으로 승인했다. 앞선 분석 전용/착수 대기 문구는 현재 승인 범위를 제한하지 않는다. 기능 계약을 실제 구현과 함께 보강하며 진행한다. 다만 현재 macOS 환경에서는 실제 검증 없이 코드 비교만 수행하도록 요청했다. 따라서 빌드·테스트 실행·앱 실행·실계정·성능·원격 Windows 검증은 하지 않는다. 앞선 G1~G7 실행 실증은 향후 별도 검증 때의 체크리스트로 남기고, 현재는 해당 구현과 원본 계약의 정적 비교로만 판정한다. C ABI/프로세스 선택도 실측 확정으로 표현하지 않는다.
-
-구현 및 반복 QA 상태는 IMPLEMENTATION-STATE.json에 기록한다. codexbar-windows-qa 루틴은 10분마다 구현을 이어가고, 구현 후보가 모두 갖춰지면 원본 고정 커밋과 Windows 코드의 전체 기능 비교 QA로 전환한다. 부족하면 다시 구현한다. 정적 비교 완료를 제품 실행/성능/실계정 동등성 증명으로 표현하지 않는다. commit/push/PR과 삭제는 이번 승인에 포함하지 않는다.
+- 일반 위젯의 원본 선택지 17개, BurnDown provider 2개/window 2개, Metric 3개와 원본 정보 밀도에 대응한다.
+- 원격 peer의 OS와 원격 shell/CLI 실행 경로를 보존·설정한다. Windows peer를 제외하거나 Windows remote에 `sh -lc`를 실행하는 구조로 완료하지 않는다. 데이터 프로토콜 v2/v1과 transport OS 선택은 분리한다.
+- TOON은 usage 전용, guard의 blocked/unknown/invalid와 fail-open을 구분한다. 원본 출력 형식·종료 코드를 Windows 관행으로 임의 통합하지 않는다.
+- 설정의 새 설치/이전 설치/잘못된 값·기존 값과 동의 상태를 구분한다. 초기화 함수 호출 위치만 연결하고 기본값 검증 완료라 하지 않는다.
+- 화면 데이터, Spend export DTO, dashboard-v1 및 내부 CSV API의 범위를 분리한다. 기존 export에 없는 필드를 추가하려면 schema 확장으로 명시하며 원본 이식 완료의 근거로 소급하지 않는다.

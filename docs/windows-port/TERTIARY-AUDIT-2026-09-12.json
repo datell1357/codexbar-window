@@ -1,0 +1,93 @@
+{
+  "baseline": "928166f899471bbdcb72210641cdec91324d0154",
+  "status": "PASS_DEFINED_SOURCE_AND_PLAN_CHECKS",
+  "widget_provider_ids": [
+    "codex",
+    "claude",
+    "gemini",
+    "alibaba",
+    "alibabatokenplan",
+    "qwencloud",
+    "antigravity",
+    "cursor",
+    "zai",
+    "copilot",
+    "devin",
+    "minimax",
+    "kilo",
+    "opencode",
+    "opencodego",
+    "mistral",
+    "kimi"
+  ],
+  "widget_families": {
+    "CodexBarSwitcherWidget": [
+      "systemSmall",
+      "systemMedium",
+      "systemLarge"
+    ],
+    "CodexBarUsageWidget": [
+      "systemSmall",
+      "systemMedium",
+      "systemLarge"
+    ],
+    "CodexBarHistoryWidget": [
+      "systemMedium",
+      "systemLarge"
+    ],
+    "CodexBarCompactWidget": [
+      "systemSmall"
+    ],
+    "CodexBarBurnDownWidget": [
+      "systemMedium"
+    ],
+    "CodexBarCombinedBurnDownWidget": [
+      "systemMedium"
+    ]
+  },
+  "conditional_metrics": [
+    "session",
+    "weekly",
+    "scopedWeekly",
+    "automatic",
+    "primaryLane",
+    "secondaryLane",
+    "tertiaryLane",
+    "sessionResetsIn",
+    "weeklyResetsIn",
+    "scopedWeeklyResetsIn",
+    "automaticResetsIn",
+    "sessionPace",
+    "weeklyPace",
+    "automaticPace",
+    "runsOutIn",
+    "balance",
+    "costToday",
+    "cost30d"
+  ],
+  "enumerated_choice_rows": 412,
+  "behavior_contract_count": 25,
+  "spend_export_fields": [
+    "coverage",
+    "currencyCode",
+    "displayName",
+    "groups",
+    "hiddenSourceIDs",
+    "id",
+    "meteredCost",
+    "modelName",
+    "models",
+    "provenance",
+    "provider",
+    "providers",
+    "requestedDays",
+    "selectedDay",
+    "sourceKind",
+    "tokenMix",
+    "totalCost",
+    "totalTokens"
+  ],
+  "windows_remote_adaptation_required": true,
+  "execution": "NOT_RUN",
+  "all_files_semantically_verified": false
+}

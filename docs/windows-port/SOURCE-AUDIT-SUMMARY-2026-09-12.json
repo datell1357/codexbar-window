@@ -1,0 +1,17 @@
+{
+  "baseline": "928166f899471bbdcb72210641cdec91324d0154",
+  "inspected_head": "80f6b484b0388877a3cf5f886aa0ad850c59779c",
+  "tracked_entries": 2844,
+  "provider_ids": 69,
+  "providers_without_descriptor_match": [],
+  "disposition_counts": {
+    "REVIEW_RESOURCE_BUILD_LICENSE": 76,
+    "REVIEW_TEST_OR_TOOL_PLATFORM": 1184,
+    "REUSE_OR_ADAPT_FOR_WINDOWS": 716,
+    "EXTRACT_BEHAVIOR_THEN_RETIRE_MAC_HOST": 568,
+    "PORT_CLI_CONTRACT": 40,
+    "REFERENCE_DOCUMENTATION": 260
+  },
+  "apple_import_file_count": 443,
+  "warning": "Inventory is mechanical, not whole-source semantic review. Provider path lists may overlap where descriptors share folders."
+}
