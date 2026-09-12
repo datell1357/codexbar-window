@@ -55,6 +55,16 @@ public struct RemoteSessionTarget: Codable, Equatable, Sendable, Identifiable {
         self.init(host: host, platform: platform)
     }
 
+    /// Pure configuration check shared with native editors; never opens a process or connection.
+    public var configurationError: String? {
+        do {
+            _ = try RemoteSessionCommandBuilder.arguments(target: self, operation: .list)
+            return nil
+        } catch {
+            return error.localizedDescription
+        }
+    }
+
     public var configurationValue: String {
         switch self.platform {
         case .windows: "windows://" + self.host

@@ -12,12 +12,14 @@ struct CodexBarWindowsMain {
 private final class WindowsTrayApplication: @unchecked Sendable {
     private let runtime: WindowsUsageRuntime
     private let sessions: WindowsAgentSessionsRuntime
+    private let remoteSessions: WindowsRemoteSessionsRuntime
     private let shutdownSignal = DispatchSemaphore(value: 0)
     private lazy var host: WindowsTrayHost = WindowsTrayHost(
         onRefresh: { [weak self] in
             guard let self else { return }
             Task { await self.runtime.refresh() }
             Task { await self.sessions.refresh() }
+            Task { await self.remoteSessions.refresh() }
         },
         onQuit: {},
         onPowerChanged: { [weak self] in
@@ -28,6 +30,7 @@ private final class WindowsTrayApplication: @unchecked Sendable {
             guard let self else { return }
             Task { await self.runtime.noteMenuOpened() }
             Task { await self.sessions.refresh() }
+            Task { await self.remoteSessions.refresh() }
         },
         onAgentSessionsSettingsChanged: { [weak self] in
             guard let self else { return }
@@ -41,10 +44,23 @@ private final class WindowsTrayApplication: @unchecked Sendable {
             guard let self else { return }
             Task { await self.sessions.focus(request) }
         },
+        onRemoteSettingsChanged: { [weak self] in
+            guard let self else { return }
+            Task { await self.remoteSessions.settingsDidChange() }
+        },
+        onRemoteRefresh: { [weak self] in
+            guard let self else { return }
+            Task { await self.remoteSessions.refresh() }
+        },
+        onRemoteFocus: { [weak self] request in
+            guard let self else { return }
+            Task { await self.remoteSessions.focus(request) }
+        },
         onPresentationSettingsChanged: { [weak self] in
             guard let self else { return }
             Task { await self.runtime.presentationSettingsDidChange() }
             Task { await self.sessions.presentationDidChange() }
+            Task { await self.remoteSessions.presentationDidChange() }
         },
         onOptionalUsageSettingsChanged: { [weak self] in
             guard let self else { return }
@@ -101,11 +117,16 @@ private final class WindowsTrayApplication: @unchecked Sendable {
     init() {
         self.runtime = WindowsUsageRuntime()
         self.sessions = WindowsAgentSessionsRuntime()
+        self.remoteSessions = WindowsRemoteSessionsRuntime()
     }
 
     func run() {
         let host = self.host
-        Task { [runtime, sessions] in
+        Task { [runtime, sessions, remoteSessions] in
+            await remoteSessions.setPublisher { [weak host] snapshot in
+                host?.postRemoteSessions(snapshot)
+            }
+            await remoteSessions.start()
             await sessions.setPublisher { [weak host] snapshot in
                 host?.postAgentSessions(snapshot)
             }
@@ -132,6 +153,7 @@ private final class WindowsTrayApplication: @unchecked Sendable {
         Task {
             await withTaskGroup(of: Void.self) { group in
                 group.addTask { await self.sessions.shutdown() }
+                group.addTask { await self.remoteSessions.shutdown() }
                 group.addTask { await self.runtime.shutdown() }
                 await group.waitForAll()
             }

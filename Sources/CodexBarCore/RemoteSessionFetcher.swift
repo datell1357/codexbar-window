@@ -92,7 +92,8 @@ public enum TailscaleStatusParser {
             guard peer["Online"] as? Bool == true,
                   let operatingSystem = peer["OS"] as? String,
                   let platform = RemoteSessionPlatform.tailscaleOS(operatingSystem),
-                  let label = self.firstDNSLabel(peer["DNSName"] as? String)
+                  let label = self.firstDNSLabel(peer["DNSName"] as? String),
+                  RemoteSessionTarget.isValidHost(label)
             else { return nil }
             let normalized = label.lowercased()
             guard !localLabels.contains(normalized), seen.insert(normalized).inserted else { return nil }
@@ -114,6 +115,12 @@ public enum TailscaleStatusParser {
     }
 }
 
+public enum RemoteSessionDiscoveryOutcome: Sendable {
+    case available([RemoteSessionTarget])
+    case unavailable(String)
+    case cancelled
+}
+
 public struct RemoteSessionFetcher: Sendable {
     public static let bundledCLIFallback = "/Applications/CodexBar.app/Contents/Helpers/CodexBarCLI"
 
@@ -123,19 +130,42 @@ public struct RemoteSessionFetcher: Sendable {
         environment: [String: String] = ProcessInfo.processInfo.environment,
         localHost: String = ProcessInfo.processInfo.hostName) async -> [String]
     {
+        guard case let .available(targets) = await self.discoverTargets(environment: environment, localHost: localHost)
+        else { return [] }
+        return targets.map { target in
+            #if os(Windows)
+            target.configurationValue
+            #else
+            target.platform == .windows ? target.configurationValue : target.host
+            #endif
+        }
+    }
+
+    public func discoverTargets(
+        environment: [String: String] = ProcessInfo.processInfo.environment,
+        localHost: String = ProcessInfo.processInfo.hostName) async -> RemoteSessionDiscoveryOutcome
+    {
         let probeEnvironment = Self.tailscaleCLIEnvironment(from: environment)
         let candidates = Self.localTailscaleBinaryCandidates(environment: environment)
             .filter { FileManager.default.isExecutableFile(atPath: $0) }
-        return await Self.firstDiscoveredHosts(candidates: candidates, localHost: localHost) { binary in
-            guard let result = try? await SubprocessRunner.run(
-                binary: binary,
-                arguments: ["status", "--json"],
-                environment: probeEnvironment,
-                timeout: 5,
-                label: "Tailscale session host discovery")
-            else { return nil }
-            return Data(result.stdout.utf8)
+        guard !Task.isCancelled else { return .cancelled }
+        guard !candidates.isEmpty else { return .unavailable("Tailscale CLI was not found.") }
+        for binary in candidates {
+            guard !Task.isCancelled else { return .cancelled }
+            do {
+                let result = try await SubprocessRunner.run(
+                    binary: binary, arguments: ["status", "--json"], environment: probeEnvironment,
+                    timeout: 5, label: "Tailscale session host discovery")
+                guard !Task.isCancelled else { return .cancelled }
+                if let targets = TailscaleStatusParser.parseTargets(
+                    from: Data(result.stdout.utf8), excludingLocalHost: localHost)
+                {
+                    return .available(targets)
+                }
+            } catch is CancellationError { return .cancelled }
+            catch { continue }
         }
+        return .unavailable("Tailscale discovery failed or is not signed in.")
     }
 
     /// Runs `tailscale status --json` on each candidate in order, falling through to the next when a
@@ -176,15 +206,19 @@ public struct RemoteSessionFetcher: Sendable {
             of: RemoteSessionHostResult.self,
             returning: [RemoteSessionHostResult].self)
         { group in
-            for target in normalized {
-                guard !Task.isCancelled else { break }
-                group.addTask {
-                    await self.fetch(target: target, environment: environment)
-                }
+            var iterator = normalized.makeIterator()
+            for _ in 0..<min(4, normalized.count) {
+                guard !Task.isCancelled, let target = iterator.next() else { break }
+                group.addTask { await self.fetch(target: target, environment: environment) }
             }
             var results: [RemoteSessionHostResult] = []
-            for await result in group {
+            while let result = await group.next() {
                 results.append(result)
+                if Task.isCancelled {
+                    group.cancelAll()
+                } else if let target = iterator.next() {
+                    group.addTask { await self.fetch(target: target, environment: environment) }
+                }
             }
             return results.sorted {
                 $0.host.localizedCaseInsensitiveCompare($1.host) == .orderedAscending

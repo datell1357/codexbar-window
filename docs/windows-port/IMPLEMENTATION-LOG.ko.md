@@ -75,3 +75,26 @@
 5. 모든 WinSDK/API/actor 수명·사용자 설정·실행 동작은 미검증이다. 새 코드로 W03/W11 전체 완료를 주장하지 않는다.
 
 다음 구현: 같은 actor와 snapshot 구조에 원격 host 설정/조회/실패를 연결하고, 로컬/원격 focus 요청을 구분한다. 그 다음 명시적 cwd와 제한된 metadata 기반 correlation을 구현한다.
+
+## IMPL-004 — 원격 세션 설정·조회·트레이 통합
+
+상태: CODE_WRITTEN_UNVERIFIED. 빌드·컴파일·테스트·앱/UI·SSH/Tailscale·실계정·검증 스크립트를 실행하지 않았다. 계약: WIN-041 / BC-020~023, W03/W04의 원격 세션 native 표면.
+
+작성한 코드:
+
+- `RemoteSessionFetcher`: available/ unavailable/cancelled discovery API로 유효한 빈 tailnet과 탐색 실패를 구분한다. typed host 조회는 최대4개 SSH 작업으로 실행하고 취소 시 나머지를 drain한다. malformed peer hostname은 파서에서 제외한다.
+- `WindowsRemoteSessionSettings`: remote enabled 기본false, discovery 선택, 수동 target/OS/선택 CLI path를 별도 버전 key로 저장한다. 최대32개 host·중복·path/OS·256KiB 저장 크기를 제한한다. 기존 agentSessionsManualHosts는 편집용으로 가져오며 unspecified OS는 명시적으로 지정해야 한다. 읽기 실패 시 저장 데이터를 덮어쓰지 않는다.
+- `WindowsRemoteSessionSettingsDialog`: native host 목록과 추가/수정/삭제, OS 선택, CLI path, remote 활성화·Tailscale discovery checkbox를 추가했다. Save에서만 저장하며 Cancel/WM_QUIT는 적용하지 않는다. 다른 row 선택 전 편집 draft를 유지·반영하고 잘못된 입력은 표시한다.
+- `WindowsRemoteSessionsRuntime`: opt-in, 60초 주기와 메뉴/수동 refresh, actor 소유 fetch/focus 작업, 세대별 late-result 차단·설정 변경/종료 취소, 호스트별 오류/이전 목록 비활성화, 원격 focus 요청을 연결했다. 최대32개 host를 새로 조회하고 popup은 최대128개 session을 표시하며 제한을 알린다. Windows/POSIX target을 focus까지 유지한다.
+- `WindowsTrayHost`/`WindowsMain`: 별도 remote submenu, host settings dialog, 목록·오류·포커스 callback과 publisher/lifecycle을 연결했다. modal editor 동안 nested popup을 막고 닫힌 뒤 mailbox를 깨운다. hidePersonalInfo에서는 호스트/프로젝트명 대신 일반 label을 표시하고 raw SSH 오류는 메뉴에 노출하지 않는다.
+- `Package.swift`: native editor font에 필요한 Windows Gdi32 링크를 추가했다. 새 외부 패키지는 없다.
+
+남은 범위:
+
+1. Windows Terminal exact-tab focus, Desktop/IDE·cwd/대화/project/activity metadata 매칭. Remote CLI 성공은 요청 수락으로 표시하며 실제 tab 선택을 보장하지 않는다.
+2. 32개 초과 peer/128개 초과 session의 전체 탐색 UI·pagination. 현재 제한 안내와 수동 host 선택만 제공한다.
+3. 호스트별 새 SSH 인증 설정·키 설치·자동 로그인은 추가하지 않았다. 기존 SSH batch-mode 환경을 사용하며 인증 실패는 unavailable이다.
+4. malformed 저장 데이터의 native 복구 editor, per-host scan progress, 즉시 오류 toast/접근성/고DPI/현지화 확장은 미완료다.
+5. 설정 저장, Win32 dialog/메뉴, actor 종료, SSH 동시성 및 실제 Windows/POSIX 실행 모두 미검증이다.
+
+다음 구현: Windows 로컬 session의 명시적 cwd/경로 옵션과 제한된 metadata를 연결해 PID-only 표시를 보강한다. 원격 대형 목록의 pagination과 native 표시 범위는 별도 단계로 진행한다.

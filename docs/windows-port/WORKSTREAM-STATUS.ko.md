@@ -1,5 +1,7 @@
 # Windows 전용 제품 작업 현황
 
+IMPL-004: remote host OS/CLI path editor와 opt-in discovery/60초 조회/트레이 목록·오류·typed focus 연결을 작성했다. 미검증이며 대형 목록 pagination·metadata·exact-tab·UI 품질 작업은 남았다. [구현 로그](IMPLEMENTATION-LOG.ko.md) 참고.
+
 IMPL-003: structured Windows scan outcome과 opt-in 로컬 세션 actor/30초 주기/트레이 목록·focus 연결을 작성했다. 오류 시 이전 목록을 비활성화하며 late-result/종료 처리를 추가했다. 미검증이고 원격 통합·metadata·정확한 tab focus는 남아 있다. [구현 로그](IMPLEMENTATION-LOG.ko.md) 참고.
 
 IMPL-002: Windows live CLI PID/생성 시각 세션 및 보수적인 root/ancestor 창 활성화 코드를 연결했다. 미검증이며 cwd/대화 매칭·Desktop/IDE·정확한 탭 focus·트레이 session 통합은 남았다. 현재 구현 상태는 [로그](IMPLEMENTATION-LOG.ko.md)를 따른다.

@@ -287,6 +287,7 @@ let package = Package(
             swiftSettings: [.enableUpcomingFeature("StrictConcurrency")],
             linkerSettings: sqlite3LinkerSettings + [
                 .linkedLibrary("User32"),
+                .linkedLibrary("Gdi32"),
                 .linkedLibrary("Shell32"),
                 .linkedLibrary("Ws2_32"),
             ]))

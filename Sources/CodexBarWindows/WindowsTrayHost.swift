@@ -23,6 +23,9 @@ public final class WindowsTrayHost: @unchecked Sendable {
     public typealias CodexWebSettingsSaveHandler = @Sendable (UInt64, WindowsCodexWebSettingsPatch) -> Void
     public typealias QuitHandler = @Sendable () -> Void
 
+    private static let remoteSettingsCommand = UINT_PTR(0x7502)
+    private static let remoteRefreshCommand = UINT_PTR(0x7503)
+    private static let remoteSessionCommandBase = UINT_PTR(0x7800)
     private static let agentSessionsToggleCommand = UINT_PTR(0x7500)
     private static let agentSessionsRefreshCommand = UINT_PTR(0x7501)
     private static let agentSessionCommandBase = UINT_PTR(0x7600)
@@ -60,6 +63,12 @@ public final class WindowsTrayHost: @unchecked Sendable {
         "TaskbarCreated".withCString(encodedAs: UTF16.self) { RegisterWindowMessageW($0) }
     }()
 
+    private let onRemoteSettingsChanged: @Sendable () -> Void
+    private let onRemoteRefresh: @Sendable () -> Void
+    private let onRemoteFocus: @Sendable (WindowsRemoteFocusRequest) -> Void
+    private var mailboxRemoteSessions: WindowsRemoteSessionMenuSnapshot = .disabled
+    private var popupRemoteCommands: [UINT_PTR: WindowsRemoteFocusRequest] = [:]
+    private var remoteEditorOpen = false
     private let onAgentSessionsSettingsChanged: @Sendable () -> Void
     private let onAgentSessionsRefresh: @Sendable () -> Void
     private let onAgentSessionFocus: @Sendable (WindowsSessionFocusRequest) -> Void
@@ -153,6 +162,9 @@ public final class WindowsTrayHost: @unchecked Sendable {
         onAgentSessionsSettingsChanged: @escaping @Sendable () -> Void = {},
         onAgentSessionsRefresh: @escaping @Sendable () -> Void = {},
         onAgentSessionFocus: @escaping @Sendable (WindowsSessionFocusRequest) -> Void = { _ in },
+        onRemoteSettingsChanged: @escaping @Sendable () -> Void = {},
+        onRemoteRefresh: @escaping @Sendable () -> Void = {},
+        onRemoteFocus: @escaping @Sendable (WindowsRemoteFocusRequest) -> Void = { _ in },
         onPresentationSettingsChanged: @escaping PresentationSettingsChangedHandler = {},
         onOptionalUsageSettingsChanged: @escaping OptionalUsageSettingsChangedHandler = {},
         onRefreshSettingsChanged: @escaping RefreshSettingsChangedHandler = {},
@@ -164,6 +176,9 @@ public final class WindowsTrayHost: @unchecked Sendable {
         onCodexWebSettingsSave: @escaping CodexWebSettingsSaveHandler = { _, _ in },
         onPredictivePaceWarningSettingsChanged: @escaping PredictivePaceWarningSettingsChangedHandler = { _ in })
     {
+        self.onRemoteSettingsChanged = onRemoteSettingsChanged
+        self.onRemoteRefresh = onRemoteRefresh
+        self.onRemoteFocus = onRemoteFocus
         self.onAgentSessionsSettingsChanged = onAgentSessionsSettingsChanged
         self.onAgentSessionsRefresh = onAgentSessionsRefresh
         self.onAgentSessionFocus = onAgentSessionFocus
@@ -280,6 +295,15 @@ public final class WindowsTrayHost: @unchecked Sendable {
     /// Publishes rows and structured provider actions atomically. The action
     /// list is copied into the next popup, preventing a refreshed snapshot from
     /// reusing command IDs that belonged to an older menu.
+    public func postRemoteSessions(_ snapshot: WindowsRemoteSessionMenuSnapshot) {
+        self.mailboxLock.lock()
+        guard !self.quitInvoked else { self.mailboxLock.unlock(); return }
+        self.mailboxRemoteSessions = snapshot
+        let hwnd = self.window
+        self.mailboxLock.unlock()
+        if let hwnd { PostMessageW(hwnd, Self.wakeMessage, 0, 0) }
+    }
+
     public func postAgentSessions(_ snapshot: WindowsSessionMenuSnapshot) {
         self.mailboxLock.lock()
         guard !self.quitInvoked else {
@@ -439,13 +463,16 @@ public final class WindowsTrayHost: @unchecked Sendable {
     }
 
     private func popup() {
+        guard !self.remoteEditorOpen else { return }
         guard let hwnd = self.window, let menu = CreatePopupMenu() else { return }
         self.onMenuOpen()
         self.mailboxLock.lock()
         let rows = self.mailboxRows
         let menuEntries = self.mailboxMenuEntries
         let agentSessions = self.mailboxAgentSessions
+        let remoteSessions = self.mailboxRemoteSessions
         self.mailboxLock.unlock()
+        self.popupRemoteCommands.removeAll(keepingCapacity: true)
         self.popupAgentSessionCommands.removeAll(keepingCapacity: true)
         self.popupStatusCommands.removeAll(keepingCapacity: true)
         self.popupDashboardCommands.removeAll(keepingCapacity: true)
@@ -626,6 +653,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
             _ = AppendMenuW(menu, changelogFlags, Self.changelogCommandBase - 1, $0)
         }
         self.appendAgentSessionsMenu(to: menu, snapshot: agentSessions)
+        self.appendRemoteSessionsMenu(to: menu, snapshot: remoteSessions)
         self.appendRefreshFrequencyMenu(to: menu)
         self.appendLowPowerModeMenu(to: menu)
         _ = AppendMenuW(menu, UINT(MF_SEPARATOR), 0, nil)
@@ -635,7 +663,8 @@ public final class WindowsTrayHost: @unchecked Sendable {
         var point = POINT()
         guard GetCursorPos(&point) != 0 else {
             _ = DestroyMenu(menu)
-            self.popupAgentSessionCommands.removeAll(keepingCapacity: true)
+            self.popupRemoteCommands.removeAll(keepingCapacity: true)
+        self.popupAgentSessionCommands.removeAll(keepingCapacity: true)
         self.popupStatusCommands.removeAll(keepingCapacity: true)
             self.popupDashboardCommands.removeAll(keepingCapacity: true)
             self.popupChangelogCommands.removeAll(keepingCapacity: true)
@@ -646,6 +675,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
         let command = TrackPopupMenu(menu, UINT(TPM_RIGHTBUTTON | TPM_RETURNCMD), point.x, point.y, 0, hwnd, nil)
         _ = DestroyMenu(menu)
         if command != 0 { self.dispatchCommand(UINT_PTR(command)) }
+        self.popupRemoteCommands.removeAll(keepingCapacity: true)
         self.popupAgentSessionCommands.removeAll(keepingCapacity: true)
         self.popupStatusCommands.removeAll(keepingCapacity: true)
         self.popupDashboardCommands.removeAll(keepingCapacity: true)
@@ -685,6 +715,57 @@ public final class WindowsTrayHost: @unchecked Sendable {
         else { _ = DestroyMenu(submenu) }
     }
 
+    private func appendRemoteSessionsMenu(to menu: HMENU, snapshot: WindowsRemoteSessionMenuSnapshot) {
+        guard let submenu = CreatePopupMenu() else { return }
+        var commands: [UINT_PTR: WindowsRemoteFocusRequest] = [:]
+        func append(_ title: String, _ flags: UINT, _ command: UINT_PTR) -> Bool {
+            title.withCString(encodedAs: UTF16.self) { AppendMenuW(submenu, flags, command, $0) != 0 }
+        }
+        var succeeded = append("Remote host settings…", UINT(MF_STRING), Self.remoteSettingsCommand)
+        if snapshot.enabled {
+            succeeded = succeeded && append("Refresh remote sessions", UINT(MF_STRING), Self.remoteRefreshCommand)
+        }
+        for message in snapshot.messages.prefix(64) {
+            let title = message.replacingOccurrences(of: "&", with: "&&")
+            succeeded = succeeded && append(title, UINT(MF_STRING | MF_GRAYED), 0)
+        }
+        for (index, row) in snapshot.rows.prefix(128).enumerated() {
+            let command = Self.remoteSessionCommandBase + UINT_PTR(index)
+            succeeded = succeeded && append(row.title, UINT(MF_STRING) | (row.isEnabled ? 0 : UINT(MF_GRAYED)), command)
+            if row.isEnabled { commands[command] = row.request }
+        }
+        let title = snapshot.enabled ? "Remote sessions (\(snapshot.rows.count))" : "Remote sessions (off)"
+        let attached = succeeded && title.withCString(encodedAs: UTF16.self) {
+            AppendMenuW(menu, UINT(MF_STRING | MF_POPUP), UINT_PTR(UInt(bitPattern: submenu)), $0) != 0
+        }
+        if attached { self.popupRemoteCommands = commands } else { _ = DestroyMenu(submenu) }
+    }
+
+    private func editRemoteSettings() {
+        guard !self.remoteEditorOpen, !self.quitInvoked, let window = self.window else { return }
+        guard case .idle = self.providerEditorPhase, case .idle = self.codexWebSettingsEditorPhase else { return }
+        self.remoteEditorOpen = true
+        defer {
+            self.remoteEditorOpen = false
+            if !self.quitInvoked { PostMessageW(window, Self.wakeMessage, 0, 0) }
+        }
+        do {
+            let settings = try WindowsRemoteSessionSettings.load(from: self.presentationDefaults)
+            guard let updated = WindowsRemoteSessionSettingsDialog.show(owner: window, settings: settings),
+                  !self.quitInvoked
+            else { return }
+            try updated.save(to: self.presentationDefaults)
+            self.onRemoteSettingsChanged()
+        } catch {
+            let message = error.localizedDescription
+            message.withCString(encodedAs: UTF16.self) { text in
+                "Remote settings could not be saved".withCString(encodedAs: UTF16.self) { title in
+                    _ = MessageBoxW(window, text, title, UINT(MB_OK | MB_ICONERROR))
+                }
+            }
+        }
+    }
+
     private func invokeQuit() {
         self.quotaWarningOverlay?.dismiss()
         self.quotaWarningOverlay = nil
@@ -696,6 +777,8 @@ public final class WindowsTrayHost: @unchecked Sendable {
         }
         self.quitInvoked = true
         self.mailboxAgentSessions = .disabled
+        self.mailboxRemoteSessions = .disabled
+        self.popupRemoteCommands.removeAll()
         self.popupAgentSessionCommands.removeAll()
         self.providerEditorPhase = .idle
         self.providerEditorExpectedRequest = nil
@@ -941,6 +1024,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
     }
 
     private func dispatchCommand(_ command: UINT_PTR) {
+        if let request = self.popupRemoteCommands[command] { self.onRemoteFocus(request); return }
         if let request = self.popupAgentSessionCommands[command] {
             self.onAgentSessionFocus(request)
             return
@@ -962,6 +1046,8 @@ public final class WindowsTrayHost: @unchecked Sendable {
             return
         }
         switch command {
+        case Self.remoteSettingsCommand: self.editRemoteSettings()
+        case Self.remoteRefreshCommand: self.onRemoteRefresh()
         case Self.agentSessionsToggleCommand:
             let enabled = self.presentationDefaults.object(forKey: "agentSessionsEnabled") as? Bool ?? false
             self.presentationDefaults.set(!enabled, forKey: "agentSessionsEnabled")
@@ -1185,6 +1271,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
         }
         let host = Unmanaged<WindowsTrayHost>.fromOpaque(UnsafeRawPointer(bitPattern: UInt(pointer))!).takeUnretainedValue()
         if message == Self.wakeMessage {
+            if host.remoteEditorOpen { return 0 }
             host.drainProviderQuotaWarningEditor()
             host.drainCodexWebSettingsEditor()
             host.drainSessionQuotaNotifications()
