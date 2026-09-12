@@ -26,8 +26,8 @@
   "static_qa_status": "NOT_RUN_DURING_IMPLEMENTATION",
   "windows_runtime_status": "NOT_VALIDATED",
   "completion_claim": false,
-  "latest_completed_slice": "IMPL-018 code written: local session settings/source submenu with explicit menu ownership and privacy lookup; unverified",
-  "next": "Separate concise session status from detailed diagnostics; SQLite, incremental cache and remaining Windows contracts remain pending.",
+  "latest_completed_slice": "IMPL-019 code written: concise local session status and bounded popup-snapshot details dialog; unverified",
+  "next": "Connect remote session snapshot details with host boundaries; SQLite, incremental cache and Windows validation remain pending.",
   "inventory": {
     "baseline_entries": 2844,
     "provider_ids": 69,
@@ -49,7 +49,7 @@
     "widget_provider_choices": 17
   },
   "automation_action_this_revision": "Created active thread heartbeat codexbar-windows-30 at 30-minute intervals",
-  "publication_action_this_revision": "Commit and push IMPL-018; actual commit and push output are publication evidence",
+  "publication_action_this_revision": "Commit and push IMPL-019; actual commit and push output are publication evidence",
   "historical_state_before_2026_09_12": {
     "phase": "IMPLEMENTING",
     "repository": "/Users/yeoreum/Documents/codexbar-window/fork",
@@ -331,6 +331,15 @@
       "contracts": [
         "WIN-010",
         "WIN-012",
+        "WIN-040"
+      ],
+      "status": "CODE_WRITTEN_UNVERIFIED",
+      "validation": "NOT_RUN_BY_USER_INSTRUCTION"
+    },
+    {
+      "id": "IMPL-019",
+      "contracts": [
+        "WIN-010",
         "WIN-040"
       ],
       "status": "CODE_WRITTEN_UNVERIFIED",

@@ -385,3 +385,22 @@
 2. 조회 상태 메시지는 목록에 남으며 긴 진단 문구의 별도 상세 UI는 미구현이다. SQLite, 증분 cache 및 나머지 Windows 기능·배포 검증도 남아 있다.
 
 다음 구현: session 조회 상태를 간단한 목록 요약과 별도 상세 안내로 나누어 긴 오류 문구가 세션 목록을 가리지 않게 연결한다.
+
+## IMPL-019 — 짧은 세션 상태와 snapshot 상세 보기
+
+상태: CODE_WRITTEN_UNVERIFIED. 빌드·컴파일·테스트·lint·앱·실제 계정/source/프로세스 조회·검증 스크립트를 실행하지 않았다. 계약: WIN-010/040.
+
+작성한 코드:
+
+- 로컬 세션 상태 행을 최대90 Unicode scalar 요약으로 표시하고 생략 표시를 붙인다. 전체 메시지는 Session status details 명령에서 native MessageBox로 읽도록 연결했다.
+- 상세 텍스트는 메뉴 생성 snapshot을 보관하며 메뉴가 열린 시점의 상태임을 안내한다. 조회를 새로 실행하거나 현재 mailbox 상태로 바꿔치기하지 않는다. 최대8192 scalar와 제어문자 제거를 적용하고 제한 초과는 표시한다.
+- 부착에 성공한 메뉴만 상세 값을 게시한다. popup 종료/취소/커서 조회 실패/종료의 기존 command cleanup에서 함께 제거한다. 상세 창 진입 전 값을 소비하고 기존 modal/quit/editor 상태 경계를 사용한다.
+- 원본 상태 메시지는 현재 runtime/scanner가 작성한 로컬 안내다. 세션 제목/경로/대화 본문을 상세 텍스트로 조립하지 않는다. 메뉴 요약에는 ampersand escaping을 적용한다.
+
+남은 범위:
+
+1. 원격 상세 보기, 구조화된 상태 severity와 필터, 긴 메시지용 스크롤 dialog는 미구현이다. MessageBox 표시/키보드/접근성·DPI 및 nested message loop 동작은 미검증이다.
+2. 요약은 의미 재분류가 아닌 길이 제한이다. 같은 snapshot의 텍스트를 보여주며 실제 최신 조회 성공을 증명하지 않는다.
+3. SQLite, 증분 cache와 전체 Windows 기능·실행/배포 검증은 남아 있다.
+
+다음 구현: 원격 session 상태에도 snapshot 상세 보기와 host별 경계를 연결한다. source별 데이터 소유권과 기존 focus generation을 유지한다.

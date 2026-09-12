@@ -23,6 +23,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
     public typealias CodexWebSettingsSaveHandler = @Sendable (UInt64, WindowsCodexWebSettingsPatch) -> Void
     public typealias QuitHandler = @Sendable () -> Void
 
+    private static let sessionDetailsCommand = UINT_PTR(0x752F)
     private static let claudeTitlesCommand = UINT_PTR(0x752E)
     private static let codexTitleFolderCommand = UINT_PTR(0x752B)
     private static let clearCodexTitleCommand = UINT_PTR(0x752C)
@@ -93,6 +94,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
     private let onAgentSessionsRefresh: @Sendable () -> Void
     private let onAgentSessionFocus: @Sendable (WindowsSessionFocusRequest) -> Void
     private var mailboxAgentSessions: WindowsSessionMenuSnapshot = .disabled
+    private var popupSessionDetails: String?
     private var popupAgentSessionCommands: [UINT_PTR: WindowsSessionFocusRequest] = [:]
     private let onRefresh: RefreshHandler
     private let onPowerChanged: PowerChangedHandler
@@ -506,6 +508,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
         self.popupPageCommands.removeAll(keepingCapacity: true)
         self.popupRemoteCommands.removeAll(keepingCapacity: true)
         self.popupAgentSessionCommands.removeAll(keepingCapacity: true)
+        self.popupSessionDetails = nil
         self.popupStatusCommands.removeAll(keepingCapacity: true)
         self.popupDashboardCommands.removeAll(keepingCapacity: true)
         self.popupChangelogCommands.removeAll(keepingCapacity: true)
@@ -699,6 +702,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
             self.popupPageCommands.removeAll(keepingCapacity: true)
         self.popupRemoteCommands.removeAll(keepingCapacity: true)
         self.popupAgentSessionCommands.removeAll(keepingCapacity: true)
+        self.popupSessionDetails = nil
         self.popupStatusCommands.removeAll(keepingCapacity: true)
             self.popupDashboardCommands.removeAll(keepingCapacity: true)
             self.popupChangelogCommands.removeAll(keepingCapacity: true)
@@ -712,6 +716,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
         self.popupPageCommands.removeAll(keepingCapacity: true)
         self.popupRemoteCommands.removeAll(keepingCapacity: true)
         self.popupAgentSessionCommands.removeAll(keepingCapacity: true)
+        self.popupSessionDetails = nil
         self.popupStatusCommands.removeAll(keepingCapacity: true)
         self.popupDashboardCommands.removeAll(keepingCapacity: true)
         self.popupChangelogCommands.removeAll(keepingCapacity: true)
@@ -723,6 +728,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
     private func appendAgentSessionsMenu(to menu: HMENU, snapshot: WindowsSessionMenuSnapshot) {
         guard let submenu = CreatePopupMenu() else { return }
         var commands: [UINT_PTR: WindowsSessionFocusRequest] = [:]
+        var details: String?
         func append(_ title: String, flags: UINT, command: UINT_PTR) -> Bool {
             title.withCString(encodedAs: UTF16.self) { AppendMenuW(submenu, flags, command, $0) != 0 }
         }
@@ -733,8 +739,15 @@ public final class WindowsTrayHost: @unchecked Sendable {
             succeeded = succeeded && append(
                 snapshot.isRefreshing ? "Refresh queued / scanning…" : "Refresh sessions",
                 flags: UINT(MF_STRING), command: Self.agentSessionsRefreshCommand)
-            if let message = snapshot.message {
-                succeeded = succeeded && append(message, flags: UINT(MF_STRING | MF_GRAYED), command: 0)
+            if let message = snapshot.message, !message.isEmpty {
+                let scalars = message.unicodeScalars.filter { !CharacterSet.controlCharacters.contains($0) }
+                let summary = scalars.prefix(90).map(String.init).joined() + (scalars.count > 90 ? "…" : "")
+                details = scalars.prefix(8192).map(String.init).joined() +
+                    (scalars.count > 8192 ? "\n\n[Display truncated]" : "")
+                succeeded = succeeded && append(summary.replacingOccurrences(of: "&", with: "&&"),
+                                                flags: UINT(MF_STRING | MF_GRAYED), command: 0)
+                succeeded = succeeded && append("Session status details…", flags: UINT(MF_STRING),
+                                                command: Self.sessionDetailsCommand)
             }
             for (index, item) in snapshot.rows.enumerated() {
                 let command = Self.agentSessionCommandBase + UINT_PTR(index)
@@ -748,7 +761,10 @@ public final class WindowsTrayHost: @unchecked Sendable {
         let attached = succeeded && title.withCString(encodedAs: UTF16.self) {
             AppendMenuW(menu, UINT(MF_STRING | MF_POPUP), UINT_PTR(UInt(bitPattern: submenu)), $0) != 0
         }
-        if attached { self.popupAgentSessionCommands = commands }
+        if attached {
+            self.popupAgentSessionCommands = commands
+            self.popupSessionDetails = details
+        }
         else {
             self.popupPageCommands[Self.localPreviousPageCommand] = nil
             self.popupPageCommands[Self.localNextPageCommand] = nil
@@ -886,6 +902,25 @@ public final class WindowsTrayHost: @unchecked Sendable {
 
     /// Configuration guidance only. Do not touch files or probe providers while building a menu.
     /// Each row routes to an existing setting action; nothing is automatically enabled or reset.
+    private func showSessionDetails() {
+        guard let details = self.popupSessionDetails, !self.remoteEditorOpen, !self.quitInvoked,
+              let window = self.window, case .idle = self.providerEditorPhase,
+              case .idle = self.codexWebSettingsEditorPhase else { return }
+        // Consume the captured popup message before entering a nested native message loop.
+        self.popupSessionDetails = nil
+        self.remoteEditorOpen = true
+        defer {
+            self.remoteEditorOpen = false
+            if !self.quitInvoked { PostMessageW(window, Self.wakeMessage, 0, 0) }
+        }
+        let body = "Status captured when the session menu opened. Refresh sessions to update.\n\n" + details
+        body.withCString(encodedAs: UTF16.self) { text in
+            "Local CLI session status".withCString(encodedAs: UTF16.self) { title in
+                _ = MessageBoxW(window, text, title, UINT(MB_OK | MB_ICONINFORMATION))
+            }
+        }
+    }
+
     private func sessionSourceGuidance(localEnabled: Bool) -> [(title: String, command: UINT_PTR)] {
         guard localEnabled else {
             return [("Start here: enable local CLI sessions", Self.agentSessionsToggleCommand)]
@@ -1029,6 +1064,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
         self.popupRemoteCommands.removeAll()
         self.popupPageCommands.removeAll()
         self.popupAgentSessionCommands.removeAll()
+        self.popupSessionDetails = nil
         self.providerEditorPhase = .idle
         self.providerEditorExpectedRequest = nil
         self.providerEditorMailbox = nil
@@ -1299,6 +1335,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
             return
         }
         switch command {
+        case Self.sessionDetailsCommand: self.showSessionDetails()
         case Self.sessionLabelCommandBase, Self.sessionLabelCommandBase + 1, Self.sessionLabelCommandBase + 2:
             let index = Int(command - Self.sessionLabelCommandBase)
             let style = WindowsSessionLabelStyle.allCases[index]
