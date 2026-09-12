@@ -348,3 +348,22 @@
 3. 큰 파일 증분 cache, SQLite, 신규 추론 제목, source 설정 진단 및 Windows 전체 기능·실행/배포 검증은 남아 있다.
 
 다음 구현: 세션 source 설정의 누락/비활성화 진단과 복구 경로를 보강한다. SQLite 및 나머지 Windows 기능 계약도 필수 범위로 유지한다.
+
+## IMPL-017 — session source 설정 안내와 복구 메뉴
+
+상태: CODE_WRITTEN_UNVERIFIED. 빌드·컴파일·테스트·lint·앱·실제 source/계정/프로세스 조회·검증 스크립트를 실행하지 않았다. 계약: WIN-010/012/040/042.
+
+작성한 코드:
+
+- local session 메뉴에 설정 상태별 다음 조치 행을 추가했다. local 기능이 꺼져 있으면 활성화, metadata matching이 꺼져 있으면 matching 활성화를 안내하고 기존 toggle 명령에 연결한다. 자동 활성화하지 않는다.
+- effective source를 GUI override 우선/환경변수 fallback/빈 override는 fallback 억제라는 기존 load 규칙으로 해석한다. Codex sessions/Claude projects 폴더 누락과 잘못된 absolute path, invalid title source를 해당 폴더 선택 명령으로 연결한다. Claude titles가 켜진 상태의 projects root 누락은 제목 전제 조건으로 설명한다.
+- 메뉴 생성 시 파일 존재/내용/실계정 조회를 하지 않는다. path 형식 정규화만 사용하며 오류 행에 경로/계정 내용을 출력하지 않는다. 설정 변경 후 기존 scan 취소·보강 데이터 초기화 경로를 재사용한다.
+- 폴더 override 해제 명령을 Use ... folder from environment로 바꿔 해제 후 환경변수로 복귀한다는 동작을 분명히 했다.
+
+남은 범위:
+
+1. 형식상 유효한 경로의 존재·권한·실제 source 소유권은 이 설정 안내가 확인하지 않는다. 실제 reader 오류 안내와 구분한다.
+2. GUI 행 중복/메뉴 높이·DPI·접근성·현지화와 클릭 동작은 미검증이다. 제목 source가 있어도 UUID/cwd 매칭 조건은 여전히 필요하다.
+3. SQLite, 증분 cache, 신규 추론 제목 및 나머지 Windows 기능·실행/배포 검증은 미완료다.
+
+다음 구현: session 메뉴의 설정/진단 행을 별도 submenu로 정리하여 세션 탐색 공간을 확보하고 기존 명령·설정 의미를 보존한다.

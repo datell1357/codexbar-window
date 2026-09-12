@@ -746,10 +746,10 @@ public final class WindowsTrayHost: @unchecked Sendable {
         succeeded = succeeded && append("Choose Codex sessions folder…", flags: UINT(MF_STRING), command: Self.codexSessionFolderCommand)
         succeeded = succeeded && append("Choose Claude projects folder…", flags: UINT(MF_STRING), command: Self.claudeProjectFolderCommand)
         if self.presentationDefaults.string(forKey: "windowsCodexSessionDirectory") != nil {
-            succeeded = succeeded && append("Clear Codex folder override", flags: UINT(MF_STRING), command: Self.clearCodexSessionFolderCommand)
+            succeeded = succeeded && append("Use Codex folder from environment", flags: UINT(MF_STRING), command: Self.clearCodexSessionFolderCommand)
         }
         if self.presentationDefaults.string(forKey: "windowsClaudeProjectDirectory") != nil {
-            succeeded = succeeded && append("Clear Claude folder override", flags: UINT(MF_STRING), command: Self.clearClaudeProjectFolderCommand)
+            succeeded = succeeded && append("Use Claude folder from environment", flags: UINT(MF_STRING), command: Self.clearClaudeProjectFolderCommand)
         }
         succeeded = succeeded && append("Choose folder containing Codex session_index.jsonl…",
                                         flags: UINT(MF_STRING), command: Self.codexTitleFolderCommand)
@@ -760,6 +760,9 @@ public final class WindowsTrayHost: @unchecked Sendable {
         if self.presentationDefaults.string(forKey: "windowsCodexTitleIndex") != nil {
             succeeded = succeeded && append("Use title source from environment",
                                             flags: UINT(MF_STRING), command: Self.clearCodexTitleCommand)
+        }
+        for item in self.sessionSourceGuidance(localEnabled: snapshot.enabled) {
+            succeeded = succeeded && append(item.title, flags: UINT(MF_STRING), command: item.command)
         }
         if snapshot.enabled {
             succeeded = succeeded && append(
@@ -863,6 +866,45 @@ public final class WindowsTrayHost: @unchecked Sendable {
             isRefreshing: true, rows: [], message: "Applying session metadata settings…")
         self.mailboxLock.unlock()
         self.onAgentSessionsSettingsChanged()
+    }
+
+    /// Configuration guidance only. Do not touch files or probe providers while building a menu.
+    /// Each row routes to an existing setting action; nothing is automatically enabled or reset.
+    private func sessionSourceGuidance(localEnabled: Bool) -> [(title: String, command: UINT_PTR)] {
+        guard localEnabled else {
+            return [("Start here: enable local CLI sessions", Self.agentSessionsToggleCommand)]
+        }
+        guard self.presentationDefaults.object(forKey: "windowsSessionMetadataEnabled") as? Bool ?? false else {
+            return [("To use configured metadata: enable matching", Self.sessionMetadataToggleCommand)]
+        }
+        func configured(_ key: String, _ variable: String) -> String? {
+            let value = self.presentationDefaults.string(forKey: key) ?? CodexBarPlatformPaths.environmentValue(
+                variable, environment: ProcessInfo.processInfo.environment)
+            guard let value, !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
+            return value
+        }
+        var rows: [(title: String, command: UINT_PTR)] = []
+        let codex = configured("windowsCodexSessionDirectory", "CODEXBAR_WINDOWS_CODEX_SESSIONS_ROOT")
+        let claude = configured("windowsClaudeProjectDirectory", "CODEXBAR_WINDOWS_CLAUDE_PROJECTS_ROOT")
+        if let codex {
+            do { _ = try WindowsSessionMetadataRoots(codexSessions: codex, claudeProjects: nil) }
+            catch { rows.append(("Fix invalid Codex source: choose sessions folder…", Self.codexSessionFolderCommand)) }
+        } else {
+            rows.append(("Codex metadata needs a sessions folder…", Self.codexSessionFolderCommand))
+        }
+        if let claude {
+            do { _ = try WindowsSessionMetadataRoots(codexSessions: nil, claudeProjects: claude) }
+            catch { rows.append(("Fix invalid Claude source: choose projects folder…", Self.claudeProjectFolderCommand)) }
+        } else {
+            let titles = self.presentationDefaults.object(forKey: "windowsClaudeSessionTitlesEnabled") as? Bool ?? false
+            rows.append((titles ? "Claude titles need a projects folder…" : "Claude metadata needs a projects folder…",
+                         Self.claudeProjectFolderCommand))
+        }
+        if let title = configured("windowsCodexTitleIndex", "CODEXBAR_WINDOWS_CODEX_TITLE_INDEX") {
+            do { _ = try WindowsSessionMetadataRoots(codexSessions: nil, claudeProjects: nil, codexTitleIndex: title) }
+            catch { rows.append(("Fix invalid title source: choose index folder…", Self.codexTitleFolderCommand)) }
+        }
+        return rows
     }
 
     private func codexTitleSourceLabel(hidePersonalInfo: Bool) -> String {
