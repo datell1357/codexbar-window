@@ -26,8 +26,8 @@
   "static_qa_status": "NOT_RUN_DURING_IMPLEMENTATION",
   "windows_runtime_status": "NOT_VALIDATED",
   "completion_claim": false,
-  "latest_completed_slice": "IMPL-020 code written: per-host remote status snapshot details with separate non-focus commands and privacy-aware labels; unverified",
-  "next": "Improve remote host/session page navigation, then continue remaining SQLite/title sources; Windows validation remains pending.",
+  "latest_completed_slice": "IMPL-021 code written: continuation host headers and visible session ranges on remote pages; unverified",
+  "next": "Implement explicitly configured Codex SQLite title fallback for matched UUIDs; preserve index precedence and source boundaries.",
   "inventory": {
     "baseline_entries": 2844,
     "provider_ids": 69,
@@ -49,7 +49,7 @@
     "widget_provider_choices": 17
   },
   "automation_action_this_revision": "Created active thread heartbeat codexbar-windows-30 at 30-minute intervals",
-  "publication_action_this_revision": "Commit and push IMPL-020; actual commit and push output are publication evidence",
+  "publication_action_this_revision": "Commit and push IMPL-021; actual commit and push output are publication evidence",
   "historical_state_before_2026_09_12": {
     "phase": "IMPLEMENTING",
     "repository": "/Users/yeoreum/Documents/codexbar-window/fork",
@@ -347,6 +347,15 @@
     },
     {
       "id": "IMPL-020",
+      "contracts": [
+        "WIN-010",
+        "WIN-041"
+      ],
+      "status": "CODE_WRITTEN_UNVERIFIED",
+      "validation": "NOT_RUN_BY_USER_INSTRUCTION"
+    },
+    {
+      "id": "IMPL-021",
       "contracts": [
         "WIN-010",
         "WIN-041"

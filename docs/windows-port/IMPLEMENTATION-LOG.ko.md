@@ -423,3 +423,20 @@
 3. SQLite, 증분 cache 및 전체 Windows 기능·실행/배포 검증은 계속 미완료다.
 
 다음 구현: 원격 host 상태와 세션 페이지 사이의 탐색을 보강하고, session slice 이후 SQLite/title source의 남은 구현을 이어간다.
+
+## IMPL-021 — 원격 session 연속 페이지의 host 상세
+
+상태: CODE_WRITTEN_UNVERIFIED. 빌드·컴파일·테스트·lint·앱·원격 실행·실제 source/계정 조회·검증 스크립트를 실행하지 않았다. 계약: WIN-010/041.
+
+작성한 코드:
+
+- 원격 페이지가 한 host의 session 목록 중간에서 시작하면 해당 host 상태 행을 Continued 표시로 다시 제공한다. 이전 페이지로 돌아가지 않고 기존 상세 dialog에 접근할 수 있다.
+- 상세 snapshot에 해당 페이지에서 보이는 host session의1-based 범위를 추가했다. host header만 페이지 마지막에 있고 session은 다음 페이지에 있는 경우 None on this page로 표시한다.
+- 반복 header는 표시용 문맥 행이며 전체 항목 수/offset/page range에는 더하지 않는다. 원래32개 항목 페이지당 최대1개 문맥 행이 추가될 수 있다. 기존 실제 session focus request와 host 상세 map을 재사용하고 조회를 추가 실행하지 않는다.
+
+남은 범위:
+
+1. host가 아주 많을 때의 직접 검색/점프, 전체 페이지 navigation UI와 메뉴33행 표시·DPI/접근성은 미검증이다. focus generation과 snapshot 상세 동작도 실행하지 않았다.
+2. SQLite title fallback, 증분 cache, source 소유권과 전체 Windows 기능·배포 검증은 남아 있다.
+
+다음 구현: 명시적으로 지정한 SQLite title source를 Codex의 매칭된 UUID에 한정하여 연결하는 경로를 구현한다. index 제목 우선과 source 경계를 보존한다.

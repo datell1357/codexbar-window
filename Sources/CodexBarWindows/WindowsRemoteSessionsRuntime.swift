@@ -253,7 +253,10 @@ public actor WindowsRemoteSessionsRuntime {
         for (index, host) in self.hosts.enumerated() {
             let hostID = host.host.lowercased()
             let hostLabel = hide ? "Remote host \(index + 1)" : host.host
-            if page.range.contains(offset) {
+            let firstSessionOffset = offset + 1
+            let hostEndOffset = firstSessionOffset + host.sessions.count
+            let continued = offset < page.range.lowerBound && page.range.lowerBound < hostEndOffset
+            if page.range.contains(offset) || continued {
                 let health: String
                 if self.pendingHostIDs.contains(hostID) {
                     health = "waiting for its query turn"
@@ -274,8 +277,13 @@ public actor WindowsRemoteSessionsRuntime {
                 let plainHost = hostLabel.unicodeScalars.filter { !CharacterSet.controlCharacters.contains($0) }
                     .prefix(160).map(String.init).joined()
                 let lastSuccess = self.lastSuccessAt[hostID].map { ISO8601DateFormatter().string(from: $0) } ?? "Never"
-                let details = "Host: \(plainHost)\nStatus: \(health)\nLast successful query: \(lastSuccess)\nStored sessions: \(host.sessions.count)\n\n\(action)"
-                rows.append(.init(title: caption("\(hostLabel): \(health)\(age) · details…"),
+                let visibleStart = max(firstSessionOffset, page.range.lowerBound)
+                let visibleEnd = min(hostEndOffset, page.range.upperBound)
+                let visible = visibleStart < visibleEnd ?
+                    "\(visibleStart - firstSessionOffset + 1)–\(visibleEnd - firstSessionOffset) of \(host.sessions.count)" : "None on this page"
+                let details = "Host: \(plainHost)\nStatus: \(health)\nLast successful query: \(lastSuccess)\nStored sessions: \(host.sessions.count)\nVisible sessions: \(visible)\n\n\(action)"
+                let continuation = continued ? "Continued · " : ""
+                rows.append(.init(title: caption("\(continuation)\(hostLabel): \(health)\(age) · details…"),
                                   request: nil, isEnabled: false, statusDetails: details))
             }
             offset += 1
