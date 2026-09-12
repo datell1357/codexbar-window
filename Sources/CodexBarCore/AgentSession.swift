@@ -35,6 +35,10 @@ public struct AgentSession: Codable, Equatable, Sendable, Identifiable {
     public var sessionName: String?
     public var startedAt: Date?
     public var lastActivityAt: Date?
+    /// Optional provenance supplied by Windows scanners. Missing/unknown values confer no trust.
+    /// Strings allow older readers to preserve future source kinds without failing JSON decoding.
+    public var metadataMatch: String? = nil
+    public var metadataTitleSource: String? = nil
     public var transcriptPath: String?
     public var host: String
 

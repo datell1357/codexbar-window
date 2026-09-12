@@ -103,9 +103,11 @@ enum WindowsSessionMetadataCorrelator {
                       metadata.cwd.flatMap(WindowsSessionLaunchHints.absolutePath) == WindowsSessionLaunchHints.absolutePath(cwd),
                       budget.hasTime, let after = self.fileInfo(path), before == after
                 else { unresolved = true; continue }
+                output[index].metadataMatch = "explicit_uuid"
                 output[index].transcriptPath = path
                 matchedHeaders[index] = metadata
                 output[index].sessionName = metadata.descriptiveName(threadMetadata: nil).map(WindowsSessionLaunchHints.label)
+                if output[index].sessionName != nil { output[index].metadataTitleSource = "rollout_role" }
                 output[index].lastActivityAt = min(after.modifiedAt, now)
             } else if session.provider == .claude, let root = roots.claudeProjects {
                 let folder = self.join(root, ClaudeSessionProjectMapper.escapedCWD(cwd))
@@ -114,6 +116,7 @@ enum WindowsSessionMetadataCorrelator {
                     unresolved = true; continue
                 }
                 // Base matching uses only filename, UUID, parent project mapping and file metadata.
+                output[index].metadataMatch = "explicit_uuid"
                 output[index].transcriptPath = path
                 output[index].lastActivityAt = min(info.modifiedAt, now)
                 if roots.readClaudeTitles {
@@ -122,6 +125,7 @@ enum WindowsSessionMetadataCorrelator {
                         guard let latest = self.fileInfo(path), latest == info else { throw TitleReadFailure.changed }
                         if !names.unresolvedIDs.isEmpty { claudeTitleFailures.insert(.outsideWindow) }
                         output[index].sessionName = names[id.lowercased()]
+                        output[index].metadataTitleSource = output[index].sessionName == nil ? nil : "claude_custom_title"
                     } catch {
                         claudeTitleFailures.insert((error as? TitleReadFailure) ?? .unavailable)
                     }
@@ -145,6 +149,7 @@ enum WindowsSessionMetadataCorrelator {
                         threadMetadata: names[header.sessionID.lowercased()].map {
                             CodexThreadMetadata(title: $0, agentPath: nil)
                         }).map(WindowsSessionLaunchHints.label)
+                    if names[header.sessionID.lowercased()] != nil { output[index].metadataTitleSource = "codex_title_index" }
                 }
             } catch {
                 let failure = (error as? TitleReadFailure) ?? .unavailable
@@ -218,8 +223,10 @@ enum WindowsSessionMetadataCorrelator {
                     }
                     guard candidates.count == 1, let match = candidates.first, budget.hasTime,
                           let latest = self.fileInfo(match.path), latest == match.info else { continue }
+                    output[index].metadataMatch = "inferred_cwd_time"
                     output[index].transcriptPath = match.path
                     output[index].sessionName = match.name
+                    if match.name != nil { output[index].metadataTitleSource = "rollout_role" }
                     output[index].lastActivityAt = match.info.modifiedAt
                     output[index].state = config.state(lastActivityAt: match.info.modifiedAt, now: now, hasLiveProcess: true)
                     inferredCount += 1
@@ -244,6 +251,7 @@ enum WindowsSessionMetadataCorrelator {
                     }
                     guard complete, candidates.count == 1, let match = candidates.first, budget.hasTime,
                           let latest = self.fileInfo(match.path), latest == match.info else { continue }
+                    output[index].metadataMatch = "inferred_cwd_time"
                     output[index].transcriptPath = match.path
                     output[index].lastActivityAt = match.info.modifiedAt
                     output[index].state = config.state(lastActivityAt: match.info.modifiedAt, now: now, hasLiveProcess: true)

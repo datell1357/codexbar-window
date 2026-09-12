@@ -252,7 +252,8 @@ public actor WindowsAgentSessionsRuntime {
             let detail = label.map { "\($0) · \(process)" } ?? process
             let provider = session.dialect?.rawValue ?? session.provider.rawValue
             // Ampersands are Win32 menu mnemonic markers; session titles are plain text.
-            let title = "\(provider) · \(detail)".replacingOccurrences(of: "&", with: "&&")
+            let provenance = WindowsSessionLabelStyle.metadataLabel(session).map { " \($0)" } ?? ""
+            let title = "\(provider) · \(detail)\(provenance)".replacingOccurrences(of: "&", with: "&&")
             return WindowsSessionMenuItem(
                 title: title,
                 request: .init(sessionID: session.id, generation: self.generation),

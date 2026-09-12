@@ -272,7 +272,8 @@ public actor WindowsRemoteSessionsRuntime {
             for session in host.sessions {
                 if page.range.contains(offset) {
                     let detail = style.label(session, hidePersonalInfo: hide) ?? session.provider.rawValue
-                    rows.append(.init(title: caption("\(hostLabel) · \(detail)"),
+                    let provenance = WindowsSessionLabelStyle.metadataLabel(session).map { " \($0)" } ?? ""
+                    rows.append(.init(title: caption("\(hostLabel) · \(detail)\(provenance)"),
                                       request: WindowsRemoteFocusRequest(hostID: hostID, sessionID: session.id, generation: self.generation),
                                       isEnabled: host.error == nil && host.target != nil))
                 }

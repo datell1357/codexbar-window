@@ -95,6 +95,10 @@ public enum WindowsAgentSessionScanner {
                 lastActivityAt: metadata?.modifiedAt,
                 transcriptPath: metadata?.path,
                 host: ProcessInfo.processInfo.hostName))
+            if metadata != nil {
+                sessions[sessions.count - 1].metadataMatch = "explicit_file"
+                if metadata?.title != nil { sessions[sessions.count - 1].metadataTitleSource = "session_header" }
+            }
         }
         guard !Task.isCancelled else { return .init(status: .cancelled, sessions: [], message: nil) }
         if unavailableExplicitMetadata {

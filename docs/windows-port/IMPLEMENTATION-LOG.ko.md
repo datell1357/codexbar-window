@@ -329,3 +329,22 @@
 3. SQLite fallback, 신규 추론 제목, source/profile 소유권, full Windows UI/플랫폼 및 배포 검증은 계속 미완료다.
 
 다음 구현: 제목·파일 metadata의 세션별 출처 표시와 실제 source 설정 진단을 이어간다. 큰 파일의 cache/증분 처리 및 SQLite도 남은 필수 범위다.
+
+## IMPL-016 — 세션별 metadata/title 출처 표시
+
+상태: CODE_WRITTEN_UNVERIFIED. 빌드·컴파일·테스트·lint·앱·실제 source/계정/프로세스 조회·검증 스크립트를 실행하지 않았다. 계약: WIN-010/040/041/042.
+
+작성한 코드:
+
+- AgentSession에 optional metadataMatch/metadataTitleSource 문자열을 추가했다. Windows scanner/correlator가 explicit_uuid, explicit_file, inferred_cwd_time 및 session_header/rollout_role/codex_title_index/claude_custom_title 출처를 성공 지점에서 기록한다. PID focus authority와 source/provider 필드는 바꾸지 않는다.
+- 기존 Codable JSON 출력에 optional 출처를 전달한다. 필드가 없는 기존 데이터는 nil이며 문자열을 사용해 미래 source kind를 보존하도록 작성했다. 실제 구버전 클라이언트와 wire 호환성은 미검증이다.
+- Windows 로컬/원격 행에 고정 출처 문구를 추가했다. 알 수 없는 값이나 nil은 표시하지 않고, 알려진 값만 사람이 읽는 문구로 바꾼다. 개인정보 숨김 상태에도 실제 경로·UUID·제목을 포함하지 않는 출처 종류만 표시한다.
+- 제목 읽기 실패/기본 project fallback에는 제목 출처를 임의로 부여하지 않는다. 신규 추론은 행별로 Inferred metadata라고 명시한다. source 표시는 연결 방법이며 target profile 소유권 검증을 뜻하지 않는다.
+
+남은 범위:
+
+1. 원격 provenance는 원격 CLI가 선언한 정보다. 암호학적 소유권 증명이 아니며 포커스 권한 근거로 사용하지 않는다. 원격 긴 행은 기존 caption 길이 제한에 의해 잘릴 수 있다.
+2. JSON 추가 필드와 기존 CLI 소비자 호환성, Win32 메뉴 폭/접근성/현지화/개인정보 표시 동작은 미검증이다.
+3. 큰 파일 증분 cache, SQLite, 신규 추론 제목, source 설정 진단 및 Windows 전체 기능·실행/배포 검증은 남아 있다.
+
+다음 구현: 세션 source 설정의 누락/비활성화 진단과 복구 경로를 보강한다. SQLite 및 나머지 Windows 기능 계약도 필수 범위로 유지한다.

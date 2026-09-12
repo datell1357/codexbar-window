@@ -34,6 +34,26 @@ enum WindowsSessionLabelStyle: String, CaseIterable {
         }
     }
 
+    /// Fixed labels only: no paths, UUIDs, titles, or arbitrary remote strings appear here.
+    static func metadataLabel(_ session: AgentSession) -> String? {
+        let match: String
+        switch session.metadataMatch {
+        case "explicit_uuid": match = "UUID metadata"
+        case "explicit_file": match = "Selected-file metadata"
+        case "inferred_cwd_time": match = "Inferred metadata"
+        default: return nil
+        }
+        let title: String?
+        switch session.metadataTitleSource {
+        case "session_header": title = "header title"
+        case "rollout_role": title = "role name"
+        case "codex_title_index": title = "indexed title"
+        case "claude_custom_title": title = "custom title"
+        default: title = nil
+        }
+        return title.map { "[\(match); \($0)]" } ?? "[\(match)]"
+    }
+
     private static func clean(_ text: String?) -> String? {
         guard let text else { return nil }
         let filtered = text.unicodeScalars.filter { !CharacterSet.controlCharacters.contains($0) }
