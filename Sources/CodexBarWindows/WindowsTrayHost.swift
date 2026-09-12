@@ -728,6 +728,41 @@ public final class WindowsTrayHost: @unchecked Sendable {
         }
         let enabledFlags = UINT(MF_STRING) | (snapshot.enabled ? UINT(MF_CHECKED) : 0)
         var succeeded = append("Enable local CLI sessions", flags: enabledFlags, command: Self.agentSessionsToggleCommand)
+        succeeded = succeeded && self.appendSessionSettingsMenu(to: submenu, localEnabled: snapshot.enabled)
+        if snapshot.enabled {
+            succeeded = succeeded && append(
+                snapshot.isRefreshing ? "Refresh queued / scanning…" : "Refresh sessions",
+                flags: UINT(MF_STRING), command: Self.agentSessionsRefreshCommand)
+            if let message = snapshot.message {
+                succeeded = succeeded && append(message, flags: UINT(MF_STRING | MF_GRAYED), command: 0)
+            }
+            for (index, item) in snapshot.rows.enumerated() {
+                let command = Self.agentSessionCommandBase + UINT_PTR(index)
+                let flags = UINT(MF_STRING) | (item.isEnabled ? 0 : UINT(MF_GRAYED))
+                succeeded = succeeded && append(item.title, flags: flags, command: command)
+                if item.isEnabled { commands[command] = item.request }
+            }
+        }
+        if snapshot.enabled { succeeded = succeeded && self.appendPageControls(to: submenu, page: snapshot.page, remote: false) }
+        let title = snapshot.enabled ? "Local CLI sessions (\(snapshot.page.totalItems))" : "Local CLI sessions"
+        let attached = succeeded && title.withCString(encodedAs: UTF16.self) {
+            AppendMenuW(menu, UINT(MF_STRING | MF_POPUP), UINT_PTR(UInt(bitPattern: submenu)), $0) != 0
+        }
+        if attached { self.popupAgentSessionCommands = commands }
+        else {
+            self.popupPageCommands[Self.localPreviousPageCommand] = nil
+            self.popupPageCommands[Self.localNextPageCommand] = nil
+            _ = DestroyMenu(submenu)
+        }
+    }
+
+    private func appendSessionSettingsMenu(to menu: HMENU, localEnabled: Bool) -> Bool {
+        guard let settings = CreatePopupMenu() else { return false }
+        func append(_ title: String, flags: UINT, command: UINT_PTR) -> Bool {
+            title.withCString(encodedAs: UTF16.self) { AppendMenuW(settings, flags, command, $0) != 0 }
+        }
+        let hidePersonalInfo = self.presentationDefaults.object(forKey: "hidePersonalInfo") as? Bool ?? false
+        var succeeded = true
         let nativeDirectories = self.presentationDefaults.object(forKey: "windowsNativeSessionCwdEnabled") as? Bool ?? false
         let nativeFlags = UINT(MF_STRING) | (nativeDirectories ? UINT(MF_CHECKED) : 0)
         succeeded = succeeded && append("Read native directories (experimental, 64-bit)",
@@ -761,34 +796,15 @@ public final class WindowsTrayHost: @unchecked Sendable {
             succeeded = succeeded && append("Use title source from environment",
                                             flags: UINT(MF_STRING), command: Self.clearCodexTitleCommand)
         }
-        for item in self.sessionSourceGuidance(localEnabled: snapshot.enabled) {
+        for item in self.sessionSourceGuidance(localEnabled: localEnabled) {
             succeeded = succeeded && append(item.title, flags: UINT(MF_STRING), command: item.command)
         }
-        if snapshot.enabled {
-            succeeded = succeeded && append(
-                snapshot.isRefreshing ? "Refresh queued / scanning…" : "Refresh sessions",
-                flags: UINT(MF_STRING), command: Self.agentSessionsRefreshCommand)
-            if let message = snapshot.message {
-                succeeded = succeeded && append(message, flags: UINT(MF_STRING | MF_GRAYED), command: 0)
-            }
-            for (index, item) in snapshot.rows.enumerated() {
-                let command = Self.agentSessionCommandBase + UINT_PTR(index)
-                let flags = UINT(MF_STRING) | (item.isEnabled ? 0 : UINT(MF_GRAYED))
-                succeeded = succeeded && append(item.title, flags: flags, command: command)
-                if item.isEnabled { commands[command] = item.request }
-            }
+        let attached = succeeded && "Session settings and sources".withCString(encodedAs: UTF16.self) {
+            AppendMenuW(menu, UINT(MF_STRING | MF_POPUP), UINT_PTR(UInt(bitPattern: settings)), $0) != 0
         }
-        if snapshot.enabled { succeeded = succeeded && self.appendPageControls(to: submenu, page: snapshot.page, remote: false) }
-        let title = snapshot.enabled ? "Local CLI sessions (\(snapshot.page.totalItems))" : "Local CLI sessions"
-        let attached = succeeded && title.withCString(encodedAs: UTF16.self) {
-            AppendMenuW(menu, UINT(MF_STRING | MF_POPUP), UINT_PTR(UInt(bitPattern: submenu)), $0) != 0
-        }
-        if attached { self.popupAgentSessionCommands = commands }
-        else {
-            self.popupPageCommands[Self.localPreviousPageCommand] = nil
-            self.popupPageCommands[Self.localNextPageCommand] = nil
-            _ = DestroyMenu(submenu)
-        }
+        // Once attached the parent owns the child. On failure only this unattached menu is destroyed.
+        if !attached { _ = DestroyMenu(settings) }
+        return attached
     }
 
     private func appendSessionLabelMenu(to menu: HMENU) {

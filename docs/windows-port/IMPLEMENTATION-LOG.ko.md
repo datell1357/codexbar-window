@@ -367,3 +367,21 @@
 3. SQLite, 증분 cache, 신규 추론 제목 및 나머지 Windows 기능·실행/배포 검증은 미완료다.
 
 다음 구현: session 메뉴의 설정/진단 행을 별도 submenu로 정리하여 세션 탐색 공간을 확보하고 기존 명령·설정 의미를 보존한다.
+
+## IMPL-018 — 로컬 session 설정·source 하위 메뉴
+
+상태: CODE_WRITTEN_UNVERIFIED. 빌드·컴파일·테스트·lint·앱·실제 계정/프로세스/source 조회·검증 스크립트를 실행하지 않았다. 계약: WIN-010/012/040.
+
+작성한 코드:
+
+- local session의 native cwd, metadata/title/inference 옵션, source 선택·복귀·비활성화, source 설정 안내를 Session settings and sources 하위 메뉴로 이동했다. 최상위 local 목록에는 활성화·설정 진입·새로고침·조회 상태·세션 행·페이지 이동을 유지한다.
+- 기존 command ID와 dispatch, defaults 키 및 설정 변경 처리 경로를 재사용한다. local 기능이 꺼져 있어도 설정 하위 메뉴에 접근할 수 있다.
+- 설정 child menu를 별도 helper에서 생성한다. 부착 전 실패하면 child를 정리하고, 부착 성공 후에는 parent의 DestroyMenu 수명에 맡긴다. parent 생성 실패 경로의 기존 page command 정리를 유지한다.
+- 제목 source privacy 값을 helper 내 defaults에서 읽도록 명시했다. 이동 전 함수에는 해당 지역 값 선언이 없어 이번 소스 편집에서 함께 보완했다. UI/컴파일 검증을 수행한 것은 아니다.
+
+남은 범위:
+
+1. 실제 Win32 메뉴 수명·키보드 탐색·화면 배치·고DPI·접근성·현지화는 미검증이다. 동적 명령/페이지/scan 취소 동작도 실행하지 않았다.
+2. 조회 상태 메시지는 목록에 남으며 긴 진단 문구의 별도 상세 UI는 미구현이다. SQLite, 증분 cache 및 나머지 Windows 기능·배포 검증도 남아 있다.
+
+다음 구현: session 조회 상태를 간단한 목록 요약과 별도 상세 안내로 나누어 긴 오류 문구가 세션 목록을 가리지 않게 연결한다.
