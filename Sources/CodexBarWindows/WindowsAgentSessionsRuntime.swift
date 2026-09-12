@@ -231,7 +231,8 @@ public actor WindowsAgentSessionsRuntime {
         guard self.defaults.object(forKey: "windowsSessionMetadataEnabled") as? Bool ?? false else { return .none }
         return try WindowsSessionMetadataRoots.load(
             codexOverride: self.defaults.string(forKey: "windowsCodexSessionDirectory"),
-            claudeOverride: self.defaults.string(forKey: "windowsClaudeProjectDirectory"))
+            claudeOverride: self.defaults.string(forKey: "windowsClaudeProjectDirectory"),
+            allowNewSessions: self.defaults.object(forKey: "windowsInferNewSessionMetadataEnabled") as? Bool ?? false)
     }
 
     private func publish() {

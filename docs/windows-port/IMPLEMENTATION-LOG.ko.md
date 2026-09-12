@@ -193,3 +193,25 @@
 6. native-cwd 실험 옵션과 새 parser/correlator/설정·UI·취소 모두 미검증이다.
 
 다음 구현: explicit UUID에 한정된 경로를 source/cwd 기반의 새 세션 매칭으로 확장하되 ambiguity와 profile 소유권을 보존한다. thread title 및 non-live metadata 표시 범위는 별도 단계로 연결한다.
+
+## IMPL-009 — 신규 세션 metadata 추론 opt-in
+
+상태: CODE_WRITTEN_UNVERIFIED. 사용자 지시에 따라 빌드·컴파일·테스트·lint·앱·실제 프로세스/세션 파일 조회·검증 스크립트를 실행하지 않았다. 계약: WIN-040/042 및 Windows session 설정.
+
+작성한 코드:
+
+- `WindowsSessionLaunchHints`: 인식 가능한 옵션만 있는 신규 호출 또는 명시적 `--` prompt 경계에 한정해 추론 후보를 표시한다. bare positional/알 수 없는 grammar, resume/fork/last/continue와 explicit selector는 신규 추론 후보에서 제외한다. 기존 explicit UUID 경로를 유지한다.
+- `WindowsSessionMetadataCorrelator`: 사용자가 지정한 root에서만, 같은 provider의 모든 발견 프로세스가 known cwd이고 같은 cwd의 프로세스가 하나일 때 추론한다. Claude는 escaped project folder 키로 충돌도 묶는다. scanner가 partial이면 신규 추론 후보를 전달하지 않는다.
+- 신규 파일은 process birth 이후의 creation/mtime을 요구한다. Codex는 제한된 전체 root 열거와 header UUID/cwd/source·전후 file identity를 사용하고, Claude는 정확한 project folder의 직접 UUID JSONL 파일 metadata만 사용한다. 후보 하나와 열거 완료·시간 예산이 충족될 때만 보강한다. 추론 중 reparse 항목/읽기 실패/불완전 후보 집합은 보수적으로 포기한다.
+- GUI `Infer new-session metadata (experimental)` 및 CLI `--infer-new-sessions`를 추가했다. 기본값은 false이며 GUI에서는 metadata 전체 기능도 켜야 한다. runtime 설정 세대 비교에 새 옵션이 포함되어 변경 시 이전 보강 결과를 비우고 늦은 결과를 버린다.
+- 실제 연결이 있으면 상태 문구에 추론이며 ownership 검증이 아님을 표시한다. session ID와 focus authority는 계속 PID+creation ticks다.
+
+범위·남은 작업:
+
+1. 파일 생성/수정 시각과 cwd의 유일성은 target 프로세스의 파일 소유권 증명이 아니다. 다른 종료된 프로세스/수동 복사/동일 프로젝트의 다른 profile이 생성한 파일도 가능하므로 실험 옵션이며 실제 source/profile 소유권 확인은 미완료다.
+2. 프로세스 유일성은 현재 scanner가 인식·발견한 CLI 집합에 한정한다. 발견되지 않은 프로세스·Desktop/IDE·전체 CLI grammar는 포함하지 않는다. bare prompt는 의도적으로 추론 대상에서 제외한다.
+3. 기존 explicit UUID matching과 신규 inference는 같은 directory entry/time budget을 공유한다. 큰 Codex tree, 변경 중 header, unknown cwd peer, 반복 생성된 복수 파일에서는 연결이 생략될 수 있다. 신규 추론의 매칭률/성능은 측정하지 않았다.
+4. filesystem 열거와 file info/header 읽기는 원자적 snapshot이 아니다. 마지막 metadata 비교 이후 변경이나 ancestor junction/race 등은 Windows 구현/검증에서 추가로 다룰 범위다.
+5. thread-title DB, Claude title, file-only 세션, exact-tab focus, long-path picker, UI DPI/접근성/현지화 및 모든 Windows 빌드·실행 검증은 남아 있다. 전체 기능/배포 완료로 계산하지 않는다.
+
+다음 구현: metadata/title의 출처와 표시 경계를 이어서 구현한다. 각 구현 묶음은 검증 없이 소스·진행 문서를 함께 커밋하고 origin/main에 푸시한다.

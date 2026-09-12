@@ -8,9 +8,12 @@ struct WindowsSessionLaunchHints: Sendable {
     let workingDirectory: String?
     let sessionFile: String?
     let requestedSessionID: String?
-    init(workingDirectory: String?, sessionFile: String?, requestedSessionID: String? = nil) {
+    let allowsNewSessionCorrelation: Bool
+    init(workingDirectory: String?, sessionFile: String?, requestedSessionID: String? = nil,
+         allowsNewSessionCorrelation: Bool = false) {
         self.workingDirectory = workingDirectory; self.sessionFile = sessionFile
         self.requestedSessionID = requestedSessionID
+        self.allowsNewSessionCorrelation = allowsNewSessionCorrelation
     }
     static let empty = Self(workingDirectory: nil, sessionFile: nil)
 
@@ -41,9 +44,11 @@ struct WindowsSessionLaunchHints: Sendable {
         var index = 0
         var skippedSubcommand = false
         var isFork = false
+        var allowsNewSession = provider == .codex || provider == .claude
         while index < arguments.count {
             let token = arguments[index]
             if token == "--" { break }
+            if provider == .codex, ["resume", "fork"].contains(token) { allowsNewSession = false }
             if provider == .codex, !isFork, token == "resume", index + 1 < arguments.count,
                let id = UUID(uuidString: arguments[index + 1]) {
                 requestedSessionID = id.uuidString.lowercased()
@@ -55,6 +60,9 @@ struct WindowsSessionLaunchHints: Sendable {
                 skippedSubcommand = true; index += 1; continue
             }
             if !token.hasPrefix("-") {
+                // Bare positional tokens can be unknown subcommands. Only an explicit -- prompt
+                // delimiter or a fully recognized option-only invocation permits inference.
+                allowsNewSession = false
                 // Stop at prompt/positional data. If a later path flag could override our earlier
                 // path, the prefix alone is not authoritative, so retain PID-only presentation.
                 if arguments.dropFirst(index + 1).prefix(while: { $0 != "--" }).contains(where: {
@@ -68,7 +76,7 @@ struct WindowsSessionLaunchHints: Sendable {
             if provider == .pi, ["--continue", "--resume", "-c", "-r", "--no-session"].contains(option) {
                 return .empty
             }
-            if provider == .codex, option == "--last" { requestedSessionID = nil }
+            if provider == .codex, option == "--last" { requestedSessionID = nil; allowsNewSession = false }
             if switches.contains(option), pieces.count == 1 { index += 1; continue }
             if provider == .codex, token.hasPrefix("-C"), token.count > 2 {
                 cwd = self.absolutePath(String(token.dropFirst(2)))
@@ -92,7 +100,8 @@ struct WindowsSessionLaunchHints: Sendable {
             }
             index += 1
         }
-        return Self(workingDirectory: cwd, sessionFile: session, requestedSessionID: requestedSessionID)
+        return Self(workingDirectory: cwd, sessionFile: session, requestedSessionID: requestedSessionID,
+                    allowsNewSessionCorrelation: allowsNewSession && requestedSessionID == nil)
     }
 
     static func absolutePath(_ value: String) -> String? {

@@ -40,6 +40,7 @@ public enum WindowsAgentSessionScanner {
         }
         var sessions: [AgentSession] = []
         var requestedIDs: [String: String] = [:]
+        var newSessionIDs: Set<String> = []
         var partialMessage: String?
         var unavailableExplicitMetadata = false
         var unavailableNativeDirectories = 0
@@ -60,6 +61,7 @@ public enum WindowsAgentSessionScanner {
             let hints = WindowsSessionLaunchHints.parse(provider: identity.provider, arguments: identity.arguments)
             let processSessionID = "pid:\(process.pid):\(process.creationTicks)"
             requestedIDs[processSessionID] = hints.requestedSessionID
+            if hints.allowsNewSessionCorrelation { newSessionIDs.insert(processSessionID) }
             var nativeDirectory: String?
             if nativeDirectoryReadEnabled {
                 switch WindowsProcessWorkingDirectory.read(process: process, deadline: deadline) {
@@ -105,7 +107,8 @@ public enum WindowsAgentSessionScanner {
                 .compactMap { $0 }.joined(separator: " ")
         }
         let correlated = WindowsSessionMetadataCorrelator.enrich(
-            sessions: sessions, requestedIDs: requestedIDs, roots: metadataRoots, config: config, now: now)
+            sessions: sessions, requestedIDs: requestedIDs, roots: metadataRoots, config: config, now: now,
+            newSessionIDs: partialMessage == nil ? newSessionIDs : [])
         if let notice = correlated.message {
             partialMessage = [partialMessage, notice].compactMap { $0 }.joined(separator: " ")
         }

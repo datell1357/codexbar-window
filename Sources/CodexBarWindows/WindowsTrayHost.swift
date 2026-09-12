@@ -23,6 +23,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
     public typealias CodexWebSettingsSaveHandler = @Sendable (UInt64, WindowsCodexWebSettingsPatch) -> Void
     public typealias QuitHandler = @Sendable () -> Void
 
+    private static let inferNewSessionMetadataCommand = UINT_PTR(0x752A)
     private static let sessionMetadataToggleCommand = UINT_PTR(0x7525)
     private static let codexSessionFolderCommand = UINT_PTR(0x7526)
     private static let claudeProjectFolderCommand = UINT_PTR(0x7527)
@@ -728,8 +729,12 @@ public final class WindowsTrayHost: @unchecked Sendable {
         succeeded = succeeded && append("Read native directories (experimental, 64-bit)",
                                         flags: nativeFlags, command: Self.nativeSessionDirectoryCommand)
         let correlate = self.presentationDefaults.object(forKey: "windowsSessionMetadataEnabled") as? Bool ?? false
-        succeeded = succeeded && append("Match selected-session metadata", flags: UINT(MF_STRING) | (correlate ? UINT(MF_CHECKED) : 0),
+        succeeded = succeeded && append("Match session metadata", flags: UINT(MF_STRING) | (correlate ? UINT(MF_CHECKED) : 0),
                                         command: Self.sessionMetadataToggleCommand)
+        let inferNew = self.presentationDefaults.object(forKey: "windowsInferNewSessionMetadataEnabled") as? Bool ?? false
+        succeeded = succeeded && append("Infer new-session metadata (experimental)",
+                                        flags: UINT(MF_STRING) | (inferNew ? UINT(MF_CHECKED) : 0),
+                                        command: Self.inferNewSessionMetadataCommand)
         succeeded = succeeded && append("Choose Codex sessions folder…", flags: UINT(MF_STRING), command: Self.codexSessionFolderCommand)
         succeeded = succeeded && append("Choose Claude projects folder…", flags: UINT(MF_STRING), command: Self.claudeProjectFolderCommand)
         if self.presentationDefaults.string(forKey: "windowsCodexSessionDirectory") != nil {
@@ -1183,6 +1188,10 @@ public final class WindowsTrayHost: @unchecked Sendable {
             self.onPresentationSettingsChanged()
         case Self.remoteSettingsCommand: self.editRemoteSettings()
         case Self.remoteRefreshCommand: self.onRemoteRefresh()
+        case Self.inferNewSessionMetadataCommand:
+            let value = self.presentationDefaults.object(forKey: "windowsInferNewSessionMetadataEnabled") as? Bool ?? false
+            self.presentationDefaults.set(!value, forKey: "windowsInferNewSessionMetadataEnabled")
+            self.sessionMetadataSettingsChanged()
         case Self.sessionMetadataToggleCommand:
             let value = self.presentationDefaults.object(forKey: "windowsSessionMetadataEnabled") as? Bool ?? false
             self.presentationDefaults.set(!value, forKey: "windowsSessionMetadataEnabled")
