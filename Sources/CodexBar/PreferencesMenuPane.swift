@@ -132,7 +132,7 @@ struct AgentSessionsSettingsSection: View {
 
 @MainActor
 struct AgentSessionHostsEditor: View {
-    static let inputFormatHint = "user@host, user@host"
+    static let inputFormatHint = "posix://user@host, windows://user@host"
 
     @Bindable var settings: SettingsStore
 

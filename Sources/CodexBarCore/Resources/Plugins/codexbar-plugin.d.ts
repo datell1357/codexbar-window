@@ -160,6 +160,8 @@ interface CodexBarPluginContext {
   };
   readonly date: {
     now(): Date;
+    /** Epoch milliseconds from the same injected refresh clock as now(). */
+    nowMillis(): number;
     iso(value: string): Date;
     unixSeconds(value: number): Date;
     unixMillis(value: number): Date;

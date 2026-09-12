@@ -4,6 +4,7 @@ public struct RemoteSessionHostResult: Equatable, Sendable, Identifiable {
     public let host: String
     public let sessions: [AgentSession]
     public let error: String?
+    public let target: RemoteSessionTarget?
 
     public var id: String {
         self.host
@@ -13,10 +14,16 @@ public struct RemoteSessionHostResult: Equatable, Sendable, Identifiable {
         self.error == nil
     }
 
-    public init(host: String, sessions: [AgentSession], error: String?) {
+    public init(
+        host: String,
+        sessions: [AgentSession],
+        error: String?,
+        target: RemoteSessionTarget? = nil)
+    {
         self.host = host
         self.sessions = sessions
         self.error = error
+        self.target = target
     }
 }
 
@@ -27,6 +34,19 @@ public enum TailscaleStatusParser {
     /// non-Tailscale `tailscale` binary — so callers can fall through to the next candidate. Returns a
     /// possibly-empty list for a valid status that simply has no eligible peers (a real answer, stop).
     package static func parseHosts(from data: Data, excludingLocalHost localHost: String? = nil) -> [String]? {
+        self.parseTargets(from: data, excludingLocalHost: localHost)?.map { target in
+            #if os(Windows)
+            target.configurationValue
+            #else
+            target.platform == .windows ? target.configurationValue : target.host
+            #endif
+        }
+    }
+
+    public static func parseTargets(
+        from data: Data,
+        excludingLocalHost localHost: String? = nil) -> [RemoteSessionTarget]?
+    {
         guard let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
         if let rawBackendState = root["BackendState"] {
             guard let backendState = rawBackendState as? String,
@@ -68,16 +88,16 @@ public enum TailscaleStatusParser {
         ].compactMap(self.firstDNSLabel).map { $0.lowercased() })
 
         var seen = Set<String>()
-        return peers.compactMap { peer in
+        return peers.compactMap { peer -> RemoteSessionTarget? in
             guard peer["Online"] as? Bool == true,
                   let operatingSystem = peer["OS"] as? String,
-                  operatingSystem == "macOS" || operatingSystem == "linux",
+                  let platform = RemoteSessionPlatform.tailscaleOS(operatingSystem),
                   let label = self.firstDNSLabel(peer["DNSName"] as? String)
             else { return nil }
             let normalized = label.lowercased()
             guard !localLabels.contains(normalized), seen.insert(normalized).inserted else { return nil }
-            return label
-        }.sorted()
+            return RemoteSessionTarget(host: label, platform: platform)
+        }.sorted { $0.host.localizedCaseInsensitiveCompare($1.host) == .orderedAscending }
     }
 
     /// Convenience returning `[]` for unparseable output. Prefer `parseHosts` when the caller needs to
@@ -104,7 +124,7 @@ public struct RemoteSessionFetcher: Sendable {
         localHost: String = ProcessInfo.processInfo.hostName) async -> [String]
     {
         let probeEnvironment = Self.tailscaleCLIEnvironment(from: environment)
-        let candidates = Self.tailscaleBinaryCandidates(path: environment["PATH"])
+        let candidates = Self.localTailscaleBinaryCandidates(environment: environment)
             .filter { FileManager.default.isExecutableFile(atPath: $0) }
         return await Self.firstDiscoveredHosts(candidates: candidates, localHost: localHost) { binary in
             guard let result = try? await SubprocessRunner.run(
@@ -141,74 +161,145 @@ public struct RemoteSessionFetcher: Sendable {
         hosts: [String],
         environment: [String: String] = ProcessInfo.processInfo.environment) async -> [RemoteSessionHostResult]
     {
-        let normalizedHosts = Self.sanitizedHosts(hosts)
+        let targets = hosts.compactMap {
+            RemoteSessionTarget(configurationValue: $0, defaultPlatform: .legacyDefault)
+        }
+        return await self.fetch(targets: targets, environment: environment)
+    }
+
+    public func fetch(
+        targets: [RemoteSessionTarget],
+        environment: [String: String] = ProcessInfo.processInfo.environment) async -> [RemoteSessionHostResult]
+    {
+        let normalized = RemoteSessionTarget.normalized(targets)
         return await withTaskGroup(
             of: RemoteSessionHostResult.self,
             returning: [RemoteSessionHostResult].self)
         { group in
-            for host in normalizedHosts {
+            for target in normalized {
+                guard !Task.isCancelled else { break }
                 group.addTask {
-                    await self.fetch(host: host, environment: environment)
+                    await self.fetch(target: target, environment: environment)
                 }
             }
             var results: [RemoteSessionHostResult] = []
             for await result in group {
                 results.append(result)
             }
-            return results
-                .sorted { lhs, rhs in lhs.host.localizedCaseInsensitiveCompare(rhs.host) == .orderedAscending }
+            return results.sorted {
+                $0.host.localizedCaseInsensitiveCompare($1.host) == .orderedAscending
+            }
         }
     }
 
+    /// Compatibility entry point. New UI callers should consume the structured focus result.
     public func focus(
         sessionID: String,
         host: String,
         environment: [String: String] = ProcessInfo.processInfo.environment) async
     {
-        guard let host = Self.sanitizedHosts([host]).first else { return }
-        guard let ssh = self.findExecutable("ssh", environment: environment) ??
-            (["/usr/bin/ssh", "/bin/ssh"].first { FileManager.default.isExecutableFile(atPath: $0) })
-        else { return }
-        let command = "codexbar sessions focus \(Self.shellQuote(sessionID)) || " +
-            "\(Self.shellQuote(Self.bundledCLIFallback)) sessions focus \(Self.shellQuote(sessionID))"
-        _ = try? await SubprocessRunner.run(
-            binary: ssh,
-            arguments: ["-o", "BatchMode=yes", "-o", "ConnectTimeout=3", host, "sh", "-lc", Self.shellQuote(command)],
-            environment: environment,
-            timeout: 5,
-            acceptsNonZeroExit: true,
-            label: "focus remote agent session")
+        guard let target = RemoteSessionTarget(configurationValue: host, defaultPlatform: .legacyDefault) else { return }
+        _ = await self.focus(sessionID: sessionID, target: target, environment: environment)
     }
 
-    private func fetch(host: String, environment: [String: String]) async -> RemoteSessionHostResult {
-        guard let ssh = self.findExecutable("ssh", environment: environment) ??
-            (["/usr/bin/ssh", "/bin/ssh"].first { FileManager.default.isExecutableFile(atPath: $0) })
-        else {
-            return RemoteSessionHostResult(host: host, sessions: [], error: "ssh not found")
-        }
-        let command = Self.remoteSessionsCommand()
+    public func focus(
+        sessionID: String,
+        target: RemoteSessionTarget,
+        environment: [String: String] = ProcessInfo.processInfo.environment) async -> RemoteSessionFocusResult
+    {
         do {
+            let arguments = try RemoteSessionCommandBuilder.arguments(target: target, operation: .focus(sessionID))
+            try Task.checkCancellation()
+            guard let ssh = self.sshExecutable(environment: environment) else {
+                return .failed("ssh not found")
+            }
+            _ = try await SubprocessRunner.run(
+                binary: ssh,
+                arguments: arguments,
+                environment: environment,
+                timeout: 5,
+                label: "focus remote agent session")
+            try Task.checkCancellation()
+            return .focused
+        } catch {
+            return .failed(error.localizedDescription)
+        }
+    }
+
+    private func fetch(
+        target: RemoteSessionTarget,
+        environment: [String: String]) async -> RemoteSessionHostResult
+    {
+        // Keep legacy POSIX result equality unchanged; Windows/explicit API targets retain the
+        // remote platform and optional path so later focus does not guess the login shell.
+        #if os(Windows)
+        let retainedTarget: RemoteSessionTarget? = target
+        #else
+        let retainedTarget = target.platform == .posix && target.executablePath == nil ? nil : target
+        #endif
+        do {
+            let arguments = try RemoteSessionCommandBuilder.arguments(target: target, operation: .list)
+            try Task.checkCancellation()
+            guard let ssh = self.sshExecutable(environment: environment) else {
+                return RemoteSessionHostResult(
+                    host: target.host, sessions: [], error: "ssh not found", target: retainedTarget)
+            }
             let result = try await SubprocessRunner.run(
                 binary: ssh,
-                arguments: [
-                    "-o", "BatchMode=yes",
-                    "-o", "ConnectTimeout=3",
-                    host,
-                    "sh", "-lc", Self.shellQuote(command),
-                ],
+                arguments: arguments,
                 environment: environment,
                 timeout: 5,
                 label: "fetch remote agent sessions")
+            try Task.checkCancellation()
             let decoder = JSONDecoder()
             decoder.dateDecodingStrategy = .iso8601
             var sessions = try decoder.decode([AgentSession].self, from: Data(result.stdout.utf8))
             for index in sessions.indices {
-                sessions[index].host = host
+                sessions[index].host = target.host
             }
-            return RemoteSessionHostResult(host: host, sessions: sessions, error: nil)
+            return RemoteSessionHostResult(
+                host: target.host, sessions: sessions, error: nil, target: retainedTarget)
         } catch {
-            return RemoteSessionHostResult(host: host, sessions: [], error: error.localizedDescription)
+            return RemoteSessionHostResult(
+                host: target.host, sessions: [], error: error.localizedDescription, target: retainedTarget)
         }
+    }
+
+    private func sshExecutable(environment: [String: String]) -> String? {
+        #if os(Windows)
+        if let resolved = self.findExecutable("ssh", environment: environment) { return resolved }
+        guard let systemRoot = CodexBarPlatformPaths.environmentValue("SystemRoot", environment: environment) else {
+            return nil
+        }
+        return WindowsExecutableResolver.resolve(
+            executable: URL(fileURLWithPath: systemRoot, isDirectory: true)
+                .appendingPathComponent("System32/OpenSSH/ssh.exe").path,
+            override: nil,
+            environment: environment)
+        #else
+        return self.findExecutable("ssh", environment: environment) ??
+            ["/usr/bin/ssh", "/bin/ssh"].first { FileManager.default.isExecutableFile(atPath: $0) }
+        #endif
+    }
+
+    private static func localTailscaleBinaryCandidates(environment: [String: String]) -> [String] {
+        #if os(Windows)
+        var candidates: [String] = []
+        if let resolved = WindowsExecutableResolver.resolve(
+            executable: "tailscale", override: nil, environment: environment)
+        {
+            candidates.append(resolved)
+        }
+        for key in ["ProgramW6432", "ProgramFiles", "ProgramFiles(x86)"] {
+            guard let directory = CodexBarPlatformPaths.environmentValue(key, environment: environment) else { continue }
+            candidates.append(URL(fileURLWithPath: directory, isDirectory: true)
+                .appendingPathComponent("Tailscale/tailscale.exe").path)
+        }
+        var seen = Set<String>()
+        return candidates.filter { seen.insert($0.lowercased()).inserted }
+        #else
+        return self.tailscaleBinaryCandidates(path: environment["PATH"])
+        #endif
     }
 
     /// Tries the v2 session JSON protocol first, then the legacy v1 form, for both PATH and the
@@ -257,10 +348,14 @@ public struct RemoteSessionFetcher: Sendable {
     }
 
     private func findExecutable(_ name: String, environment: [String: String]) -> String? {
+        #if os(Windows)
+        return WindowsExecutableResolver.resolve(executable: name, override: nil, environment: environment)
+        #else
         let path = environment["PATH"] ?? "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin"
         return path.split(separator: ":")
             .map { String($0) + "/" + name }
             .first { FileManager.default.isExecutableFile(atPath: $0) }
+        #endif
     }
 
     public static func sanitizedHosts(_ hosts: [String]) -> [String] {

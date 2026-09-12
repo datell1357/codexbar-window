@@ -220,8 +220,13 @@ final class AgentSessionsStore {
 
     func focus(_ session: AgentSession, remoteHost: String?) {
         if let remoteHost {
+            let target = self.remoteHosts.first(where: { $0.host == remoteHost })?.target
             Task {
-                await self.remoteFetcher.focus(sessionID: session.id, host: remoteHost)
+                if let target {
+                    _ = await self.remoteFetcher.focus(sessionID: session.id, target: target)
+                } else {
+                    await self.remoteFetcher.focus(sessionID: session.id, host: remoteHost)
+                }
             }
         } else {
             _ = SessionWindowFocuser.focus(session)
