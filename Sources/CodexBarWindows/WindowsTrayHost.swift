@@ -23,6 +23,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
     public typealias CodexWebSettingsSaveHandler = @Sendable (UInt64, WindowsCodexWebSettingsPatch) -> Void
     public typealias QuitHandler = @Sendable () -> Void
 
+    private static let nativeSessionDirectoryCommand = UINT_PTR(0x7524)
     private static let pagePopupMessage = UINT(WM_APP) + 2
     private static let localPreviousPageCommand = UINT_PTR(0x7520)
     private static let localNextPageCommand = UINT_PTR(0x7521)
@@ -717,6 +718,10 @@ public final class WindowsTrayHost: @unchecked Sendable {
         }
         let enabledFlags = UINT(MF_STRING) | (snapshot.enabled ? UINT(MF_CHECKED) : 0)
         var succeeded = append("Enable local CLI sessions", flags: enabledFlags, command: Self.agentSessionsToggleCommand)
+        let nativeDirectories = self.presentationDefaults.object(forKey: "windowsNativeSessionCwdEnabled") as? Bool ?? false
+        let nativeFlags = UINT(MF_STRING) | (nativeDirectories ? UINT(MF_CHECKED) : 0)
+        succeeded = succeeded && append("Read native directories (experimental, 64-bit)",
+                                        flags: nativeFlags, command: Self.nativeSessionDirectoryCommand)
         if snapshot.enabled {
             succeeded = succeeded && append(
                 snapshot.isRefreshing ? "Refresh queued / scanning…" : "Refresh sessions",
@@ -1129,6 +1134,15 @@ public final class WindowsTrayHost: @unchecked Sendable {
             self.onPresentationSettingsChanged()
         case Self.remoteSettingsCommand: self.editRemoteSettings()
         case Self.remoteRefreshCommand: self.onRemoteRefresh()
+        case Self.nativeSessionDirectoryCommand:
+            let current = self.presentationDefaults.object(forKey: "windowsNativeSessionCwdEnabled") as? Bool ?? false
+            self.presentationDefaults.set(!current, forKey: "windowsNativeSessionCwdEnabled")
+            self.mailboxLock.lock()
+            self.mailboxAgentSessions = .init(
+                enabled: self.presentationDefaults.object(forKey: "agentSessionsEnabled") as? Bool ?? false,
+                isRefreshing: true, rows: [], message: "Applying session directory settings…")
+            self.mailboxLock.unlock()
+            self.onAgentSessionsSettingsChanged()
         case Self.agentSessionsToggleCommand:
             let enabled = self.presentationDefaults.object(forKey: "agentSessionsEnabled") as? Bool ?? false
             self.presentationDefaults.set(!enabled, forKey: "agentSessionsEnabled")

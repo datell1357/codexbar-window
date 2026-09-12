@@ -139,11 +139,18 @@ extension CodexBarCLI {
     }
 
     static func sessionsHelp(version: String) -> String {
-        """
+        #if os(Windows)
+        let nativeOption = " [--native-cwd]"
+        let focusDescription = "Focus activates an available Windows window. --native-cwd opts into experimental 64-bit directory reads."
+        #else
+        let nativeOption = ""
+        let focusDescription = "Focus activates the owning terminal or desktop app on macOS."
+        #endif
+        return """
         CodexBar \(version)
 
         Usage:
-          codexbar sessions [--json|--json-v2] [--pretty]
+          codexbar sessions [--json|--json-v2] [--pretty]\(nativeOption)
           codexbar sessions focus <id>
 
         Description:
@@ -151,7 +158,7 @@ extension CodexBarCLI {
           --json emits the legacy v1 array with only Codex and Claude providers.
           --json-v2 emits the complete current array, including Pi-family sessions.
           JSON uses stable AgentSession field names and ISO-8601 dates.
-          Focus activates the owning terminal or desktop app on macOS.
+          \(focusDescription)
 
         Examples:
           codexbar sessions

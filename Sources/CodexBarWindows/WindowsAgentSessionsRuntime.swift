@@ -98,10 +98,9 @@ public actor WindowsAgentSessionsRuntime {
         self.scanTask?.cancel()
         self.queuedRefresh = self.enabled && self.scanTask != nil
         self.message = nil
-        if !self.enabled {
-            self.sessions = []
-            self.fresh = false
-        }
+        // This callback also changes the native-directory opt-in. Drop prior enrichment immediately.
+        self.sessions = []
+        self.fresh = false
         self.reconcileSchedule()
         self.publish()
         if self.enabled { await self.refresh() }
@@ -126,14 +125,18 @@ public actor WindowsAgentSessionsRuntime {
             return
         }
         let currentGeneration = self.generation
+        let nativeDirectoryReadEnabled = self.defaults.object(forKey: "windowsNativeSessionCwdEnabled") as? Bool ?? false
         let task = Task.detached(priority: .utility) {
-            await WindowsAgentSessionScanner.scanOutcome()
+            await WindowsAgentSessionScanner.scanOutcome(nativeDirectoryReadEnabled: nativeDirectoryReadEnabled)
         }
         self.scanTask = task
         self.publish()
         let result = await task.value
         self.scanTask = nil
-        if self.running, self.enabled, self.generation == currentGeneration, !Task.isCancelled {
+        if self.running, self.enabled, self.generation == currentGeneration, !Task.isCancelled,
+           (self.defaults.object(forKey: "agentSessionsEnabled") as? Bool ?? false),
+           nativeDirectoryReadEnabled == (self.defaults.object(forKey: "windowsNativeSessionCwdEnabled") as? Bool ?? false)
+        {
             switch result.status {
             case .complete, .partial:
                 self.sessions = result.sessions
@@ -236,7 +239,7 @@ public actor WindowsAgentSessionsRuntime {
                 isEnabled: self.fresh)
         }
         let status = self.message ?? (self.scanTask != nil ? "Scanning local CLI sessions…" :
-            (rows.isEmpty ? "No recognized local CLI sessions." : "Labels use explicit launch paths or selected session headers; live cwd detection is not connected."))
+            (rows.isEmpty ? "No recognized local CLI sessions." : "Labels use available launch paths, opted-in native directories, or selected session headers."))
         self.publisher(.init(enabled: true, isRefreshing: self.scanTask != nil, rows: rows, message: status, page: page))
     }
 }

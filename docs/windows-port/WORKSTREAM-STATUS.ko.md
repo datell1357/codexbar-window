@@ -1,5 +1,7 @@
 # Windows 전용 제품 작업 현황
 
+IMPL-007: native64 process cwd 후보 reader와 기본 off 실험 옵션/CLI flag를 작성했다. 내부 RTL layout에 의존하므로 지원 확정·배포 가능 상태로 세지 않는다. identity/길이/값 변화 guard가 있어도 실제 Windows 검증은 미실시다. [구현 로그](IMPLEMENTATION-LOG.ko.md) 참고.
+
 IMPL-006: local/remote 결과 페이지와 remote host 순환 cursor·last-success 상태를 작성했다. 표시상 first-N 절단을 줄였으며 원본 scanner/remote CLI 수집 한도는 유지한다. native cwd·전체 correlation·exact-tab은 미완료이며 모든 신규 코드는 미검증이다. [구현 로그](IMPLEMENTATION-LOG.ko.md) 참고.
 
 IMPL-005: explicit Codex launch cwd 및 선택된 Pi/OMP session header를 부분 연결하고 project/title/combined label 설정을 추가했다. PID+생성 시각 ID를 유지한다. 실제 cwd/Claude·Codex correlation·전체 root/옵션·exact-tab은 미완료이며 전부 미검증이다. [구현 로그](IMPLEMENTATION-LOG.ko.md) 참고.

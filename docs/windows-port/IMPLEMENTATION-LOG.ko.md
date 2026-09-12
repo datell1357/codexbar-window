@@ -142,3 +142,30 @@
 5. 기존 query/scan/actor 종료와 page/메뉴 수명 모두 실행 검증하지 않았다. 전체 W03/W11 완료나 배포 가능 상태로 표시하지 않는다.
 
 다음 구현: 로컬 cwd 제공 경계와 공급자별 session metadata correlation을 이어간다. 실제 native cwd가 없는 현재 explicit hint 범위를 전체 지원으로 오인하지 않는다.
+
+## IMPL-007 — 실험적 native process cwd 읽기 (2026-09-13 KST)
+
+상태: CODE_WRITTEN_UNVERIFIED. 빌드·컴파일·테스트·앱·실제 프로세스/메모리·계정 조회·검증 스크립트는 실행하지 않았다. 구현에 필요한 공개 문서와 헤더 정의만 읽었다. 계약: WIN-040/042의 Windows cwd 기반.
+
+작성한 코드:
+
+- `WindowsProcessWorkingDirectory.swift`: 현재 사용자 SID와 PID 생성 시각을 확인하고 열린 process handle을 유지한다. IsWow64Process2/NtQueryInformationProcess를 동적으로 찾고 native64 x64/ARM64 조건에서만 작은 PEB/parameter 필드를 읽는 후보 구현을 추가했다. WOW64/에뮬레이션/32비트/권한 거부/API 부재는 unavailable이다.
+- directory 문자열뿐 아니라 image/command-line anchor, normalized parameter flag, 길이·pointer 산술·UTF-16, 두 번의 descriptor/문자열 값, 최종 생존·생성 시각을 확인한다. 읽기 byte budget/deadline/cancel 조건을 갖는다. environment pointer/block, 메모리 전체 탐색, 쓰기/injection·SeDebugPrivilege는 사용하지 않는다. 읽은 메모리 버퍼를 로그나 파일로 저장하지 않는다.
+- `WindowsAgentSessionScanner`: explicit provider cwd override를 우선하고 없을 때 native directory 결과를 사용한다. native read 실패는 partial 안내와 기존 path/PID fallback으로 처리한다. 기존 file-based metadata와 PID+creation ID를 유지한다.
+- Windows 트레이에 `Read native directories (experimental, 64-bit)`를 추가했고 기본값은 false다. 설정 변경 시 기존 세션 보강 데이터를 즉시 비우고 진행 중 scan을 취소한다. 일반 local-session toggle과 별개로 선택해야 한다.
+- Windows CLI sessions에 `--native-cwd` opt-in과 help를 추가했다. 기본 list/remote 실행에서는 이 flag를 자동 추가하지 않는다.
+
+중요한 구현 경계:
+
+1. CurrentDirectory는 공식 RTL_USER_PROCESS_PARAMETERS의 reserved 영역에 해당한다. 내부 native64 layout을 사용하는 실험 구현이며 Microsoft가 안정성을 보장하는 API로 표현하지 않는다. layout/anchor 검사는 Windows 실행 검증을 대신하지 않는다. 실제 Windows 검증 전 기본 활성화나 배포 가능 판정은 하지 않는다.
+2. 현재 native directory 채택은 drive-absolute 경로 범위다. UNC·32비트/에뮬레이션 지원·상대 argv 해석·Claude/Codex transcript correlation은 미완료다.
+3. Win32 프로세스가 내부 값을 바꾸는 race를 완전히 원자적으로 막는 것은 아니다. 읽기 중 값이 다르면 포기하며 알려지지 않은 layout에 임의 offset 탐색을 하지 않는다.
+4. `ReadProcessMemory` 및 WinSDK signature·architecture/ABI·UI/CLI 설정·취소 동작은 실행하지 않았다. 새 코드는 미검증이다.
+
+자료:
+- Microsoft NtQueryInformationProcess: https://learn.microsoft.com/en-us/windows/win32/api/winternl/nf-winternl-ntqueryinformationprocess
+- Microsoft RTL_USER_PROCESS_PARAMETERS: https://learn.microsoft.com/en-us/windows/win32/api/winternl/ns-winternl-rtl_user_process_parameters
+- Microsoft ReadProcessMemory / IsWow64Process2 문서.
+- System Informer phnt ntrtl.h의 CURDIR/RTL_USER_PROCESS_PARAMETERS 필드 정의: https://github.com/winsiderss/phnt/blob/master/ntrtl.h (참고만 했으며 소스/패키지를 vendoring하지 않음).
+
+다음 구현: source 소유권과 실제/명시 cwd가 확인된 경우에 한정하여 Codex/Claude의 제한된 transcript metadata correlation을 연결한다. native-cwd 실험 옵션의 Windows 검증은 계속 별도 미완료로 유지한다.

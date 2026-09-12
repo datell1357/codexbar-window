@@ -4,7 +4,7 @@ import Foundation
 
 extension CodexBarCLI {
     static func runSessions(_ values: ParsedValues) async {
-        let sessions = await Self.scanSessionsForCommand()
+        let sessions = await Self.scanSessionsForCommand(values: values)
         if let jsonVersion = Self.sessionsJSONProtocolVersion(from: values) {
             Self.printJSON(
                 Self.sessionsForJSON(sessions, includePiFamily: jsonVersion == 2),
@@ -14,9 +14,9 @@ extension CodexBarCLI {
         }
     }
 
-    private static func scanSessionsForCommand() async -> [AgentSession] {
+    private static func scanSessionsForCommand(values: ParsedValues) async -> [AgentSession] {
         #if os(Windows)
-        let outcome = await WindowsAgentSessionScanner.scanOutcome()
+        let outcome = await WindowsAgentSessionScanner.scanOutcome(nativeDirectoryReadEnabled: values.flags.contains("nativeCwd"))
         switch outcome.status {
         case .failed, .cancelled:
             Self.writeStderr((outcome.message ?? "Session scan cancelled.") + "\n")
@@ -53,7 +53,7 @@ extension CodexBarCLI {
             writeStderr("Missing session id.\n")
             platformExit(1)
         }
-        let sessions = await Self.scanSessionsForCommand()
+        let sessions = await Self.scanSessionsForCommand(values: values)
         guard let session = sessions.first(where: { $0.id == sessionID }) else {
             Self.writeStderr("Unknown session: \(sessionID)\n")
             Self.platformExit(1)
@@ -118,6 +118,11 @@ extension CodexBarCLI {
 }
 
 struct SessionsOptions: CommanderParsable {
+    #if os(Windows)
+    @Flag(name: .long("native-cwd"), help: "Opt in to experimental native 64-bit process directory reads")
+    var nativeCwd: Bool = false
+    #endif
+
     @Flag(name: .long("json"), help: "Emit legacy JSON compatible with older clients")
     var jsonShortcut: Bool = false
 

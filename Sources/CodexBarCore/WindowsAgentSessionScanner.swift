@@ -18,7 +18,8 @@ public enum WindowsAgentSessionScanner {
 
     public static func scanOutcome(
         config: SessionScanConfig = SessionScanConfig(),
-        now: Date = Date()) async -> WindowsSessionScanOutcome
+        now: Date = Date(),
+        nativeDirectoryReadEnabled: Bool = false) async -> WindowsSessionScanOutcome
     {
         guard !Task.isCancelled else { return .init(status: .cancelled, sessions: [], message: nil) }
         guard config.maxProcessCount > 0 else {
@@ -39,6 +40,7 @@ public enum WindowsAgentSessionScanner {
         var sessions: [AgentSession] = []
         var partialMessage: String?
         var unavailableExplicitMetadata = false
+        var unavailableNativeDirectories = 0
         for process in snapshots.sorted(by: { $0.creationTime > $1.creationTime }) {
             guard !Task.isCancelled else { return .init(status: .cancelled, sessions: [], message: nil) }
             guard sessions.count < config.maxProcessCount else {
@@ -54,6 +56,13 @@ public enum WindowsAgentSessionScanner {
                   let identity = self.identity(imagePath: process.imagePath, arguments: self.arguments(process.commandLine))
             else { continue }
             let hints = WindowsSessionLaunchHints.parse(provider: identity.provider, arguments: identity.arguments)
+            var nativeDirectory: String?
+            if nativeDirectoryReadEnabled {
+                switch WindowsProcessWorkingDirectory.read(process: process, deadline: deadline) {
+                case let .available(path): nativeDirectory = path
+                case .unavailable: unavailableNativeDirectories += 1
+                }
+            }
             let metadata: WindowsExplicitSessionMetadata?
             if identity.provider == .pi, let dialect = identity.dialect, let path = hints.sessionFile {
                 metadata = WindowsExplicitSessionMetadataReader.read(
@@ -63,7 +72,8 @@ public enum WindowsAgentSessionScanner {
                 metadata = nil
             }
             // A selected file's saved cwd can label that session, but is not a live process-cwd observation.
-            let cwd = hints.workingDirectory
+            // An explicit provider workspace override remains authoritative (it may not call chdir).
+            let cwd = hints.workingDirectory ?? nativeDirectory
             let projectPath = cwd ?? metadata?.cwd
             sessions.append(AgentSession(
                 id: "pid:\(process.pid):\(process.creationTicks)",
@@ -83,6 +93,11 @@ public enum WindowsAgentSessionScanner {
         guard !Task.isCancelled else { return .init(status: .cancelled, sessions: [], message: nil) }
         if unavailableExplicitMetadata {
             partialMessage = [partialMessage, "Some explicitly selected session headers were unavailable; PID labels are retained."]
+                .compactMap { $0 }.joined(separator: " ")
+        }
+        if unavailableNativeDirectories > 0 {
+            partialMessage = [partialMessage,
+                              "Native directories were unavailable for \(unavailableNativeDirectories) processes; existing path/PID fallback is retained."]
                 .compactMap { $0 }.joined(separator: " ")
         }
         return .init(status: partialMessage == nil ? .complete : .partial, sessions: sessions, message: partialMessage)
