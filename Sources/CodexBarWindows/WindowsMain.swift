@@ -11,11 +11,13 @@ struct CodexBarWindowsMain {
 
 private final class WindowsTrayApplication: @unchecked Sendable {
     private let runtime: WindowsUsageRuntime
+    private let sessions: WindowsAgentSessionsRuntime
     private let shutdownSignal = DispatchSemaphore(value: 0)
     private lazy var host: WindowsTrayHost = WindowsTrayHost(
         onRefresh: { [weak self] in
             guard let self else { return }
             Task { await self.runtime.refresh() }
+            Task { await self.sessions.refresh() }
         },
         onQuit: {},
         onPowerChanged: { [weak self] in
@@ -25,10 +27,24 @@ private final class WindowsTrayApplication: @unchecked Sendable {
         onMenuOpen: { [weak self] in
             guard let self else { return }
             Task { await self.runtime.noteMenuOpened() }
+            Task { await self.sessions.refresh() }
+        },
+        onAgentSessionsSettingsChanged: { [weak self] in
+            guard let self else { return }
+            Task { await self.sessions.settingsDidChange() }
+        },
+        onAgentSessionsRefresh: { [weak self] in
+            guard let self else { return }
+            Task { await self.sessions.refresh() }
+        },
+        onAgentSessionFocus: { [weak self] request in
+            guard let self else { return }
+            Task { await self.sessions.focus(request) }
         },
         onPresentationSettingsChanged: { [weak self] in
             guard let self else { return }
             Task { await self.runtime.presentationSettingsDidChange() }
+            Task { await self.sessions.presentationDidChange() }
         },
         onOptionalUsageSettingsChanged: { [weak self] in
             guard let self else { return }
@@ -84,11 +100,16 @@ private final class WindowsTrayApplication: @unchecked Sendable {
 
     init() {
         self.runtime = WindowsUsageRuntime()
+        self.sessions = WindowsAgentSessionsRuntime()
     }
 
     func run() {
         let host = self.host
-        Task { [runtime] in
+        Task { [runtime, sessions] in
+            await sessions.setPublisher { [weak host] snapshot in
+                host?.postAgentSessions(snapshot)
+            }
+            await sessions.start()
             await runtime.setCombinedPublisher { [weak host] rows, entries in
                 host?.postRows(rows, menuEntries: entries)
             }
@@ -109,7 +130,11 @@ private final class WindowsTrayApplication: @unchecked Sendable {
             FileHandle.standardError.write(Data("CodexBar tray failed: \(error.localizedDescription)\n".utf8))
         }
         Task {
-            await self.runtime.shutdown()
+            await withTaskGroup(of: Void.self) { group in
+                group.addTask { await self.sessions.shutdown() }
+                group.addTask { await self.runtime.shutdown() }
+                await group.waitForAll()
+            }
             self.shutdownSignal.signal()
         }
         // WM_CLOSE schedules asynchronous cleanup. Keep the process alive until

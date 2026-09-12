@@ -52,3 +52,26 @@
 5. Windows 툴체인에서 WinSDK signature·linker·PE/argv·process/window 수명을 검증하지 않았다. 기존 테스트도 실행하지 않았다.
 
 다음 구현: Windows 세션의 structured scan outcome(성공/빈/조회 실패/부분 결과)과 runtime 설정/갱신 연결을 추가하고, 현재 Windows 트레이에 session 목록·오류·focus 명령을 연결한다. 이어서 명시적 cwd/metadata 기반의 provider별 correlation을 확장한다.
+
+## IMPL-003 — 로컬 세션 상태·주기·트레이 연결
+
+상태: CODE_WRITTEN_UNVERIFIED. 사용자 지시에 따라 빌드·컴파일·테스트·앱·조회 실행·검증 스크립트를 실행하지 않았다. 계약: WIN-007/010 트레이 표면(W03), WIN-040/041, 세션 opt-in 및 설정/종료 수명.
+
+작성한 코드:
+
+- Core `WindowsSessionScanOutcome`: complete/partial/failed/cancelled와 목록/메시지를 분리했다. 열거 실패·timeout은 실패, 결과 수/시간 예산 초과는 부분 결과로 반환한다. 기존 list-only API는 호환 wrapper로 남긴다.
+- CLI sessions/list/focus는 Windows에서 structured outcome을 사용하며 실패/취소 시 exit1, 부분 결과는 stderr 안내 후 기존 JSON/list 형식을 유지한다.
+- `WindowsAgentSessionsRuntime.swift`: agentSessionsEnabled 기본 false, 활성화 시에만 30초 스케줄과 메뉴/수동 갱신, 한 번의 scan과 합쳐진 후속 요청, 세대 기반 늦은 결과 차단, 설정 off/종료 시 취소·drain과 데이터 제거를 추가했다. scan/focus task를 actor가 소유한다.
+- `WindowsTrayHost.swift`: 고정된 popup snapshot에서 local CLI sessions submenu, 활성화 toggle, refresh, PID 기반 목록과 포커스 명령을 연결했다. 오류 시 이전 목록은 보존하되 actions를 비활성화하고 오류 메시지를 표시한다. popup의 명령표는 닫을 때 제거한다.
+- `WindowsMain.swift`: 독립 세션 runtime의 publisher/메뉴/settings/focus/start/shutdown을 연결했다. provider quota refresh와 session discovery는 별도로 예약한다. 종료는 두 runtime에 취소/drain을 요청한다.
+- Windows window focuser는 호출별 지역 상태만 사용하므로 main-dispatch queue hop 없이 worker에서 호출할 수 있게 했다. minimize 복원은 ShowWindowAsync를 사용하고 취소 검사 후 foreground 요청을 한다. Mac focuser의 MainActor 경로는 변경하지 않았다.
+
+남은 범위:
+
+1. 원격 세션 목록·host/OS/CLI 경로 editor·주기 갱신과 focus 결과의 native 통합. 현재 submenu는 로컬 CLI만 다룬다.
+2. 프로젝트·대화명·cwd/metadata·실제 활동 시각, Desktop/IDE와 Windows Terminal의 정확한 tab 연결.
+3. 개별 PID 접근 거부나 PE/argv 읽기 실패의 집계는 기존 열거기의 skip 동작을 유지한다. structured complete는 현재 식별 가능한 CLI 범위의 탐색 종료이며 모든 프로세스의 접근 성공을 뜻하지 않는다.
+4. 상태/오류는 다음 popup snapshot에 표시한다. 닫힌 메뉴에 대한 즉시 toast/오류 내역 UI·현지화는 아직 연결하지 않았다.
+5. 모든 WinSDK/API/actor 수명·사용자 설정·실행 동작은 미검증이다. 새 코드로 W03/W11 전체 완료를 주장하지 않는다.
+
+다음 구현: 같은 actor와 snapshot 구조에 원격 host 설정/조회/실패를 연결하고, 로컬/원격 focus 요청을 구분한다. 그 다음 명시적 cwd와 제한된 metadata 기반 correlation을 구현한다.

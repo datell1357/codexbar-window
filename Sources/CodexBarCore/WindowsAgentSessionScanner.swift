@@ -4,21 +4,50 @@ import WinSDK
 
 /// Initial native Windows scan: live CLI identities only. Metadata correlation is deliberately
 /// separate; missing cwd/transcript information is not inferred from unrelated recent files.
-enum WindowsAgentSessionScanner {
+public struct WindowsSessionScanOutcome: Sendable {
+    public enum Status: Sendable { case complete, partial, failed, cancelled }
+    public let status: Status
+    public let sessions: [AgentSession]
+    public let message: String?
+}
+
+public enum WindowsAgentSessionScanner {
     static func scan(config: SessionScanConfig, now: Date) async -> [AgentSession] {
-        guard config.maxProcessCount > 0, !Task.isCancelled else { return [] }
+        await self.scanOutcome(config: config, now: now).sessions
+    }
+
+    public static func scanOutcome(
+        config: SessionScanConfig = SessionScanConfig(),
+        now: Date = Date()) async -> WindowsSessionScanOutcome
+    {
+        guard !Task.isCancelled else { return .init(status: .cancelled, sessions: [], message: nil) }
+        guard config.maxProcessCount > 0 else {
+            return .init(status: .partial, sessions: [], message: "Session scan limit is zero.")
+        }
         let deadline = Date().addingTimeInterval(2)
         let snapshots: [WindowsProcessSnapshot]
         do {
             snapshots = try await WindowsProcessEnumerator.snapshots(
                 deadline: deadline, scope: .agentSessions)
+        } catch is CancellationError {
+            return .init(status: .cancelled, sessions: [], message: nil)
+        } catch WindowsProcessEnumerator.ProcessEnumeratorError.timedOut {
+            return .init(status: .failed, sessions: [], message: "Windows process discovery timed out.")
         } catch {
-            return []
+            return .init(status: .failed, sessions: [], message: "Windows process discovery failed.")
         }
         var sessions: [AgentSession] = []
+        var partialMessage: String?
         for process in snapshots.sorted(by: { $0.creationTime > $1.creationTime }) {
-            guard !Task.isCancelled else { return [] }
-            guard sessions.count < config.maxProcessCount, Date() < deadline else { break }
+            guard !Task.isCancelled else { return .init(status: .cancelled, sessions: [], message: nil) }
+            guard sessions.count < config.maxProcessCount else {
+                partialMessage = "Session result limit reached; this list may be incomplete."
+                break
+            }
+            guard Date() < deadline else {
+                partialMessage = "Session scan time budget reached; this list may be incomplete."
+                break
+            }
             guard let pid = Int32(exactly: process.pid), process.creationTicks > 0,
                   self.isConsoleImage(process.imagePath),
                   let identity = self.identity(imagePath: process.imagePath, arguments: self.arguments(process.commandLine))
@@ -37,7 +66,8 @@ enum WindowsAgentSessionScanner {
                 transcriptPath: nil,
                 host: ProcessInfo.processInfo.hostName))
         }
-        return sessions
+        guard !Task.isCancelled else { return .init(status: .cancelled, sessions: [], message: nil) }
+        return .init(status: partialMessage == nil ? .complete : .partial, sessions: sessions, message: partialMessage)
     }
 
     private static func identity(

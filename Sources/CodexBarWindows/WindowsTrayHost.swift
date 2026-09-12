@@ -23,6 +23,9 @@ public final class WindowsTrayHost: @unchecked Sendable {
     public typealias CodexWebSettingsSaveHandler = @Sendable (UInt64, WindowsCodexWebSettingsPatch) -> Void
     public typealias QuitHandler = @Sendable () -> Void
 
+    private static let agentSessionsToggleCommand = UINT_PTR(0x7500)
+    private static let agentSessionsRefreshCommand = UINT_PTR(0x7501)
+    private static let agentSessionCommandBase = UINT_PTR(0x7600)
     private static let wakeMessage = UINT(WM_APP) + 1
     private static let refreshCommand = UINT_PTR(0x7001)
     private static let quitCommand = UINT_PTR(0x7002)
@@ -57,6 +60,11 @@ public final class WindowsTrayHost: @unchecked Sendable {
         "TaskbarCreated".withCString(encodedAs: UTF16.self) { RegisterWindowMessageW($0) }
     }()
 
+    private let onAgentSessionsSettingsChanged: @Sendable () -> Void
+    private let onAgentSessionsRefresh: @Sendable () -> Void
+    private let onAgentSessionFocus: @Sendable (WindowsSessionFocusRequest) -> Void
+    private var mailboxAgentSessions: WindowsSessionMenuSnapshot = .disabled
+    private var popupAgentSessionCommands: [UINT_PTR: WindowsSessionFocusRequest] = [:]
     private let onRefresh: RefreshHandler
     private let onPowerChanged: PowerChangedHandler
     private let onMenuOpen: @Sendable () -> Void
@@ -142,6 +150,9 @@ public final class WindowsTrayHost: @unchecked Sendable {
         onQuit: @escaping QuitHandler,
         onPowerChanged: @escaping PowerChangedHandler = {},
         onMenuOpen: @escaping @Sendable () -> Void = {},
+        onAgentSessionsSettingsChanged: @escaping @Sendable () -> Void = {},
+        onAgentSessionsRefresh: @escaping @Sendable () -> Void = {},
+        onAgentSessionFocus: @escaping @Sendable (WindowsSessionFocusRequest) -> Void = { _ in },
         onPresentationSettingsChanged: @escaping PresentationSettingsChangedHandler = {},
         onOptionalUsageSettingsChanged: @escaping OptionalUsageSettingsChangedHandler = {},
         onRefreshSettingsChanged: @escaping RefreshSettingsChangedHandler = {},
@@ -153,6 +164,9 @@ public final class WindowsTrayHost: @unchecked Sendable {
         onCodexWebSettingsSave: @escaping CodexWebSettingsSaveHandler = { _, _ in },
         onPredictivePaceWarningSettingsChanged: @escaping PredictivePaceWarningSettingsChangedHandler = { _ in })
     {
+        self.onAgentSessionsSettingsChanged = onAgentSessionsSettingsChanged
+        self.onAgentSessionsRefresh = onAgentSessionsRefresh
+        self.onAgentSessionFocus = onAgentSessionFocus
         self.onRefresh = onRefresh
         self.onQuit = onQuit
         self.onPowerChanged = onPowerChanged
@@ -266,6 +280,18 @@ public final class WindowsTrayHost: @unchecked Sendable {
     /// Publishes rows and structured provider actions atomically. The action
     /// list is copied into the next popup, preventing a refreshed snapshot from
     /// reusing command IDs that belonged to an older menu.
+    public func postAgentSessions(_ snapshot: WindowsSessionMenuSnapshot) {
+        self.mailboxLock.lock()
+        guard !self.quitInvoked else {
+            self.mailboxLock.unlock()
+            return
+        }
+        self.mailboxAgentSessions = snapshot
+        let hwnd = self.window
+        self.mailboxLock.unlock()
+        if let hwnd { PostMessageW(hwnd, Self.wakeMessage, 0, 0) }
+    }
+
     public func postRows(_ rows: [String], menuEntries: [WindowsTrayMenuEntry]) {
         self.mailboxLock.lock()
         self.mailboxRows = rows
@@ -418,7 +444,9 @@ public final class WindowsTrayHost: @unchecked Sendable {
         self.mailboxLock.lock()
         let rows = self.mailboxRows
         let menuEntries = self.mailboxMenuEntries
+        let agentSessions = self.mailboxAgentSessions
         self.mailboxLock.unlock()
+        self.popupAgentSessionCommands.removeAll(keepingCapacity: true)
         self.popupStatusCommands.removeAll(keepingCapacity: true)
         self.popupDashboardCommands.removeAll(keepingCapacity: true)
         self.popupChangelogCommands.removeAll(keepingCapacity: true)
@@ -597,6 +625,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
         "Show provider changelog links".withCString(encodedAs: UTF16.self) {
             _ = AppendMenuW(menu, changelogFlags, Self.changelogCommandBase - 1, $0)
         }
+        self.appendAgentSessionsMenu(to: menu, snapshot: agentSessions)
         self.appendRefreshFrequencyMenu(to: menu)
         self.appendLowPowerModeMenu(to: menu)
         _ = AppendMenuW(menu, UINT(MF_SEPARATOR), 0, nil)
@@ -606,7 +635,8 @@ public final class WindowsTrayHost: @unchecked Sendable {
         var point = POINT()
         guard GetCursorPos(&point) != 0 else {
             _ = DestroyMenu(menu)
-            self.popupStatusCommands.removeAll(keepingCapacity: true)
+            self.popupAgentSessionCommands.removeAll(keepingCapacity: true)
+        self.popupStatusCommands.removeAll(keepingCapacity: true)
             self.popupDashboardCommands.removeAll(keepingCapacity: true)
             self.popupChangelogCommands.removeAll(keepingCapacity: true)
             self.popupProviderQuotaWarningCommands.removeAll(keepingCapacity: true)
@@ -616,12 +646,43 @@ public final class WindowsTrayHost: @unchecked Sendable {
         let command = TrackPopupMenu(menu, UINT(TPM_RIGHTBUTTON | TPM_RETURNCMD), point.x, point.y, 0, hwnd, nil)
         _ = DestroyMenu(menu)
         if command != 0 { self.dispatchCommand(UINT_PTR(command)) }
+        self.popupAgentSessionCommands.removeAll(keepingCapacity: true)
         self.popupStatusCommands.removeAll(keepingCapacity: true)
         self.popupDashboardCommands.removeAll(keepingCapacity: true)
         self.popupChangelogCommands.removeAll(keepingCapacity: true)
         self.popupProviderQuotaWarningCommands.removeAll(keepingCapacity: true)
         self.popupProviderQuotaWarningNames.removeAll(keepingCapacity: true)
         _ = PostMessageW(hwnd, WM_NULL, 0, 0)
+    }
+
+    private func appendAgentSessionsMenu(to menu: HMENU, snapshot: WindowsSessionMenuSnapshot) {
+        guard let submenu = CreatePopupMenu() else { return }
+        var commands: [UINT_PTR: WindowsSessionFocusRequest] = [:]
+        func append(_ title: String, flags: UINT, command: UINT_PTR) -> Bool {
+            title.withCString(encodedAs: UTF16.self) { AppendMenuW(submenu, flags, command, $0) != 0 }
+        }
+        let enabledFlags = UINT(MF_STRING) | (snapshot.enabled ? UINT(MF_CHECKED) : 0)
+        var succeeded = append("Enable local CLI sessions", flags: enabledFlags, command: Self.agentSessionsToggleCommand)
+        if snapshot.enabled {
+            succeeded = succeeded && append(
+                snapshot.isRefreshing ? "Refresh queued / scanning…" : "Refresh sessions",
+                flags: UINT(MF_STRING), command: Self.agentSessionsRefreshCommand)
+            if let message = snapshot.message {
+                succeeded = succeeded && append(message, flags: UINT(MF_STRING | MF_GRAYED), command: 0)
+            }
+            for (index, item) in snapshot.rows.prefix(64).enumerated() {
+                let command = Self.agentSessionCommandBase + UINT_PTR(index)
+                let flags = UINT(MF_STRING) | (item.isEnabled ? 0 : UINT(MF_GRAYED))
+                succeeded = succeeded && append(item.title, flags: flags, command: command)
+                if item.isEnabled { commands[command] = item.request }
+            }
+        }
+        let title = snapshot.enabled ? "Local CLI sessions (\(snapshot.rows.count))" : "Local CLI sessions"
+        let attached = succeeded && title.withCString(encodedAs: UTF16.self) {
+            AppendMenuW(menu, UINT(MF_STRING | MF_POPUP), UINT_PTR(UInt(bitPattern: submenu)), $0) != 0
+        }
+        if attached { self.popupAgentSessionCommands = commands }
+        else { _ = DestroyMenu(submenu) }
     }
 
     private func invokeQuit() {
@@ -634,6 +695,8 @@ public final class WindowsTrayHost: @unchecked Sendable {
             return
         }
         self.quitInvoked = true
+        self.mailboxAgentSessions = .disabled
+        self.popupAgentSessionCommands.removeAll()
         self.providerEditorPhase = .idle
         self.providerEditorExpectedRequest = nil
         self.providerEditorMailbox = nil
@@ -878,6 +941,10 @@ public final class WindowsTrayHost: @unchecked Sendable {
     }
 
     private func dispatchCommand(_ command: UINT_PTR) {
+        if let request = self.popupAgentSessionCommands[command] {
+            self.onAgentSessionFocus(request)
+            return
+        }
         if let url = self.popupStatusCommands[command] {
             self.openStatusPage(url)
             return
@@ -895,6 +962,11 @@ public final class WindowsTrayHost: @unchecked Sendable {
             return
         }
         switch command {
+        case Self.agentSessionsToggleCommand:
+            let enabled = self.presentationDefaults.object(forKey: "agentSessionsEnabled") as? Bool ?? false
+            self.presentationDefaults.set(!enabled, forKey: "agentSessionsEnabled")
+            self.onAgentSessionsSettingsChanged()
+        case Self.agentSessionsRefreshCommand: self.onAgentSessionsRefresh()
         case Self.refreshCommand: self.onRefresh()
         case Self.quitCommand: self.invokeQuit()
         case Self.usageBarsShowUsedCommand: self.togglePresentationSetting(forKey: "usageBarsShowUsed")

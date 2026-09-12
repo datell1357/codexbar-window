@@ -4,7 +4,7 @@ import Foundation
 
 extension CodexBarCLI {
     static func runSessions(_ values: ParsedValues) async {
-        let sessions = await LocalAgentSessionScanner().scan()
+        let sessions = await Self.scanSessionsForCommand()
         if let jsonVersion = Self.sessionsJSONProtocolVersion(from: values) {
             Self.printJSON(
                 Self.sessionsForJSON(sessions, includePiFamily: jsonVersion == 2),
@@ -12,6 +12,24 @@ extension CodexBarCLI {
         } else {
             print(Self.renderSessionsTable(sessions))
         }
+    }
+
+    private static func scanSessionsForCommand() async -> [AgentSession] {
+        #if os(Windows)
+        let outcome = await WindowsAgentSessionScanner.scanOutcome()
+        switch outcome.status {
+        case .failed, .cancelled:
+            Self.writeStderr((outcome.message ?? "Session scan cancelled.") + "\n")
+            Self.platformExit(1)
+        case .partial:
+            Self.writeStderr((outcome.message ?? "Partial session list.") + "\n")
+        case .complete:
+            break
+        }
+        return outcome.sessions
+        #else
+        return await LocalAgentSessionScanner().scan()
+        #endif
     }
 
     static func sessionsJSONProtocolVersion(from values: ParsedValues) -> Int? {
@@ -35,7 +53,7 @@ extension CodexBarCLI {
             writeStderr("Missing session id.\n")
             platformExit(1)
         }
-        let sessions = await LocalAgentSessionScanner().scan()
+        let sessions = await Self.scanSessionsForCommand()
         guard let session = sessions.first(where: { $0.id == sessionID }) else {
             Self.writeStderr("Unknown session: \(sessionID)\n")
             Self.platformExit(1)
