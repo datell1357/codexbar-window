@@ -23,6 +23,9 @@ public final class WindowsTrayHost: @unchecked Sendable {
     public typealias CodexWebSettingsSaveHandler = @Sendable (UInt64, WindowsCodexWebSettingsPatch) -> Void
     public typealias QuitHandler = @Sendable () -> Void
 
+    private static let codexTitleFolderCommand = UINT_PTR(0x752B)
+    private static let clearCodexTitleCommand = UINT_PTR(0x752C)
+    private static let disableCodexTitleCommand = UINT_PTR(0x752D)
     private static let inferNewSessionMetadataCommand = UINT_PTR(0x752A)
     private static let sessionMetadataToggleCommand = UINT_PTR(0x7525)
     private static let codexSessionFolderCommand = UINT_PTR(0x7526)
@@ -743,6 +746,16 @@ public final class WindowsTrayHost: @unchecked Sendable {
         if self.presentationDefaults.string(forKey: "windowsClaudeProjectDirectory") != nil {
             succeeded = succeeded && append("Clear Claude folder override", flags: UINT(MF_STRING), command: Self.clearClaudeProjectFolderCommand)
         }
+        succeeded = succeeded && append("Choose folder containing Codex session_index.jsonl…",
+                                        flags: UINT(MF_STRING), command: Self.codexTitleFolderCommand)
+        succeeded = succeeded && append(self.codexTitleSourceLabel(hidePersonalInfo: hidePersonalInfo),
+                                        flags: UINT(MF_STRING | MF_GRAYED), command: 0)
+        succeeded = succeeded && append("Disable Codex indexed titles",
+                                        flags: UINT(MF_STRING), command: Self.disableCodexTitleCommand)
+        if self.presentationDefaults.string(forKey: "windowsCodexTitleIndex") != nil {
+            succeeded = succeeded && append("Use title source from environment",
+                                            flags: UINT(MF_STRING), command: Self.clearCodexTitleCommand)
+        }
         if snapshot.enabled {
             succeeded = succeeded && append(
                 snapshot.isRefreshing ? "Refresh queued / scanning…" : "Refresh sessions",
@@ -845,6 +858,48 @@ public final class WindowsTrayHost: @unchecked Sendable {
             isRefreshing: true, rows: [], message: "Applying session metadata settings…")
         self.mailboxLock.unlock()
         self.onAgentSessionsSettingsChanged()
+    }
+
+    private func codexTitleSourceLabel(hidePersonalInfo: Bool) -> String {
+        let override = self.presentationDefaults.string(forKey: "windowsCodexTitleIndex")
+        let environment = CodexBarPlatformPaths.environmentValue(
+            "CODEXBAR_WINDOWS_CODEX_TITLE_INDEX", environment: ProcessInfo.processInfo.environment)
+        guard let raw = override ?? environment,
+              !raw.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return override != nil ? "Indexed titles: disabled" : "Indexed titles: no source configured"
+        }
+        let source = override != nil ? "selected folder" : "environment"
+        // Describe configuration only; this does not claim the file exists or was matched.
+        guard !hidePersonalInfo else { return "Title source: \(source) (path hidden)" }
+        let clean = raw.unicodeScalars.filter { !CharacterSet.controlCharacters.contains($0) }
+            .prefix(160).map(String.init).joined().replacingOccurrences(of: "&", with: "&&")
+        return "Title source (\(source)): \(clean)"
+    }
+
+    private func chooseCodexTitleFolder() {
+        guard !self.remoteEditorOpen, !self.quitInvoked, let window = self.window,
+              case .idle = self.providerEditorPhase, case .idle = self.codexWebSettingsEditorPhase else { return }
+        self.remoteEditorOpen = true
+        defer {
+            self.remoteEditorOpen = false
+            if !self.quitInvoked { PostMessageW(window, Self.wakeMessage, 0, 0) }
+        }
+        guard let folder = WindowsSessionMetadataFolderPicker.choose(
+            owner: window, title: "Choose the folder containing Codex session_index.jsonl"),
+              !self.quitInvoked else { return }
+        let path = folder + (folder.hasSuffix("\\") ? "" : "\\") + "session_index.jsonl"
+        do {
+            let roots = try WindowsSessionMetadataRoots(codexSessions: nil, claudeProjects: nil, codexTitleIndex: path)
+            guard let normalized = roots.codexTitleIndex else { return }
+            self.presentationDefaults.set(normalized, forKey: "windowsCodexTitleIndex")
+            self.sessionMetadataSettingsChanged()
+        } catch {
+            "Choose an absolute local Windows drive folder.".withCString(encodedAs: UTF16.self) { text in
+                "Codex title source".withCString(encodedAs: UTF16.self) {
+                    _ = MessageBoxW(window, text, $0, UINT(MB_OK | MB_ICONERROR))
+                }
+            }
+        }
     }
 
     private func chooseSessionMetadataFolder(codex: Bool) {
@@ -1191,6 +1246,14 @@ public final class WindowsTrayHost: @unchecked Sendable {
         case Self.inferNewSessionMetadataCommand:
             let value = self.presentationDefaults.object(forKey: "windowsInferNewSessionMetadataEnabled") as? Bool ?? false
             self.presentationDefaults.set(!value, forKey: "windowsInferNewSessionMetadataEnabled")
+            self.sessionMetadataSettingsChanged()
+        case Self.codexTitleFolderCommand: self.chooseCodexTitleFolder()
+        case Self.clearCodexTitleCommand:
+            self.presentationDefaults.removeObject(forKey: "windowsCodexTitleIndex")
+            self.sessionMetadataSettingsChanged()
+        case Self.disableCodexTitleCommand:
+            // Empty explicit override suppresses environment fallback; removeObject restores it.
+            self.presentationDefaults.set("", forKey: "windowsCodexTitleIndex")
             self.sessionMetadataSettingsChanged()
         case Self.sessionMetadataToggleCommand:
             let value = self.presentationDefaults.object(forKey: "windowsSessionMetadataEnabled") as? Bool ?? false

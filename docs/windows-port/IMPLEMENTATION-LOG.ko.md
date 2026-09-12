@@ -254,3 +254,22 @@
 4. 공통 metadata 시간 예산을 공유하므로 base matching 이후 여유가 없으면 제목 조회를 생략한다. 전체 기능/배포 완료로 계산하지 않는다.
 
 다음 구현: Windows GUI의 title source 선택·해제와 명시적 source 표시를 연결한다. SQLite/Claude 제목 및 나머지 platform 계약은 후속 필수 범위로 유지한다.
+
+## IMPL-012 — GUI Codex 제목 소스 선택·해제·표시
+
+상태: CODE_WRITTEN_UNVERIFIED. 사용자 지시에 따라 빌드·컴파일·테스트·lint·앱·실제 파일/계정/프로세스 조회 및 검증 스크립트를 실행하지 않았다. 계약: WIN-010/012/040/042.
+
+작성한 코드:
+
+- Windows 트레이 local session 메뉴에 Codex `session_index.jsonl`이 있는 폴더 선택 명령을 추가했다. 기존 native folder picker를 재사용하며 선택한 폴더에 고정 파일명을 붙여 absolute path 설정으로 저장한다. 선택 자체로 metadata 전체 기능을 켜거나 파일을 읽지 않는다.
+- `Disable Codex indexed titles`는 빈 explicit override를 저장해 환경변수 fallback까지 막는다. `Use title source from environment`는 override만 제거한다. 두 동작 모두 원본 파일을 삭제/변경하지 않는다.
+- 메뉴는 선택 폴더/환경변수/비활성화/미설정 상태를 구분한다. 경로는 제어문자 제거·길이 제한·Win32 mnemonic escaping을 적용하고 hidePersonalInfo가 켜져 있으면 표시하지 않는다. source 표시는 설정 출처이며 파일 존재나 매칭 성공을 주장하지 않는다.
+- runtime roots load에 GUI override를 전달했다. 기존 설정 변경 처리로 캐시 보강값을 비우고 scan을 취소하며 roots snapshot 비교로 이전 source의 늦은 결과를 차단한다. 선택 창은 기존 modal/quit 상태 경계를 사용한다.
+
+남은 범위:
+
+1. GUI는 고정 이름 `session_index.jsonl`의 부모 폴더를 선택한다. 임의 파일명과 긴 경로는 기존 CLI/환경 설정 범위이며 현대적 long-path file picker는 미구현이다.
+2. 제목 표시에는 local sessions/metadata 기능과 Codex sessions root, explicit UUID 매칭이 필요하다. 설정만으로 데이터가 연결된 것은 아니다.
+3. SQLite fallback, Claude 제목, 신규 추론 세션의 제목, 큰 index cache와 source/profile 소유권 검증은 남아 있다. GUI DPI/접근성/현지화 및 Windows 실행 검증도 미완료다.
+
+다음 구현: Claude의 명시적으로 매칭된 transcript에서 제목 metadata를 읽는 경로와 별도 opt-in 설정을 연결한다. 대화 본문을 제목으로 추정하는 동작은 별도 계약 없이 추가하지 않는다.
