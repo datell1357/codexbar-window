@@ -169,3 +169,27 @@
 - System Informer phnt ntrtl.h의 CURDIR/RTL_USER_PROCESS_PARAMETERS 필드 정의: https://github.com/winsiderss/phnt/blob/master/ntrtl.h (참고만 했으며 소스/패키지를 vendoring하지 않음).
 
 다음 구현: source 소유권과 실제/명시 cwd가 확인된 경우에 한정하여 Codex/Claude의 제한된 transcript metadata correlation을 연결한다. native-cwd 실험 옵션의 Windows 검증은 계속 별도 미완료로 유지한다.
+
+## IMPL-008 — 명시적 Codex/Claude UUID metadata correlation
+
+상태: CODE_WRITTEN_UNVERIFIED. 빌드·컴파일·테스트·앱·실제 프로세스/파일/계정 조회·검증 스크립트를 실행하지 않았다. 계약: WIN-040/042, W03/W04 session metadata source 설정.
+
+작성한 코드:
+
+- `WindowsSessionLaunchHints`: Codex resume UUID와 Claude --resume/-r/--session-id UUID를 추적한다. fork/continue/상충하는 selector는 기존 session metadata로 연결하지 않는다. unknown grammar는 보수적 fallback이다.
+- `WindowsSessionMetadataRoots`/`WindowsSessionMetadataCorrelator`: 사용자가 지정한 Codex sessions 및 Claude projects root만 사용한다. known cwd와 explicit UUID가 없으면 연결하지 않는다. Codex는 depth/entry/time 예산 안에서 UUID 파일 후보를 찾고, 후보가 하나이며 header ID/cwd·source와 파일 identity/크기/mtime이 맞는 경우만 붙인다. Claude는 escaped project folder+명시 UUID 파일의 metadata만 읽고 본문은 읽지 않는다. 같은 provider/cwd/UUID에 여러 프로세스가 있으면 연결하지 않는다.
+- `WindowsAgentSessionScanner`: metadata path/mtime/activity를 보강하면서 PID+생성 시각 ID를 그대로 유지한다. 미해결/모호/예산 초과는 partial 안내와 PID fallback으로 남긴다.
+- GUI: `Match selected-session metadata`는 기본 off다. Codex/Claude 폴더 선택과 override 해제 메뉴를 추가했고, 설정 변경 시 기존 보강 데이터와 늦은 조회 결과를 차단한다. folder picker는 선택만 하며 기능을 자동으로 켜지 않는다.
+- CLI: `--codex-session-root`, `--claude-project-root`를 추가했다. 앱 환경변수 `CODEXBAR_WINDOWS_CODEX_SESSIONS_ROOT`, `CODEXBAR_WINDOWS_CLAUDE_PROJECTS_ROOT`도 명시적 source로 사용할 수 있다. 대상 프로세스의 환경을 읽거나 default HOME을 빌려서 채우지 않는다.
+- native folder picker의 COM 수명과 Ole32 링크를 추가했다. 새 외부 패키지는 없다.
+
+범위·남은 작업:
+
+1. 일반 신규 세션/ID 없는 resume·picker·fork/continue, 다중 profile/root 자동 발견과 full CLI grammar는 미완료다. 이번 matching은 known cwd+explicit UUID에 한정한다.
+2. root는 사용자가 선언한 검색 범위다. 실제 target CODEX_HOME/CLAUDE_CONFIG_DIR을 자동으로 증명한 것이 아니다. 잘못된 root나 중복·모호한 후보는 연결하지 않으며 전체 계정/소스 동등성을 주장하지 않는다.
+3. Codex directory depth3 및 공통 entry/time budget 때문에 큰/비표준 트리가 미해결일 수 있다. 불완전 enumeration에서 유일 후보라고 판정하지 않는다. 직접 UUID/cwd가 맞아도 헤더 읽기 중 파일이 바뀌면 보강을 생략한다.
+4. Codex는 기존 bounded first-line reader를 재사용하고 전후 file identity를 비교한다. 전체 작업이 하나의 원자적 filesystem transaction은 아니며 ancestor junction/race 및 모든 file lifecycle 검증은 남아 있다.
+5. Claude title, Codex thread-title DB, Desktop/IDE, exact tab focus, long-path folder-picker 지원, DPI/현지화/접근성은 미완료다. GUI folder picker는 현재 전통적 Windows 경로 API 범위이며 긴 root는 CLI/환경 설정 경로로 별도 다뤄야 한다.
+6. native-cwd 실험 옵션과 새 parser/correlator/설정·UI·취소 모두 미검증이다.
+
+다음 구현: explicit UUID에 한정된 경로를 source/cwd 기반의 새 세션 매칭으로 확장하되 ambiguity와 profile 소유권을 보존한다. thread title 및 non-live metadata 표시 범위는 별도 단계로 연결한다.

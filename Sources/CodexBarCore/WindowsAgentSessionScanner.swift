@@ -19,7 +19,8 @@ public enum WindowsAgentSessionScanner {
     public static func scanOutcome(
         config: SessionScanConfig = SessionScanConfig(),
         now: Date = Date(),
-        nativeDirectoryReadEnabled: Bool = false) async -> WindowsSessionScanOutcome
+        nativeDirectoryReadEnabled: Bool = false,
+        metadataRoots: WindowsSessionMetadataRoots = .none) async -> WindowsSessionScanOutcome
     {
         guard !Task.isCancelled else { return .init(status: .cancelled, sessions: [], message: nil) }
         guard config.maxProcessCount > 0 else {
@@ -38,6 +39,7 @@ public enum WindowsAgentSessionScanner {
             return .init(status: .failed, sessions: [], message: "Windows process discovery failed.")
         }
         var sessions: [AgentSession] = []
+        var requestedIDs: [String: String] = [:]
         var partialMessage: String?
         var unavailableExplicitMetadata = false
         var unavailableNativeDirectories = 0
@@ -56,6 +58,8 @@ public enum WindowsAgentSessionScanner {
                   let identity = self.identity(imagePath: process.imagePath, arguments: self.arguments(process.commandLine))
             else { continue }
             let hints = WindowsSessionLaunchHints.parse(provider: identity.provider, arguments: identity.arguments)
+            let processSessionID = "pid:\(process.pid):\(process.creationTicks)"
+            requestedIDs[processSessionID] = hints.requestedSessionID
             var nativeDirectory: String?
             if nativeDirectoryReadEnabled {
                 switch WindowsProcessWorkingDirectory.read(process: process, deadline: deadline) {
@@ -76,7 +80,7 @@ public enum WindowsAgentSessionScanner {
             let cwd = hints.workingDirectory ?? nativeDirectory
             let projectPath = cwd ?? metadata?.cwd
             sessions.append(AgentSession(
-                id: "pid:\(process.pid):\(process.creationTicks)",
+                id: processSessionID,
                 provider: identity.provider,
                 dialect: identity.dialect,
                 source: .cli,
@@ -100,7 +104,13 @@ public enum WindowsAgentSessionScanner {
                               "Native directories were unavailable for \(unavailableNativeDirectories) processes; existing path/PID fallback is retained."]
                 .compactMap { $0 }.joined(separator: " ")
         }
-        return .init(status: partialMessage == nil ? .complete : .partial, sessions: sessions, message: partialMessage)
+        let correlated = WindowsSessionMetadataCorrelator.enrich(
+            sessions: sessions, requestedIDs: requestedIDs, roots: metadataRoots, config: config, now: now)
+        if let notice = correlated.message {
+            partialMessage = [partialMessage, notice].compactMap { $0 }.joined(separator: " ")
+        }
+        guard !Task.isCancelled else { return .init(status: .cancelled, sessions: [], message: nil) }
+        return .init(status: partialMessage == nil ? .complete : .partial, sessions: correlated.sessions, message: partialMessage)
     }
 
     private static func identity(

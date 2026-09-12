@@ -126,8 +126,17 @@ public actor WindowsAgentSessionsRuntime {
         }
         let currentGeneration = self.generation
         let nativeDirectoryReadEnabled = self.defaults.object(forKey: "windowsNativeSessionCwdEnabled") as? Bool ?? false
+        let metadataRoots: WindowsSessionMetadataRoots
+        do { metadataRoots = try self.metadataRoots() }
+        catch {
+            self.fresh = false
+            self.message = "Session metadata folder settings are invalid. Configure absolute local drive paths."
+            self.publish()
+            return
+        }
         let task = Task.detached(priority: .utility) {
-            await WindowsAgentSessionScanner.scanOutcome(nativeDirectoryReadEnabled: nativeDirectoryReadEnabled)
+            await WindowsAgentSessionScanner.scanOutcome(
+                nativeDirectoryReadEnabled: nativeDirectoryReadEnabled, metadataRoots: metadataRoots)
         }
         self.scanTask = task
         self.publish()
@@ -135,7 +144,8 @@ public actor WindowsAgentSessionsRuntime {
         self.scanTask = nil
         if self.running, self.enabled, self.generation == currentGeneration, !Task.isCancelled,
            (self.defaults.object(forKey: "agentSessionsEnabled") as? Bool ?? false),
-           nativeDirectoryReadEnabled == (self.defaults.object(forKey: "windowsNativeSessionCwdEnabled") as? Bool ?? false)
+           nativeDirectoryReadEnabled == (self.defaults.object(forKey: "windowsNativeSessionCwdEnabled") as? Bool ?? false),
+           (try? self.metadataRoots()) == metadataRoots
         {
             switch result.status {
             case .complete, .partial:
@@ -215,6 +225,13 @@ public actor WindowsAgentSessionsRuntime {
         _ = await focus?.value
         await periodic?.value
         await deferred?.value
+    }
+
+    private func metadataRoots() throws -> WindowsSessionMetadataRoots {
+        guard self.defaults.object(forKey: "windowsSessionMetadataEnabled") as? Bool ?? false else { return .none }
+        return try WindowsSessionMetadataRoots.load(
+            codexOverride: self.defaults.string(forKey: "windowsCodexSessionDirectory"),
+            claudeOverride: self.defaults.string(forKey: "windowsClaudeProjectDirectory"))
     }
 
     private func publish() {

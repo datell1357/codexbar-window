@@ -23,6 +23,11 @@ public final class WindowsTrayHost: @unchecked Sendable {
     public typealias CodexWebSettingsSaveHandler = @Sendable (UInt64, WindowsCodexWebSettingsPatch) -> Void
     public typealias QuitHandler = @Sendable () -> Void
 
+    private static let sessionMetadataToggleCommand = UINT_PTR(0x7525)
+    private static let codexSessionFolderCommand = UINT_PTR(0x7526)
+    private static let claudeProjectFolderCommand = UINT_PTR(0x7527)
+    private static let clearCodexSessionFolderCommand = UINT_PTR(0x7528)
+    private static let clearClaudeProjectFolderCommand = UINT_PTR(0x7529)
     private static let nativeSessionDirectoryCommand = UINT_PTR(0x7524)
     private static let pagePopupMessage = UINT(WM_APP) + 2
     private static let localPreviousPageCommand = UINT_PTR(0x7520)
@@ -722,6 +727,17 @@ public final class WindowsTrayHost: @unchecked Sendable {
         let nativeFlags = UINT(MF_STRING) | (nativeDirectories ? UINT(MF_CHECKED) : 0)
         succeeded = succeeded && append("Read native directories (experimental, 64-bit)",
                                         flags: nativeFlags, command: Self.nativeSessionDirectoryCommand)
+        let correlate = self.presentationDefaults.object(forKey: "windowsSessionMetadataEnabled") as? Bool ?? false
+        succeeded = succeeded && append("Match selected-session metadata", flags: UINT(MF_STRING) | (correlate ? UINT(MF_CHECKED) : 0),
+                                        command: Self.sessionMetadataToggleCommand)
+        succeeded = succeeded && append("Choose Codex sessions folder…", flags: UINT(MF_STRING), command: Self.codexSessionFolderCommand)
+        succeeded = succeeded && append("Choose Claude projects folder…", flags: UINT(MF_STRING), command: Self.claudeProjectFolderCommand)
+        if self.presentationDefaults.string(forKey: "windowsCodexSessionDirectory") != nil {
+            succeeded = succeeded && append("Clear Codex folder override", flags: UINT(MF_STRING), command: Self.clearCodexSessionFolderCommand)
+        }
+        if self.presentationDefaults.string(forKey: "windowsClaudeProjectDirectory") != nil {
+            succeeded = succeeded && append("Clear Claude folder override", flags: UINT(MF_STRING), command: Self.clearClaudeProjectFolderCommand)
+        }
         if snapshot.enabled {
             succeeded = succeeded && append(
                 snapshot.isRefreshing ? "Refresh queued / scanning…" : "Refresh sessions",
@@ -815,6 +831,39 @@ public final class WindowsTrayHost: @unchecked Sendable {
             if let request { self.popupPageCommands[command] = (request, remote) }
         }
         return true
+    }
+
+    private func sessionMetadataSettingsChanged() {
+        self.mailboxLock.lock()
+        self.mailboxAgentSessions = .init(
+            enabled: self.presentationDefaults.object(forKey: "agentSessionsEnabled") as? Bool ?? false,
+            isRefreshing: true, rows: [], message: "Applying session metadata settings…")
+        self.mailboxLock.unlock()
+        self.onAgentSessionsSettingsChanged()
+    }
+
+    private func chooseSessionMetadataFolder(codex: Bool) {
+        guard !self.remoteEditorOpen, !self.quitInvoked, let window = self.window,
+              case .idle = self.providerEditorPhase, case .idle = self.codexWebSettingsEditorPhase else { return }
+        self.remoteEditorOpen = true
+        defer {
+            self.remoteEditorOpen = false
+            if !self.quitInvoked { PostMessageW(window, Self.wakeMessage, 0, 0) }
+        }
+        guard let path = WindowsSessionMetadataFolderPicker.choose(
+            owner: window, title: codex ? "Choose the Codex sessions folder" : "Choose the Claude projects folder"),
+              !self.quitInvoked else { return }
+        do {
+            _ = try WindowsSessionMetadataRoots(codexSessions: codex ? path : nil, claudeProjects: codex ? nil : path)
+            self.presentationDefaults.set(path, forKey: codex ? "windowsCodexSessionDirectory" : "windowsClaudeProjectDirectory")
+            self.sessionMetadataSettingsChanged()
+        } catch {
+            "Choose an absolute local Windows drive folder.".withCString(encodedAs: UTF16.self) { text in
+                "Session metadata".withCString(encodedAs: UTF16.self) {
+                    _ = MessageBoxW(window, text, $0, UINT(MB_OK | MB_ICONERROR))
+                }
+            }
+        }
     }
 
     private func editRemoteSettings() {
@@ -1134,6 +1183,18 @@ public final class WindowsTrayHost: @unchecked Sendable {
             self.onPresentationSettingsChanged()
         case Self.remoteSettingsCommand: self.editRemoteSettings()
         case Self.remoteRefreshCommand: self.onRemoteRefresh()
+        case Self.sessionMetadataToggleCommand:
+            let value = self.presentationDefaults.object(forKey: "windowsSessionMetadataEnabled") as? Bool ?? false
+            self.presentationDefaults.set(!value, forKey: "windowsSessionMetadataEnabled")
+            self.sessionMetadataSettingsChanged()
+        case Self.codexSessionFolderCommand: self.chooseSessionMetadataFolder(codex: true)
+        case Self.claudeProjectFolderCommand: self.chooseSessionMetadataFolder(codex: false)
+        case Self.clearCodexSessionFolderCommand:
+            self.presentationDefaults.removeObject(forKey: "windowsCodexSessionDirectory")
+            self.sessionMetadataSettingsChanged()
+        case Self.clearClaudeProjectFolderCommand:
+            self.presentationDefaults.removeObject(forKey: "windowsClaudeProjectDirectory")
+            self.sessionMetadataSettingsChanged()
         case Self.nativeSessionDirectoryCommand:
             let current = self.presentationDefaults.object(forKey: "windowsNativeSessionCwdEnabled") as? Bool ?? false
             self.presentationDefaults.set(!current, forKey: "windowsNativeSessionCwdEnabled")

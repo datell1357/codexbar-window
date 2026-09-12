@@ -7,6 +7,11 @@ import WinSDK
 struct WindowsSessionLaunchHints: Sendable {
     let workingDirectory: String?
     let sessionFile: String?
+    let requestedSessionID: String?
+    init(workingDirectory: String?, sessionFile: String?, requestedSessionID: String? = nil) {
+        self.workingDirectory = workingDirectory; self.sessionFile = sessionFile
+        self.requestedSessionID = requestedSessionID
+    }
     static let empty = Self(workingDirectory: nil, sessionFile: nil)
 
     static func parse(provider: AgentSession.Provider, arguments: [String]) -> Self {
@@ -25,16 +30,27 @@ struct WindowsSessionLaunchHints: Sendable {
             switches = ["--continue", "-c", "--resume", "-r", "--print", "-p", "--no-session",
                         "--no-extensions", "--no-skills", "--no-prompt-templates"]
         case .claude:
-            // --add-dir grants tool access; it is not the Claude process's working directory.
-            return .empty
+            values = ["--resume", "-r", "--session-id", "--model", "--permission-mode", "--add-dir",
+                      "--allowedTools", "--disallowedTools", "--mcp-config", "--append-system-prompt",
+                      "--system-prompt", "--settings", "--setting-sources"]
+            switches = ["--print", "-p", "--verbose", "--dangerously-skip-permissions", "--strict-mcp-config"]
         }
         var cwd: String?
         var session: String?
+        var requestedSessionID: String?
         var index = 0
         var skippedSubcommand = false
+        var isFork = false
         while index < arguments.count {
             let token = arguments[index]
             if token == "--" { break }
+            if provider == .codex, !isFork, token == "resume", index + 1 < arguments.count,
+               let id = UUID(uuidString: arguments[index + 1]) {
+                requestedSessionID = id.uuidString.lowercased()
+                skippedSubcommand = true; index += 2; continue
+            }
+            if provider == .claude, ["--continue", "-c", "--fork-session"].contains(token) { return .empty }
+            if provider == .codex, token == "fork" { requestedSessionID = nil; isFork = true }
             if provider == .codex, !skippedSubcommand, ["exec", "resume", "fork"].contains(token) {
                 skippedSubcommand = true; index += 1; continue
             }
@@ -42,7 +58,8 @@ struct WindowsSessionLaunchHints: Sendable {
                 // Stop at prompt/positional data. If a later path flag could override our earlier
                 // path, the prefix alone is not authoritative, so retain PID-only presentation.
                 if arguments.dropFirst(index + 1).prefix(while: { $0 != "--" }).contains(where: {
-                    $0.hasPrefix("-C") || $0.hasPrefix("--cd") || $0.hasPrefix("--session")
+                    $0.hasPrefix("-C") || $0.hasPrefix("--cd") || $0.hasPrefix("--session") ||
+                        ["--continue", "--resume", "--fork-session", "--last", "-r", "-c"].contains($0)
                 }) { return .empty }
                 break
             }
@@ -51,6 +68,7 @@ struct WindowsSessionLaunchHints: Sendable {
             if provider == .pi, ["--continue", "--resume", "-c", "-r", "--no-session"].contains(option) {
                 return .empty
             }
+            if provider == .codex, option == "--last" { requestedSessionID = nil }
             if switches.contains(option), pieces.count == 1 { index += 1; continue }
             if provider == .codex, token.hasPrefix("-C"), token.count > 2 {
                 cwd = self.absolutePath(String(token.dropFirst(2)))
@@ -66,9 +84,15 @@ struct WindowsSessionLaunchHints: Sendable {
             }
             if option == "--cd" || option == "-C" { cwd = self.absolutePath(value) }
             if option == "--session" { session = self.absolutePath(value) }
+            if provider == .claude, ["--resume", "-r", "--session-id"].contains(option) {
+                guard let id = UUID(uuidString: value) else { return .empty }
+                let selected = id.uuidString.lowercased()
+                if let previous = requestedSessionID, previous != selected { return .empty }
+                requestedSessionID = selected
+            }
             index += 1
         }
-        return Self(workingDirectory: cwd, sessionFile: session)
+        return Self(workingDirectory: cwd, sessionFile: session, requestedSessionID: requestedSessionID)
     }
 
     static func absolutePath(_ value: String) -> String? {

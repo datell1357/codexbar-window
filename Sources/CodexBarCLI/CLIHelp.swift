@@ -140,7 +140,7 @@ extension CodexBarCLI {
 
     static func sessionsHelp(version: String) -> String {
         #if os(Windows)
-        let nativeOption = " [--native-cwd]"
+        let nativeOption = " [--native-cwd] [--codex-session-root <path>] [--claude-project-root <path>]"
         let focusDescription = "Focus activates an available Windows window. --native-cwd opts into experimental 64-bit directory reads."
         #else
         let nativeOption = ""

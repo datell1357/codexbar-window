@@ -26,8 +26,8 @@
   "static_qa_status": "NOT_RUN_DURING_IMPLEMENTATION",
   "windows_runtime_status": "NOT_VALIDATED",
   "completion_claim": false,
-  "latest_completed_slice": "IMPL-007 code written: opt-in experimental native64 Windows cwd reader with identity/layout checks and tray/CLI switches; unverified",
-  "next": "Implement bounded Codex/Claude transcript metadata correlation only with known cwd/source ownership; keep native-cwd runtime verification pending.",
+  "latest_completed_slice": "IMPL-008 code written: explicit-UUID Codex/Claude metadata correlation with declared roots and GUI/CLI source settings; unverified",
+  "next": "Extend selected UUID correlation toward new-session/cwd source matching without ambiguous profile joins; later connect safe thread titles and remaining UI/platform contracts.",
   "inventory": {
     "baseline_entries": 2844,
     "provider_ids": 69,
@@ -49,7 +49,7 @@
     "widget_provider_choices": 17
   },
   "automation_action_this_revision": "Created active thread heartbeat codexbar-windows-30 at 30-minute intervals",
-  "publication_action_this_revision": "Commit and push IMPL-007; actual commit and push output are publication evidence",
+  "publication_action_this_revision": "Commit and push IMPL-008; actual commit and push output are publication evidence",
   "historical_state_before_2026_09_12": {
     "phase": "IMPLEMENTING",
     "repository": "/Users/yeoreum/Documents/codexbar-window/fork",
@@ -121,10 +121,10 @@
     }
   ],
   "windows_adaptations_pending": [
-    "Runtime validation and supported ABI policy for experimental native cwd, WOW64/UNC/relative-path handling",
-    "Codex/Claude transcript correlation, Desktop/IDE and full Pi/OMP roots",
-    "Windows Terminal pseudoconsole and exact tab focus",
-    "Collection limits, manual-host capacity, large-cache policy and UI refinements",
+    "Validation and supported ABI policy for experimental native cwd, WOW64/UNC/relative paths",
+    "New-session/ID-less correlation, real profile/root ownership, thread titles and Desktop/IDE",
+    "Windows Terminal exact-tab focus and remaining collection/cache limits",
+    "Long-path picker, error recovery, localization/accessibility/DPI",
     "All Windows build and runtime validation"
   ],
   "automation": {
@@ -220,6 +220,17 @@
       "status": "CODE_WRITTEN_UNVERIFIED",
       "validation": "NOT_RUN_BY_USER_INSTRUCTION",
       "experimental_default_enabled": false
+    },
+    {
+      "id": "IMPL-008",
+      "contracts": [
+        "WIN-040",
+        "WIN-042",
+        "WIN-010",
+        "WIN-012"
+      ],
+      "status": "CODE_WRITTEN_UNVERIFIED",
+      "validation": "NOT_RUN_BY_USER_INSTRUCTION"
     }
   ],
   "publication_policy": {

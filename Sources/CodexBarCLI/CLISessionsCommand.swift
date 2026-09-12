@@ -16,7 +16,17 @@ extension CodexBarCLI {
 
     private static func scanSessionsForCommand(values: ParsedValues) async -> [AgentSession] {
         #if os(Windows)
-        let outcome = await WindowsAgentSessionScanner.scanOutcome(nativeDirectoryReadEnabled: values.flags.contains("nativeCwd"))
+        let roots: WindowsSessionMetadataRoots
+        do {
+            roots = try WindowsSessionMetadataRoots.load(
+                codexOverride: values.options["codexSessionRoot"]?.last,
+                claudeOverride: values.options["claudeProjectRoot"]?.last)
+        } catch {
+            Self.writeStderr("Invalid Windows session metadata root. Use an absolute local drive path.\n")
+            Self.platformExit(64)
+        }
+        let outcome = await WindowsAgentSessionScanner.scanOutcome(
+            nativeDirectoryReadEnabled: values.flags.contains("nativeCwd"), metadataRoots: roots)
         switch outcome.status {
         case .failed, .cancelled:
             Self.writeStderr((outcome.message ?? "Session scan cancelled.") + "\n")
@@ -121,6 +131,10 @@ struct SessionsOptions: CommanderParsable {
     #if os(Windows)
     @Flag(name: .long("native-cwd"), help: "Opt in to experimental native 64-bit process directory reads")
     var nativeCwd: Bool = false
+    @Option(name: .long("codex-session-root"), help: "Explicit Codex sessions folder for selected UUID metadata matching")
+    var codexSessionRoot: String?
+    @Option(name: .long("claude-project-root"), help: "Explicit Claude projects folder for selected UUID metadata matching")
+    var claudeProjectRoot: String?
     #endif
 
     @Flag(name: .long("json"), help: "Emit legacy JSON compatible with older clients")
