@@ -310,3 +310,22 @@
 3. SQLite, 신규 추론 제목, source/profile 소유권과 전체 Windows 기능·배포 검증은 계속 미완료다.
 
 다음 구현: 큰 파일 제목 읽기를 위한 bounded suffix 처리와 완전한 레코드 경계를 연결한다. 부분 데이터에서 발견되지 않은 제목을 확정하지 않는 정책을 유지한다.
+
+## IMPL-015 — 큰 제목 파일의 bounded suffix 읽기
+
+상태: CODE_WRITTEN_UNVERIFIED. 빌드·컴파일·테스트·lint·앱·실제 파일/프로세스/계정 조회·검증 스크립트는 실행하지 않았다. 계약: WIN-040/042.
+
+작성한 코드:
+
+- 공통 title reader에서1MiB보다 큰 파일은 같은 Windows handle의 SetFilePointerEx로 마지막1MiB 위치로 이동한다. 읽기 시작 offset의 Int64 변환을 확인하고, EOF까지 예상 suffix 길이와 전후 file identity를 유지한다. 작은 파일은 전체 읽기를 유지한다.
+- suffix의 첫 줄은 UTF-8/JSON 중간 조각일 수 있으므로 첫 newline까지 항상 버린다. 이후 레코드에만 기존64KiB 행/JSON schema/UUID 검사를 적용한다. 시작점이 우연히 완전한 행 경계여도 첫 행은 보수적으로 버린다.
+- title 결과에 unresolved UUID 집합을 추가했다. suffix에서 찾은 UUID는 마지막 제목을 사용하고, 빈 마지막 제목은 clear로 취급한다. 발견하지 못한 UUID는 제목 없음으로 확정하지 않고 범위 밖 미해결 안내와 기존 역할/프로젝트 fallback을 유지한다. Codex의 일부 UUID가 미해결이어도 발견한 다른 UUID 제목은 표시한다.
+- CLI 도움말의 title index 읽기 범위를 갱신했다. PID focus ID/활동 시각, 기본 off Claude opt-in, source 설정과 개인정보 표시 정책은 유지한다.
+
+남은 범위:
+
+1. 전체 transcript 검색이나 증분 cache가 아니다. 제목이 마지막1MiB보다 앞에 있으면 미해결이다. suffix에64KiB 초과 행 또는 잘못된 JSON이 있으면 해당 읽기의 제목을 생략한다.
+2. 파일 변경/동기 read 취소 지연, SetFilePointerEx/WinSDK signature 및 실제 Windows 동작은 미검증이다. EOF 레코드는 JSON 파싱에 성공해야 하며 전체 작업은 원자적 filesystem snapshot이 아니다.
+3. SQLite fallback, 신규 추론 제목, source/profile 소유권, full Windows UI/플랫폼 및 배포 검증은 계속 미완료다.
+
+다음 구현: 제목·파일 metadata의 세션별 출처 표시와 실제 source 설정 진단을 이어간다. 큰 파일의 cache/증분 처리 및 SQLite도 남은 필수 범위다.

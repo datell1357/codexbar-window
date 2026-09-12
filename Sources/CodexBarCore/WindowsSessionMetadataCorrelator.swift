@@ -120,6 +120,7 @@ enum WindowsSessionMetadataCorrelator {
                     do {
                         let names = try self.stableTitleNames(path, ids: [id.lowercased()], deadline: budget.deadline, claude: true)
                         guard let latest = self.fileInfo(path), latest == info else { throw TitleReadFailure.changed }
+                        if !names.unresolvedIDs.isEmpty { claudeTitleFailures.insert(.outsideWindow) }
                         output[index].sessionName = names[id.lowercased()]
                     } catch {
                         claudeTitleFailures.insert((error as? TitleReadFailure) ?? .unavailable)
@@ -136,6 +137,9 @@ enum WindowsSessionMetadataCorrelator {
             let ids = Set(matchedHeaders.values.map { $0.sessionID.lowercased() })
             do {
                 let names = try self.stableTitleNames(titlePath, ids: ids, deadline: budget.deadline)
+                if !names.unresolvedIDs.isEmpty {
+                    notices.append("Codex titles: \(TitleReadFailure.outsideWindow.message)")
+                }
                 for (index, header) in matchedHeaders {
                     output[index].sessionName = header.descriptiveName(
                         threadMetadata: names[header.sessionID.lowercased()].map {
@@ -403,18 +407,19 @@ enum WindowsSessionMetadataCorrelator {
     }
 
     /// Explicit source only: never derive CODEX_HOME or a title index from another account.
-    /// A complete stable index is required so a later rename cannot be missed by truncation.
+    /// Reads through a stable EOF so accepted records cannot have a later unseen rename.
     private enum TitleReadFailure: Error, Hashable, CaseIterable {
-        case unavailable, fileLimit, lineLimit, format, changed, deadline, cancelled
+        case unavailable, fileLimit, lineLimit, format, changed, deadline, cancelled, outsideWindow
         var message: String {
             switch self {
             case .unavailable: "The configured source cannot be read as a local regular file. Check its location and access."
-            case .fileLimit: "The source exceeds the current 1 MiB reader limit. Large-file support is pending."
+            case .fileLimit: "The source grew beyond the 1 MiB read window; a later refresh can retry."
             case .lineLimit: "A record exceeds the current 64 KiB line limit."
             case .format: "The source contains incomplete or unsupported title records."
             case .changed: "The source changed during reading; a later refresh can retry."
             case .deadline: "The metadata scan time budget was exhausted."
             case .cancelled: "Title reading was cancelled."
+            case .outsideWindow: "Some titles were not found in the last 1 MiB; earlier title records remain unresolved."
             }
         }
     }
@@ -424,8 +429,14 @@ enum WindowsSessionMetadataCorrelator {
         if Date() >= deadline { throw TitleReadFailure.deadline }
     }
 
+    private struct TitleNames {
+        let names: [String: String]
+        let unresolvedIDs: Set<String>
+        subscript(_ id: String) -> String? { self.names[id] }
+    }
+
     private static func stableTitleNames(
-        _ path: String, ids: Set<String>, deadline: Date, claude: Bool = false) throws -> [String: String] {
+        _ path: String, ids: Set<String>, deadline: Date, claude: Bool = false) throws -> TitleNames {
         try self.checkTitleDeadline(deadline)
         guard let absolute = WindowsSessionLaunchHints.absolutePath(path),
               let separator = absolute.lastIndex(of: "\\"),
@@ -439,7 +450,13 @@ enum WindowsSessionMetadataCorrelator {
         defer { CloseHandle(handle) }
         let maximumBytes = 1024 * 1024
         guard let before = self.fileInfo(handle: handle) else { throw TitleReadFailure.unavailable }
-        guard before.size <= UInt64(maximumBytes) else { throw TitleReadFailure.fileLimit }
+        let startOffset = before.size > UInt64(maximumBytes) ? before.size - UInt64(maximumBytes) : 0
+        if startOffset > 0 {
+            guard let offset = Int64(exactly: startOffset) else { throw TitleReadFailure.unavailable }
+            var distance = LARGE_INTEGER()
+            distance.QuadPart = offset
+            guard SetFilePointerEx(handle, distance, nil, DWORD(FILE_BEGIN)) != 0 else { throw TitleReadFailure.unavailable }
+        }
         var data = Data()
         var reachedEOF = false
         while data.count <= maximumBytes, !Task.isCancelled, Date() < deadline {
@@ -454,7 +471,14 @@ enum WindowsSessionMetadataCorrelator {
         }
         try self.checkTitleDeadline(deadline)
         guard data.count <= maximumBytes else { throw TitleReadFailure.fileLimit }
-        guard reachedEOF, UInt64(data.count) == before.size else { throw TitleReadFailure.changed }
+        guard reachedEOF, UInt64(data.count) == before.size - startOffset else { throw TitleReadFailure.changed }
+        if startOffset > 0 {
+            // The offset may fall inside a UTF-8 scalar or JSON token. Discard through the first
+            // newline even if it happened to start on a record boundary; never parse a fragment.
+            guard let newline = data.firstIndex(of: 10) else { throw TitleReadFailure.outsideWindow }
+            data.removeSubrange(...newline)
+        }
+        var seenIDs: Set<String> = []
         var names: [String: String] = [:]
         for line in data.split(separator: 10) {
             try self.checkTitleDeadline(deadline)
@@ -469,6 +493,7 @@ enum WindowsSessionMetadataCorrelator {
                   let title = object[claude ? "customTitle" : "thread_name"] as? String else { throw TitleReadFailure.format }
             let id = uuid.uuidString.lowercased()
             guard ids.contains(id) else { continue }
+            seenIDs.insert(id)
             let clean = WindowsSessionLaunchHints.label(title)
             // Append order follows the original index reader; an empty rename removes stale text.
             names[id] = clean.isEmpty ? nil : clean
@@ -477,7 +502,7 @@ enum WindowsSessionMetadataCorrelator {
         guard let after = self.fileInfo(handle: handle), let current = self.fileInfo(absolute)
         else { throw TitleReadFailure.unavailable }
         guard before == after, current == after else { throw TitleReadFailure.changed }
-        return names
+        return TitleNames(names: names, unresolvedIDs: startOffset > 0 ? ids.subtracting(seenIDs) : [])
     }
 
     private static func join(_ base: String, _ component: String) -> String {

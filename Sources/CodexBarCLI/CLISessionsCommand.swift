@@ -140,7 +140,7 @@ struct SessionsOptions: CommanderParsable {
     var claudeTitles: Bool = false
     @Option(name: .long("codex-session-root"), help: "Explicit Codex sessions folder for selected UUID metadata matching")
     var codexSessionRoot: String?
-    @Option(name: .long("codex-title-index"), help: "Explicit Codex session_index.jsonl for selected UUID titles (maximum 1 MiB)")
+    @Option(name: .long("codex-title-index"), help: "Explicit Codex session_index.jsonl for selected UUID titles (reads the last 1 MiB)")
     var codexTitleIndex: String?
     @Option(name: .long("claude-project-root"), help: "Explicit Claude projects folder for selected UUID metadata matching")
     var claudeProjectRoot: String?
