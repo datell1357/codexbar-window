@@ -1,5 +1,7 @@
 # Windows 전용 제품 작업 현황
 
+- IMPL-234: Cursor Windows 비용 이벤트 기본 전송을 격리하고 페이지 decode 상한/취소/고정 오류를 연결했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
 - IMPL-233: Cursor 사용량/후보 확인과 Windsurf 수동 세션 HTTP의 Windows 기본 전송을 격리 경로에 연결했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
 
 - IMPL-232: Zed/Augment Windows 수동 계정 HTTP의 ambient 쿠키·캐시·URL 자격증명을 분리했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.

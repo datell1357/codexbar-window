@@ -2701,3 +2701,11 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - 본 변경은 Cursor 별도 비용 이벤트 수집기의 전송까지 완료했다는 의미가 아니다. 비용 수집 및 다른 제공자 경로는 별도 소요로 남는다.
 - 남은 소요: 실제 전송/계정 전환 검증, Zed 자동 인증/Chromium/Windsurf 가져오기 및 전체 계획 나머지.
 - CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·네트워크 검증 미실행.
+
+## IMPL-234 — Cursor 비용 이벤트 전송 격리
+
+- Windows 비용 이벤트 수집기는 명시 쿠키를 사용하는 전용 HTTP client를 기본으로 선택한다. 주입 transport와 다른 플랫폼 기본값은 유지한다.
+- 수신 및 decode 뒤 취소를 확인하고 Windows 페이지는 수신 후 16MiB 상한을 적용한다. decode 실패는 응답값을 포함하지 않는 고정 URLError로 전달한다.
+- 기존 전체 페이지/중복 경계/계정 ID 전후 확인 규칙은 유지한다. 크기 상한은 스트리밍 다운로드 제한이 아닌 decode 진입 제한이다.
+- 남은 소요: 실제 비용 조회/계정 전환 검증, 자동 인증/Chromium/Windsurf 지원 및 전체 계획 나머지.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·네트워크 검증 미실행.

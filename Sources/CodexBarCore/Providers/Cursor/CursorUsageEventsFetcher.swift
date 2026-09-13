@@ -361,13 +361,17 @@ struct CursorUsageEventsFetcher: Sendable {
 
     init(
         baseURL: URL = URL(string: "https://cursor.com")!,
-        transport: any ProviderHTTPTransport = ProviderHTTPClient.shared,
+        transport: (any ProviderHTTPTransport)? = nil,
         timeout: TimeInterval = 30,
         pageSize: Int = 1000,
         maxPages: Int = 200)
     {
         self.baseURL = baseURL
-        self.transport = transport
+        #if os(Windows)
+        self.transport = transport ?? WindowsManualAccountHTTPTransport.shared
+        #else
+        self.transport = transport ?? ProviderHTTPClient.shared
+        #endif
         self.timeout = timeout
         self.pageSize = pageSize
         self.maxPages = maxPages
@@ -478,8 +482,19 @@ struct CursorUsageEventsFetcher: Sendable {
                 startDate: Self.millisString(since),
                 endDate: Self.millisString(until)))
         let (data, response) = try await self.transport.data(for: request)
+        try Task.checkCancellation()
         try Self.validate(response)
+        #if os(Windows)
+        guard data.count <= 16 * 1024 * 1024 else { throw URLError(.dataLengthExceedsMaximum) }
+        do {
+            let result = try JSONDecoder().decode(CursorUsageEventsPage.self, from: data)
+            try Task.checkCancellation()
+            return result
+        } catch is CancellationError { throw CancellationError() }
+        catch { throw URLError(.cannotParseResponse) }
+        #else
         return try JSONDecoder().decode(CursorUsageEventsPage.self, from: data)
+        #endif
     }
 
     // MARK: Request Building
