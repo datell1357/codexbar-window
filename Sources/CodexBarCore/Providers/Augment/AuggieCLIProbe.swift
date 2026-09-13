@@ -1,6 +1,6 @@
 import Foundation
 
-#if os(macOS)
+#if os(macOS) || os(Windows)
 
 /// Fetches Augment usage via `auggie account status` CLI command
 public struct AuggieCLIProbe: Sendable {
@@ -10,6 +10,7 @@ public struct AuggieCLIProbe: Sendable {
 
     public func fetch() async throws -> AugmentStatusSnapshot {
         let output = try await self.runAuggieAccountStatus()
+        try Task.checkCancellation()
         return try self.parse(output)
     }
 
@@ -27,19 +28,44 @@ public struct AuggieCLIProbe: Sendable {
             env: env,
             loginPATH: loginPATH)
 
+        #if os(Windows)
+        guard let command = WindowsCommandResolver.resolve(executable: "auggie",
+            override: CodexBarPlatformPaths.environmentValue("AUGGIE_CLI_PATH", environment: env),
+            environment: pathEnv) else { throw AuggieCLIError.noOutput }
+        let result: SubprocessResult
+        do {
+            result = try await SubprocessRunner.run(binary: command.target.executable,
+                arguments: command.target.argumentPrefix + ["account", "status"],
+                environment: command.target.environment(from: pathEnv),
+                timeout: Self.commandTimeout, maxOutputBytes: 1024 * 1024,
+                label: "auggie-account-status")
+        } catch let SubprocessRunnerError.nonZeroExit(code, stderr) {
+            if stderr.contains("Authentication failed") || stderr.contains("auggie login") {
+                throw AuggieCLIError.notAuthenticated
+            }
+            throw AuggieCLIError.parseError("Command exited with status \(code).")
+        }
+        try Task.checkCancellation()
+        #else
         let result = try await SubprocessRunner.run(
             binary: executable,
             arguments: ["account", "status"],
             environment: pathEnv,
             timeout: Self.commandTimeout,
             label: "auggie-account-status")
+        
+        #endif
 
         let output = result.stdout
         let errorOutput = result.stderr
 
         guard !output.isEmpty else {
             if !errorOutput.isEmpty {
+                #if os(Windows)
+                Self.log.error("Auggie returned no standard output")
+                #else
                 Self.log.error("Auggie stderr: \(errorOutput)")
+                #endif
             }
             throw AuggieCLIError.noOutput
         }
@@ -49,7 +75,11 @@ public struct AuggieCLIProbe: Sendable {
             throw AuggieCLIError.notAuthenticated
         }
 
+        #if os(Windows)
+        return TextParsing.stripANSICodes(output).replacingOccurrences(of: "\r\n", with: "\n")
+        #else
         return output
+        #endif
     }
 
     func parse(_ output: String) throws -> AugmentStatusSnapshot {
@@ -138,13 +168,21 @@ public struct AuggieCLIProbe: Sendable {
         }
 
         guard let finalRemaining = remaining else {
+            #if os(Windows)
+            Self.log.error("Failed to parse Auggie account status")
+            #else
             Self.log.error("Failed to parse auggie output: \(output)")
+            #endif
             throw AuggieCLIError.parseError("Could not extract credits from output")
         }
 
         let finalTotal = total ?? maxCredits
         guard let finalTotal else {
+            #if os(Windows)
+            Self.log.error("Failed to parse Auggie account status")
+            #else
             Self.log.error("Failed to parse auggie output: \(output)")
+            #endif
             throw AuggieCLIError.parseError("Could not extract credits from output")
         }
 

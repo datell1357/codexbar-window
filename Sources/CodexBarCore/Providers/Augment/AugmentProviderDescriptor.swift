@@ -111,7 +111,7 @@ public enum AugmentProviderDescriptor {
                 versionDetector: nil,
                 browserSupportExemption: { source, _, settings in
                     #if os(Windows)
-                    return source == .cli || (settings?.augment?.cookieSource == .manual &&
+                    return source != .web || (settings?.augment?.cookieSource == .manual &&
                         CookieHeaderNormalizer.normalize(settings?.augment?.manualCookieHeader) != nil)
                     #else
                     return false
@@ -131,7 +131,13 @@ struct AugmentCLIFetchStrategy: ProviderFetchStrategy {
         // Check if auggie CLI is installed
         let env = ProcessInfo.processInfo.environment
         let loginPATH = LoginShellPathCache.shared.current
+        #if os(Windows)
+        return WindowsCommandResolver.resolve(executable: "auggie",
+            override: CodexBarPlatformPaths.environmentValue("AUGGIE_CLI_PATH", environment: env),
+            environment: env) != nil
+        #else
         return BinaryLocator.resolveAuggieBinary(env: env, loginPATH: loginPATH) != nil
+        #endif
     }
 
     func fetch(_ context: ProviderFetchContext) async throws -> ProviderFetchResult {

@@ -1,5 +1,7 @@
 # Windows 전용 제품 작업 현황
 
+- IMPL-221: Auggie account status 원본 파서를 Windows 명령 해석/제한 실행에 연결했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
 - IMPL-220: Augment 원본 수동 쿠키 크레딧/구독 조회를 Windows에 포함하고 선택 계정의 웹 조회를 연결했다. 자동 브라우저/CLI는 미완료. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
 
 - IMPL-219: 비용 프로젝트/세션 선택 목록에 표시 제목 필터와 결과 수·선택 유지·요약 복귀를 연결했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.

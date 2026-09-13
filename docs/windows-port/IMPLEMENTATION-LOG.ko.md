@@ -2588,3 +2588,12 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - 크레딧 필수/구독 선택의 원본 순서를 유지한다. Windows 자동 브라우저/앱 로그인과 보호 세션 저장은 본 변경에 포함하지 않았으며 없는 수동 세션은 명시적으로 실패한다.
 - 남은 소요: Augment Windows CLI/브라우저 로그인·계정 소유권, Windsurf 자동 가져오기 및 전체 계획 나머지.
 - CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·API·실제 계정 검증 미실행.
+
+## IMPL-221 — Auggie CLI Windows 경로
+
+- Auggie account status 실행/원본 크레딧 파서를 Windows에도 포함한다. WindowsCommandResolver와 AUGGIE_CLI_PATH, target argumentPrefix/environment를 통해 공통 Windows subprocess backend에 연결한다.
+- CLI 가용성도 같은 명령 해석기를 사용하고 auto/cli의 browser 지원 예외를 허용한다. 수동 웹 계정은 기존 CLI 우회 규칙을 유지한다.
+- 실행 제한 15초, stdout/stderr capture 1MiB 명시 상한, 실행 후 취소 확인, ANSI/CRLF 정규화를 추가한다. Windows에서는 원본 stderr와 파싱 실패 출력 전체를 로그/오류에 남기지 않는다.
+- CLI 배포 형태별 resolver 지원 및 실제 출력 호환성은 미확인이다. 로그인 실행/자동 브라우저 가져오기는 본 변경에 포함하지 않는다.
+- 남은 소요: Windows CLI 설치 형태·동작 검증, Augment/Windsurf 자동 로그인 및 전체 계획 나머지.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·CLI 실행·실제 계정 검증 미실행.
