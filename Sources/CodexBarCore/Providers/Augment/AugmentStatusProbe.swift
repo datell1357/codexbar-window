@@ -403,10 +403,13 @@ public actor AugmentSessionStore {
 public struct AugmentStatusProbe: Sendable {
     public let baseURL: URL
     public var timeout: TimeInterval = 15.0
+    private let transport: any ProviderHTTPTransport
 
-    public init(baseURL: URL = URL(string: "https://app.augmentcode.com")!, timeout: TimeInterval = 15.0) {
+    public init(baseURL: URL = URL(string: "https://app.augmentcode.com")!, timeout: TimeInterval = 15.0,
+                transport: any ProviderHTTPTransport = ProviderHTTPClient.shared) {
         self.baseURL = baseURL
         self.timeout = timeout
+        self.transport = transport
     }
 
     /// Fetch Augment usage with manual cookie header (for debugging).
@@ -526,7 +529,7 @@ public struct AugmentStatusProbe: Sendable {
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         request.setValue(cookieHeader, forHTTPHeaderField: "Cookie")
 
-        let (data, response) = try await ProviderHTTPClient.shared.data(for: request)
+        let (data, response) = try await self.transport.data(for: request)
         try Task.checkCancellation()
         #if os(Windows)
         guard data.count <= 4 * 1024 * 1024 else {
@@ -586,7 +589,7 @@ public struct AugmentStatusProbe: Sendable {
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         request.setValue(cookieHeader, forHTTPHeaderField: "Cookie")
 
-        let (data, response) = try await ProviderHTTPClient.shared.data(for: request)
+        let (data, response) = try await self.transport.data(for: request)
         try Task.checkCancellation()
         #if os(Windows)
         guard data.count <= 4 * 1024 * 1024 else {

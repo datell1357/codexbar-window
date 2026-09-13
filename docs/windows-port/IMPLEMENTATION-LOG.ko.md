@@ -2606,3 +2606,12 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - Windows CLI 실패 뒤 미구현 자동 웹 조회로 fallback하지 않아 원래 오류/취소를 보존한다. 수동 웹 계정은 기존 웹 전용 전략을 유지한다.
 - 남은 소요: 설치 형태별 실제 Windows 검증, Augment/Windsurf 자동 로그인 및 전체 계획 나머지.
 - CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·CLI 실행 검증 미실행.
+
+## IMPL-223 — Augment Firefox 가져오기 backend
+
+- Windows Firefox 쿠키 reader로 Augment API host에 적용 가능한 쿠키만 선택한다. 부모 host-only 쿠키와 auth 전용 host는 제외하고 프로필/originAttributes partition을 분리한다.
+- 알려진 세션 쿠키가 있는 후보만 만들며 같은 이름의 다른 값, 잘못된 헤더 문자, 64KiB 초과를 거부한다. 기존 Cursor backend의 deadline/취소/프로필 출처 표시 방식을 따른다.
+- AugmentStatusProbe에 기본값이 기존 HTTP client인 transport 주입을 추가하고 후보의 수동 쿠키만으로 조회한다. 구독 응답에서 이메일이 확인되지 않으면 가져오기 확인은 실패한다. 이메일은 안정적인 서버 account ID로 간주하지 않는다.
+- 실제 브라우저/API 접근이나 계정 저장을 실행하지 않았다. 후보 선택/만료 ticket/보호 저장 UI는 아직 미연결이며 자동 가져오기 완료로 간주하지 않는다.
+- 남은 소요: Augment 가져오기 runtime/UI/보호 저장, Chromium 지원, Windsurf 자동 가져오기 및 전체 계획 나머지.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·브라우저·API 검증 미실행.
