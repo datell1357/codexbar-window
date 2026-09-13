@@ -26,6 +26,7 @@ public struct WindowsCursorBrowserSessionImporter: Sendable {
         guard BrowserCookieAccessGate.shouldAttempt(.firefox) else { throw Failure.browserUnavailable }
         var query = BrowserCookieQuery(domains: ["cursor.com"], domainMatch: .exact, origin: .domainBased)
         query.includePartitionedCookies = true
+        query.deadline = deadline
         let names: Set<String> = ["WorkosCursorSessionToken", "__Secure-next-auth.session-token",
                                  "next-auth.session-token", "wos-session", "__Secure-wos-session",
                                  "authjs.session-token", "__Secure-authjs.session-token"]

@@ -41,6 +41,8 @@ public enum BrowserCookieOriginStrategy: Sendable {
 public struct BrowserCookieQuery: Sendable {
     /// Opt in only when the caller keeps each Firefox origin-attribute partition separate.
     public var includePartitionedCookies = false
+    /// Optional shared operation deadline for Windows cookie database reads.
+    public var deadline: Date? = nil
     /// Domain patterns to match (empty = no filtering).
     public var domains: [String]
     /// Matching strategy for domains.

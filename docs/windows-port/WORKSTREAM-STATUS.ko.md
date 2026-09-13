@@ -1,5 +1,7 @@
 # Windows 전용 제품 작업 현황
 
+- IMPL-199: Cursor 탐색 deadline을 Firefox SQLite progress handler 및 row 읽기에 연결했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
 - IMPL-198: Firefox originAttributes를 보존하고 Cursor 컨테이너/partition별 후보를 분리하도록 작성했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
 
 - IMPL-197: Cursor 후보 ticket 5분 만료 시 메모리 참조 정리 및 열린 선택/이름 입력 UI 만료 처리를 연결했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.

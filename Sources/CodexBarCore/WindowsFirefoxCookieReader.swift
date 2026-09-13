@@ -5,10 +5,22 @@ import CSQLite3
 import Foundation
 
 enum WindowsFirefoxCookieReader {
+    private final class ReadBudget {
+        let deadline: Date?
+        init(deadline: Date?) { self.deadline = deadline }
+        var interrupted: Bool { Task.isCancelled || (self.deadline.map { Date() >= $0 } ?? false) }
+    }
+
+    private static func check(_ query: BrowserCookieQuery) throws {
+        try Task.checkCancellation()
+        if let deadline = query.deadline, Date() >= deadline { throw URLError(.timedOut) }
+    }
+
     /// Reads one SQLite snapshot, including committed WAL content, without copying the database.
     /// Read-only WAL access can fail when SQLite cannot access the required shared-memory state.
     /// The busy handler waits at most 250 ms per lock contention; this is not a total query deadline.
     static func read(from databaseURL: URL, query: BrowserCookieQuery) throws -> [BrowserCookieRecord] {
+        try Self.check(query)
         guard databaseURL.isFileURL, !databaseURL.path.utf8.contains(0) else {
             throw Self.failure(SQLITE_MISUSE)
         }
@@ -21,11 +33,29 @@ enum WindowsFirefoxCookieReader {
         defer { sqlite3_close(database) }
         let timeoutResult = sqlite3_busy_timeout(database, 250)
         guard timeoutResult == SQLITE_OK else { throw Self.failure(timeoutResult) }
-        return try Self.read(database: database, query: query)
+        let budget = ReadBudget(deadline: query.deadline)
+        sqlite3_progress_handler(database, 1000, { raw in
+            guard let raw else { return 1 }
+            let budget = Unmanaged<ReadBudget>.fromOpaque(raw).takeUnretainedValue()
+            return budget.interrupted ? 1 : 0
+        }, Unmanaged.passUnretained(budget).toOpaque())
+        defer { sqlite3_progress_handler(database, 0, nil, nil) }
+        return try withExtendedLifetime(budget) {
+            do {
+                let records = try Self.read(database: database, query: query)
+                try Self.check(query)
+                return records
+            } catch {
+                // Preserve cancellation/deadline identity instead of exposing SQLITE_INTERRUPT as a profile failure.
+                try Self.check(query)
+                throw error
+            }
+        }
     }
 
     /// Borrows the connection. The caller owns its lifetime and busy-handler configuration.
     static func read(database: OpaquePointer, query: BrowserCookieQuery) throws -> [BrowserCookieRecord] {
+        try Self.check(query)
         var conditions: [String] = []
         var bindings: [String] = []
         for pattern in query.domains {
@@ -70,6 +100,7 @@ enum WindowsFirefoxCookieReader {
 
         var records: [BrowserCookieRecord] = []
         while true {
+            try Self.check(query)
             let result = sqlite3_step(statement)
             if result == SQLITE_DONE { return records }
             guard result == SQLITE_ROW else { throw Self.failure(result) }

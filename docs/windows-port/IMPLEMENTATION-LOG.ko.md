@@ -2408,3 +2408,11 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - 저장소 속성은 HTTP cookie나 UI에 포함하지 않는다. 각 후보는 기존 API 계정 확인/최대 후보 수/deadline 경로를 거친다.
 - 남은 소요: Firefox 컨테이너 이름 UX, partition의 인증 의미에 대한 Windows 실증, Chrome/Edge/WebView2 및 전체 계획 나머지 항목.
 - CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·실제 Firefox/SQLite/API 검증 미실행.
+
+## IMPL-199 — Firefox SQLite 취소/deadline
+
+- Windows cookie query에 optional deadline을 추가하고 Cursor 탐색의 공유 deadline을 전달한다.
+- 소유한 read-only SQLite 연결에 progress handler를 등록해 VM 실행 중 취소/시간 초과를 확인한다. callback 객체는 조회 동안 유지하고 연결을 닫기 전에 handler를 해제한다.
+- 행 읽기 전과 완료 후에도 확인하며 SQLITE_INTERRUPT가 단순 프로필 읽기 실패로 변환되지 않도록 취소/timeout을 우선 전달한다. 빌린 연결은 기존 progress handler를 덮어쓰지 않는다.
+- SQLite open 및 OS 파일 I/O/잠금 대기는 progress callback 밖일 수 있으므로 엄격한 wall-clock 완료 보장은 아니다. 기존 250ms busy timeout을 유지한다.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·실제 SQLite/취소/시간 경과 검증 미실행. 추가 브라우저 지원 및 전체 계획 나머지 항목은 계속 남아 있다.
