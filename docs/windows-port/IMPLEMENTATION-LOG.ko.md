@@ -1612,3 +1612,13 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - snapshot에서 unchanged와 replace를 구분하는 patch 생성 API를 추가했다. scope가 실제 교체될 때만 소문자로 정규화하고 기존 미수정 값은 유지한다.
 
 남은 범위: native metadata 입력 UI/host/Main 연결, 개인정보 표시 정책, legacy invalid metadata 편집 안내, Windows 실행 검증 및 전체 계획 기능.
+
+## IMPL-117 — native metadata 편집 대화상자
+
+상태 CODE_WRITTEN_UNVERIFIED. 컴파일/빌드/테스트/UI/계정/검증 미실시. guidelines/COMMITS.md 부재로 핵심 커밋 규칙을 적용한다.
+
+- 지원되는 scope/org/workspace만 현재 snapshot 값으로 채우고 unchanged/replace patch로 반환한다. credential은 입력·전달하지 않는다. 미변경 nil/empty 원본 구분을 유지한다.
+- 기존 native modal/DPI/font/keyboard 경로를 바탕으로 별도 편집 대화상자를 작성했다. 512자를 넘거나 NUL을 포함한 기존 값은 자동 잘림 없이 열기 실패로 처리한다.
+- 필드 오류와 z.ai team 필수 값을 inline 안내하고 입력을 유지한다. personal 전환 시 org/project를 암묵적으로 삭제하지 않으며 각 필드를 비우면 명시적 삭제로 처리한다.
+
+남은 범위: tray/host/Main 연결, privacy 표시 가드, 오류 상세·legacy 긴 값 복구, scope 선택 UX, 고배율·작은 화면·접근성 및 Windows 실행 검증.
