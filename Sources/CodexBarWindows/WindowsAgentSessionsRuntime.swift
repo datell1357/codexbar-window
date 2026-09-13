@@ -120,6 +120,22 @@ public actor WindowsAgentSessionsRuntime {
         self.publish()
     }
 
+    public func refreshIgnoringTitleCache() async {
+        guard self.running, self.enabled, !Task.isCancelled else { return }
+        self.generation &+= 1
+        self.titleCache = WindowsSessionTitleCache()
+        self.titleCacheRoots = nil
+        self.scanTask?.cancel()
+        self.focusTask?.cancel()
+        self.sessions = []
+        self.fresh = false
+        self.message = "Refreshing sessions with an empty title cache…"
+        self.publish()
+        // An in-flight scan drains normally. refresh() queues the replacement instead of
+        // starting overlapping scans; its old generation cannot publish or populate this cache.
+        await self.refresh()
+    }
+
     public func refresh() async {
         guard self.running, self.enabled, !Task.isCancelled else { return }
         guard self.scanTask == nil else {
@@ -159,6 +175,10 @@ public actor WindowsAgentSessionsRuntime {
                 self.sessions = result.sessions
                 self.fresh = true
                 self.message = result.message
+                if !metadataRoots.isEmpty {
+                    let cacheStatus = "Title cache: \(titleCache.storedEntryCount) stored entries. Manual refresh clears this cache."
+                    self.message = [self.message, cacheStatus].compactMap { $0 }.joined(separator: " ")
+                }
             case .failed:
                 self.fresh = false
                 self.message = result.message ?? "Session discovery failed."

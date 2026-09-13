@@ -18,6 +18,12 @@ public final class WindowsSessionTitleCache: @unchecked Sendable {
     private var entries: [String: Entry] = [:]
     public init() {}
 
+    public var storedEntryCount: Int {
+        self.lock.lock()
+        defer { self.lock.unlock() }
+        return self.entries.count
+    }
+
     func get(_ key: String, fingerprint: [UInt64]) -> Value? {
         self.lock.lock()
         defer { self.lock.unlock() }

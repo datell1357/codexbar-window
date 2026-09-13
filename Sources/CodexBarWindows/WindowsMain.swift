@@ -38,7 +38,7 @@ private final class WindowsTrayApplication: @unchecked Sendable {
         },
         onAgentSessionsRefresh: { [weak self] in
             guard let self else { return }
-            Task { await self.sessions.refresh() }
+            Task { await self.sessions.refreshIgnoringTitleCache() }
         },
         onAgentSessionFocus: { [weak self] request in
             guard let self else { return }

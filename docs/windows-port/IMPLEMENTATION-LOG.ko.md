@@ -565,3 +565,20 @@
 3. SQLite snapshot/WAL·source 소유권, 신규 추론 제목 및 전체 Windows 기능·배포 검증은 남아 있다.
 
 다음 구현: session metadata의 캐시 사용 상태와 수동 새로고침 시 캐시 우회 경로를 연결한다. 기능 완료나 성능 개선을 측정 결과처럼 보고하지 않는다.
+
+## IMPL-029 — 수동 새로고침 title cache 우회
+
+상태: CODE_WRITTEN_UNVERIFIED. 빌드·컴파일·테스트·lint·앱·실제 source/계정 조회·검증 스크립트를 실행하지 않았다. 계약: WIN-010/040/042.
+
+작성한 코드:
+
+- local session 수동 refresh callback을 refreshIgnoringTitleCache에 연결했다. 새 cache 인스턴스와 generation을 만들고 기존 scan/focus를 취소하며 이전 보강 행을 비운다. 진행 중 scan이 있으면 기존 queued/deferred 경로로 drain 후 교체 scan을 시작한다.
+- 기존 주기적/메뉴 열기 refresh는 캐시 재사용 경로를 유지한다. 수동 명령 caption에 clear title cache를 명시했다. source 파일이나 SQLite DB를 변경하지 않는다.
+- 성공/partial 상태에 메모리 cache 저장 entry 수와 수동 refresh의 효과를 추가했다. thread-safe count getter만 사용하며 hit rate/성능/검증 성공률로 해석하지 않는다. 만료됐으나 아직 접근하지 않은 항목도 저장 수에 포함될 수 있다.
+
+남은 범위:
+
+1. 반복 수동 요청과 queued scan/focus cancellation·actor 수명 및 Windows UI 동작은 미검증이다. cache를 비운 뒤에도 byte/time budget에 따라 제목이 미해결일 수 있다.
+2. 증분 parsing·장기 공정성, SQLite snapshot/소유권 및 전체 Windows 기능·배포 검증은 남아 있다.
+
+다음 구현: session 조회의 source별 처리량·미해결 정보를 데이터 모델로 분리해 현재 문자열 진단을 구조화한다. 전체 기능 완료와는 별도로 추적한다.

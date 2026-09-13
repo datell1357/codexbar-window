@@ -744,7 +744,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
         succeeded = succeeded && self.appendSessionSettingsMenu(to: submenu, localEnabled: snapshot.enabled)
         if snapshot.enabled {
             succeeded = succeeded && append(
-                snapshot.isRefreshing ? "Refresh queued / scanning…" : "Refresh sessions",
+                snapshot.isRefreshing ? "Refresh queued / scanning…" : "Refresh sessions (clear title cache)",
                 flags: UINT(MF_STRING), command: Self.agentSessionsRefreshCommand)
             if let message = snapshot.message, !message.isEmpty {
                 let scalars = message.unicodeScalars.filter { !CharacterSet.controlCharacters.contains($0) }
