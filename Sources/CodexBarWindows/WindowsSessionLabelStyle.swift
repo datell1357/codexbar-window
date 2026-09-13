@@ -49,6 +49,7 @@ enum WindowsSessionLabelStyle: String, CaseIterable {
         case "rollout_role": title = "role name"
         case "codex_title_index": title = "indexed title"
         case "codex_title_database": title = "database title"
+        case "codex_database_role": title = "database role"
         case "claude_custom_title": title = "custom title"
         default: title = nil
         }

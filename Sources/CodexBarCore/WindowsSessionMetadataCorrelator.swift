@@ -169,12 +169,16 @@ enum WindowsSessionMetadataCorrelator {
         }
         if let path = roots.codexTitleDatabase, !databaseIDs.isEmpty {
             do {
-                let titles = try self.databaseTitles(path, ids: databaseIDs, deadline: budget.deadline)
+                let metadata = try self.databaseMetadata(path, ids: databaseIDs, deadline: budget.deadline)
                 for (index, header) in matchedHeaders {
-                    guard let title = titles[header.sessionID.lowercased()] else { continue }
-                    output[index].sessionName = header.descriptiveName(
-                        threadMetadata: CodexThreadMetadata(title: title, agentPath: nil)).map(WindowsSessionLaunchHints.label)
-                    output[index].metadataTitleSource = "codex_title_database"
+                    guard let row = metadata[header.sessionID.lowercased()],
+                          let name = header.descriptiveName(threadMetadata: row).map(WindowsSessionLaunchHints.label),
+                          !name.isEmpty else { continue }
+                    output[index].sessionName = name
+                    if row.title != nil { output[index].metadataTitleSource = "codex_title_database" }
+                    else if row.agentPath != nil, !header.isGuardian {
+                        output[index].metadataTitleSource = "codex_database_role"
+                    }
                 }
             } catch {
                 let reason = (error as? DatabaseReadFailure)?.message ?? (error as? TitleReadFailure)?.message ?? DatabaseReadFailure.query.message
@@ -579,7 +583,7 @@ enum WindowsSessionMetadataCorrelator {
     }
     #endif
 
-    private static func databaseTitles(_ path: String, ids: Set<String>, deadline: Date) throws -> [String: String] {
+    private static func databaseMetadata(_ path: String, ids: Set<String>, deadline: Date) throws -> [String: CodexThreadMetadata] {
         try self.checkTitleDeadline(deadline)
         guard let absolute = WindowsSessionLaunchHints.absolutePath(path),
               let separator = absolute.lastIndex(of: "\\"),
@@ -604,10 +608,16 @@ enum WindowsSessionMetadataCorrelator {
             return Task.isCancelled || Date() >= deadline ? 1 : 0
         }, context)
         var statement: OpaquePointer?
-        let prepared = sqlite3_prepare_v2(database, "SELECT title FROM threads WHERE id = ?1 LIMIT 2", -1, &statement, nil)
+        var prepared = sqlite3_prepare_v2(database, "SELECT title, agent_path FROM threads WHERE id = ?1 LIMIT 2", -1, &statement, nil)
         defer { if let statement { sqlite3_finalize(statement) } }
+        if prepared & 0xFF == SQLITE_ERROR {
+            // Older schemas may not have agent_path. Retry the title-only shape, preserving limits.
+            if let failed = statement { sqlite3_finalize(failed); statement = nil }
+            try self.checkTitleDeadline(deadline)
+            prepared = sqlite3_prepare_v2(database, "SELECT title, NULL FROM threads WHERE id = ?1 LIMIT 2", -1, &statement, nil)
+        }
         guard prepared == SQLITE_OK, let statement else { throw self.databaseFailure(prepared, deadline: deadline) }
-        var titles: [String: String] = [:]
+        var metadata: [String: CodexThreadMetadata] = [:]
         let transient = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
         for id in ids.sorted() {
             try self.checkTitleDeadline(deadline)
@@ -619,17 +629,27 @@ enum WindowsSessionMetadataCorrelator {
             let status = sqlite3_step(statement)
             if status == SQLITE_DONE { continue }
             guard status == SQLITE_ROW else { throw self.databaseFailure(status, deadline: deadline) }
+            var title: String?
+            var agentPath: String?
             if sqlite3_column_type(statement, 0) == SQLITE_TEXT, let raw = sqlite3_column_text(statement, 0) {
-                let title = WindowsSessionLaunchHints.label(String(cString: raw))
-                if !title.isEmpty { titles[id] = title }
+                let clean = WindowsSessionLaunchHints.label(String(cString: raw))
+                if !clean.isEmpty { title = clean }
             }
+            if sqlite3_column_type(statement, 1) == SQLITE_TEXT, let raw = sqlite3_column_text(statement, 1) {
+                let path = String(cString: raw).trimmingCharacters(in: .whitespacesAndNewlines)
+                if !path.isEmpty, path.utf8.count <= 4096,
+                   !path.unicodeScalars.contains(where: CharacterSet.controlCharacters.contains) {
+                    agentPath = path
+                }
+            }
+            if title != nil || agentPath != nil { metadata[id] = CodexThreadMetadata(title: title, agentPath: agentPath) }
             let next = sqlite3_step(statement)
             if next == SQLITE_ROW { throw DatabaseReadFailure.duplicate }
             guard next == SQLITE_DONE else { throw self.databaseFailure(next, deadline: deadline) }
         }
         try self.checkTitleDeadline(deadline)
         guard let after = self.fileInfo(absolute), before == after else { throw TitleReadFailure.changed }
-        return titles
+        return metadata
         #else
         throw DatabaseReadFailure.module
         #endif

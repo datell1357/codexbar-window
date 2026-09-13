@@ -494,3 +494,21 @@
 2. 증분 cache, DB agent_path 및 신규 추론 제목, 전체 Windows 기능·배포 검증은 계속 미완료다.
 
 다음 구현: Codex DB의 agent_path 보강을 기존 rollout 역할과 title 우선순위에 맞춰 연결한다. SQLite/path ownership의 미검증 경계는 유지한다.
+
+## IMPL-025 — Codex SQLite agent_path 역할 보강
+
+상태: CODE_WRITTEN_UNVERIFIED. 빌드·컴파일·테스트·lint·앱·실제 DB/source 조회·검증 스크립트를 실행하지 않았다. 계약: WIN-040/042.
+
+작성한 코드:
+
+- DB reader 결과를 title 문자열에서 CodexThreadMetadata로 확장했다. title과 agent_path를 조회하고 원본 descriptiveName 조합에 전달한다. guardian 이름 우선, DB agent_path와 rollout 역할 fallback 규칙은 원본 helper를 따른다.
+- agent_path가 없는 이전 스키마를 위해 prepare의 SQLITE_ERROR일 때 title/NULL shape로 한 번 재시도한다. 실패 statement를 finalize하고 deadline·기존 readonly/row/length 제한을 유지한다. 재시도도 실패하면 기존 typed 진단으로 전달한다.
+- agent_path는 비어 있거나 control character를 포함하거나4096 UTF-8 bytes를 넘으면 채택하지 않는다. 제목이 없고 DB 역할로 이름을 만든 경우 database role 출처로 표시한다.
+- DB 보강 대상은 기존 databaseIDs에 한정한다. index 제목·명시적 clear·미해결/실패의 DB 대체 금지는 유지한다. 따라서 index 제목이 있는 세션에 DB 역할만 별도로 조회하는 확장은 이번 범위에 없다.
+
+남은 범위:
+
+1. SQLite schema fallback, 문자열 encoding·역할 formatter·provenance와 Windows 실행은 미검증이다. SQLITE_ERROR는 missing-column만 의미하지 않으므로 재시도 성공 여부로만 fallback을 처리한다.
+2. index title+DB role 조합의 별도 provenance 정책, 증분 cache·신규 추론 제목, DB ownership/WAL·전체 Windows 기능/배포 검증은 남아 있다.
+
+다음 구현: session metadata 읽기 예산을 제목 보강과 기본 세션 매칭 사이에서 분리하여 선택적 제목 조회가 다른 세션의 기본 연결을 방해하지 않도록 한다.
