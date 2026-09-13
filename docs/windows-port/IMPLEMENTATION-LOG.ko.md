@@ -2666,3 +2666,11 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - 구조 검사는 인증 성공을 뜻하지 않으며 실제 ID 일치 확인은 원본 API 조회 경로에 남아 있다.
 - 남은 소요: Zed 편집기 자동 인증/서버 설정, Chromium/Windsurf 가져오기 및 전체 계획 나머지.
 - CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 파서 실행·빌드·테스트·lint·UI·API 검증 미실행.
+
+## IMPL-230 — Zed 예측 횟수와 청구 상세
+
+- Windows generic details에 실제 edit prediction 횟수, 제한/Unlimited, 연체 여부, 유효 청구 기간을 추가한다. 비율에 쓰는 clamp와 별개로 실제 사용 횟수를 보존한다.
+- 음수 사용 횟수는 Unknown이며 primary를 만들지 않는다. 역전/길이 0인 청구 구간은 secondary/갱신 시각에서 제외하고 상세 안내를 제공한다.
+- Windows 청구 경과율과 reset 문구는 snapshot.updatedAt을 사용한다. 상세에 이 막대가 경과 시간이지 사용량 비율이 아님을 표시한다.
+- 남은 소요: 실제 Windows 렌더링 검증, Zed 자동 인증/서버 설정과 전체 계획 나머지.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·UI·API 검증 미실행.

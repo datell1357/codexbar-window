@@ -463,6 +463,41 @@ extension ZedUsageSnapshot {
             used: plan.usage.editPredictions.used,
             limit: plan.usage.editPredictions.limit)
 
+        #if os(Windows)
+        let validPeriod = plan.subscriptionPeriod.flatMap { period in
+            period.endedAt > period.startedAt ? period : nil
+        }
+        let secondary = validPeriod.map { period in
+            RateWindow(
+                usedPercent: Self.billingCycleUsedPercent(startedAt: period.startedAt,
+                    endedAt: period.endedAt, now: self.updatedAt),
+                windowMinutes: nil, resetsAt: period.endedAt,
+                resetDescription: Self.formatResetDescription(period.endedAt, now: self.updatedAt))
+        }
+        let predictions = plan.usage.editPredictions
+        let limitText: String
+        switch predictions.limit {
+        case .unlimited: limitText = "Unlimited"
+        case let .limited(value): limitText = value >= 0 ? value.formatted() : "Unknown"
+        }
+        var rows: [ProviderDetailSection.Row] = [
+            .makeRow(label: "Edit predictions used", value: predictions.used >= 0 ? predictions.used.formatted() : "Unknown"),
+            .makeRow(label: "Prediction limit", value: limitText),
+            .makeRow(label: "Billing status", value: plan.hasOverdueInvoices ? "Overdue invoices" : "No overdue invoices"),
+        ]
+        if let period = validPeriod {
+            let formatter = DateFormatter()
+            formatter.dateStyle = .medium
+            formatter.timeStyle = .short
+            rows.append(.makeRow(label: "Billing cycle starts", value: formatter.string(from: period.startedAt)))
+            rows.append(.makeRow(label: "Billing cycle ends", value: formatter.string(from: period.endedAt),
+                secondaryValue: "The billing cycle bar measures elapsed time, not usage."))
+        } else if plan.subscriptionPeriod != nil {
+            rows.append(.makeRow(label: "Billing cycle", value: "Unavailable",
+                secondaryValue: "The server returned an invalid billing interval."))
+        }
+        let details: [ProviderDetailSection] = [.makeSection(title: "Zed usage", rows: rows)]
+        #else
         let secondary = plan.subscriptionPeriod.map { period in
             RateWindow(
                 usedPercent: Self.billingCycleUsedPercent(startedAt: period.startedAt, endedAt: period.endedAt),
@@ -470,6 +505,9 @@ extension ZedUsageSnapshot {
                 resetsAt: period.endedAt,
                 resetDescription: Self.formatResetDescription(period.endedAt))
         }
+
+        let details: [ProviderDetailSection] = []
+        #endif
 
         var extraRateWindows: [NamedRateWindow] = []
         if plan.hasOverdueInvoices {
@@ -494,12 +532,16 @@ extension ZedUsageSnapshot {
             primary: primary,
             secondary: secondary,
             extraRateWindows: extraRateWindows.isEmpty ? nil : extraRateWindows,
-            subscriptionRenewsAt: plan.subscriptionPeriod?.endedAt,
+            details: details,
+            subscriptionRenewsAt: secondary?.resetsAt,
             updatedAt: self.updatedAt,
             identity: identity)
     }
 
     private static func makeEditPredictionsWindow(used: Int, limit: ZedUsageLimit) -> RateWindow? {
+        #if os(Windows)
+        guard used >= 0 else { return nil }
+        #endif
         switch limit {
         case .unlimited:
             return RateWindow(
@@ -537,8 +579,7 @@ extension ZedUsageSnapshot {
         }
     }
 
-    private static func billingCycleUsedPercent(startedAt: Date, endedAt: Date) -> Double {
-        let now = Date()
+    private static func billingCycleUsedPercent(startedAt: Date, endedAt: Date, now: Date = Date()) -> Double {
         let total = endedAt.timeIntervalSince(startedAt)
         guard total > 0 else { return 0 }
         let elapsed = now.timeIntervalSince(startedAt)
