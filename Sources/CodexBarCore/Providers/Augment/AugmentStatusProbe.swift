@@ -458,10 +458,14 @@ public struct AugmentStatusProbe: Sendable {
     private let transport: any ProviderHTTPTransport
 
     public init(baseURL: URL = URL(string: "https://app.augmentcode.com")!, timeout: TimeInterval = 15.0,
-                transport: any ProviderHTTPTransport = ProviderHTTPClient.shared) {
+                transport: (any ProviderHTTPTransport)? = nil) {
         self.baseURL = baseURL
         self.timeout = timeout
-        self.transport = transport
+        #if os(Windows)
+        self.transport = transport ?? WindowsManualAccountHTTPTransport.shared
+        #else
+        self.transport = transport ?? ProviderHTTPClient.shared
+        #endif
     }
 
     /// Fetch Augment usage with manual cookie header (for debugging).

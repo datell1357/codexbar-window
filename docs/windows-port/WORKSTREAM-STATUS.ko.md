@@ -1,5 +1,7 @@
 # Windows 전용 제품 작업 현황
 
+- IMPL-232: Zed/Augment Windows 수동 계정 HTTP의 ambient 쿠키·캐시·URL 자격증명을 분리했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
 - IMPL-231: Zed Windows 자격증명에 선택적 HTTPS 서버 origin을 묶고 사용자 서버 조회를 연결했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
 
 - IMPL-230: Zed Windows 상세에 예측 횟수/한도/청구 상태를 전달하고 청구 경과율을 수집 시각에 고정한다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.

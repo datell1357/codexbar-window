@@ -2683,3 +2683,12 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - 계정 추가/교체 안내와 공통 구조 검사도 확장 형식을 사용한다. 로컬 편집기 설정이나 별도 서버 환경 변수가 저장된 토큰의 전송 대상을 바꾸지 않는다.
 - 남은 소요: Zed 편집기 자동 인증, 사용자 서버 실제 호환성/전송 동작 검증, Chromium/Windsurf 지원과 전체 계획 나머지.
 - CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 파서·빌드·테스트·lint·UI·API 검증 미실행.
+
+## IMPL-232 — 수동 계정 HTTP 격리
+
+- WindowsManualAccountHTTPTransport는 ephemeral configuration에서 쿠키 저장/자동 첨부, URL credential storage 및 응답 캐시를 비활성화한다. 공통 동일 출처 HTTPS redirect guard를 유지한다.
+- Zed/Augment 기본 Windows 조회는 전용 전송을 사용하며 호출자가 제공한 transport는 보존한다. macOS 기본 전송은 기존 shared client이다.
+- Augment 브라우저 후보 확인 overload도 기본 transport를 강제로 shared로 넘기지 않아 동일 격리가 적용된다. 선택한 후보의 명시 헤더만으로 요청하도록 구성한다.
+- Windows Zed 네트워크/파싱 실패는 원본 URL/서버 응답 문자열을 담는 오류 대신 고정 문구를 반환한다.
+- 남은 소요: 실제 HTTP/리디렉션·계정 전환 검증, Zed 자동 인증/Chromium/Windsurf 지원 및 전체 계획 나머지.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·네트워크 검증 미실행.

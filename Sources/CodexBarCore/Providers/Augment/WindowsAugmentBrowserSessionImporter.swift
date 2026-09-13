@@ -116,7 +116,7 @@ public struct WindowsAugmentBrowserSessionImporter: Sendable {
     /// Uses the import's shared deadline, rather than resetting a timeout for each profile.
     /// Cancellation is cooperative: the transport must finish draining its cancelled requests.
     public func validate(_ candidate: Candidate, deadline: Date,
-                         transport: any ProviderHTTPTransport = ProviderHTTPClient.shared) async throws -> ValidatedCandidate {
+                         transport: (any ProviderHTTPTransport)? = nil) async throws -> ValidatedCandidate {
         try Self.check(deadline)
         let remaining = min(60, max(0, deadline.timeIntervalSinceNow))
         let result = try await withThrowingTaskGroup(of: ValidatedCandidate.self) { group in
@@ -137,7 +137,7 @@ public struct WindowsAugmentBrowserSessionImporter: Sendable {
     }
 
     public func validate(_ candidate: Candidate, expectedEmail: String? = nil,
-                         transport: any ProviderHTTPTransport = ProviderHTTPClient.shared) async throws -> ValidatedCandidate {
+                         transport: (any ProviderHTTPTransport)? = nil) async throws -> ValidatedCandidate {
         try Task.checkCancellation()
         let snapshot = try await AugmentStatusProbe(transport: transport)
             .fetch(cookieHeaderOverride: candidate.cookieHeader)

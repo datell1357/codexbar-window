@@ -343,11 +343,15 @@ public struct ZedStatusProbe: Sendable {
 
     public init(
         credentialsReader: any ZedCredentialsReading = ZedKeychainCredentialsReader(),
-        transport: any ProviderHTTPTransport = ProviderHTTPClient.shared,
+        transport: (any ProviderHTTPTransport)? = nil,
         settingsLoader: @escaping @Sendable () -> ZedClientSettings? = { ZedClientSettings.load() })
     {
         self.credentialsReader = credentialsReader
-        self.transport = transport
+        #if os(Windows)
+        self.transport = transport ?? WindowsManualAccountHTTPTransport.shared
+        #else
+        self.transport = transport ?? ProviderHTTPClient.shared
+        #endif
         self.settingsLoader = settingsLoader
     }
 
@@ -401,8 +405,13 @@ public struct ZedStatusProbe: Sendable {
         } catch let error as URLError where error.code == .cancelled {
             throw CancellationError()
         } catch {
+            #if os(Windows)
+            Self.logger.debug("Zed API transport failed")
+            throw ZedStatusProbeError.networkError("The request could not be completed.")
+            #else
             Self.logger.debug("Zed cloud API transport failed: \(error.localizedDescription)")
             throw ZedStatusProbeError.networkError(error.localizedDescription)
+            #endif
         }
 
         #if os(Windows)
@@ -436,7 +445,11 @@ public struct ZedStatusProbe: Sendable {
         do {
             return try decoder.decode(ZedAuthenticatedUserResponse.self, from: data)
         } catch {
+            #if os(Windows)
+            throw ZedStatusProbeError.parseFailed("Invalid account response.")
+            #else
             throw ZedStatusProbeError.parseFailed(error.localizedDescription)
+            #endif
         }
     }
 
