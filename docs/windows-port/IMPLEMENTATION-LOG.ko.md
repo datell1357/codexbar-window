@@ -1632,3 +1632,13 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - Hide personal info 활성 상태에서는 metadata 편집을 열지 않으며 command 및 비동기 load 완료 시점에 다시 확인한다. 이는 현재 값을 화면에 채우는 편집기의 개인정보 표시 가드다.
 
 남은 범위: modal 열린 후 외부 privacy 변경 대응, scope 선택 UX, 긴 legacy 값 복구, refresh 경합·shutdown·작은 화면·접근성 및 Windows 실행 검증, 전체 기능 구현.
+
+## IMPL-119 — 저장 계정 삭제 backend
+
+상태 CODE_WRITTEN_UNVERIFIED. 컴파일/빌드/테스트/계정 삭제/검증 미실시. guidelines/COMMITS.md 부재로 핵심 커밋 규칙을 적용한다.
+
+- 삭제 확인용 snapshot은 공급자, 활성 계정 여부, 남을 계정 수와 opaque ticket만 전달한다. 저장 시 대상 revision·전체 계정 UUID 순서·활성 계정·만료를 다시 확인한다.
+- 원본의 선택 규칙대로 비선택 계정 삭제 시 활성 UUID를 보존하고, 선택 계정 삭제 시 같은 위치 또는 마지막 남은 계정을 선택한다. 마지막 계정이면 tokenAccounts를 nil로 저장한다.
+- catalog API key 제거 규칙과 selected/source 변경의 session/history/mailbox 상태 철회를 연결한다. config 파일·history 파일은 삭제하지 않는다. 실제 계정 삭제는 실행하지 않았다.
+
+남은 범위: 명시적 삭제 확인 UI/host/Main 연결, 마지막 계정 삭제 후 ambient source 안내, Antigravity shared OAuth cache 정리 parity, 동시 저장 및 Windows 검증. 이번 API는 config 계정 제거만 담당한다.

@@ -1,5 +1,7 @@
 # Windows 전용 제품 작업 현황
 
+- IMPL-119: 저장 계정 삭제 ticket/선택 보존/보호 저장 backend를 작성했다. 삭제 실행 및 UI 연결은 하지 않았다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
 - IMPL-118: account metadata 메뉴·조회·native editor·저장·refresh를 연결했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
 
 - IMPL-117: 공급자별 scope/org/workspace native editor를 작성했다. 메뉴/Main 연결은 남아 있다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.

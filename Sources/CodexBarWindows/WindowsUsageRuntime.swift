@@ -134,6 +134,13 @@ public actor WindowsUsageRuntime {
         let expiresAt: Date
     }
     private var credentialEditTicket: CredentialEditTicket?
+    private struct AccountRemovalTicket {
+        let edit: CredentialEditTicket
+        let selectedID: UUID
+        let accountIDs: [UUID]
+    }
+    private var accountRemovalTicket: AccountRemovalTicket?
+
 
     private var quotaWarningGeneration: UInt64 = 0
     private var predictivePaceWarningGeneration: UInt64 = 0
@@ -460,6 +467,76 @@ public actor WindowsUsageRuntime {
             self.credentialEditTicket = ticket
             return .loaded(.init(ticketID: ticket.id, provider: provider, usageScope: account.usageScope,
                 organizationID: account.organizationID, workspaceID: account.workspaceID))
+        } catch { return .failed }
+    }
+
+    public func beginTokenAccountRemoval(providerID: ProviderInstanceID,
+                                          accountID: UUID) -> WindowsTokenAccountRemovalLoadResult {
+        guard !self.shuttingDown else { return .shuttingDown }
+        guard self.refreshTask == nil else { return .refreshInProgress }
+        self.accountRemovalTicket = nil
+        do {
+            guard let provider = providerID.firstPartyProvider,
+                  TokenAccountSupportCatalog.support(for: provider) != nil,
+                  let config = try self.configStore.load(), config.enabledProviders().contains(providerID),
+                  let data = config.providerConfig(for: providerID)?.tokenAccounts,
+                  Set(data.accounts.map(\.id)).count == data.accounts.count,
+                  let account = data.accounts.first(where: { $0.id == accountID }) else { return .unavailable }
+            let edit = CredentialEditTicket(id: UUID(), providerID: providerID, accountID: accountID,
+                revision: try Self.credentialEditRevision(account), expiresAt: Date().addingTimeInterval(600))
+            let selectedID = data.accounts[data.clampedActiveIndex()].id
+            self.accountRemovalTicket = .init(edit: edit, selectedID: selectedID, accountIDs: data.accounts.map(\.id))
+            return .loaded(.init(ticketID: edit.id, provider: provider,
+                removesSelectedAccount: selectedID == accountID, remainingAccountCount: data.accounts.count - 1))
+        } catch { return .failed }
+    }
+
+    public func cancelTokenAccountRemoval(ticketID: UUID) {
+        if self.accountRemovalTicket?.edit.id == ticketID { self.accountRemovalTicket = nil }
+    }
+
+    /// Call only after the user confirms removal of the account represented by the ticket.
+    public func removeTokenAccount(ticketID: UUID) -> WindowsTokenAccountRemovalSaveResult {
+        guard !self.shuttingDown else { return .shuttingDown }
+        guard self.refreshTask == nil else { return .refreshInProgress }
+        guard let removal = self.accountRemovalTicket, removal.edit.id == ticketID else { return .staleAccount }
+        self.accountRemovalTicket = nil
+        let ticket = removal.edit
+        guard ticket.expiresAt > Date() else { return .staleAccount }
+        do {
+            guard let provider = ticket.providerID.firstPartyProvider,
+                  let support = TokenAccountSupportCatalog.support(for: provider),
+                  var config = try self.configStore.load(), config.enabledProviders().contains(ticket.providerID),
+                  var entry = config.providerConfig(for: ticket.providerID), let data = entry.tokenAccounts,
+                  data.accounts.map(\.id) == removal.accountIDs,
+                  !data.accounts.isEmpty,
+                  data.accounts[data.clampedActiveIndex()].id == removal.selectedID,
+                  let index = data.accounts.firstIndex(where: { $0.id == ticket.accountID }),
+                  try Self.credentialEditRevision(data.accounts[index]) == ticket.revision else { return .staleAccount }
+            var remaining = data.accounts
+            remaining.remove(at: index)
+            if remaining.isEmpty {
+                entry.tokenAccounts = nil
+            } else {
+                let selected = remaining.firstIndex { $0.id == removal.selectedID } ?? min(index, remaining.count - 1)
+                entry.tokenAccounts = .init(version: data.version, accounts: remaining, activeIndex: selected)
+            }
+            let sourceChanged = support.clearsAPIKeyOnMutation && entry.apiKey != nil
+            if support.clearsAPIKeyOnMutation { entry.apiKey = nil }
+            config.setProviderConfig(entry)
+            try self.configStore.save(config)
+            self.latestProviderConfigs[ticket.providerID] = entry
+            if self.credentialEditTicket?.providerID == ticket.providerID,
+               self.credentialEditTicket?.accountID == ticket.accountID { self.credentialEditTicket = nil }
+            if removal.selectedID == ticket.accountID || sourceChanged {
+                self.invalidateSelectedAccountState(ticket.providerID)
+                self.presentations.removeValue(forKey: ticket.providerID)
+                self.providerCopyErrors.removeValue(forKey: ticket.providerID.rawValue)
+                self.renderEntries = [.row("Saved account removed. Refresh usage to load the current source.")]
+                self.statusMenuEntries.removeAll()
+            }
+            self.publishRenderEntries(settings: WindowsUsagePresentationSettings.load())
+            return .removed
         } catch { return .failed }
     }
 
@@ -1258,6 +1335,7 @@ public actor WindowsUsageRuntime {
         self.observedAccountSignatures = nil
         self.observedCodexOwner = nil
         self.credentialEditTicket = nil
+        self.accountRemovalTicket = nil
         await CLIProbeSessionResetter.resetAll()
     }
 
