@@ -2555,3 +2555,11 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - IMPL-214/215 후에도 runtime의 확장 버튼 조건이 모델/프로젝트 개수에만 의존하던 누락을 수정했다. 세션이 있으면 상세 확장을 제공하고, 현재 설정과 일치하는 유지된 snapshot에도 동일한 section을 제공한다.
 - 남은 소요: 프로젝트별 일별/모델별 심화 탐색, 대규모 목록 사용성, Windsurf 자동 가져오기 및 전체 계획 나머지. 개별 항목 선택 UI가 작성되었으나 동작 확인 증거는 없다.
 - CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·UI·실제 데이터 검증 미실행.
+
+## IMPL-217 — 프로젝트 일별 내역
+
+- 프로젝트 집계에서 기존 선택 기간과 소스 coverage 조건을 통과한 기록을 날짜별로도 보존한다. 같은 소스/프로젝트/날짜 기록은 합산하고 날짜 내 미확인 값/overflow가 있으면 해당 지표를 Unknown으로 유지한다.
+- 프로젝트 선택 상세에 최신 날짜부터 일별 비용·토큰을 표시한다. 기존 소스 통화 배수와 표시 시간대를 사용한다. 기록이 없는 날짜를 0으로 채우지 않으며 이 제한을 화면에 설명한다.
+- 활동 기록이 존재하지만 비용/토큰 합계가 모두 미확인인 프로젝트를 목록에서 제외하던 조건을 변경했다. 기간/coverage 안의 기록이 전혀 없는 프로젝트는 계속 제외한다.
+- 남은 소요: 프로젝트별 모델 분석, 대규모 탐색 UX, Windsurf 자동 가져오기 및 전체 계획 나머지.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·UI·실제 로그 검증 미실행.

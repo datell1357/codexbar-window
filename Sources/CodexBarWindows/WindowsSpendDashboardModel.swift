@@ -120,9 +120,17 @@ struct WindowsSpendDashboardModel: Equatable, Sendable {
         let totalTokens: Int?
         let totalCost: Double?
 
+        var daily: [ProjectDayRow] = []
+
         var id: String {
             "\(self.sourceID):\(self.projectName)"
         }
+    }
+
+    struct ProjectDayRow: Equatable, Sendable {
+        let day: Date
+        let totalTokens: Int?
+        let totalCost: Double?
     }
 
     struct DailyPoint: Identifiable, Equatable, Sendable {
@@ -660,10 +668,20 @@ struct WindowsSpendDashboardModel: Equatable, Sendable {
             let name: String
         }
 
+        struct DayAccumulator {
+            var tokens: Int? = 0
+            var cost: Double? = 0
+            var invalidTokens = false
+            var invalidCost = false
+            var overflowedTokens = false
+            var overflowedCost = false
+        }
+
         struct Accumulator {
             let provider: UsageProvider
             let providerName: String
             let path: String?
+            var daily: [Date: DayAccumulator] = [:]
             var tokens: Int?
             var cost: Double?
             var sawTokens = false
@@ -692,6 +710,18 @@ struct WindowsSpendDashboardModel: Equatable, Sendable {
                           bounds.contains(day),
                           summary.coveredInterval?.contains(day) == true
                     else { continue }
+                    var daily = aggregate.daily[day] ?? DayAccumulator()
+                    if let tokens = Self.nonnegative(entry.totalTokens) {
+                        daily.tokens = Self.add(tokens, to: daily.tokens, overflowed: &daily.overflowedTokens)
+                    } else if !Self.hasProvenZeroTokens(entry) {
+                        daily.invalidTokens = true
+                    }
+                    if let cost = Self.validCost(entry.costUSD).map({ $0 * summary.costMultiplier }) {
+                        daily.cost = Self.add(cost, to: daily.cost, overflowed: &daily.overflowedCost)
+                    } else if !Self.hasProvenZeroCost(entry) {
+                        daily.invalidCost = true
+                    }
+                    aggregate.daily[day] = daily
                     if let tokens = Self.nonnegative(entry.totalTokens) {
                         aggregate.sawTokens = true
                         aggregate.tokens = Self.add(
@@ -729,12 +759,17 @@ struct WindowsSpendDashboardModel: Equatable, Sendable {
                         : nil,
                     totalCost: value.sawCost && !value.invalidCost && !value.overflowedCost
                         ? value.cost
-                        : nil)
+                        : nil,
+                    daily: value.daily.map { day, daily in
+                        ProjectDayRow(day: day,
+                            totalTokens: !daily.invalidTokens && !daily.overflowedTokens ? daily.tokens : nil,
+                            totalCost: !daily.invalidCost && !daily.overflowedCost ? daily.cost : nil)
+                    }.sorted { $0.day > $1.day })
             }
             .filter { row in
-                // A project the window never touched has no attributable spend; the scanner only
-                // emits projects with recorded usage, so dropping keeps zeros from being fabricated.
-                row.totalTokens != nil || row.totalCost != nil
+                // Retain attributed days even when every amount is unknown; missing coverage
+                // must not hide a project that has captured activity in the requested window.
+                !row.daily.isEmpty
             }
             .sorted { lhs, rhs in
                 switch (lhs.totalCost, rhs.totalCost) {
@@ -758,7 +793,8 @@ struct WindowsSpendDashboardModel: Equatable, Sendable {
                     projectName: row.projectName,
                     path: row.path,
                     totalTokens: row.totalTokens,
-                    totalCost: row.totalCost)
+                    totalCost: row.totalCost,
+                    daily: row.daily)
             }
     }
 

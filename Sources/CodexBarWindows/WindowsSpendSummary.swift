@@ -123,6 +123,18 @@ enum WindowsSpendSummary {
                     "Cost: " + cost(project.totalCost, currency: group.currencyCode),
                     "Tokens: " + tokens(project.totalTokens)]
                 if !hidePersonalInfo, let path = project.path { rows.append("Path: " + safe(path)) }
+                rows.append("Daily history (captured days within source coverage)")
+                rows.append("Missing days are not inferred as zero. Unknown amounts preserve incomplete coverage.")
+                let formatter = DateFormatter()
+                formatter.dateStyle = .medium
+                formatter.timeStyle = .none
+                formatter.timeZone = group.timeZone
+                for daily in project.daily {
+                    rows.append(formatter.string(from: daily.day) + " · "
+                        + cost(daily.totalCost, currency: group.currencyCode) + " · "
+                        + tokens(daily.totalTokens) + " tokens")
+                }
+
                 if snapshot.stale { rows.append("Stale data: a new collection has not completed.") }
                 sections.append(WindowsSnapshotSection(title: title, text: rows.joined(separator: "\r\n")))
             }
