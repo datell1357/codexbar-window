@@ -159,6 +159,10 @@ public struct BrowserCookieClient: Sendable {
             let records = try self.reader(databaseURL, query)
             return BrowserCookieDomainMatcher.filterExpired(
                 records, includeExpired: query.includeExpired, now: query.referenceDate)
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch let error as URLError where error.code == .timedOut {
+            throw error
         } catch let error as BrowserCookieError {
             throw error
         } catch {

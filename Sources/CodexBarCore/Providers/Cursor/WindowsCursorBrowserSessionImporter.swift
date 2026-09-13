@@ -1,5 +1,8 @@
 #if os(Windows)
 import Foundation
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
 
 /// Explicit browser-import backend. Discovery never commits a candidate or changes the selected account.
 public struct WindowsCursorBrowserSessionImporter: Sendable {
@@ -46,8 +49,7 @@ public struct WindowsCursorBrowserSessionImporter: Sendable {
                     guard cookies.contains(where: { cookie in
                         names.contains(cookie.name) || names.contains(where: { cookie.name.hasPrefix($0 + ".") })
                     }) else { continue }
-                    let raw = cookies.map { "\($0.name)=\($0.value)" }.joined(separator: "; ")
-                    guard raw.utf8.count <= 65_536, let header = CookieHeaderNormalizer.normalize(raw) else {
+                    guard let header = Self.unambiguousHeader(cookies) else {
                         failures += 1
                         continue
                     }
@@ -59,6 +61,27 @@ public struct WindowsCursorBrowserSessionImporter: Sendable {
         }
         try Self.check(deadline)
         return Discovery(candidates: candidates, failedProfileCount: failures)
+    }
+
+    /// Reject ambiguous host/domain duplicates and malformed header bytes; never choose an account by row order.
+    private static func unambiguousHeader(_ cookies: [HTTPCookie]) -> String? {
+        var values: [String: String] = [:]
+        let namePunctuation = Set("!#$%&'*+-.^_`|~".utf8)
+        for cookie in cookies {
+            guard !cookie.name.isEmpty, cookie.name.utf8.allSatisfy({ byte in
+                (48...57).contains(byte) || (65...90).contains(byte) || (97...122).contains(byte) ||
+                    namePunctuation.contains(byte)
+            }), cookie.value.utf8.allSatisfy({ byte in
+                byte == 0x21 || (0x23...0x2B).contains(byte) || (0x2D...0x3A).contains(byte) ||
+                    (0x3C...0x5B).contains(byte) || (0x5D...0x7E).contains(byte)
+            }) else { return nil }
+            if let previous = values[cookie.name], previous != cookie.value { return nil }
+            values[cookie.name] = cookie.value
+        }
+        guard !values.isEmpty else { return nil }
+        let header = values.keys.sorted().map { "\($0)=\(values[$0]!)" }.joined(separator: "; ")
+        guard header.utf8.count <= 65_536 else { return nil }
+        return header
     }
 
     /// Uses the import's shared deadline, rather than resetting a timeout for each profile.

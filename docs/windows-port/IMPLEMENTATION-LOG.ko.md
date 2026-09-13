@@ -2416,3 +2416,11 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - 행 읽기 전과 완료 후에도 확인하며 SQLITE_INTERRUPT가 단순 프로필 읽기 실패로 변환되지 않도록 취소/timeout을 우선 전달한다. 빌린 연결은 기존 progress handler를 덮어쓰지 않는다.
 - SQLite open 및 OS 파일 I/O/잠금 대기는 progress callback 밖일 수 있으므로 엄격한 wall-clock 완료 보장은 아니다. 기존 250ms busy timeout을 유지한다.
 - CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·실제 SQLite/취소/시간 경과 검증 미실행. 추가 브라우저 지원 및 전체 계획 나머지 항목은 계속 남아 있다.
+
+## IMPL-200 — Cursor 쿠키 후보의 결정성
+
+- Windows BrowserCookieClient에서 CancellationError 및 timedOut을 일반 loadFailed로 감싸지 않고 전달한다.
+- Cursor partition별 header 생성 시 같은 이름/같은 값은 하나로 합치고 같은 이름/다른 값은 후보 실패로 처리한다. 이름 순으로 정렬하여 DB 반환 순서에 따른 후보/캐시 지문 변동을 줄인다.
+- header 이름과 값의 허용 ASCII 바이트를 검사해 제어문자/구분자 혼입을 거부하고 기존 64KiB 제한을 유지한다. 원본 쿠키 값은 로그에 남기지 않는다.
+- 남은 소요: 충돌 후보 재로그인 UX, 컨테이너 이름, Chrome/Edge/WebView2 및 전체 계획 나머지 항목.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·실제 Firefox/API 검증 미실행.
