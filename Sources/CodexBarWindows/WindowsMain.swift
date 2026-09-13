@@ -98,6 +98,22 @@ private final class WindowsTrayApplication: @unchecked Sendable {
                 self.host.postTokenAccountAdd(requestID: requestID, result: result)
             }
         },
+        onMetadataEditBegin: { [weak self] requestID, providerID, accountID in
+            guard let self else { return }
+            Task {
+                let result = await self.runtime.beginTokenAccountMetadataEdit(providerID: providerID, accountID: accountID)
+                self.host.postMetadataEditLoad(requestID: requestID, result: result)
+            }
+        },
+        onMetadataEditSave: { [weak self] requestID, ticketID, patch in
+            guard let self else { return }
+            Task {
+                let result = await self.runtime.updateTokenAccountMetadata(ticketID: ticketID, patch: patch)
+                await self.runtime.cancelTokenAccountCredentialEdit(ticketID: ticketID)
+                if case .saved = result { Task { await self.runtime.refresh() } }
+                self.host.postMetadataEditSave(requestID: requestID, result: result)
+            }
+        },
         onCredentialEditBegin: { [weak self] requestID, providerID, accountID in
             guard let self else { return }
             Task {

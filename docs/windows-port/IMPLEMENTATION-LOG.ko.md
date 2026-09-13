@@ -1622,3 +1622,13 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - 필드 오류와 z.ai team 필수 값을 inline 안내하고 입력을 유지한다. personal 전환 시 org/project를 암묵적으로 삭제하지 않으며 각 필드를 비우면 명시적 삭제로 처리한다.
 
 남은 범위: tray/host/Main 연결, privacy 표시 가드, 오류 상세·legacy 긴 값 복구, scope 선택 UX, 고배율·작은 화면·접근성 및 Windows 실행 검증.
+
+## IMPL-118 — account metadata 메뉴 및 저장 연결
+
+상태 CODE_WRITTEN_UNVERIFIED. 컴파일/빌드/테스트/UI/계정/검증 미실시. guidelines/COMMITS.md 부재로 핵심 커밋 규칙을 적용한다.
+
+- 지원 공급자의 저장 계정 메뉴에 Edit scope를 추가하고 UUID를 통한 begin/snapshot/editor/patch/save 경로를 연결했다. 성공 후 Main에서 usage refresh를 요청한다.
+- host mailbox와 기존 계정 변경 pending slot을 사용한다. 취소·열기 실패·늦은 load 거절·save 종료 시 opaque ticket을 정리한다. 오류 메시지에는 계정 metadata나 credential을 넣지 않는다.
+- Hide personal info 활성 상태에서는 metadata 편집을 열지 않으며 command 및 비동기 load 완료 시점에 다시 확인한다. 이는 현재 값을 화면에 채우는 편집기의 개인정보 표시 가드다.
+
+남은 범위: modal 열린 후 외부 privacy 변경 대응, scope 선택 UX, 긴 legacy 값 복구, refresh 경합·shutdown·작은 화면·접근성 및 Windows 실행 검증, 전체 기능 구현.

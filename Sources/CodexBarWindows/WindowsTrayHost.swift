@@ -147,6 +147,11 @@ public final class WindowsTrayHost: @unchecked Sendable {
     private let onTokenAccountAdd: @Sendable (UUID, WindowsTokenAccountAddRequest) -> Void
     private var popupTokenAccountAdds: [UINT_PTR: (UsageProvider, UUID?)] = [:]
     private var tokenAccountAddResult: WindowsTokenAccountAddResult?
+    private let onMetadataEditBegin: @Sendable (UUID, ProviderInstanceID, UUID) -> Void
+    private let onMetadataEditSave: @Sendable (UUID, UUID, WindowsTokenAccountMetadataPatch) -> Void
+    private var popupMetadataEdits: [UINT_PTR: (ProviderInstanceID, UUID)] = [:]
+    private var metadataLoadResult: WindowsTokenAccountMetadataLoadResult?
+    private var metadataSaveResult: WindowsTokenAccountCredentialSaveResult?
     private let onCredentialEditBegin: @Sendable (UUID, ProviderInstanceID, UUID) -> Void
     private let onCredentialEditSave: @Sendable (UUID, UUID, String) -> Void
     private let onCredentialEditCancel: @Sendable (UUID) -> Void
@@ -265,6 +270,8 @@ public final class WindowsTrayHost: @unchecked Sendable {
         onSessionQuotaNotificationSettingsChanged: @escaping SessionQuotaNotificationSettingsChangedHandler = {},
         onQuotaWarningSettingsChanged: @escaping QuotaWarningSettingsChangedHandler = {},
         onTokenAccountAdd: @escaping @Sendable (UUID, WindowsTokenAccountAddRequest) -> Void = { _, _ in },
+        onMetadataEditBegin: @escaping @Sendable (UUID, ProviderInstanceID, UUID) -> Void = { _, _, _ in },
+        onMetadataEditSave: @escaping @Sendable (UUID, UUID, WindowsTokenAccountMetadataPatch) -> Void = { _, _, _ in },
         onCredentialEditBegin: @escaping @Sendable (UUID, ProviderInstanceID, UUID) -> Void = { _, _, _ in },
         onCredentialEditSave: @escaping @Sendable (UUID, UUID, String) -> Void = { _, _, _ in },
         onCredentialEditCancel: @escaping @Sendable (UUID) -> Void = { _ in },
@@ -294,6 +301,8 @@ public final class WindowsTrayHost: @unchecked Sendable {
         self.onSessionQuotaNotificationSettingsChanged = onSessionQuotaNotificationSettingsChanged
         self.onQuotaWarningSettingsChanged = onQuotaWarningSettingsChanged
         self.onTokenAccountAdd = onTokenAccountAdd
+        self.onMetadataEditBegin = onMetadataEditBegin
+        self.onMetadataEditSave = onMetadataEditSave
         self.onCredentialEditBegin = onCredentialEditBegin
         self.onCredentialEditSave = onCredentialEditSave
         self.onCredentialEditCancel = onCredentialEditCancel
@@ -536,6 +545,87 @@ public final class WindowsTrayHost: @unchecked Sendable {
         case .failed: message = "Could not add or protect the account. Check your Windows profile and configuration access, then try again."
         }
         self.showMessage(message, caption: "Add saved account")
+    }
+
+    public func postMetadataEditLoad(requestID: UUID, result: WindowsTokenAccountMetadataLoadResult) {
+        self.mailboxLock.lock()
+        guard !self.quitInvoked, self.tokenAccountPendingID == requestID,
+              self.metadataLoadResult == nil else {
+            self.mailboxLock.unlock()
+            if case let .loaded(snapshot) = result { self.onCredentialEditCancel(snapshot.ticketID) }
+            return
+        }
+        self.metadataLoadResult = result
+        let window = self.window
+        self.mailboxLock.unlock()
+        if let window { PostMessageW(window, Self.wakeMessage, 0, 0) }
+    }
+
+    public func postMetadataEditSave(requestID: UUID, result: WindowsTokenAccountCredentialSaveResult) {
+        self.mailboxLock.lock()
+        guard !self.quitInvoked, self.tokenAccountPendingID == requestID,
+              self.metadataSaveResult == nil else { self.mailboxLock.unlock(); return }
+        self.metadataSaveResult = result
+        let window = self.window
+        self.mailboxLock.unlock()
+        if let window { PostMessageW(window, Self.wakeMessage, 0, 0) }
+    }
+
+    private func drainMetadataEdit() {
+        guard !self.quitInvoked, !self.remoteEditorOpen, let window = self.window,
+              case .idle = self.providerEditorPhase, case .idle = self.codexWebSettingsEditorPhase else { return }
+        self.mailboxLock.lock()
+        let loaded = self.metadataLoadResult
+        let saved = self.metadataSaveResult
+        let requestID = self.tokenAccountPendingID
+        self.metadataLoadResult = nil
+        self.metadataSaveResult = nil
+        self.mailboxLock.unlock()
+        guard loaded != nil || saved != nil, let requestID else { return }
+        var message: String?
+        if let loaded {
+            switch loaded {
+            case let .loaded(snapshot):
+                let ticketID = snapshot.ticketID
+                guard !WindowsUsagePresentationSettings.load().hidePersonalInfo else {
+                    self.onCredentialEditCancel(ticketID)
+                    self.mailboxLock.lock()
+                    if self.tokenAccountPendingID == requestID { self.tokenAccountPendingID = nil }
+                    self.mailboxLock.unlock()
+                    self.showMessage("Turn off Hide personal info before editing account scope.", caption: "Account scope")
+                    return
+                }
+                self.remoteEditorOpen = true
+                let input = WindowsAccountMetadataDialog.show(owner: window, snapshot: snapshot)
+                self.remoteEditorOpen = false
+                if !self.quitInvoked { PostMessageW(window, Self.wakeMessage, 0, 0) }
+                if !self.quitInvoked, case let .saved(patch) = input {
+                    self.onMetadataEditSave(requestID, ticketID, patch)
+                    return
+                }
+                self.onCredentialEditCancel(ticketID)
+                if case .failed = input { message = "Could not open the account scope editor." }
+            case .unavailable: message = "The saved account is no longer available. Refresh usage and try again."
+            case .refreshInProgress: message = "Usage is refreshing. Try again after it finishes."
+            case .shuttingDown: break
+            case .failed: message = "Could not load the account. Check configuration access and try again."
+            }
+        }
+        if let saved {
+            switch saved {
+            case .saved: message = "Account scope saved. Usage refresh was requested."
+            case .unchanged: message = "The account scope is unchanged."
+            case .invalidInput: message = "The account scope fields are invalid. Reopen the editor and check the provider requirements."
+            case .staleAccount: message = "The account changed or the edit expired. Refresh usage and reopen the editor."
+            case .refreshInProgress: message = "Usage is refreshing. Reopen the editor after it finishes."
+            case .shuttingDown: break
+            case .failed: message = "Could not save the account scope. Check configuration access and reopen the editor."
+            }
+        }
+        self.mailboxLock.lock()
+        if self.tokenAccountPendingID == requestID { self.tokenAccountPendingID = nil }
+        self.mailboxLock.unlock()
+        if !self.quitInvoked, let message { self.showMessage(message, caption: "Edit account scope") }
     }
 
     public func postCredentialEditLoad(requestID: UUID, result: WindowsTokenAccountCredentialLoadResult) {
@@ -947,6 +1037,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
         self.popupTokenAccountCommands.removeAll(keepingCapacity: true)
         self.popupTokenAccountRenames.removeAll(keepingCapacity: true)
         self.popupCredentialEdits.removeAll(keepingCapacity: true)
+        self.popupMetadataEdits.removeAll(keepingCapacity: true)
         self.popupTokenAccountAdds.removeAll(keepingCapacity: true)
         self.popupTokenAccountPages.removeAll(keepingCapacity: true)
         var continuingPage = false
@@ -961,6 +1052,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
             self.popupTokenAccountCommands.removeAll(keepingCapacity: true)
         self.popupTokenAccountRenames.removeAll(keepingCapacity: true)
         self.popupCredentialEdits.removeAll(keepingCapacity: true)
+        self.popupMetadataEdits.removeAll(keepingCapacity: true)
         self.popupTokenAccountAdds.removeAll(keepingCapacity: true)
             self.popupTokenAccountPages.removeAll(keepingCapacity: true)
             self.mailboxLock.lock()
@@ -1050,6 +1142,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
                 }
             }
             var commands: [UINT_PTR: WindowsTokenAccountSelectionRequest] = [:]
+            var metadataEdits: [UINT_PTR: (ProviderInstanceID, UUID)] = [:]
             var credentialEdits: [UINT_PTR: (ProviderInstanceID, UUID)] = [:]
             var renames: [UINT_PTR: (ProviderInstanceID, UUID, String)] = [:]
             for entry in menuEntries {
@@ -1060,6 +1153,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
                 let end = min(selection.accounts.count, accountEnd - providerStart)
                 guard start < end, let providerMenu = CreatePopupMenu() else { continue }
                 var providerCommands: [UINT_PTR: WindowsTokenAccountSelectionRequest] = [:]
+                var providerMetadataEdits: [UINT_PTR: (ProviderInstanceID, UUID)] = [:]
                 var providerCredentialEdits: [UINT_PTR: (ProviderInstanceID, UUID)] = [:]
                 var providerRenames: [UINT_PTR: (ProviderInstanceID, UUID, String)] = [:]
                 for account in selection.accounts[start..<end] {
@@ -1070,6 +1164,14 @@ public final class WindowsTrayHost: @unchecked Sendable {
                     let title = account.title.replacingOccurrences(of: "&", with: "&&")
                     if title.withCString(encodedAs: UTF16.self, { AppendMenuW(providerMenu, flags, command, $0) }) != 0 {
                         providerCommands[command] = request
+                        if let provider = selection.providerID.firstPartyProvider,
+                           let support = TokenAccountSupportCatalog.support(for: provider),
+                           support.showsOrganizationField || support.showsTeamModeControls {
+                            let metadataCommand = UINT_PTR(0x8300) + command - UINT_PTR(0x7E00)
+                            if ("Edit scope for " + title + "…").withCString(encodedAs: UTF16.self, {
+                                AppendMenuW(providerMenu, UINT(MF_STRING), metadataCommand, $0)
+                            }) != 0 { providerMetadataEdits[metadataCommand] = (selection.providerID, account.id) }
+                        }
                         let credentialCommand = UINT_PTR(0x8200) + command - UINT_PTR(0x7E00)
                         if ("Replace credential for " + title + "…").withCString(encodedAs: UTF16.self, {
                             AppendMenuW(providerMenu, UINT(MF_STRING), credentialCommand, $0)
@@ -1088,6 +1190,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
                 }
                 if attached {
                     commands.merge(providerCommands) { _, new in new }
+                    metadataEdits.merge(providerMetadataEdits) { _, new in new }
                     credentialEdits.merge(providerCredentialEdits) { _, new in new }
                     renames.merge(providerRenames) { _, new in new }
                 } else { DestroyMenu(providerMenu) }
@@ -1100,6 +1203,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
                 self.popupTokenAccountCommands = commands
                 self.popupTokenAccountRenames = renames
                 self.popupCredentialEdits = credentialEdits
+                self.popupMetadataEdits = metadataEdits
                 self.popupTokenAccountPages = pageCommands
                 savedAccountsMenuPosition = menuPosition
             } else { DestroyMenu(accountsMenu) }
@@ -2142,6 +2246,26 @@ public final class WindowsTrayHost: @unchecked Sendable {
             }
             return
         }
+        if let (providerID, accountID) = self.popupMetadataEdits[command] {
+            guard !self.quitInvoked, !self.remoteEditorOpen,
+                  case .idle = self.providerEditorPhase, case .idle = self.codexWebSettingsEditorPhase else { return }
+            guard self.popupCopyPrivacy == WindowsUsagePresentationSettings.load().hidePersonalInfo,
+                  !WindowsUsagePresentationSettings.load().hidePersonalInfo else {
+                self.showMessage("Turn off Hide personal info and reopen Saved accounts before editing scope.", caption: "Saved accounts")
+                return
+            }
+            self.mailboxLock.lock()
+            guard self.tokenAccountPendingID == nil else {
+                self.mailboxLock.unlock()
+                self.showMessage("An account change is already in progress. Please wait.", caption: "Saved accounts")
+                return
+            }
+            let requestID = UUID()
+            self.tokenAccountPendingID = requestID
+            self.mailboxLock.unlock()
+            self.onMetadataEditBegin(requestID, providerID, accountID)
+            return
+        }
         if let (providerID, accountID) = self.popupCredentialEdits[command] {
             guard !self.quitInvoked, !self.remoteEditorOpen,
                   case .idle = self.providerEditorPhase, case .idle = self.codexWebSettingsEditorPhase else { return }
@@ -2785,6 +2909,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
         if message == Self.wakeMessage {
             host.drainCLISetup()
             if host.remoteEditorOpen { return 0 }
+            host.drainMetadataEdit()
             host.drainCredentialEdit()
             host.drainTokenAccountAdd()
             host.drainTokenAccountRename()
