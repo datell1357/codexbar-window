@@ -449,13 +449,8 @@ public struct AntigravityOAuthCredentialsStore: @unchecked Sendable {
 
     private func loadUnlocked() throws -> AntigravityOAuthCredentials? {
         #if os(Windows)
-        let data: Data
-        do { data = try Data(contentsOf: self.fileURL) }
-        catch let error as NSError where error.domain == NSCocoaErrorDomain && error.code == NSFileReadNoSuchFileError {
-            return nil
-        }
-        // Bound both legacy plaintext and encrypted input before JSON parsing.
-        guard data.count <= 1_048_576 else { throw ProtectionError.invalidEnvelope }
+        guard let data = try WindowsBoundedFileReader.readIfPresent(at: self.fileURL, maximumBytes: 1_048_576)
+        else { return nil }
         #else
         guard self.fileManager.fileExists(atPath: self.fileURL.path) else { return nil }
         let data = try Data(contentsOf: self.fileURL)

@@ -1752,3 +1752,13 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - 보호 envelope뿐 아니라 legacy plaintext도 JSON 파싱 전에 1 MiB 한도를 적용한다. 한도는 읽은 Data에 적용되며 아직 스트리밍 메모리 제한은 아니다.
 
 남은 범위: Windows Foundation 오류 매핑 검증, 경로/reparse·외부 프로세스 교체 경합, bounded file read, 전체 계획 및 Windows 실행 검증.
+
+## IMPL-131 — 제한된 credential/recovery 파일 읽기
+
+상태 CODE_WRITTEN_UNVERIFIED. 컴파일/빌드/테스트/파일 접근/검증 미실시. guidelines/COMMITS.md 부재로 핵심 커밋 규칙을 적용한다.
+
+- WindowsBoundedFileReader를 추가해 64 KiB 청크와 한도 초과 확인 1 byte로 읽는다. 정상 EOF까지 short read를 반복하고 한도 초과·읽기·close 오류를 전파한다. 명시적 파일 부재만 nil이다.
+- Antigravity shared cache 1 MiB 및 removal journal 16 MiB 읽기를 연결해 Data(contentsOf:) 전체 파일 적재를 대체했다. 형식·암호화 검사는 기존 경로를 유지한다.
+- 파일 크기 사전 조회에 의존하지 않아 읽는 중 커져도 누적 한도를 넘기지 않도록 작성했다. 실제 파일은 읽지 않았다.
+
+남은 범위: Windows FileHandle 오류·short read 검증, reparse/비정규 파일과 프로세스 간 경합, config 등 다른 파일 읽기 한도 및 전체 계획 검증.

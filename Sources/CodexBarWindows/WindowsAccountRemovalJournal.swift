@@ -11,10 +11,8 @@ struct WindowsAccountRemovalJournal {
     private static let maximumBytes = 16 * 1024 * 1024
 
     func load() throws -> [UUID: ProviderTokenAccount] {
-        let data: Data
-        do { data = try Data(contentsOf: self.fileURL) }
-        catch let error as NSError where error.domain == NSCocoaErrorDomain && error.code == NSFileReadNoSuchFileError { return [:] }
-        guard data.count <= Self.maximumBytes else { throw Failure.invalidRecord }
+        guard let data = try WindowsBoundedFileReader.readIfPresent(at: self.fileURL, maximumBytes: Self.maximumBytes)
+        else { return [:] }
         let envelope = try JSONDecoder().decode(Envelope.self, from: data)
         guard envelope.version == 1, envelope.entries.count <= 128,
               Set(envelope.entries.map(\.id)).count == envelope.entries.count else { throw Failure.invalidRecord }
