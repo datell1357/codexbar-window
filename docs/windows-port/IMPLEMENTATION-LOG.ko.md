@@ -2709,3 +2709,12 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - 기존 전체 페이지/중복 경계/계정 ID 전후 확인 규칙은 유지한다. 크기 상한은 스트리밍 다운로드 제한이 아닌 decode 진입 제한이다.
 - 남은 소요: 실제 비용 조회/계정 전환 검증, 자동 인증/Chromium/Windsurf 지원 및 전체 계획 나머지.
 - CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·네트워크 검증 미실행.
+
+## IMPL-235 — Zed Windows 편집기 credential reader
+
+- 원본 https://github.com/zed-industries/zed/blob/main/crates/gpui_windows/src/util.rs 의 target 함수와 platform.rs의 read_credentials를 읽어 `zed:url=<serviceURL>` / CRED_TYPE_GENERIC / UserName / 원본 byte blob 계약을 확인했다. client/src/client.rs는 username을 user ID, blob을 UTF-8 token으로 사용한다.
+- exact target 하나만 CredReadW로 읽고 vault 열거/쓰기/삭제는 하지 않는 reader를 작성했다. service origin 검사, username/blob 크기 제한, UTF-8/ID/token 구문 검사, 취소 확인, CredFree 정리를 포함한다.
+- 없는 항목은 nil, 읽기 실패와 잘못된 형식은 비밀값 없는 오류로 반환한다. 원본 조사만 수행했고 실제 Credential Manager를 읽거나 API를 호출하지 않았다.
+- 원본 URL은 main 가변 참조이며 실제 설치 버전 호환성은 검증하지 않았다. reader는 기본 fetch/UI에 아직 연결하지 않았다.
+- 남은 소요: 편집기 설정/계정 선택과 가져오기 UI 연결, 실제 Windows 검증 및 전체 계획 나머지.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·Credential Manager 검증 미실행.
