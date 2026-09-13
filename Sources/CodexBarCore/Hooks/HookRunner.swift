@@ -94,6 +94,7 @@ public enum HookRunner {
         #if os(Windows)
         guard !Task.isCancelled else { return }
         #endif
+        if let authorization, await !authorization() { return }
         let rules = config.matchingRules(for: event)
         guard !rules.isEmpty else { return }
         // Quota events already dedupe upstream (threshold-crossing, depletion, and
@@ -110,7 +111,16 @@ public enum HookRunner {
             guard !Task.isCancelled else { return }
             #endif
             do {
+                #if os(Windows)
+                if let authorization {
+                    try await self.runWhileAuthorized(rule: rule, event: event,
+                        baseEnvironment: baseEnvironment, authorization: authorization)
+                } else {
+                    _ = try await self.run(rule: rule, event: event, baseEnvironment: baseEnvironment)
+                }
+                #else
                 _ = try await self.run(rule: rule, event: event, baseEnvironment: baseEnvironment)
+                #endif
                 #if os(Windows)
                 guard !Task.isCancelled else { return }
                 #endif
@@ -136,6 +146,37 @@ public enum HookRunner {
             }
         }
     }
+
+    #if os(Windows)
+    /// The monitor owns no process handle. Cancelling the command task delegates termination
+    /// and pipe draining to SubprocessRunner, including the normal timeout/cleanup contract.
+    private static func runWhileAuthorized(
+        rule: HookRule, event: HookEvent, baseEnvironment: [String: String],
+        authorization: @escaping @Sendable () async -> Bool) async throws
+    {
+        try Task.checkCancellation()
+        guard await authorization() else { throw CancellationError() }
+        try await withThrowingTaskGroup(of: Void.self) { group in
+            group.addTask {
+                try Task.checkCancellation()
+                guard await authorization() else { throw CancellationError() }
+                _ = try await self.run(rule: rule, event: event, baseEnvironment: baseEnvironment)
+            }
+            group.addTask {
+                while true {
+                    try await Task.sleep(nanoseconds: 500_000_000)
+                    try Task.checkCancellation()
+                    guard await authorization() else { throw CancellationError() }
+                }
+            }
+            defer { group.cancelAll() }
+            // Command completion ends the monitor; revoked authorization cancels the command.
+            // The group drains both children before returning to the next rule.
+            _ = try await group.next()
+        }
+        try Task.checkCancellation()
+    }
+    #endif
 
     public static func failureSummary(_ error: Error) -> String {
         if error is HookRunnerError { return "payload too large" }

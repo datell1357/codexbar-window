@@ -3150,3 +3150,12 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - 대기열 초과와 소유권 미확정 계정 수, batch 제출 실패를 트레이 상태 행으로 알린다. 성공 제출은 명령 실행 성공을 의미하지 않는다.
 - 남은 소요: plugin/외부 계정 소유권과 fetch 진입 실패/status probe, 전용 hook 설정 UI, 설정 변경 직후 실행 중 명령 취소 및 전체 계획 나머지. 실행 중인 명령은 시작 후 외부 설정 변경을 즉시 감지해 취소하지 못하며 후속 규칙 시작 전에는 재확인한다.
 - CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·실제 조회/훅 실행 미실행.
+
+## IMPL-286 — 실행 중 hook 설정 변경 취소
+
+- Windows hook 명령 실행과 0.5초 간격 authorization 확인을 throwing task group으로 관리한다. runtime의 설정/개인정보/종료 확인이 false이면 명령 작업에 취소를 전달한다.
+- 정상 명령 완료는 감시 작업을 취소하고, 감시 실패는 명령을 취소한다. 두 자식 작업이 반환하기 전 다음 규칙을 시작하지 않는다. 프로세스 종료와 파이프 drain은 기존 SubprocessRunner에 위임한다.
+- rate limiter 소모 전에도 authorization을 확인한다. 콜백 없는 기존 직접 실행 경로는 유지한다.
+- 확인 주기와 실제 프로세스 종료 시간은 동일하지 않다. 파일 시스템/actor 응답과 프로세스 정리 시간이 추가될 수 있으며 실행 검증은 하지 않았다.
+- 남은 소요: plugin/외부 계정/status probe 및 fetch 진입 실패 경로, hook 설정 UI와 전체 계획 나머지.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·실제 훅/명령 실행 미실행.
