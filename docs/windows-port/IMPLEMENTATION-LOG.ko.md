@@ -2114,3 +2114,13 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - Codex 부분 모델 이력 보존, 가격 없는 named model 보존, Codex/Cursor ledger의 unpriceable cost 구분, zero/missing 및 모델 합계 coverage 규칙을 포함한다. 원본 파일은 유지한다.
 
 남은 범위: 컴파일 및 모델 집계 실제 검증, JSON 내보내기 등 전체 대시보드 기능, ownership/cache 처리와 전체 계획 구현. 이번 확장 추가만으로 다른 누락이 없거나 빌드가 성공한다고 주장하지 않는다.
+
+## IMPL-167 — 원본 비용 JSON 복사·내보내기
+
+상태 CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·인코더 실행·파일 저장·클립보드 검증 미실시. guidelines/COMMITS.md 부재로 핵심 규칙을 적용한다.
+
+- 원본 SpendDashboardExportPayload 및 JSONEncoder 설정(prettyPrinted/sortedKeys/iso8601), 기간별 기본 파일명을 Windows로 이식했다. 원본 요청 기간/선택일/통화 그룹/서비스/모델/coverage/tokenMix/hiddenSourceIDs 범위를 유지하며 프로젝트·세션·일별 기록 등 필드는 추가하지 않는다.
+- runtime에서 수집 완료/ready/non-stale/동일 설정을 요구하고 원본 DTO를 인코딩한다. 순서를 안정시키기 위해 hiddenSourceIDs를 정렬한다. 파일은 16 MiB, 복사는 기존 65536 UTF-16 단위 제한을 사용한다. 복사 한도 초과는 JSON 파일 내보내기를 안내하고 데이터 일부를 잘라 내보내지 않는다.
+- 트레이 Copy cost JSON/Export cost JSON, request UUID mailbox, UTF-8 텍스트 clipboard와 Windows .json 저장 대화상자를 연결했다. 저장은 overwrite prompt와 atomic write, 개인정보/계정 유효성 재확인을 따른다. 인코딩 실패는 사용자 오류로 전달한다.
+
+남은 범위: 원본 partial/stale 상태에서 export하는 정책 차이(현재 Windows는 완전한 수집만 허용), 전체 Windows 실행/스키마 검증, ownership ticket/원자적 게시, live ledger/cache 및 전체 계획 구현. 실제 JSON을 생성하거나 파일/클립보드를 변경하지 않았다.

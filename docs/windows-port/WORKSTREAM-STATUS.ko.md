@@ -1,5 +1,7 @@
 # Windows 전용 제품 작업 현황
 
+- IMPL-167: 원본 Spend JSON DTO 및 Copy cost JSON/Export cost JSON 트레이 동작을 연결했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
 - IMPL-166: Windows 비용 모델에서 호출하지만 빠져 있던 ModelBreakdown 확장을 원본에서 이식했다. 이전 비용 UI/모델 구현은 이 누락을 포함한 미검증 상태였다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
 
 - IMPL-165: 공유 미리보기의 중첩 저장/오류 대화상자 반환 뒤 owner 창을 닫도록 연결했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.

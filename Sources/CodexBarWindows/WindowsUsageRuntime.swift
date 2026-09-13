@@ -152,11 +152,35 @@ public actor WindowsUsageRuntime {
 
     public enum ShareStatsCopyResult: Sendable {
         case costHistory(WindowsSpendHistorySnapshot)
+        case json(Data, filename: String)
         case image(Data, filename: String)
         case clipboardImage(png: Data, dib: Data)
         case preview(png: Data, dib: Data, filename: String, text: String)
         case ready(String)
         case unavailable(String)
+    }
+
+    public func spendJSONResult(copy: Bool) -> ShareStatsCopyResult {
+        guard !self.shuttingDown, self.spendState == .available,
+              let snapshot = self.spendSnapshot, snapshot.phase == .ready, !snapshot.stale,
+              !snapshot.model.groups.isEmpty, let settings = self.collectedSpendSettings,
+              WindowsSpendSettings.load() == settings else {
+            return .unavailable("Cost export requires a current, completed collection. Refresh all and retry.")
+        }
+        do {
+            let data = try WindowsSpendDashboardJSONExporter.encodedData(
+                model: snapshot.model, hiddenSourceIDs: settings.hiddenSourceIDs.sorted())
+            guard data.count <= 16 * 1024 * 1024 else { return .unavailable("The cost JSON exceeds the 16 MiB export limit.") }
+            if copy {
+                guard let text = String(data: data, encoding: .utf8), text.utf16.count <= 65_536 else {
+                    return .unavailable("The cost JSON is too large for clipboard copying. Use Export cost JSON instead.")
+                }
+                return .ready(text)
+            }
+            return .json(data, filename: WindowsSpendDashboardJSONExporter.defaultFilename(days: snapshot.model.requestedDays))
+        } catch {
+            return .unavailable("Cost JSON could not be encoded. No export was produced.")
+        }
     }
 
     public func shareStatsImageResult(copyToClipboard: Bool = false, preview: Bool = false) -> ShareStatsCopyResult {

@@ -99,6 +99,13 @@ private final class WindowsTrayApplication: @unchecked Sendable {
                 self.host.postShareStatsCopy(requestID: requestID, result: result)
             }
         },
+        onSpendJSONRequested: { [weak self] requestID, copy in
+            guard let self else { return }
+            Task {
+                let result = await self.runtime.spendJSONResult(copy: copy)
+                self.host.postShareStatsCopy(requestID: requestID, result: result)
+            }
+        },
         onShareStatsPreviewRequested: { [weak self] requestID in
             guard let self else { return }
             Task {

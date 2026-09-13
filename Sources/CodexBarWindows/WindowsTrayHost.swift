@@ -102,6 +102,9 @@ public final class WindowsTrayHost: @unchecked Sendable {
     private static let spendHistoryCommand = UINT_PTR(0x7038)
     private let onSpendHoursRequested: @Sendable (UUID, UInt64, Date, String) -> Void
     private let onSpendHistoryRequested: @Sendable (UUID) -> Void
+    private static let spendJSONCopyCommand = UINT_PTR(0x703C)
+    private static let spendJSONSaveCommand = UINT_PTR(0x703D)
+    private let onSpendJSONRequested: @Sendable (UUID, Bool) -> Void
     private static let shareStatsPreviewCommand = UINT_PTR(0x7037)
     private let onShareStatsPreviewRequested: @Sendable (UUID) -> Void
     private static let shareStatsImageCopyCommand = UINT_PTR(0x7036)
@@ -308,6 +311,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
         onTokenActivityRequested: @escaping @Sendable (UUID) -> Void = { _ in },
         onSpendHoursRequested: @escaping @Sendable (UUID, UInt64, Date, String) -> Void = { _, _, _, _ in },
         onSpendHistoryRequested: @escaping @Sendable (UUID) -> Void = { _ in },
+        onSpendJSONRequested: @escaping @Sendable (UUID, Bool) -> Void = { _, _ in },
         onShareStatsPreviewRequested: @escaping @Sendable (UUID) -> Void = { _ in },
         onShareStatsImageCopyRequested: @escaping @Sendable (UUID) -> Void = { _ in },
         onShareStatsImageRequested: @escaping @Sendable (UUID) -> Void = { _ in },
@@ -353,6 +357,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
         self.onTokenActivityRequested = onTokenActivityRequested
         self.onSpendHoursRequested = onSpendHoursRequested
         self.onSpendHistoryRequested = onSpendHistoryRequested
+        self.onSpendJSONRequested = onSpendJSONRequested
         self.onShareStatsPreviewRequested = onShareStatsPreviewRequested
         self.onShareStatsImageCopyRequested = onShareStatsImageCopyRequested
         self.onShareStatsImageRequested = onShareStatsImageRequested
@@ -582,6 +587,15 @@ public final class WindowsTrayHost: @unchecked Sendable {
         case let .clipboardImage(png, dib):
             if let error = WindowsClipboard.writeImage(png: png, dib: dib, owner: window, isCurrent: isCurrent) {
                 self.showMessage(error, caption: "Share Stats")
+            }
+        case let .json(data, filename):
+            self.remoteEditorOpen = true
+            let error = WindowsSpendJSONSaveDialog.saveJSON(data, filename: filename, owner: window,
+                hidePersonalInfo: request.privacy, isCurrent: isCurrent)
+            self.remoteEditorOpen = false
+            if !self.quitInvoked {
+                PostMessageW(window, Self.wakeMessage, 0, 0)
+                if let error { self.showMessage(error, caption: "Cost JSON export") }
             }
         case let .image(data, filename):
             self.remoteEditorOpen = true
@@ -2485,6 +2499,8 @@ public final class WindowsTrayHost: @unchecked Sendable {
             (Self.spendSummaryCommand, "Open cost summary…", false),
             (Self.spendHistoryCommand, "Open cost history chart…", false),
             (Self.tokenActivityCommand, "Open token activity heatmap…", false),
+            (Self.spendJSONCopyCommand, "Copy cost JSON", false),
+            (Self.spendJSONSaveCommand, "Export cost JSON…", false),
             (Self.shareStatsCopyCommand, "Copy Share Stats", false),
             (Self.shareStatsImageCommand, "Save Share Stats PNG…", false),
             (Self.shareStatsImageCopyCommand, "Copy Share Stats image", false),
@@ -2952,14 +2968,17 @@ public final class WindowsTrayHost: @unchecked Sendable {
             self.spendSourcesMailbox = nil
             self.mailboxLock.unlock()
             self.onSpendSourcesRequested(requestID)
-        case Self.shareStatsCopyCommand, Self.shareStatsImageCommand, Self.shareStatsImageCopyCommand, Self.shareStatsPreviewCommand, Self.spendHistoryCommand, Self.tokenActivityCommand:
+        case Self.spendJSONCopyCommand, Self.spendJSONSaveCommand, Self.shareStatsCopyCommand, Self.shareStatsImageCommand, Self.shareStatsImageCopyCommand, Self.shareStatsPreviewCommand, Self.spendHistoryCommand, Self.tokenActivityCommand:
             let requestID = UUID()
             let privacy = WindowsUsagePresentationSettings.load().hidePersonalInfo
             self.mailboxLock.lock()
             self.shareStatsCopyRequest = (requestID, privacy)
             self.shareStatsCopyMailbox = nil
             self.mailboxLock.unlock()
-            if command == Self.tokenActivityCommand { self.onTokenActivityRequested(requestID) }
+            if command == Self.spendJSONCopyCommand || command == Self.spendJSONSaveCommand {
+                self.onSpendJSONRequested(requestID, command == Self.spendJSONCopyCommand)
+            }
+            else if command == Self.tokenActivityCommand { self.onTokenActivityRequested(requestID) }
             else if command == Self.spendHistoryCommand { self.onSpendHistoryRequested(requestID) }
             else if command == Self.shareStatsPreviewCommand { self.onShareStatsPreviewRequested(requestID) }
             else if command == Self.shareStatsImageCopyCommand { self.onShareStatsImageCopyRequested(requestID) }
