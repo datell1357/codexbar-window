@@ -2424,3 +2424,11 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - header 이름과 값의 허용 ASCII 바이트를 검사해 제어문자/구분자 혼입을 거부하고 기존 64KiB 제한을 유지한다. 원본 쿠키 값은 로그에 남기지 않는다.
 - 남은 소요: 충돌 후보 재로그인 UX, 컨테이너 이름, Chrome/Edge/WebView2 및 전체 계획 나머지 항목.
 - CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·실제 Firefox/API 검증 미실행.
+
+## IMPL-201 — Firefox cookie 읽기 크기 제한
+
+- 조회에서 반환한 행은 최대 50,000개, 복사 대상 텍스트 합계는 8MiB, 개별 열은 256KiB로 제한한다. 만료/제외할 행도 비용에 포함하며 초과 시 전체 조회를 실패 처리해 잘린 세션을 후보로 사용하지 않는다.
+- 소유한 읽기 전용 SQLite 연결에는 1MiB SQLITE_LIMIT_LENGTH도 적용한다. 브라우저 DB 파일이나 빌린 연결의 설정을 변경하지 않는다.
+- 원문 쿠키는 오류에 포함하지 않고 기존 SQLite 오류 코드 경로를 사용한다. Swift 객체/SQLite 내부 전체 메모리를 8MiB로 보장하는 것은 아니다.
+- 남은 소요: 대용량 실제 프로필 호환성 검증, 추가 브라우저 지원 및 전체 계획의 나머지 항목.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·실제 SQLite/메모리 측정 미실행.

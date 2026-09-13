@@ -1,5 +1,7 @@
 # Windows 전용 제품 작업 현황
 
+- IMPL-201: Firefox cookie 조회의 행 수/누적 텍스트/개별 열 크기 상한을 작성했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
 - IMPL-200: 브라우저 취소/timeout 오류 전달을 보존하고 Cursor 동일 이름 충돌/잘못된 쿠키 바이트를 거부하도록 작성했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
 
 - IMPL-199: Cursor 탐색 deadline을 Firefox SQLite progress handler 및 row 읽기에 연결했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.

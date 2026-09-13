@@ -5,6 +5,10 @@ import CSQLite3
 import Foundation
 
 enum WindowsFirefoxCookieReader {
+    private static let maximumRows = 50_000
+    private static let maximumTextBytes = 8 * 1024 * 1024
+    private static let maximumColumnBytes = 256 * 1024
+
     private final class ReadBudget {
         let deadline: Date?
         init(deadline: Date?) { self.deadline = deadline }
@@ -31,6 +35,8 @@ enum WindowsFirefoxCookieReader {
             throw Self.failure(openResult == SQLITE_OK ? SQLITE_ERROR : openResult)
         }
         defer { sqlite3_close(database) }
+        // Applies only to this owned read-only connection; never mutates the browser database.
+        _ = sqlite3_limit(database, SQLITE_LIMIT_LENGTH, 1024 * 1024)
         let timeoutResult = sqlite3_busy_timeout(database, 250)
         guard timeoutResult == SQLITE_OK else { throw Self.failure(timeoutResult) }
         let budget = ReadBudget(deadline: query.deadline)
@@ -99,11 +105,22 @@ enum WindowsFirefoxCookieReader {
         }
 
         var records: [BrowserCookieRecord] = []
+        var rowCount = 0
+        var textBytes = 0
         while true {
             try Self.check(query)
             let result = sqlite3_step(statement)
             if result == SQLITE_DONE { return records }
             guard result == SQLITE_ROW else { throw Self.failure(result) }
+            rowCount += 1
+            guard rowCount <= Self.maximumRows else { throw Self.failure(SQLITE_TOOBIG) }
+            // Count before copying values into Swift strings, including discarded/expired rows.
+            for column in [Int32(0), 1, 2, 3, 7] {
+                let count = Int(sqlite3_column_bytes(statement, column))
+                guard count <= Self.maximumColumnBytes,
+                      count <= Self.maximumTextBytes - textBytes else { throw Self.failure(SQLITE_TOOBIG) }
+                textBytes += count
+            }
             guard let host = try Self.text(statement, column: 0),
                   let name = try Self.text(statement, column: 1),
                   let path = try Self.text(statement, column: 2),
@@ -148,6 +165,7 @@ enum WindowsFirefoxCookieReader {
         guard sqlite3_column_type(statement, column) != SQLITE_NULL else { return nil }
         guard let bytes = sqlite3_column_text(statement, column) else { throw Self.failure(SQLITE_NOMEM) }
         let count = Int(sqlite3_column_bytes(statement, column))
+        guard count <= Self.maximumColumnBytes else { throw Self.failure(SQLITE_TOOBIG) }
         return String(decoding: UnsafeBufferPointer(start: bytes, count: count), as: UTF8.self)
     }
 
