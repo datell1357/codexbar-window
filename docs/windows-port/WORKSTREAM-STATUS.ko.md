@@ -1,5 +1,7 @@
 # Windows 전용 제품 작업 현황
 
+- IMPL-240: Windows Zed settings.json에서 서버를 읽는 1MiB 제한 loader와 주석/후행 쉼표 처리를 작성했다. UI 기본값 연결은 남아 있다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
 - IMPL-239: Zed 편집기 가져오기에 HTTPS 서버 주소 선택 창을 추가하고 선택 origin을 조회·확인에 전달했다. 자동 설정 탐색은 남아 있다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
 
 - IMPL-238: 트레이 Zed 편집기 가져오기/취소와 계정 확인·이름 입력·보호 저장 콜백을 연결했다. 기본 production 서버 대상이며 custom server 탐색은 남아 있다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.

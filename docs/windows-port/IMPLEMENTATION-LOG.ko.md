@@ -2750,3 +2750,12 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - 선택 origin을 Main에서 runtime으로 전달하여 기본 production 외 서버도 exact target reader와 고정 credential API 확인을 사용한다. 서버 입력 도중 개인정보 모드 변경은 기존 dialog 감시로 취소한다.
 - 남은 소요: 편집기 설정 자동 탐색, 실제 Windows UI/사용자 서버 호환성 검증 및 전체 계획 나머지.
 - CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·UI·Credential Manager·API 검증 미실행.
+
+## IMPL-240 — Zed 편집기 설정 origin loader
+
+- 원본 https://github.com/zed-industries/zed/blob/main/crates/paths/src/paths.rs 에서 Windows RoamingAppData/Zed/settings.json 경로와 custom data dir의 config 하위 경로를 확인했다. main 가변 참조이며 설치 버전 호환성은 미검증이다.
+- 기본 APPDATA 경로와 명시 URL overload를 제공하고 최대 1MiB+1만 읽어 과대 파일을 거부한다. 파일 없음만 production 기본값이며 접근 실패/파싱 실패는 오류로 전달한다.
+- 문자열 내부 URL/escape를 유지하면서 줄/블록 주석과 후행 쉼표를 처리한다. UTF-8 및 JSON object를 요구하고 서버 origin은 기존 공통 계약으로 검사한다.
+- credentials_url과 server_url이 다르면 현재 단일 origin bundle로 잘못 가져오지 않도록 별도 오류를 반환한다. 이 구성의 완전한 지원은 남은 소요이다.
+- 남은 소요: UI 추천 기본값 연결, custom data dir 발견, 분리된 credential/API origin 계약, 중복 key 정책 및 실제 Windows 검증과 전체 계획 나머지.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 파서·빌드·테스트·lint·설정 파일 실행 검증 미실행.
