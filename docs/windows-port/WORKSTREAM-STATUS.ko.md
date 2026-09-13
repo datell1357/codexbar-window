@@ -1,5 +1,7 @@
 # Windows 전용 제품 작업 현황
 
+- IMPL-256: manifest 로그/VersionEdit를 연결해 유효한 table 및 log 메타데이터를 복원하도록 작성했다. 파일 확보와 table 읽기는 남아 있다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
 - IMPL-255: LevelDB manifest VersionEdit 파서를 작성했다. live table 목록 replay와 table 읽기는 남아 있다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
 
 - IMPL-254: LevelDB 내부 키와 최신 version 선택을 구현하고 삭제 표시를 유지했다. 완전한 manifest/table/log 연결은 남아 있다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.

@@ -2887,3 +2887,12 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - 4MiB record/100000 field 상한과 취소 확인을 포함한다. 실제 파일을 열거나 manifest 상태를 아직 replay하지 않는다.
 - 남은 소요: live table 목록 replay, SSTable/footer/index/compression 처리, 일관된 snapshot 및 Chromium/Windsurf 연결과 전체 계획 나머지.
 - CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 파서 실행·빌드·테스트·lint·실제 브라우저 파일 조회 미실행.
+
+## IMPL-256 — LevelDB manifest replay
+
+- 원본 https://github.com/google/leveldb/blob/main/db/version_set.cc의 Recover 흐름을 읽고 물리 로그/VersionEdit decoder를 순차 연결했다. 원본은 가변 main 참조이다.
+- bytewise comparator만 허용하고 필수 log/next file/last sequence를 요구한다. previous log 미지정은 0으로 유지한다. log/next/sequence의 역행을 거부한다.
+- edit마다 table 삭제 후 추가를 적용하고 상충 metadata 및 최종 중복 physical file을 거부한다. table 목록은 level/번호 순서로 반환한다.
+- 최대 table 개수/metadata budget과 취소 처리를 포함한다. comparator 확인은 엄격히 요구하며 일부 manifest 조각만으로 상태를 반환하지 않는다.
+- 남은 소요: CURRENT와 실제 파일의 일관된 확보, table 압축/블록 읽기, key 범위/level overlap 검사, Chromium/Windsurf 연결 및 전체 계획 나머지.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 파서 실행·빌드·테스트·lint·실제 브라우저 파일 조회 미실행.
