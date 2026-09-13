@@ -329,6 +329,20 @@ public enum WindsurfWebFetcher {
 
     #endif
 
+    #if os(Windows)
+    /// localStorage may contain JSON.stringify(token), so an exported object's value can be JSON twice.
+    /// Decode exactly one storage-string layer; malformed quoting is not stripped heuristically.
+    private static func windowsStorageString(_ raw: String) -> String? {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        guard trimmed.hasPrefix("\"") else { return trimmed }
+        guard let data = trimmed.data(using: .utf8),
+              let value = try? JSONDecoder().decode(String.self, from: data) else { return nil }
+        let result = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        return result.isEmpty ? nil : result
+    }
+    #endif
+
     private static func sessionAuth(from values: [String: Any]) -> WindsurfDevinSessionAuth? {
         func stringValue(for keys: [String]) -> String? {
             #if os(Windows)
@@ -336,10 +350,9 @@ public enum WindsurfWebFetcher {
             for key in keys {
                 guard let raw = values[key] else { continue }
                 guard let value = raw as? String else { return nil }
-                let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
-                guard !trimmed.isEmpty else { return nil }
-                if let resolved, resolved != trimmed { return nil }
-                resolved = trimmed
+                guard let normalized = Self.windowsStorageString(value) else { return nil }
+                if let resolved, resolved != normalized { return nil }
+                resolved = normalized
             }
             return resolved
             #else

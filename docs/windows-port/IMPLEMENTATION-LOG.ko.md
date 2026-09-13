@@ -2520,3 +2520,11 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - sessionAuth는 root의 네 인증 필드만 사용한다. 사용하지 않는 중첩 객체의 키에는 이 중복 정책을 적용하지 않는다. 입력은 기존 64KiB 상한을 유지한다.
 - 남은 소요: 실제 파서 회귀 검증, 브라우저 로그인 및 전체 계획 나머지 항목.
 - CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 파서 실행·빌드·테스트·lint·실제 API 검증 미실행.
+
+## IMPL-213 — Windsurf localStorage 수동 입력 호환
+
+- 원본 importer가 처리하던 JSON.stringify된 storage value를 Windows 수동 JSON 세션에서도 한 겹 해석한다. 잘못 닫힌 문자열은 임의 quote 제거 대신 거부한다.
+- 같은 필드의 별칭은 storage 문자열 해석 후 비교하며 기존 네 필드/중복 키/문자/크기 제한을 유지한다. 안내는 같은 로그인 origin에서 네 값을 함께 옮기는 수동 작업임을 명시한다.
+- 자동 탐색은 기존 macOS SweetCookieKit reader 의존 때문에 Windows에 아직 연결되지 않았다. 이 변경을 자동 로그인/브라우저 가져오기 완료로 간주하지 않는다.
+- 남은 소요: Windows Chromium localStorage reader 및 프로필/origin별 후보 검증·저장 UI, 앱 로그인, 전체 계획 나머지 항목.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 파서 실행·빌드·테스트·lint·실제 브라우저/API 검증 미실행.

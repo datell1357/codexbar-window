@@ -6,7 +6,7 @@ public enum WindsurfProviderDescriptor {
         #if os(Windows)
         ProviderCredentialAdapter(tokenAccountSupport: TokenAccountSupport(
             title: "Devin session bundle",
-            subtitle: "Store a Windsurf session bundle with sessionToken, auth1Token, accountID and primaryOrgID.",
+            subtitle: "Paste a Windsurf session JSON bundle or the four devin_* localStorage values exported together from one signed-in browser origin.",
             placeholder: "JSON session bundle",
             injection: .cookieHeader,
             requiresManualCookieSource: true,
