@@ -634,3 +634,21 @@
 3. 기존 session cache/SQLite/ownership 및 전체 Windows 기능·배포 검증은 계속 남아 있다.
 
 다음 구현: 전역 단축키 설정을 저장 가능한 modifier/key 모델과 사용자 선택 메뉴로 확장하며 등록 변경 실패 시 이전 등록을 보존한다.
+
+## IMPL-033 — 전역 단축키 preset 선택과 등록 교체
+
+상태: CODE_WRITTEN_UNVERIFIED. 빌드·컴파일·테스트·lint·앱·실제 hotkey 등록/입력·검증 스크립트는 실행하지 않았다. 계약: WIN-011/012.
+
+작성한 코드:
+
+- WindowsMenuShortcut 모델에 Ctrl+Alt+C/Ctrl+Shift+C/Ctrl+Alt+B/Ctrl+Shift+B 네 preset을 정의하고 저장/복원을 연결했다. 알 수 없는 저장값은 기존 Ctrl+Alt+C 기본값으로 해석한다. 활성화와 조합 선택은 별도 메뉴이며 비활성 상태에서 선택해도 자동 활성화하지 않는다.
+- 활성 조합 변경은 다른 hotkey ID로 후보를 먼저 등록한다. 새 등록 실패는 이전 상태를 보존한다. 기존 해제 실패 시 후보 해제를 시도하며 성공 전에는 설정을 저장하지 않는다. 정리 실패 후보 ID도 owned set에 남겨 종료 시 재해제한다. handler는 active ID만 처리한다.
+- 메뉴에 활성 여부·선택 조합·실패 안내를 표시한다. 하위 메뉴 부착 실패 시 미부착 handle을 정리한다. 기존 popup/quit/editor 경계를 유지한다.
+
+남은 범위:
+
+1. 임의 키 capture editor가 아닌 네 preset 범위다. 예약키/AltGr/layout, 변경·rollback/종료 cleanup·키 전달·DPI/접근성은 미검증이다.
+2. unregister가 반복 실패한 비활성 후보는 종료까지 OS 예약이 남을 수 있다. 앱 handler는 무시하지만 사용자 알림/재시도 정리 UI는 후속 범위다. OS failure를 원자적 rollback 성공으로 주장하지 않는다.
+3. 전체 WIN-011/012와 기존 session/SQLite·Windows 배포 검증은 미완료다.
+
+다음 구현: hotkey 등록/해제 오류 상태와 rollback 잔여 등록 정리를 명시적으로 표시하고 재시도 경로를 연결한다.
