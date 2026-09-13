@@ -1,5 +1,7 @@
 # Windows 전용 제품 작업 현황
 
+- IMPL-140: 비용 수집 loader/옵션 동시 교체·이전 데이터 무효화·시간대 단독 변경 거절을 작성했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
 - IMPL-139: 비용 bucket timezone 설정과 loader/calendar 집계 전달을 작성했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
 
 - IMPL-138: Windows 비용 수집 opt-in·Codex ledger 예외·capability gating 및 대시보드 옵션 설정을 작성했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.

@@ -23,6 +23,7 @@ actor WindowsSpendDashboardController {
         var selectedDay: Date?
     }
     enum Phase: Sendable { case idle, refreshing, ready, partial, failed, stopped }
+    enum OptionsResult: Sendable { case applied, requiresCollectionReconfiguration, stopped }
     enum Failure: Sendable { case scanFailed, duplicateSourceIDs }
     struct Snapshot: Sendable {
         let generation: UInt64
@@ -37,7 +38,7 @@ actor WindowsSpendDashboardController {
     typealias Loader = @Sendable (_ historyDays: Int) async throws -> Scan
     typealias Publisher = @Sendable (Snapshot) -> Void
 
-    private let loader: Loader
+    private var loader: Loader
     private let publisher: Publisher
     private var options = Options()
     private var scan: Scan?
@@ -48,16 +49,43 @@ actor WindowsSpendDashboardController {
     private var refreshTask: Task<Void, Never>?
     private var stopped = false
 
-    init(loader: @escaping Loader, publisher: @escaping Publisher) {
+    /// The loader must use the same bucket calendar as these options.
+    init(loader: @escaping Loader, options: Options = Options(), publisher: @escaping Publisher) {
         self.loader = loader
+        self.options = Self.normalized(options)
         self.publisher = publisher
     }
 
-    func setOptions(_ options: Options) {
-        guard !self.stopped else { return }
-        self.options = options
-        self.options.days = max(1, min(WindowsSpendHistoryPolicy.scanDays, options.days))
+    @discardableResult
+    func setOptions(_ options: Options) -> OptionsResult {
+        guard !self.stopped else { return .stopped }
+        let normalized = Self.normalized(options)
+        guard normalized.bucketTimeZoneIdentifier == self.options.bucketTimeZoneIdentifier else {
+            return .requiresCollectionReconfiguration
+        }
+        self.options = normalized
         self.publish()
+        return .applied
+    }
+
+    /// Replace source credentials/account ownership or the bucket calendar as one operation.
+    /// Construct the replacement loader with the same calendar as options before calling this.
+    @discardableResult
+    func replaceCollection(loader: @escaping Loader, options: Options) -> Bool {
+        guard !self.stopped else { return false }
+        self.clearCollection()
+        self.loader = loader
+        self.options = Self.normalized(options)
+        self.publish()
+        return true
+    }
+
+    private static func normalized(_ options: Options) -> Options {
+        var result = options
+        result.days = max(1, min(WindowsSpendHistoryPolicy.scanDays, options.days))
+        result.bucketTimeZoneIdentifier = CostUsageBucketTimeZone
+            .timeZone(identifier: options.bucketTimeZoneIdentifier).identifier
+        return result
     }
 
     func snapshot(now: Date = Date()) -> Snapshot {
@@ -84,16 +112,22 @@ actor WindowsSpendDashboardController {
         self.phase = .refreshing
         self.failure = nil
         self.publish()
-        let task = Task { await self.performRefresh(generation: generation) }
+        let loader = self.loader
+        let task = Task { await self.performRefresh(generation: generation, loader: loader) }
         self.refreshTask = task
         await task.value
         if self.generation == generation { self.refreshTask = nil }
     }
 
-    /// Call before changing the account/source context used by the loader.
+    /// Withdraw current data without changing the configured loader.
     /// Old owner data is withdrawn immediately, including if cancellation is ignored by a loader.
     func invalidateSourceContext() {
         guard !self.stopped else { return }
+        self.clearCollection()
+        self.publish()
+    }
+
+    private func clearCollection() {
         self.generation &+= 1
         self.refreshTask?.cancel()
         self.refreshTask = nil
@@ -101,7 +135,6 @@ actor WindowsSpendDashboardController {
         self.loadedAt = nil
         self.failure = nil
         self.phase = .idle
-        self.publish()
     }
 
     func stop() {
@@ -116,9 +149,11 @@ actor WindowsSpendDashboardController {
         self.publish()
     }
 
-    private func performRefresh(generation: UInt64) async {
+    private func performRefresh(generation: UInt64, loader: Loader) async {
+        guard !self.stopped, self.generation == generation else { return }
         do {
-            let scan = try await self.loader(WindowsSpendHistoryPolicy.scanDays)
+            try Task.checkCancellation()
+            let scan = try await loader(WindowsSpendHistoryPolicy.scanDays)
             try Task.checkCancellation()
             guard !self.stopped, self.generation == generation else { return }
             let sourceIDs = scan.inputs.map(\.id) + scan.sourceFailures.map(\.sourceID)

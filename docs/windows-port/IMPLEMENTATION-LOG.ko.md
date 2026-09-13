@@ -1842,3 +1842,13 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - 잘못된/없는 저장 식별자는 현재 시간대로 대체한다. 아직 Main에서 설정을 저장·loader 생성하는 흐름을 연결하지 않았으므로 초기 pin의 실제 지속성은 그 연결이 필요하다.
 
 남은 범위: Main/설정 UI 연결, 시간대 변경 시 기존 scan 무효화와 재수집 정책, DST·경계·Windows 검증 및 전체 계획 구현.
+
+## IMPL-140 — 비용 수집 구성 교체와 표시 옵션 분리
+
+상태 CODE_WRITTEN_UNVERIFIED. 컴파일/빌드/테스트/수집/검증 미실시. guidelines/COMMITS.md 부재로 핵심 커밋 규칙을 적용한다.
+
+- controller의 loader와 옵션을 한 actor operation으로 교체하는 API를 작성했다. 교체 시 generation을 갱신하고 작업 취소·이전 scan/share/오류 제거 후 idle snapshot을 게시한다.
+- 기간·통화·필터 변경은 보관된 데이터에서 재집계하되 bucket 시간대 변경은 requiresCollectionReconfiguration으로 거절한다. 생성 시 옵션을 받을 수 있으며 유효 시간대 식별자를 고정한다.
+- refresh task가 시작 당시 loader를 캡처하고 실행 전에도 generation/취소를 확인하도록 작성했다. 이미 진행 중인 이전 수집의 결과는 generation으로 거절한다.
+
+남은 범위: Main/설정 UI에서 같은 calendar의 loader/옵션 생성 및 교체 연결, 실제 native dashboard/share 화면, 취소된 수집의 캐시 쓰기 종료 보장·Windows 검증 및 전체 계획 구현. 아직 controller는 앱 실행 경로에 연결되지 않았다.
