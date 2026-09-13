@@ -25,12 +25,14 @@ public struct WindowsWindsurfBrowserSessionImporter: Sendable {
     }
     public enum Failure: Error { case timedOut, browserUnavailable }
 
+    public static let supportedBrowsers: [Browser] = [.chrome, .edge, .chromium, .chromeBeta, .chromeCanary, .edgeBeta, .edgeCanary]
+
     public init() {}
 
-    public func discover(deadline: Date = Date().addingTimeInterval(15)) throws -> Discovery {
+    public func discover(browser: Browser = .chrome, deadline: Date = Date().addingTimeInterval(15)) throws -> Discovery {
         try Self.check(deadline)
-        guard BrowserCookieAccessGate.shouldAttempt(.chrome) else { throw Failure.browserUnavailable }
-        let profiles = try WindowsChromiumLocalStorageProfiles.discover(browsers: [.chrome], deadline: deadline)
+        guard Self.supportedBrowsers.contains(browser), BrowserCookieAccessGate.shouldAttempt(browser) else { throw Failure.browserUnavailable }
+        let profiles = try WindowsChromiumLocalStorageProfiles.discover(browsers: [browser], deadline: deadline)
         var candidates: [Candidate] = []
         var failed = 0
         var busy = 0

@@ -963,7 +963,7 @@ public actor WindowsUsageRuntime {
         return (revision, selected)
     }
 
-    public func discoverWindsurfBrowserAccounts(requestID: UUID = UUID()) async -> WindsurfBrowserImportResult {
+    public func discoverWindsurfBrowserAccounts(requestID: UUID = UUID(), browser: Browser = .chrome) async -> WindsurfBrowserImportResult {
         guard !Task.isCancelled else { return .unavailable("The browser import was cancelled.") }
         guard !self.shuttingDown, self.refreshTask == nil else { return .unavailable("Wait for the current refresh to finish.") }
         self.cancelWindsurfBrowserImport()
@@ -981,7 +981,7 @@ public actor WindowsUsageRuntime {
             let importer = WindowsWindsurfBrowserSessionImporter()
             // Profile enumeration and LevelDB reads must not occupy the usage runtime actor.
             let discoveryTask = Task.detached(priority: .utility) {
-                try importer.discover(deadline: deadline)
+                try importer.discover(browser: browser, deadline: deadline)
             }
             self.windsurfBrowserDiscoveryTask = discoveryTask
             defer {
@@ -1035,7 +1035,7 @@ public actor WindowsUsageRuntime {
                     let label = privacy ? "Windsurf account \(rows.count + 1)" :
                         "Windsurf session \(rows.count + 1)"
                     let safe = String(LogRedactor.redact(label).unicodeScalars.filter { $0.value >= 32 && $0.value != 127 }.map(String.init).joined().prefix(160))
-                    let source = privacy ? "Chrome session \(rows.count + 1)" :
+                    let source = privacy ? "browser session \(rows.count + 1)" :
                         String(LogRedactor.redact(result.candidate.sourceLabel + " / " + result.candidate.origin).unicodeScalars
                             .filter { $0.value >= 32 && $0.value != 127 }.map(String.init).joined().prefix(120))
                     rows.append(.init(id: id, title: safe + " — " + source))
@@ -1057,23 +1057,23 @@ public actor WindowsUsageRuntime {
             }
             guard !rows.isEmpty else {
                 if !discovery.candidates.isEmpty {
-                    return .unavailable("Chrome session data was found, but no usable plan response was received. Check connectivity or sign in to Windsurf again, close Chrome, and retry.")
+                    return .unavailable("browser session data was found, but no usable plan response was received. Check connectivity or sign in to Windsurf again, close browser, and retry.")
                 }
                 var reasons: [String] = []
                 if discovery.busyProfileCount > 0 {
-                    reasons.append("Some Chrome profiles are in use. Close Chrome normally, including background processes, and retry.")
+                    reasons.append("Some browser profiles are in use. Close browser normally, including background processes, and retry.")
                 }
                 if discovery.unsupportedProfileCount > 0 {
                     reasons.append("Some profiles use a storage format or compression this importer does not support yet. Use a manual Windsurf session bundle for those profiles.")
                 }
                 if discovery.failedProfileCount > 0 {
-                    reasons.append("Some Chrome profiles could not be read consistently. Check profile access; the importer does not repair browser storage.")
+                    reasons.append("Some browser profiles could not be read consistently. Check profile access; the importer does not repair browser storage.")
                 }
                 if discovery.incompleteOriginCount > 0 || discovery.invalidOriginCount > 0 {
-                    reasons.append("Some stored Windsurf sessions are incomplete or invalid. Sign in again and close Chrome before retrying.")
+                    reasons.append("Some stored Windsurf sessions are incomplete or invalid. Sign in again and close browser before retrying.")
                 }
                 return .unavailable(reasons.isEmpty
-                    ? "No Windsurf session was found in supported Chrome profiles. Sign in to windsurf.com in Chrome, close Chrome, and retry."
+                    ? "No Windsurf session was found in supported browser profiles. Sign in to windsurf.com in browser, close browser, and retry."
                     : reasons.joined(separator: "\n\n"))
             }
             let expires = Date().addingTimeInterval(300)
@@ -1091,11 +1091,11 @@ public actor WindowsUsageRuntime {
         } catch is CancellationError {
             return .unavailable("Windsurf browser import was cancelled.")
         } catch WindowsWindsurfBrowserSessionImporter.Failure.browserUnavailable {
-            return .unavailable("Chrome access is disabled. Enable browser access before importing a Windsurf account.")
+            return .unavailable("browser access is disabled. Enable access for the selected browser before importing a Windsurf account.")
         } catch WindowsWindsurfBrowserSessionImporter.Failure.timedOut {
             return .unavailable("Windsurf browser import reached its time limit. Retry the import.")
         } catch {
-            return .unavailable("Windsurf browser import did not complete. Close Chrome and retry. Unsupported or damaged storage cannot be imported.")
+            return .unavailable("Windsurf browser import did not complete. Close browser and retry. Unsupported or damaged storage cannot be imported.")
         }
     }
 

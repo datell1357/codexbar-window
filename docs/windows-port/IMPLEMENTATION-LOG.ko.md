@@ -3021,3 +3021,11 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - 접근 차단/취소/시간 제한을 구분하며 경로나 인증 값을 오류 메시지에 포함하지 않는다.
 - 남은 소요: 추가 압축/브라우저 지원과 전체 계획 나머지.
 - CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·실행 검증 미실행.
+
+## IMPL-271 — Windsurf 가져오기 브라우저 선택
+
+- 기존 경로 탐색 지원 범위인 Chrome/Edge/Chromium 및 Chrome·Edge Beta/Canary를 공개 지원 목록과 트레이 선택 메뉴로 연결했다.
+- Chrome을 기본값으로 유지하고 명시적으로 선택한 단일 브라우저만 탐색한다. 해당 browser access gate를 확인하며 다른 브라우저로 자동 fallback하지 않는다.
+- 선택 결과를 WindowsMain/runtime/importer에 전달하고 후보/오류 문구의 Chrome 고정 표현을 일반화했다. 브라우저 선택 취소는 가져오기를 시작하지 않는다.
+- 기본 프로필 경로만 지원하며 사용자 지정 정책/명령행 경로와 추가 브라우저/압축 지원은 남아 있다. 전체 계획은 계속 진행 중이다.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·브라우저/UI/네트워크 실행 미실행.

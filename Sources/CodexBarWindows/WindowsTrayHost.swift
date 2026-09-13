@@ -128,7 +128,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
     private static let windsurfBrowserImportCommand = UINT_PTR(0x7F31)
     private let onCursorBrowserImportRequested: @Sendable (UUID) -> Void
     private let onAugmentBrowserImportRequested: @Sendable (UUID) -> Void
-    private let onWindsurfBrowserImportRequested: @Sendable (UUID) -> Void
+    private let onWindsurfBrowserImportRequested: @Sendable (UUID, Browser) -> Void
     private let onCursorBrowserImportSave: @Sendable (UUID, UUID, UUID, String) -> Void
     private let onAugmentBrowserImportSave: @Sendable (UUID, UUID, UUID, String) -> Void
     private let onWindsurfBrowserImportSave: @Sendable (UUID, UUID, UUID, String) -> Void
@@ -360,7 +360,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
         onAugmentBrowserImportRequested: @escaping @Sendable (UUID) -> Void = { _ in },
         onAugmentBrowserImportSave: @escaping @Sendable (UUID, UUID, UUID, String) -> Void = { _, _, _, _ in },
         onAugmentBrowserImportCancel: @escaping @Sendable (UUID) -> Void = { _ in },
-        onWindsurfBrowserImportRequested: @escaping @Sendable (UUID) -> Void = { _ in },
+        onWindsurfBrowserImportRequested: @escaping @Sendable (UUID, Browser) -> Void = { _, _ in },
         onWindsurfBrowserImportSave: @escaping @Sendable (UUID, UUID, UUID, String) -> Void = { _, _, _, _ in },
         onWindsurfBrowserImportCancel: @escaping @Sendable (UUID) -> Void = { _ in },
         onZedEditorServerRequested: @escaping @Sendable (UUID) -> Void = { _ in },
@@ -1948,7 +1948,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
                 self.mailboxLock.lock()
                 let importing = self.windsurfImportRequest != nil
                 self.mailboxLock.unlock()
-                let title = importing ? "Cancel Windsurf browser import" : "Import Windsurf from Chrome…"
+                let title = importing ? "Cancel Windsurf browser import" : "Import Windsurf from browser…"
                 title.withCString(encodedAs: UTF16.self) {
                     _ = AppendMenuW(addMenu, UINT(MF_STRING), importing ? Self.windsurfBrowserImportCancelCommand : Self.windsurfBrowserImportCommand, $0)
                 }
@@ -3219,12 +3219,18 @@ public final class WindowsTrayHost: @unchecked Sendable {
         if command == Self.windsurfBrowserImportCommand {
             guard !self.quitInvoked, !self.remoteEditorOpen,
                   case .idle = self.providerEditorPhase, case .idle = self.codexWebSettingsEditorPhase else { return }
+            guard let window = self.window else { return }
+            self.remoteEditorOpen = true
+            let browser = WindowsWindsurfBrowserAccountMenu.chooseBrowser(owner: window)
+            self.remoteEditorOpen = false
+            PostMessageW(window, Self.wakeMessage, 0, 0)
+            guard let browser, !self.quitInvoked else { return }
             self.mailboxLock.lock()
             guard self.windsurfImportRequest == nil else { self.mailboxLock.unlock(); return }
             let requestID = UUID()
             self.windsurfImportRequest = requestID
             self.mailboxLock.unlock()
-            self.onWindsurfBrowserImportRequested(requestID)
+            self.onWindsurfBrowserImportRequested(requestID, browser)
             return
         }
         if command == Self.zedEditorImportCancelCommand {
