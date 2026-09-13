@@ -29,8 +29,8 @@ enum WindowsSpendSummary {
         for group in model.groups {
             rows.append("")
             rows.append("Currency: " + safe(group.currencyCode))
-            rows.append("Estimated cost: " + cost(group.totalCost, currency: group.currencyCode))
-            rows.append("Tokens: " + tokens(group.totalTokens))
+            rows.append("Estimated cost: " + (group.hasPartialCost ? "~" : "") + cost(group.totalCost, currency: group.currencyCode))
+            rows.append("Tokens: " + (group.hasPartialTokens ? "~" : "") + tokens(group.totalTokens))
             rows.append(contentsOf: accountingDetails(group))
             rows.append("Covered days: \(group.coveredDayCount) / \(model.requestedDays)")
             rows.append("Bucket time zone: " + group.timeZone.identifier)
@@ -39,12 +39,17 @@ enum WindowsSpendSummary {
             }
             rows.append("Providers")
             for provider in group.providers {
-                rows.append("  " + safe(provider.displayName) + " · " + cost(provider.totalCost, currency: group.currencyCode)
+                rows.append("  #\(provider.rank) " + safe(provider.displayName) + " · " + cost(provider.totalCost, currency: group.currencyCode)
                     + " · " + tokens(provider.totalTokens) + " tokens · \(provider.coveredDayCount) covered days")
             }
             rows.append("Models")
+            if group.models.isEmpty {
+                rows.append(group.modelHistoryCompleteness == .incomplete
+                    ? "  Model breakdown unavailable." : "  No model-level history.")
+            }
             for model in group.models.prefix(expanded ? group.models.count : 8) {
-                rows.append("  " + safe(model.providerName) + " / " + safe(model.modelName) + " · "
+                let rank = group.modelHistoryCompleteness == .complete ? "#\(model.rank) " : "Partial · "
+                rows.append("  " + rank + safe(model.providerName) + " / " + safe(model.modelName) + " · "
                     + cost(model.totalCost, currency: group.currencyCode) + " · " + tokens(model.totalTokens) + " tokens")
                 rows.append("    " + tokenMixDetails(model.tokenMix))
             }
@@ -53,7 +58,7 @@ enum WindowsSpendSummary {
             if group.projects.isEmpty { rows.append("  No project breakdown is available for this period.") }
             for (index, project) in group.projects.prefix(expanded ? group.projects.count : 8).enumerated() {
                 let name = hidePersonalInfo ? "Project \(index + 1)" : safe(project.projectName)
-                rows.append("  " + name + " · " + safe(project.providerName) + " · "
+                rows.append("  #\(project.rank) " + name + " · " + safe(project.providerName) + " · "
                     + cost(project.totalCost, currency: group.currencyCode) + " · " + tokens(project.totalTokens) + " tokens")
             }
             if !expanded, group.projects.count > 8 { rows.append("  \(group.projects.count - 8) more projects. Choose Show all rows to expand.") }
@@ -91,6 +96,13 @@ enum WindowsSpendSummary {
                     tokenMixDetails(group.tokenMix),
                     "Coverage: Priced \(coverage.priced.formatted()) · Unpriced \(coverage.unpriced.formatted())"
                         + " · Unmetered \(coverage.unmetered.formatted()) · Estimated \(coverage.estimated.formatted())"]
+        if group.hasPartialCost {
+            rows.append("Partial cost estimate: \(group.pricedProviderCount) of \(group.providers.count) subscriptions have spend. ~ marks a subtotal with missing subscriptions.")
+        }
+        if group.hasPartialTokens {
+            let known = group.providers.count { $0.totalTokens != nil }
+            rows.append("Partial token total: \(known) of \(group.providers.count) subscriptions report tokens. Missing values are not zero.")
+        }
         if let metered = group.meteredCost {
             rows.append("Plan metered: " + cost(metered, currency: group.currencyCode))
         }

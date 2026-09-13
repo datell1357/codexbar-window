@@ -2165,3 +2165,14 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - 수집 중 외부 설정 불일치를 발견하면 controller뿐 아니라 retained snapshot/source/settings도 비운다. 비용 요약도 현재 설정과 collected settings가 다르면 데이터를 표시하지 않는다.
 
 남은 범위: retained 수집 자체는 IMPL-170의 Codex 전용 제한을 유지한다. 전체 source stale lifecycle, per-source failure 보존, 수집 세대/계정의 원자적 경계, Windows 검증 및 전체 계획 구현은 남아 있다.
+
+## IMPL-172 — 부분 합계와 모델 순위 표시
+
+상태 CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·화면/실행 검증 미실시. guidelines/COMMITS.md 부재로 핵심 규칙을 적용한다.
+
+- 이미 이식된 hasPartialCost/hasPartialTokens를 실제 summary 및 일별 비용 합계 표시에 연결했다. 원본처럼 일부 구독 값이 없는 합계 앞에 ~를 표시한다.
+- 공통 accounting detail에 비용/토큰을 보고한 구독 수와 누락 값은 zero가 아니라는 설명을 추가해 차트 상세에도 전달한다. source 수집 실패 표시는 별도로 유지한다.
+- provider/project rank를 표시하고 모델은 complete breakdown일 때만 rank를 표시한다. 불완전한 모델 행은 Partial로 표시하며 빈 모델 리스트는 incomplete일 때 unavailable, complete일 때 no history로 구분한다.
+- 집계 산식과 JSON schema는 바꾸지 않는다. 기존 partial flag의 구독 값 존재 여부 정의를 그대로 따른다.
+
+남은 범위: 원본의 모든 표시/내보내기 정책, 전체 provider의 stale/ownership/cache 흐름 및 Windows 검증, 전체 계획 구현. 실제 화면에서 표식이나 정렬이 맞는지는 미검증이다.

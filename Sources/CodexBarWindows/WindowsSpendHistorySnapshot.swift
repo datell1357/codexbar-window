@@ -152,7 +152,7 @@ public struct WindowsSpendHistorySnapshot: Sendable {
             let maximum = max(1, days.flatMap(\.segments).map(\.end).max() ?? 0)
             let total = group.totalCost.map { WindowsShareStatsFormatting.currency($0, code: group.currencyCode) } ?? "Unknown"
             var summary = ["Cost history · " + group.currencyCode,
-                           "Period total: " + total,
+                           "Period total: " + (group.hasPartialCost ? "~" : "") + total,
                            "Covered days: \(group.coveredDayCount) / \(snapshot.model.requestedDays) · " + group.timeZone.identifier,
                            "Bars show known contributions; missing sources can make a daily bar incomplete. Gray ticks indicate no known sample.",
                            "Select a day with the chart or Previous/Next day buttons. All days clears the selection. Use currency buttons to switch groups.",

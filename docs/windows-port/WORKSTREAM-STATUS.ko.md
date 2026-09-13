@@ -1,5 +1,7 @@
 # Windows 전용 제품 작업 현황
 
+- IMPL-172: 비용/토큰 부분 합계 표식과 알려진 구독 수, 모델 순위·빈 이력 표시를 원본에 맞춰 연결했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
 - IMPL-171: 유지된 이전 비용 결과의 일별/시간별/heatmap 조회와 stale 안내, 설정 변경 시 retained state 철회를 연결했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
 
 - IMPL-170: 동일 설정/소스/지문을 가진 Codex 전용 비용 refresh에서 이전 summary/JSON을 stale로 유지하도록 연결했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
