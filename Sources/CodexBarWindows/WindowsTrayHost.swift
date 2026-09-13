@@ -144,6 +144,9 @@ public final class WindowsTrayHost: @unchecked Sendable {
     private var popupRemoteDetails: [UINT_PTR: String] = [:]
     private var popupSessionDetails: String?
     private var popupAgentSessionCommands: [UINT_PTR: WindowsSessionFocusRequest] = [:]
+    private let onTokenAccountAdd: @Sendable (UUID, WindowsTokenAccountAddRequest) -> Void
+    private var popupTokenAccountAdds: [UINT_PTR: (UsageProvider, UUID?)] = [:]
+    private var tokenAccountAddResult: WindowsTokenAccountAddResult?
     private let onTokenAccountRename: @Sendable (UUID, WindowsTokenAccountRenameRequest) -> Void
     private var popupTokenAccountRenames: [UINT_PTR: (ProviderInstanceID, UUID, String)] = [:]
     private var tokenAccountRenameResult: WindowsTokenAccountRenameResult?
@@ -255,6 +258,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
         onRefreshSettingsChanged: @escaping RefreshSettingsChangedHandler = {},
         onSessionQuotaNotificationSettingsChanged: @escaping SessionQuotaNotificationSettingsChangedHandler = {},
         onQuotaWarningSettingsChanged: @escaping QuotaWarningSettingsChangedHandler = {},
+        onTokenAccountAdd: @escaping @Sendable (UUID, WindowsTokenAccountAddRequest) -> Void = { _, _ in },
         onTokenAccountRename: @escaping @Sendable (UUID, WindowsTokenAccountRenameRequest) -> Void = { _, _ in },
         onTokenAccountSelect: @escaping @Sendable (WindowsTokenAccountSelectionRequest) -> Void = { _ in },
         onProviderQuotaWarningLoad: @escaping ProviderQuotaWarningLoadHandler = { _, _ in },
@@ -280,6 +284,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
         self.onRefreshSettingsChanged = onRefreshSettingsChanged
         self.onSessionQuotaNotificationSettingsChanged = onSessionQuotaNotificationSettingsChanged
         self.onQuotaWarningSettingsChanged = onQuotaWarningSettingsChanged
+        self.onTokenAccountAdd = onTokenAccountAdd
         self.onTokenAccountRename = onTokenAccountRename
         self.onTokenAccountSelect = onTokenAccountSelect
         self.onProviderQuotaWarningLoad = onProviderQuotaWarningLoad
@@ -479,6 +484,38 @@ public final class WindowsTrayHost: @unchecked Sendable {
         let hwnd = self.window
         self.mailboxLock.unlock()
         if let hwnd { PostMessageW(hwnd, Self.wakeMessage, 0, 0) }
+    }
+
+    public func postTokenAccountAdd(requestID: UUID, result: WindowsTokenAccountAddResult) {
+        self.mailboxLock.lock()
+        guard !self.quitInvoked, self.tokenAccountPendingID == requestID,
+              self.tokenAccountAddResult == nil else { self.mailboxLock.unlock(); return }
+        self.tokenAccountAddResult = result
+        let hwnd = self.window
+        self.mailboxLock.unlock()
+        if let hwnd { PostMessageW(hwnd, Self.wakeMessage, 0, 0) }
+    }
+
+    private func drainTokenAccountAdd() {
+        guard !self.quitInvoked, !self.remoteEditorOpen,
+              case .idle = self.providerEditorPhase, case .idle = self.codexWebSettingsEditorPhase else { return }
+        self.mailboxLock.lock()
+        let result = self.tokenAccountAddResult
+        if result != nil { self.tokenAccountAddResult = nil; self.tokenAccountPendingID = nil }
+        self.mailboxLock.unlock()
+        guard let result else { return }
+        let message: String
+        switch result {
+        case .saved: message = "Account added and selected. Usage refresh was requested; credentials have not yet been verified."
+        case .alreadyAdded: message = "This account was already added. Refresh usage to see the current selection."
+        case .invalidInput: message = "Could not add the account. Check the name, credential size and optional fields."
+        case .staleSelection: message = "The account selection changed. Refresh usage and reopen Add saved account."
+        case .refreshInProgress: message = "Usage is refreshing. Add the account after it finishes."
+        case .unavailable: message = "This provider is no longer available for saved accounts."
+        case .shuttingDown: return
+        case .failed: message = "Could not add or protect the account. Check your Windows profile and configuration access, then try again."
+        }
+        self.showMessage(message, caption: "Add saved account")
     }
 
     public func postTokenAccountRename(requestID: UUID, result: WindowsTokenAccountRenameResult) {
@@ -817,6 +854,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
         self.popupProviderDetails.removeAll(keepingCapacity: true)
         self.popupTokenAccountCommands.removeAll(keepingCapacity: true)
         self.popupTokenAccountRenames.removeAll(keepingCapacity: true)
+        self.popupTokenAccountAdds.removeAll(keepingCapacity: true)
         self.popupTokenAccountPages.removeAll(keepingCapacity: true)
         var continuingPage = false
         let focusSavedAccounts = preserveAnchor && self.tokenAccountPageQueued
@@ -829,6 +867,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
             self.popupProviderDetails.removeAll(keepingCapacity: true)
             self.popupTokenAccountCommands.removeAll(keepingCapacity: true)
         self.popupTokenAccountRenames.removeAll(keepingCapacity: true)
+        self.popupTokenAccountAdds.removeAll(keepingCapacity: true)
             self.popupTokenAccountPages.removeAll(keepingCapacity: true)
             self.mailboxLock.lock()
             let cliReady = self.cliSetupResult != nil
@@ -873,6 +912,23 @@ public final class WindowsTrayHost: @unchecked Sendable {
             "Copy &redacted summary".withCString(encodedAs: UTF16.self) {
                 _ = AppendMenuW(menu, UINT(MF_STRING), Self.copySummaryCommand, $0)
             }
+        }
+        if let addMenu = CreatePopupMenu() {
+            var commands: [UINT_PTR: (UsageProvider, UUID?)] = [:]
+            for entry in menuEntries {
+                guard commands.count < 128, let provider = UsageProvider(rawValue: entry.providerID),
+                      TokenAccountSupportCatalog.support(for: provider) != nil else { continue }
+                let command = UINT_PTR(0x8100 + commands.count)
+                let title = ProviderDescriptorRegistry.descriptor(for: provider).metadata.displayName
+                    .replacingOccurrences(of: "&", with: "&&")
+                if title.withCString(encodedAs: UTF16.self, { AppendMenuW(addMenu, UINT(MF_STRING), command, $0) }) != 0 {
+                    commands[command] = (provider, entry.tokenAccountSelection?.selectedID)
+                }
+            }
+            let attached = !commands.isEmpty && "Add saved account…".withCString(encodedAs: UTF16.self) {
+                AppendMenuW(menu, UINT(MF_STRING | MF_POPUP), UINT_PTR(UInt(bitPattern: addMenu)), $0) != 0
+            }
+            if attached { self.popupTokenAccountAdds = commands } else { DestroyMenu(addMenu) }
         }
         let accountIDs = menuEntries.flatMap { $0.tokenAccountSelection?.accounts.map(\.id) ?? [] }
         if accountIDs != self.tokenAccountPageIDs {
@@ -1955,6 +2011,35 @@ public final class WindowsTrayHost: @unchecked Sendable {
     }
 
     private func dispatchCommand(_ command: UINT_PTR) {
+        if let (provider, expectedSelectedID) = self.popupTokenAccountAdds[command] {
+            guard !self.quitInvoked, !self.remoteEditorOpen, let window = self.window,
+                  let support = TokenAccountSupportCatalog.support(for: provider),
+                  case .idle = self.providerEditorPhase, case .idle = self.codexWebSettingsEditorPhase else { return }
+            self.mailboxLock.lock()
+            let busy = self.tokenAccountPendingID != nil
+            self.mailboxLock.unlock()
+            guard !busy else { self.showMessage("An account change is already being saved. Please wait.", caption: "Saved accounts"); return }
+            self.remoteEditorOpen = true
+            let result = WindowsAccountAddDialog.show(owner: window,
+                providerName: ProviderDescriptorRegistry.descriptor(for: provider).metadata.displayName, support: support)
+            self.remoteEditorOpen = false
+            if !self.quitInvoked { PostMessageW(window, Self.wakeMessage, 0, 0) }
+            guard !self.quitInvoked else { return }
+            switch result {
+            case .cancelled: break
+            case .failed: self.showMessage("Could not open the account editor.", caption: "Saved accounts")
+            case let .saved(draft):
+                let requestID = UUID()
+                self.mailboxLock.lock()
+                self.tokenAccountPendingID = requestID
+                self.mailboxLock.unlock()
+                self.onTokenAccountAdd(requestID, .init(providerID: provider.instanceID, accountID: UUID(),
+                    label: draft.label, token: draft.token, usageScope: draft.scope,
+                    organizationID: draft.organization, workspaceID: draft.workspace,
+                    expectedSelectedID: expectedSelectedID))
+            }
+            return
+        }
         if let (providerID, accountID, revision) = self.popupTokenAccountRenames[command] {
             guard !self.quitInvoked, !self.remoteEditorOpen, let window = self.window,
                   case .idle = self.providerEditorPhase, case .idle = self.codexWebSettingsEditorPhase else { return }
@@ -2579,6 +2664,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
         if message == Self.wakeMessage {
             host.drainCLISetup()
             if host.remoteEditorOpen { return 0 }
+            host.drainTokenAccountAdd()
             host.drainTokenAccountRename()
             host.drainTokenAccountSelection()
             host.drainProviderQuotaWarningEditor()

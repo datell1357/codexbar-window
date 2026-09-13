@@ -1472,3 +1472,14 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - 저장 시 보호 변환 실패는 파일 교체 전 발생하므로 해당 경로에 한해 기존 설정 미교체를 명시한다. 일반 파일 쓰기/권한 적용 실패에는 이 결과를 사용하지 않는다. JSON 파서 세부 내용은 credential 입력이 섞일 수 있어 정해진 일반 오류로 변환한다.
 
 남은 범위: 복구 전용 UI/백업 선택·프로필 이동·구버전 정책, 실제 오류 분류와 Windows 검증, 전체 계정 및 provider 기능 구현. 자동 복원·파일 삭제·실제 이전을 실행하지 않았다.
+
+## IMPL-103 — 수동 계정 추가 UI와 보호 저장 연결
+
+상태 CODE_WRITTEN_UNVERIFIED. 컴파일/빌드/테스트/UI/실계정/DPAPI/설정 쓰기/검증 미실시. guidelines/COMMITS.md 부재로 핵심 커밋 규칙을 적용한다.
+
+- 지원 공급자를 선택하는 Add saved account 메뉴와 이름/ES_PASSWORD credential 입력 창을 작성했다. catalog의 조직·team controls 지원에 따라 scope/organization/workspace 필드를 생성한다. 이름은 비워 두면 backend fallback을 사용한다.
+- UI는 입력과 취소만 처리하며 계정 저장은 기존 actor backend와 보호 config 저장 경로를 사용한다. 공유 pending 슬롯·요청 ID로 계정 추가/선택/이름 변경 중복을 막고 결과를 대응한다.
+- 저장 성공 뒤 사용량 refresh를 요청하고, 저장 성공을 인증 검증 완료로 표시하지 않는다. 지원 해제·stale 선택·수집 진행 중·입력 실패·보호 또는 저장 실패를 각각 안내한다.
+- 기존 이름 창 구조의 DPI/system font/작업 영역/WM_QUIT/owner 복원 처리를 사용했다. 토큰이나 draft를 로그·결과 안내에 출력하지 않고 자동 clipboard 읽기나 로그인 probe도 추가하지 않았다.
+
+남은 범위: credential 종류별 안내·OAuth 전용 플로우·입력 실패 시 draft 보존 UX, 매우 작은 화면 스크롤/접근성/지역화, credential 변경·계정 제거·동시 표시, Windows ABI/DPAPI/실제 계정 검증. 메모리 token 복사 완전 삭제를 보장하지 않으며 전체 계정 관리 완료가 아니다.
