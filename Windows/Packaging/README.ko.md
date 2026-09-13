@@ -73,3 +73,12 @@ Sign-CodexBarDistribution.ps1은 DistributionDirectory, SigningRequest, Certific
 서명 최종화는 서명된 각 파일의 FileShare.Read handle을 유지한 후 서명 상태·machine·import·해시를 다시 읽도록 보완했다. vendor/비서명 파일의 최종 hash가 원본 인벤토리와 다르면 중단한다. 최종 dependencies는 서명 전 기록을 복사하지 않고 다시 계산하며 dependencyAnalysis=HELD_FINAL_FILES_STATIC_AND_RVA_DELAY_IMPORT_NAMES로 표시한다. 모든 handle은 최종 인벤토리 기록 또는 실패 후 해제한다. 이전 PRE_SIGN_INVENTORY_ONLY 설명은 과거 단계다.
 
 실제 Authenticode/.NET 파일 공유 호환성, 상위 디렉터리 변경과 최종 출력 외부 접근은 미검증이다. 유효한 동일 signer가 별도로 바꾼 파일, 동적 import/forwarder/API symbol 지원까지 확인하는 것은 아니다. SIGNED_RUNTIME_UNVERIFIED 및 releaseApproved=false는 유지한다.
+
+
+## 사용자별 버전 설치
+
+Install-CodexBarVersion.ps1은 DistributionDirectory와 ExpectedSignerThumbprint, 개발용 AllowUnvalidatedBuild opt-in을 받아 `%LOCALAPPDATA%/Programs/CodexBarWindows/versions/<version>-<architecture>-<revision>`에 새 payload를 설치하도록 작성됐다. 기존 version은 덮거나 지우지 않는다. installer는 앱을 실행하지 않으며 사용자 설정·PATH·startup·바로가기를 변경하지 않는다.
+
+입력 및 복사한 파일의 hash를 대조하고 app/CLI/PATH resource의 Authenticode/지정 signer/timestamp를 확인한 뒤 INSTALLED_INACTIVE_RUNTIME_UNVERIFIED receipt를 마지막에 기록한다. 관리 작업은 operations.lock을 독점 열며 실패한 부분 출력은 보존한다. receipt가 없는 폴더는 완료된 설치로 사용하면 안 된다. installer를 현재 macOS에서 실행하지 않았다.
+
+현재 범위는 버전별 설치다. 활성 버전 전환·Start Menu·Apps 제거 등록·upgrade/rollback·uninstall 및 호스트 OS/CPU 적합성은 다음 필수 범위다. receipt는 암호학적으로 서명된 증명이 아니며 같은 사용자에 의한 변경·상위 경로 race·런타임/리소스 전체 신뢰는 별도 검증이 필요하다. releaseApproved=false인 개발 payload를 출시 가능으로 표현하지 않는다.

@@ -1064,3 +1064,13 @@
 남은 범위: 실제 공유/AuthentiCode 동작, 상위 경로 경쟁, 동적 import/forwarder, OS 지원 정책 근거, installer/upgrade/MSIX 및 전체 Windows 검증.
 
 다음 구현: Windows 설치·업그레이드·제거 lifecycle을 연결한다.
+
+## IMPL-063 — 사용자별 버전 payload 설치
+
+상태 CODE_WRITTEN_UNVERIFIED. PowerShell/인증서/설치/파일/빌드/컴파일/테스트/검증 실행 미실시.
+
+- signed payload와 명시적 signer를 받아 LocalAppData Programs의 version/architecture/revision별 새 폴더에만 복사하는 코드를 작성했다. runtime-unverified 개발 설치 opt-in을 요구한다.
+- source/target hash, first-party Authenticode/signer/timestamp를 확인하고 read-sharing handle을 receipt 기록까지 유지한다. operations.lock 독점 열기와 완료 receipt-last를 연결했다.
+- 기존 version·부분 출력·사용자 데이터를 보존하고 활성화/PATH/startup 변경을 하지 않는다. receipt는 INSTALLED_INACTIVE_RUNTIME_UNVERIFIED다.
+
+남은 범위: active version/shortcut 전환·upgrade rollback·uninstall/OS 적합성·receipt 신뢰 및 모든 Windows 검증.
