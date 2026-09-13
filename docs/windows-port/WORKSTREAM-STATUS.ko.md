@@ -1,5 +1,7 @@
 # Windows 전용 제품 작업 현황
 
+- IMPL-088: 상세 창에서 명시적으로 전체 새로고침을 요청하고 닫는 동작을 작성했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
 - IMPL-087: 공급자 링크 실패 사용자 안내와 URL 비출력 로그를 작성했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
 
 - IMPL-086: 상세 창의 공급자별 dashboard/status/release notes 버튼과 최소 창 크기를 작성했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.

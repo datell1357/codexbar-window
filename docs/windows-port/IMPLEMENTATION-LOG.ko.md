@@ -1316,3 +1316,13 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winus
 - 오류 로그에서 원본 URL을 제거했다. 계정 식별자가 포함될 수 있는 path/query/fragment를 출력하지 않고 실패 종류와 shell 반환값만 기록한다. shell 수락을 웹페이지 로드나 인증 성공으로 판정하지 않는다.
 
 남은 범위: rich card/계정 선택·refresh 통합, DPI·접근성·지역화, Windows 실제 링크 열기/실패 대화상자 검증. WIN-010 완료를 의미하지 않는다.
+
+## IMPL-088 — 상세 창의 명시적 전체 새로고침
+
+상태 CODE_WRITTEN_UNVERIFIED. 빌드/컴파일/테스트/UI/실제 수집/검증 미실시. guidelines/COMMITS.md 부재로 핵심 커밋 규칙을 적용한다.
+
+- 상세 창 결과를 closed/openURL/refreshAll enum으로 분리하고 Refresh all & close 버튼을 작성했다. 선택 후 창과 modal owner를 정리한 다음 기존 onRefresh 콜백을 한 번 호출한다.
+- 기존 콜백은 usage/local sessions/remote sessions를 요청하므로 공급자 전용 갱신으로 오인하지 않도록 전체 새로고침과 창 닫힘을 버튼 및 안내에 명시했다. 별도 fetch 루프를 만들지 않으며 usage runtime의 진행 중 요청 합치기 경로를 재사용한다.
+- Close/Escape/창 닫기는 새로고침을 요청하지 않는다. 업데이트 완료를 기다리거나 최신 데이터를 받았다고 표시하지 않으며, 업데이트 뒤 상세 창을 다시 여는 안내를 작성했다.
+
+남은 범위: 상세 창을 유지하는 live refresh/로딩·실패 상태, 공급자·계정별 갱신과 rich card, DPI/접근성/지역화 및 Windows 런타임 검증. WIN-010 완료를 의미하지 않는다.

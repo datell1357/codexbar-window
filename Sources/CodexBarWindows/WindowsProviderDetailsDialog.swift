@@ -7,20 +7,23 @@ enum WindowsProviderDetailsDialog {
     private static let className = "CodexBar.ProviderDetailsDialog"
     private static let textID: Int32 = 101
     private static let closeID: Int32 = 2
+    private static let refreshID: Int32 = 3
     private static let linkBaseID: Int32 = 201
 
     struct Link {
         let title: String
         let url: String
     }
-    struct Result {
-        let selectedURL: String?
+    enum Result {
+        case closed
+        case openURL(String)
+        case refreshAll
     }
 
     private final class Context {
         let text: String
         let links: [Link]
-        var selectedURL: String?
+        var result: Result = .closed
         var closed = false
         init(text: String, links: [Link]) { self.text = text; self.links = Array(links.prefix(3)) }
     }
@@ -79,7 +82,7 @@ enum WindowsProviderDetailsDialog {
         }
         if IsWindow(hwnd) != 0 { DestroyWindow(hwnd) }
         if IsWindow(owner) != 0, ownerWasEnabled { EnableWindow(owner, 1); SetForegroundWindow(owner) }
-        return succeeded ? Result(selectedURL: context.selectedURL) : nil
+        return succeeded ? context.result : nil
     }
 
     private static let windowProc: WNDPROC = { hwnd, message, wParam, lParam in
@@ -102,6 +105,10 @@ enum WindowsProviderDetailsDialog {
                                   DWORD(WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_DEFPUSHBUTTON)) != nil else {
                 return -1
             }
+            guard Self.addControl(hwnd, "BUTTON", "Refresh all && close", Self.refreshID,
+                                  DWORD(WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON)) != nil else {
+                return -1
+            }
             for (index, link) in context.links.enumerated() {
                 guard Self.addControl(hwnd, "BUTTON", link.title, Self.linkBaseID + Int32(index),
                                       DWORD(WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON)) != nil else {
@@ -121,9 +128,14 @@ enum WindowsProviderDetailsDialog {
         case UINT(WM_COMMAND):
             let command = Int32(wParam & 0xffff)
             if command == Self.closeID { DestroyWindow(hwnd); return 0 }
+            if command == Self.refreshID {
+                context.result = .refreshAll
+                DestroyWindow(hwnd)
+                return 0
+            }
             let index = Int(command - Self.linkBaseID)
             if context.links.indices.contains(index) {
-                context.selectedURL = context.links[index].url
+                context.result = .openURL(context.links[index].url)
                 DestroyWindow(hwnd)
             }
             return 0
@@ -140,12 +152,13 @@ enum WindowsProviderDetailsDialog {
         var rect = RECT()
         guard GetClientRect(hwnd, &rect) != 0 else { return }
         let width = max(0, rect.right - rect.left), height = max(0, rect.bottom - rect.top)
-        MoveWindow(GetDlgItem(hwnd, Self.textID), 12, 12, max(1, width - 24), max(1, height - 64), 1)
+        MoveWindow(GetDlgItem(hwnd, Self.textID), 12, 12, max(1, width - 24), max(1, height - 100), 1)
         for index in 0..<3 {
             if let control = GetDlgItem(hwnd, Self.linkBaseID + Int32(index)) {
                 MoveWindow(control, 12 + Int32(index) * 132, max(12, height - 40), 124, 28, 1)
             }
         }
+        MoveWindow(GetDlgItem(hwnd, Self.refreshID), 12, max(12, height - 76), 180, 28, 1)
         MoveWindow(GetDlgItem(hwnd, Self.closeID), max(12, width - 104), max(12, height - 40), 92, 28, 1)
     }
 
