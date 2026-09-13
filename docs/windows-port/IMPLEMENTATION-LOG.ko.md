@@ -1441,3 +1441,14 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/hidpi/wm-dpichanged 
 남은 범위: config의 보호 token schema/읽기/쓰기 연결과 legacy migration, CLI/다른 호출부 호환성, 저장 실패·profile 변경·잘못된 암호문·복구 UX, Windows ABI 및 DPAPI 검증. 이 codec은 아직 저장 호출부에 연결되지 않아 기존 JSON token 저장을 변경하지 않는다.
 
 API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-cryptprotectdata , https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-cryptunprotectdata
+
+## IMPL-100 — 설정 token 보호 읽기·쓰기 연결
+
+상태 CODE_WRITTEN_UNVERIFIED. 컴파일/빌드/테스트/설정 읽기·쓰기 실행/DPAPI/검증 미실시. guidelines/COMMITS.md 부재로 핵심 커밋 규칙을 적용한다.
+
+- Windows config load/saveEncodedData에 디스크 전용 변환을 연결했다. 저장 시 account.token을 제거하고 windowsProtectedToken(base64 DPAPI) 및 root windowsTokenProtectionVersion=1로 쓴다. 메모리 모델과 encodedData는 기존 resolved token 계약을 유지한다.
+- 구형 평문 설정은 읽을 수 있으며 다음 정상 저장 때 token 계정을 모두 보호하도록 작성했다. 읽기만으로 파일을 수정하지 않는다. 모든 암호화를 마친 뒤 기존 atomic write를 호출하고 실패 시 평문 fallback을 하지 않는다.
+- 보호 형식의 version/크기/UUID 중복, 보호·평문 혼합과 marker 누락을 거절한다. 다른 공급자/계정으로 바꾼 blob은 DPAPI binding 및 payload 확인 경로에서 거절하도록 연결했다.
+- 비Windows 공통 저장소는 보호 marker를 가진 파일 읽기와 해당 기존 파일 덮어쓰기를 거절한다. 암호화/복원 예외에는 원문 데이터나 OS 상세를 포함하지 않는다.
+
+제한: 실제 기존 파일 이전은 실행하지 않았다. tokenAccounts의 token만 보호하며 provider apiKey/cookieHeader/secretKey/pluginSecrets, 직접 JSONEncoder/파일 쓰기 경로, 구버전 바이너리 호환성·downgrade 및 백업 평문은 별도 대응이 필요하다. 기존 atomic write 이후 권한 적용 실패와 process 간 충돌도 남아 있다. 전체 credential 보관 또는 배포 준비 완료를 주장하지 않는다.

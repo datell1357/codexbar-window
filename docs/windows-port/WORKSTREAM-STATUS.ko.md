@@ -1,5 +1,7 @@
 # Windows 전용 제품 작업 현황
 
+- IMPL-100: config token 보호 읽기·쓰기와 다음 저장 시 legacy 변환을 작성했다. 실제 이전 미실행, CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
 - IMPL-099: 사용자 범위 DPAPI token codec을 작성했다. 저장소 미연결, CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
 
 - IMPL-098: 새 토큰 계정 추가 backend를 작성했다. UI/보호 저장 이전 미연결, CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.

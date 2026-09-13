@@ -4,6 +4,8 @@ public enum CodexBarConfigStoreError: LocalizedError {
     case invalidURL
     case decodeFailed(String)
     case encodeFailed(String)
+    case protectedTokenUnavailable
+    case protectedTokenUnsupported
 
     public var errorDescription: String? {
         switch self {
@@ -13,6 +15,10 @@ public enum CodexBarConfigStoreError: LocalizedError {
             "Failed to decode CodexBar config: \(details)"
         case let .encodeFailed(details):
             "Failed to encode CodexBar config: \(details)"
+        case .protectedTokenUnavailable:
+            "Could not protect or restore Windows account credentials. Keep the original configuration and use the Windows user profile that saved it."
+        case .protectedTokenUnsupported:
+            "This configuration contains Windows-protected account credentials and cannot be opened on this platform."
         }
     }
 }
@@ -31,7 +37,18 @@ public struct CodexBarConfigStore: @unchecked Sendable {
 
     public func load() throws -> CodexBarConfig? {
         guard self.fileManager.fileExists(atPath: self.fileURL.path) else { return nil }
-        let data = try Data(contentsOf: self.fileURL)
+        let storedData = try Data(contentsOf: self.fileURL)
+        let data: Data
+        #if os(Windows)
+        do { data = try WindowsProtectedTokenConfig.decode(storedData) }
+        catch { throw CodexBarConfigStoreError.protectedTokenUnavailable }
+        #else
+        if let root = try? JSONSerialization.jsonObject(with: storedData) as? [String: Any],
+           root["windowsTokenProtectionVersion"] != nil {
+            throw CodexBarConfigStoreError.protectedTokenUnsupported
+        }
+        data = storedData
+        #endif
         let decoder = JSONDecoder()
         do {
             let decoded = try decoder.decode(CodexBarConfig.self, from: data)
@@ -67,11 +84,30 @@ public struct CodexBarConfigStore: @unchecked Sendable {
     }
 
     public func saveEncodedData(_ data: Data) throws {
+        let storedData: Data
+        #if os(Windows)
+        // Finish every encryption before creating directories or replacing the original file.
+        do { storedData = try WindowsProtectedTokenConfig.encode(data) }
+        catch { throw CodexBarConfigStoreError.protectedTokenUnavailable }
+        #else
+        let candidateRoot = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+        if candidateRoot?["windowsTokenProtectionVersion"] != nil {
+            throw CodexBarConfigStoreError.protectedTokenUnsupported
+        }
+        if self.fileManager.fileExists(atPath: self.fileURL.path) {
+            let existing = try Data(contentsOf: self.fileURL)
+            if let root = try? JSONSerialization.jsonObject(with: existing) as? [String: Any],
+               root["windowsTokenProtectionVersion"] != nil {
+                throw CodexBarConfigStoreError.protectedTokenUnsupported
+            }
+        }
+        storedData = data
+        #endif
         let directory = self.fileURL.deletingLastPathComponent()
         if !self.fileManager.fileExists(atPath: directory.path) {
             try self.fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
         }
-        try data.write(to: self.fileURL, options: [.atomic])
+        try storedData.write(to: self.fileURL, options: [.atomic])
         try self.applySecurePermissionsIfNeeded()
     }
 
