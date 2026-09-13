@@ -25,6 +25,20 @@ public enum WindsurfProviderDescriptor {
                 CookieProviderSettings(
                     cookieSource: settings.cookieSource,
                     manualCookieHeader: settings.manualCookieHeader)
+            }, credentialSettings: { context in
+                #if os(Windows)
+                let cookie = context.cookieSettings(for: .windsurf)
+                let source: WindsurfUsageDataSource
+                switch context.config?.source {
+                case .web: source = .web
+                case .cli: source = .cli
+                default: source = .auto
+                }
+                return WindsurfProviderSettings(usageDataSource: source, cookieSource: cookie.cookieSource,
+                                                manualCookieHeader: cookie.manualCookieHeader)
+                #else
+                return nil
+                #endif
             }),
             credentials: Self.credentials,
             metadata: ProviderMetadata(
@@ -62,8 +76,15 @@ public enum WindsurfProviderDescriptor {
                 noDataMessage: { "Windsurf cost summary is not supported." }),
             fetchPlan: ProviderFetchPlan(
                 sourceModes: [.auto, .web, .cli],
-                pipeline: ProviderFetchPipeline(resolveStrategies: { _ in
-                    [WindsurfWebFetchStrategy(), WindsurfLocalFetchStrategy()]
+                pipeline: ProviderFetchPipeline(resolveStrategies: { context in
+                    #if os(Windows)
+                    // Manual session selection is handled by the web strategy. Automatic local
+                    // reads need not attempt an unimplemented browser importer first.
+                    if context.sourceMode == .auto, context.settings?.windsurf?.cookieSource != .manual {
+                        return [WindsurfLocalFetchStrategy()]
+                    }
+                    #endif
+                    return [WindsurfWebFetchStrategy(), WindsurfLocalFetchStrategy()]
                 })),
             cli: ProviderCLIConfig(
                 name: "windsurf",

@@ -1,5 +1,7 @@
 # Windows 전용 제품 작업 현황
 
+- IMPL-206: Windsurf 저장 계정의 Windows settings 투영과 자동 로컬 조회 전략 선택을 연결했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
 - IMPL-205: Windows Windsurf 저장 계정 adapter 및 CLI browser 지원 예외, 수동 세션 설정 표시를 연결했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
 
 - IMPL-204: Windsurf 로컬 SQLite cachedPlanInfo 조회를 Windows Roaming AppData 경로에 연결했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.

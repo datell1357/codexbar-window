@@ -2464,3 +2464,11 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - Windows 설정의 Web API 표시는 수동 세션임을 명시한다. macOS credential adapter와 표시 기본값은 유지한다.
 - 남은 소요: 저장 계정별 설정 투영/회귀 검증, 브라우저 localStorage/앱 로그인, 캐시 최신성 및 전체 계획 나머지 항목.
 - CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·실제 계정 저장/CLI/UI 검증 미실행.
+
+## IMPL-206 — Windsurf 저장 계정 settings 투영
+
+- Windows Windsurf settingsSection에 credentialSettings 변환을 추가해 config/선택 계정으로부터 해석한 cookie source와 세션 bundle을 fetch context로 전달한다. 기존 공통 resolver의 계정별 정규화 및 manual source 규칙을 사용한다.
+- 설정의 source를 WindsurfUsageDataSource에 반영한다. Windows auto에서 수동 계정이 없으면 미구현 browser importer를 먼저 시도하지 않고 구현된 로컬 strategy를 선택한다. 수동 계정은 web strategy 및 로컬 혼용 차단을 유지한다.
+- macOS settings 변환/전략 선택 동작은 유지한다. 향후 Windows 자동 로그인 구현 때 auto 전략을 확장해야 한다.
+- 남은 소요: 저장 계정/CLI source 조합의 Windows 회귀 검증, 캐시 최신성 표시, 브라우저 로그인 및 전체 계획 나머지 항목.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·실제 설정/조회 검증 미실행.
