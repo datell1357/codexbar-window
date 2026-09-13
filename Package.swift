@@ -295,6 +295,7 @@ let package = Package(
             linkerSettings: sqlite3LinkerSettings + [
                 .linkedLibrary("User32"),
                 .linkedLibrary("Gdi32"),
+                .linkedLibrary("Comdlg32"),
                 .linkedLibrary("Ole32"),
                 .linkedLibrary("Shell32"),
                 .linkedLibrary("Ws2_32"),

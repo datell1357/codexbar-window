@@ -78,6 +78,13 @@ private final class WindowsTrayApplication: @unchecked Sendable {
             guard let self else { return }
             Task { await self.runtime.optionalUsageSettingsDidChange() }
         },
+        onShareStatsImageRequested: { [weak self] requestID in
+            guard let self else { return }
+            Task {
+                let result = await self.runtime.shareStatsImageResult()
+                self.host.postShareStatsCopy(requestID: requestID, result: result)
+            }
+        },
         onSpendSourcesRequested: { [weak self] requestID in
             guard let self else { return }
             Task {

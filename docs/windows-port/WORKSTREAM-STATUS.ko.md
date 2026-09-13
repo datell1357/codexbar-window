@@ -1,5 +1,7 @@
 # Windows 전용 제품 작업 현황
 
+- IMPL-148: GDI 1200×630 공유 카드/PNG encoder/Windows PNG 저장 메뉴를 작성했다. 이미지 실행·검증 미실시. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
 - IMPL-147: 비용 집계 소스 전체/개별 포함 선택 메뉴와 generation 확인 저장·재집계를 연결했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
 
 - IMPL-146: 기간/통화/source 표시 옵션 변경 시 보관된 비용 scan을 재집계하도록 runtime에 연결했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.

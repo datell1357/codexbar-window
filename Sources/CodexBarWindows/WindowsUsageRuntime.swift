@@ -108,8 +108,22 @@ public actor WindowsUsageRuntime {
     }
 
     public enum ShareStatsCopyResult: Sendable {
+        case image(Data, filename: String)
         case ready(String)
         case unavailable(String)
+    }
+
+    public func shareStatsImageResult() -> ShareStatsCopyResult {
+        guard !self.shuttingDown, self.spendState == .available,
+              let snapshot = self.spendSnapshot, snapshot.phase == .ready, !snapshot.stale,
+              let payload = snapshot.sharePayload, let settings = self.collectedSpendSettings,
+              WindowsSpendSettings.load() == settings else {
+            return .unavailable("Saving Share Stats needs a completed collection with unchanged settings and no failed sources.")
+        }
+        guard let data = WindowsShareStatsRenderer.pngData(payload: payload, calendar: settings.bucketCalendar) else {
+            return .unavailable("The Share Stats image could not be generated.")
+        }
+        return .image(data, filename: "codexbar-subscriptions-last-\(payload.days)-days.png")
     }
 
     public func shareStatsCopyResult() -> ShareStatsCopyResult {

@@ -1922,3 +1922,13 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - 숨김 설정 저장 후 기존 scan 재집계를 호출한다. 표시 제외는 수집을 끄는 설정이 아니며 원본 availableSources 목록을 유지해 전체 제외 후에도 다시 포함할 수 있다. 선택 시 대기 중인 Share Stats 복사를 취소한다.
 
 남은 범위: 실패 소스의 선택/진단, 여러 Codex 계정과 OpenCodeX 입력 전체 parity, 키보드 popup 위치·DPI·접근성·동시성 검증, 전체 비용 차트·이미지 공유 및 계획 구현. UI와 실제 설정 저장은 실행하지 않았다.
+
+## IMPL-148 — Share Stats PNG 저장
+
+상태 CODE_WRITTEN_UNVERIFIED. 컴파일/빌드/테스트/이미지 생성·PNG 파싱·저장 대화상자·파일 저장/검증 미실시. guidelines/COMMITS.md 부재로 핵심 커밋 규칙을 적용한다.
+
+- 원본 크기 1200×630의 GDI DIB 공유 카드 renderer를 작성했다. sanitized share payload의 토큰·통화·공급자·모델·coverage·data-through를 그리며 표시 한도 초과 공급자/통화는 안내한다. GDI 자원을 정리하고 BGRA를 RGB로 변환한다.
+- 외부 codec 패키지 없이 bounded RGB raster를 PNG로 인코딩하는 작은 encoder를 작성했다. None 필터·stored DEFLATE·Adler32·PNG chunk CRC를 사용하며 2048×2048 크기 상한을 둔다. 인코딩 결과는 아직 생성/검증하지 않았다.
+- Save Share Stats PNG 메뉴를 runtime의 ready/settings 검사를 거쳐 기존 UUID 공유 mailbox로 연결했다. native GetSaveFileNameW와 .png 확장자/덮어쓰기 확인 후 atomic write를 사용하며 개인정보 표시 상태를 저장 전후 확인한다. Windows OS Comdlg32 linker library를 추가했으며 외부 dependency는 추가하지 않았다.
+
+남은 범위: PNG 디코딩·픽셀/텍스트/Unicode/DPI 검증, 원본 카드 세부 시각 parity, 이미지 preview·이미지 클립보드 복사, 대화상자 중 계정 변경/종료 처리, 전체 비용 차트 및 전체 계획 구현. 미검증 encoder/WinSDK 호출이므로 생성 가능한 이미지나 배포 품질을 보장하지 않는다.
