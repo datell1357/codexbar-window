@@ -81,6 +81,14 @@ public actor WindowsHookDispatchQueue {
         return self.submit(events)
     }
 
+    /// Coarse failure events produced separately from successful sibling account observations.
+    public func submitFailures(_ events: [HookEvent]) -> Submission {
+        guard events.count <= 256, events.allSatisfy({ $0.event == .refreshFailed }) else {
+            return Submission(accepted: 0, omitted: events.count)
+        }
+        return self.submit(events.map { HookDispatch(event: $0) })
+    }
+
     public func submit(_ dispatches: [HookDispatch]) -> Submission {
         guard !self.stopped, self.config.enabled,
               self.config.events.count <= HooksConfig.maximumRuleCount else {

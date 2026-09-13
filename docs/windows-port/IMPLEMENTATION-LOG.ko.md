@@ -3123,3 +3123,12 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - Windows mapper에 비권위적 추가 구간 목록의 누락 key를 계산하는 도우미를 추가했다. 같은 계정만 대상으로 하며 완전한 목록 또는 같은 window ID의 새 source가 있으면 이전 key를 유지하지 않는다.
 - 남은 소요: runtime batch 수집과 이전 key 전달/설정·종료 연결 및 전체 계획 나머지.
 - CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·훅 실행 미실행.
+
+## IMPL-283 — Hook 계정별 결과 수집
+
+- 한 갱신의 계정 결과를 공급자별 관측으로 합치는 batch builder를 작성했다. 계정 중복/잘못된 lane 소유권 및 수량 초과를 거부한다.
+- 실패한 계정의 이전 lane을 보존하면서 정상 계정 lane은 갱신한다. 실패 이벤트는 별도로 생성해 provider observation의 refreshFailureStatus가 정상 계정 관측까지 중단하지 않도록 한다.
+- 개인정보를 담지 않은 실패 이벤트를 대기열에 전달하는 submitFailures를 추가했다. 기존 공급자 단위 rate limit을 유지한다.
+- 완전한 계정 roster에서 사라진 계정은 이전 lane을 유지하지 않는다. runtime은 실제 roster와 안정된 opaque discriminator를 제공해야 한다.
+- 남은 소요: runtime refresh 세대별 batch/설정/소유권 digest/종료/누락 표시 연결 및 전체 계획 나머지.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·훅 실행 미실행.
