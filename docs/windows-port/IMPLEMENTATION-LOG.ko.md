@@ -704,3 +704,19 @@
 2. 중간 페이지 요청이 거부된 경우 복원 기록은 다음 새 진입에서 초기화된다. 메뉴 scroll/선택 복원·임의 shortcut editor와 전체 Windows 기능/배포 검증은 미완료다.
 
 다음 구현: 키보드로 열린 메뉴의 초기 선택과 navigation 접근성을 보강한다. native 동작 검증은 사용자 승인 후 별도 진행한다.
+
+## IMPL-037 — keyboard menu 초기 navigation과 mnemonic
+
+상태: CODE_WRITTEN_UNVERIFIED. 빌드·컴파일·테스트·lint·앱·실제 키 입력·검증 스크립트를 실행하지 않았다. 계약: WIN-011.
+
+작성한 코드:
+
+- 키보드 popup의 local session submenu 위치를 메뉴 생성 시 기록하고 WM_INITMENUPOPUP에서 유효한 enabled submenu인 경우 한 번 highlight하도록 연결했다. command 실행/키 입력 주입은 하지 않는다. callback 전후 HMENU/position state를 지우고 파괴된 menu를 보관하지 않는다.
+- Local/Remote/shortcut/Refresh/Quit의 정적 caption에 native mnemonic을 추가했다. 동적 session/provider 문자열의 기존 ampersand escaping은 유지한다. 선택 메뉴가 생성되지 않았으면 강제 초기 선택을 하지 않는다.
+
+남은 범위:
+
+1. HiliteMenuItem의 native tracking loop 초기 선택 동작과 screen reader/키보드 navigation은 미검증이다. 초기 highlight가 모든 Windows 환경에서 focus 이동을 보장하지 않는다.
+2. 전체 메뉴 mnemonic 충돌/현지화·scroll/마지막 선택 복원·임의 shortcut capture와 전체 Windows 기능/배포 검증은 남아 있다.
+
+다음 구현: 임의 shortcut 선택의 범위를 넓히되 예약 조합과 modifier 저장 모델을 명시적으로 다루는 설정 경로를 구현한다.

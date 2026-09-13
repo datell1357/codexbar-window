@@ -33,6 +33,8 @@ public final class WindowsTrayHost: @unchecked Sendable {
     private var menuHotkeyFailureMessage: String?
     private static let cleanupHotkeyCommand = UINT_PTR(0x7544)
     private var popupIsOpen = false
+    private var keyboardInitialMenu: HMENU?
+    private var keyboardInitialPosition: UINT?
     private var keyboardPopupAnchor: POINT?
     private var keyboardReturnTarget: (window: HWND, process: DWORD, thread: DWORD)?
     private static let chooseTitleDatabaseCommand = UINT_PTR(0x7530)
@@ -603,7 +605,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
                             Self.shortcutChoiceBase + UINT_PTR(index), $0) != 0
             }
         }
-        let attached = succeeded && "Menu shortcut".withCString(encodedAs: UTF16.self) {
+        let attached = succeeded && "Menu short&cut".withCString(encodedAs: UTF16.self) {
             AppendMenuW(menu, UINT(MF_STRING | MF_POPUP), UINT_PTR(UInt(bitPattern: child)), $0) != 0
         }
         if !attached { _ = DestroyMenu(child) }
@@ -852,6 +854,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
         "Show provider changelog links".withCString(encodedAs: UTF16.self) {
             _ = AppendMenuW(menu, changelogFlags, Self.changelogCommandBase - 1, $0)
         }
+        let localMenuPosition = GetMenuItemCount(menu)
         self.appendAgentSessionsMenu(to: menu, snapshot: agentSessions)
         self.appendRemoteSessionsMenu(to: menu, snapshot: remoteSessions)
         self.appendShortcutMenu(to: menu)
@@ -859,8 +862,8 @@ public final class WindowsTrayHost: @unchecked Sendable {
         self.appendRefreshFrequencyMenu(to: menu)
         self.appendLowPowerModeMenu(to: menu)
         _ = AppendMenuW(menu, UINT(MF_SEPARATOR), 0, nil)
-        "Refresh".withCString(encodedAs: UTF16.self) { _ = AppendMenuW(menu, UINT(MF_STRING), Self.refreshCommand, $0) }
-        "Quit".withCString(encodedAs: UTF16.self) { _ = AppendMenuW(menu, UINT(MF_STRING), Self.quitCommand, $0) }
+        "Re&fresh".withCString(encodedAs: UTF16.self) { _ = AppendMenuW(menu, UINT(MF_STRING), Self.refreshCommand, $0) }
+        "&Quit".withCString(encodedAs: UTF16.self) { _ = AppendMenuW(menu, UINT(MF_STRING), Self.quitCommand, $0) }
         _ = SetForegroundWindow(hwnd)
         var point = self.keyboardPopupAnchor ?? POINT()
         let havePoint = self.keyboardPopupAnchor != nil || GetCursorPos(&point) != 0
@@ -892,7 +895,13 @@ public final class WindowsTrayHost: @unchecked Sendable {
             }
             flags |= UINT(TPM_RIGHTALIGN | TPM_BOTTOMALIGN)
         }
+        if self.keyboardReturnTarget != nil, localMenuPosition >= 0, GetSubMenu(menu, localMenuPosition) != nil {
+            self.keyboardInitialMenu = menu
+            self.keyboardInitialPosition = UINT(localMenuPosition)
+        }
         let command = TrackPopupMenu(menu, flags, point.x, point.y, 0, hwnd, nil)
+        self.keyboardInitialMenu = nil
+        self.keyboardInitialPosition = nil
         _ = DestroyMenu(menu)
         continuingPage = command != 0 && self.popupPageCommands[UINT_PTR(command)] != nil
         if command != 0 { self.dispatchCommand(UINT_PTR(command)) }
@@ -942,7 +951,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
             }
         }
         if snapshot.enabled { succeeded = succeeded && self.appendPageControls(to: submenu, page: snapshot.page, remote: false) }
-        let title = snapshot.enabled ? "Local CLI sessions (\(snapshot.page.totalItems))" : "Local CLI sessions"
+        let title = snapshot.enabled ? "&Local CLI sessions (\(snapshot.page.totalItems))" : "&Local CLI sessions"
         let attached = succeeded && title.withCString(encodedAs: UTF16.self) {
             AppendMenuW(menu, UINT(MF_STRING | MF_POPUP), UINT_PTR(UInt(bitPattern: submenu)), $0) != 0
         }
@@ -1055,7 +1064,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
             else if row.isEnabled { commands[command] = row.request }
         }
         if snapshot.enabled { succeeded = succeeded && self.appendPageControls(to: submenu, page: snapshot.page, remote: true) }
-        let title = snapshot.enabled ? "Remote sessions" : "Remote sessions (off)"
+        let title = snapshot.enabled ? "&Remote sessions" : "&Remote sessions (off)"
         let attached = succeeded && title.withCString(encodedAs: UTF16.self) {
             AppendMenuW(menu, UINT(MF_STRING | MF_POPUP), UINT_PTR(UInt(bitPattern: submenu)), $0) != 0
         }
@@ -1875,6 +1884,18 @@ public final class WindowsTrayHost: @unchecked Sendable {
             return DefWindowProcW(hwnd, message, wParam, lParam)
         }
         let host = Unmanaged<WindowsTrayHost>.fromOpaque(UnsafeRawPointer(bitPattern: UInt(pointer))!).takeUnretainedValue()
+        if message == UINT(WM_INITMENUPOPUP), let menu = host.keyboardInitialMenu,
+           wParam == WPARAM(UInt(bitPattern: menu)), let position = host.keyboardInitialPosition {
+            host.keyboardInitialMenu = nil
+            host.keyboardInitialPosition = nil
+            // Highlight a navigation submenu only; do not inject keys or execute a command.
+            let state = GetMenuState(menu, position, UINT(MF_BYPOSITION))
+            if state != UINT.max, state & UINT(MF_DISABLED | MF_GRAYED | MF_SEPARATOR) == 0,
+               GetSubMenu(menu, Int32(position)) != nil {
+                _ = HiliteMenuItem(hwnd, menu, position, UINT(MF_BYPOSITION | MF_HILITE))
+            }
+            return 0
+        }
         if message == UINT(WM_HOTKEY), wParam == WPARAM(host.activeHotkeyID) {
             guard host.menuHotkeyRegistered, !host.quitInvoked, !host.remoteEditorOpen,
                   case .idle = host.providerEditorPhase, case .idle = host.codexWebSettingsEditorPhase else { return 0 }
