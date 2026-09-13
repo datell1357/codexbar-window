@@ -2328,3 +2328,11 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - 기존 이름 변경/credential 교체 호출의 동작은 optional privacy 기본값을 유지한다.
 - 남은 소요: Windows 메뉴 modal loop의 timer 전달 및 DPI/키보드 동작 검증, 즉시 변경 이벤트 연동, Chrome/Edge/WebView2 및 나머지 계획. timer 간격 내의 즉각적인 화면 제거는 보장하지 않는다.
 - CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·실행/UI 검증 미실행.
+
+## IMPL-189 — 가져온 Cursor 계정의 외부 ID
+
+- API에서 확인한 Cursor accountID를 기존 ProviderTokenAccount.externalIdentifier에 함께 저장한다. 새 스키마나 수동 ID 입력 UI는 추가하지 않았다.
+- 내부 추가 경로만 검증된 ID를 받으며 길이/제어문자를 제한한다. 같은 UUID 재시도도 외부 ID가 일치해야 이미 추가한 계정으로 처리한다.
+- Cursor credential이 다른 값으로 교체되면 이전 외부 ID를 제거한다. 이름 변경 또는 같은 credential 유지 시 기존 ID를 보존한다.
+- 남은 소요: 갱신 응답 계정 ID 불일치 차단, 팀 ID 모델, 기존 계정 가져오기 중복 정책, 추가 브라우저 지원 및 전체 계획의 나머지 항목.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·실제 저장/API 검증 미실행.

@@ -1,5 +1,7 @@
 # Windows 전용 제품 작업 현황
 
+- IMPL-189: Cursor 가져오기에서 확인한 계정 ID 저장과 credential 변경 시 ID 철회를 연결했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
 - IMPL-188: Cursor 후보 메뉴와 가져오기 이름 입력 대화상자의 privacy 변경 감지/닫기/저장 차단을 작성했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
 
 - IMPL-187: Cursor 후보 HTTP 검증에 전체 가져오기 deadline을 연결하고 초과 시 이전 확인 후보를 유지하도록 작성했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.

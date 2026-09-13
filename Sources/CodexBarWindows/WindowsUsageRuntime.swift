@@ -675,7 +675,8 @@ public actor WindowsUsageRuntime {
             guard try self.cursorImportRevision()?.0 == pending.revision else { return .staleSelection }
             let result = self.addTokenAccount(.init(providerID: UsageProvider.cursor.instanceID, accountID: candidateID,
                 label: label, token: candidate.candidate.cookieHeader, usageScope: nil, organizationID: nil,
-                workspaceID: nil, expectedSelectedID: pending.selectedID))
+                workspaceID: nil, expectedSelectedID: pending.selectedID),
+                verifiedExternalIdentifier: candidate.accountID)
             switch result {
             case .saved, .alreadyAdded: self.cancelCursorBrowserImport()
             default: break
@@ -685,6 +686,19 @@ public actor WindowsUsageRuntime {
     }
 
     public func addTokenAccount(_ request: WindowsTokenAccountAddRequest) -> WindowsTokenAccountAddResult {
+        self.addTokenAccount(request, verifiedExternalIdentifier: nil)
+    }
+
+    /// Only a validated browser candidate supplies this identity; free-form account inputs cannot assert it.
+    private func addTokenAccount(_ request: WindowsTokenAccountAddRequest,
+                                 verifiedExternalIdentifier: String?) -> WindowsTokenAccountAddResult {
+        if let identity = verifiedExternalIdentifier {
+            guard request.providerID == UsageProvider.cursor.instanceID, !identity.isEmpty,
+                  identity.utf8.count <= 512,
+                  !identity.unicodeScalars.contains(where: { $0.value < 32 || $0.value == 127 }) else {
+                return .invalidInput
+            }
+        }
         guard !self.shuttingDown else { return .shuttingDown }
         guard self.refreshTask == nil else { return .refreshInProgress }
         let token = request.token.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -712,13 +726,15 @@ public actor WindowsUsageRuntime {
             if let existing = accounts.first(where: { $0.id == request.accountID }) {
                 guard existing.token == token, (label.isEmpty || existing.label == label),
                       existing.usageScope == scope, existing.organizationID == organization,
-                      existing.workspaceID == workspace else { return .staleSelection }
+                      existing.workspaceID == workspace,
+                      existing.externalIdentifier == verifiedExternalIdentifier else { return .staleSelection }
                 return .alreadyAdded(existing.id)
             }
             let selectedID = accounts.isEmpty ? nil : accounts[data!.clampedActiveIndex()].id
             guard selectedID == request.expectedSelectedID else { return .staleSelection }
             let account = ProviderTokenAccount(id: request.accountID, label: resolvedLabel, token: token,
-                addedAt: Date().timeIntervalSince1970, lastUsed: nil, usageScope: scope,
+                addedAt: Date().timeIntervalSince1970, lastUsed: nil,
+                externalIdentifier: verifiedExternalIdentifier, usageScope: scope,
                 organizationID: organization, workspaceID: workspace)
             entry.tokenAccounts = ProviderTokenAccountData(version: data?.version ?? 1,
                                                            accounts: accounts + [account], activeIndex: accounts.count)
@@ -1059,7 +1075,7 @@ public actor WindowsUsageRuntime {
             var accounts = data.accounts
             accounts[index] = ProviderTokenAccount(id: existing.id, label: existing.label, token: token,
                 addedAt: existing.addedAt, lastUsed: existing.lastUsed,
-                externalIdentifier: existing.externalIdentifier, usageScope: scope,
+                externalIdentifier: provider == .cursor && token != existing.token ? nil : existing.externalIdentifier, usageScope: scope,
                 organizationID: organization, workspaceID: workspace)
             entry.tokenAccounts = ProviderTokenAccountData(version: data.version, accounts: accounts,
                                                            activeIndex: data.activeIndex)
