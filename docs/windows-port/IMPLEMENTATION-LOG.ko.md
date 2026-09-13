@@ -962,3 +962,15 @@
 근거: https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-sendmessagetimeoutw 및 WM_SETTINGCHANGE 계약.
 
 남은 범위:100ms는 수신 창별 timeout이므로 전체 broadcast hard limit이 아니다. 상세 실패 코드, child process-tree containment, resource 서명/MSIX 및 Windows 실행·배포 검증은 남아 있다.
+
+## IMPL-054 — Windows 배포물 명시적 조립
+
+상태: CODE_WRITTEN_UNVERIFIED. PowerShell/패키징/빌드/컴파일/테스트/검증 실행 미실시.
+
+- Windows/Packaging/New-CodexBarDistribution.ps1은 입력 JSON의 명시적 file 목록을 받아 새 출력 폴더에만 복사한다. app/CLI/runtime DLL/license/operation resource 범주를 요구하고 파일 목적지 중복·상위 탈출·파일/폴더 충돌을 제한한다.
+- source regular file만 복사하고 원본 경로를 제외한 relative path/kind/size/hash 인벤토리를 작성하도록 했다. status는 STAGED_UNVERIFIED이며 hash를 실행/서명/의존성 검증으로 표현하지 않는다.
+- WhatIf/ShouldProcess, 기존 출력 거절, 실패 부분 출력 보존을 구현하고 README에 실제 bundle 경로 유지와 입력 책임을 명시했다.
+
+남은 범위: 정확한 DLL closure/resource 입력 자동 생성, PE architecture 일치, source/output 동시 변경과 상위 reparse, 서명·MSIX·installer/update 및 Windows 실행 검증이 남아 있다. 현재 조립 스크립트는 배포 완료가 아니다.
+
+다음 구현: 의존성/리소스 목록 생성과 서명 인계 작업을 연결한다.
