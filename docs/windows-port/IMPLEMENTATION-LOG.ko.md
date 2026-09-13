@@ -2033,3 +2033,13 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - 홈이 없는 source는 loader의 개별 실패로 처리한다. 여러 Codex 행을 기존 filter/chart/share/OpenCodeX preferred-merge 규칙에 전달하며, Codex 행이 여러 개일 때 OpenCodeX를 임의의 하나에 병합하지 않는 원본 규칙을 따른다.
 
 남은 범위: 원본 live ledger cache ownership/barrier/tombstone 세부 parity, auth 부재/읽기 실패 구분과 원격 managed-home 정책, 별칭/하드링크 홈 중복 방지, 외부 계정 변경 즉시 무효화 및 Windows 실행 검증, 전체 계획 구현. 실제 다중 계정 수집 성공을 주장하지 않는다.
+
+## IMPL-159 — 인증 파일 부재와 읽기 실패 구분
+
+상태 CODE_WRITTEN_UNVERIFIED. 컴파일/빌드/테스트/auth.json·파일·권한/검증 미실시. guidelines/COMMITS.md 부재로 핵심 커밋 규칙을 적용한다.
+
+- Windows용 CodexCredentialFileAccess.readIfPresent를 작성했다. 기존 fixture permits/testIO 경계를 유지하고 bounded reader로 최대 지정 바이트만 읽는다. 확인된 Cocoa 파일 부재만 nil이며 접근/크기/기타 실패는 전파한다.
+- CodexAuthFingerprint.fingerprintIfPresent는 4 MiB auth.json 상한을 사용하고 데이터가 있으면 기존 SHA256 규칙을 따른다. 기존 optional 지문 API의 타 플랫폼 동작은 유지한다.
+- Windows spend loader의 수집 전후 지문 검사를 throwing API로 연결했다. 양쪽 읽기가 실패해 nil==nil로 통과하는 대신 해당 소스의 실패로 처리한다. fixture 승인 실패도 인증 파일 부재로 삼키지 않는다.
+
+남은 범위: 인증/로그 읽기 사이 atomic ownership barrier, live ledger ownership/tombstone/캐시 parity, 원격 managed-home 및 외부 변경 감지, Windows 검증과 전체 계획 구현. 실제 인증 파일은 읽지 않았다.

@@ -152,6 +152,27 @@ public enum CodexCredentialFileAccess {
         return try Data(contentsOf: url, options: options)
     }
 
+    #if os(Windows)
+    /// Preserves credential fixture authorization while distinguishing confirmed absence from read errors.
+    public static func readIfPresent(at url: URL, maximumBytes: Int) throws -> Data? {
+        guard maximumBytes > 0, maximumBytes <= 64 * 1024 * 1024 else { throw WindowsBoundedFileReader.Failure.invalidLimit }
+        guard self.permits(url) else { throw CodexOAuthCredentialsError.notFound }
+        #if DEBUG
+        if let testIO {
+            do {
+                let data = try testIO(.read, url)
+                guard data.count <= maximumBytes else { throw WindowsBoundedFileReader.Failure.tooLarge }
+                return data
+            } catch let error as NSError where error.domain == NSCocoaErrorDomain &&
+                (error.code == NSFileReadNoSuchFileError || error.code == NSFileNoSuchFileError) {
+                return nil
+            }
+        }
+        #endif
+        return try WindowsBoundedFileReader.readIfPresent(at: url, maximumBytes: maximumBytes)
+    }
+    #endif
+
     public static func fileExists(at url: URL, fileManager: FileManager = .default) -> Bool {
         guard self.permits(url) else { return false }
         #if DEBUG

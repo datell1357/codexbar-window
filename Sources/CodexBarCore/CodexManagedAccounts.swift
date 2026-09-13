@@ -100,6 +100,15 @@ public enum CodexAuthFingerprint {
         return self.fingerprint(data: data)
     }
 
+    #if os(Windows)
+    /// A missing file has no fingerprint; denied, oversized, or failed reads must invalidate the scan.
+    public static func fingerprintIfPresent(homePath: String) throws -> String? {
+        guard let data = try CodexCredentialFileAccess.readIfPresent(
+            at: self.authFileURL(homePath: homePath), maximumBytes: 4 * 1024 * 1024) else { return nil }
+        return self.fingerprint(data: data)
+    }
+    #endif
+
     public static func fingerprint(env: [String: String], fileManager: FileManager = .default) -> String? {
         self.fingerprint(
             homePath: CodexHomeScope.ambientHomeURL(env: env, fileManager: fileManager).path,

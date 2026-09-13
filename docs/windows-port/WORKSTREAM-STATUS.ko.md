@@ -1,5 +1,7 @@
 # Windows 전용 제품 작업 현황
 
+- IMPL-159: Windows Codex 지문 조회를 bounded throwing read로 연결해 파일 부재와 읽기 실패를 구분했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
 - IMPL-158: visible Codex 계정/프로필별 비용 소스·홈/지문/시간대 캐시 분리·수집 전후 소유권 검사를 작성했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
 
 - IMPL-157: OpenCodeX 로그 opt-in/공급자 fan-out 병합/독립 캐시/관찰 상태 및 중복 Codex 숨김 메뉴를 연결했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.

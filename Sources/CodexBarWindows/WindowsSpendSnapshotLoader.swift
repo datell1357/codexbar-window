@@ -66,7 +66,7 @@ struct WindowsSpendSnapshotLoader {
                         var directory: ObjCBool = false
                         guard FileManager.default.fileExists(atPath: home, isDirectory: &directory), directory.boolValue,
                               FileManager.default.isReadableFile(atPath: home) else { throw Failure.missingCodexHome }
-                        capturedFingerprint = CodexAuthFingerprint.fingerprint(homePath: home)
+                        capturedFingerprint = try CodexAuthFingerprint.fingerprintIfPresent(homePath: home)
                         if let expected = source.expectedCodexAuthFingerprint, capturedFingerprint != expected {
                             throw Failure.codexOwnerChanged
                         }
@@ -91,7 +91,7 @@ struct WindowsSpendSnapshotLoader {
                     }
                     try Task.checkCancellation()
                     if source.provider == .codex, source.verifyCodexOwner, let home = source.codexHomePath,
-                       CodexAuthFingerprint.fingerprint(homePath: home) != capturedFingerprint {
+                       try CodexAuthFingerprint.fingerprintIfPresent(homePath: home) != capturedFingerprint {
                         throw Failure.codexOwnerChanged
                     }
                     inputs.append(.init(id: source.id, provider: source.provider, displayName: source.displayName,
