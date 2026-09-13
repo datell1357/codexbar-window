@@ -1,5 +1,7 @@
 # Windows 전용 제품 작업 현황
 
+- IMPL-196: 같은 검증 ID와 세션을 재가져오면 기존 계정을 선택하도록 연결하고 이름 보존을 안내한다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
 - IMPL-195: Cursor 비용 계정 ID 확인 실패를 구분하고 요약/JSON 내보내기 안내에 재가져오기 사유를 표시하도록 작성했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
 
 - IMPL-194: CLI cost/dashboard/serve에서 같은 선택 계정의 쿠키와 ID를 함께 해석해 Core 비용 조회에 전달하도록 작성했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.

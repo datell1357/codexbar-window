@@ -2384,3 +2384,11 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - 소스 실패는 새 scan에서 이미 제외되고 OpenCodeX 일반 읽기 오류도 내부에서 부분 실패로 처리되고 있어, 이전 결과 보존 정책을 추정으로 변경하지 않았다.
 - 남은 소요: 팀/세션 소유권 모델, 추가 브라우저 지원 및 나머지 전체 계획. 네트워크 오류를 계정 불일치라고 오분류하지 않는다.
 - CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·실제 API/UI 검증 미실행.
+
+## IMPL-196 — 동일 Cursor 세션 재가져오기
+
+- 저장된 검증 ID와 정규화된 cookie가 모두 같고 별도 scope/조직/프로젝트가 없는 기존 계정이면 새 계정을 추가하지 않고 기존 선택 API로 활성화한다.
+- 기존 계정 UUID/이름/자격 정보는 덮어쓰지 않는다. 결과 안내에서 기존 이름 유지와 사용량 Refresh 필요를 표시한다.
+- 같은 사용자 ID라도 cookie가 다르면 팀 컨텍스트를 단정할 수 없어 별도 후보로 유지한다. ID 없는 수동 계정 자동 병합도 수행하지 않는다.
+- 남은 소요: 로그인 갱신 시 동일 계정 교체 UX, 팀 컨텍스트 모델, 추가 브라우저 지원 및 전체 계획 나머지 항목.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·실제 저장/API/UI 검증 미실행.

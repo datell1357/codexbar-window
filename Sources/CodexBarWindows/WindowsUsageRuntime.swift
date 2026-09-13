@@ -676,6 +676,28 @@ public actor WindowsUsageRuntime {
               let candidate = pending.candidates[candidateID] else { return .staleSelection }
         do {
             guard try self.cursorImportRevision()?.0 == pending.revision else { return .staleSelection }
+            let providerID = UsageProvider.cursor.instanceID
+            let existingAccounts = try self.configStore.load()?.providerConfig(for: providerID)?.tokenAccounts?.accounts ?? []
+            // A matching user ID alone can conceal a different team session. Reuse only the
+            // same verified identity AND normalized credential, without overwriting account metadata.
+            if let existing = existingAccounts.first(where: {
+                $0.externalIdentifier == candidate.accountID &&
+                    CookieHeaderNormalizer.normalize($0.token) == candidate.candidate.cookieHeader &&
+                    $0.usageScope == nil && $0.organizationID == nil && $0.workspaceID == nil
+            }) {
+                let selection = self.selectTokenAccount(providerID: providerID, accountID: existing.id,
+                                                        expectedSelectedID: pending.selectedID)
+                switch selection {
+                case .saved, .unchanged:
+                    self.cancelCursorBrowserImport(requestID: requestID)
+                    return .alreadyAdded(existing.id)
+                case .staleSelection: return .staleSelection
+                case .refreshInProgress: return .refreshInProgress
+                case .unavailable: return .unavailable
+                case .shuttingDown: return .shuttingDown
+                case .failed: return .failed
+                }
+            }
             let result = self.addTokenAccount(.init(providerID: UsageProvider.cursor.instanceID, accountID: candidateID,
                 label: label, token: candidate.candidate.cookieHeader, usageScope: nil, organizationID: nil,
                 workspaceID: nil, expectedSelectedID: pending.selectedID),

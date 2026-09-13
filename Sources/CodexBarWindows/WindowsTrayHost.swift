@@ -548,7 +548,8 @@ public final class WindowsTrayHost: @unchecked Sendable {
             self.mailboxLock.unlock()
             let message: String
             switch saved {
-            case .saved, .alreadyAdded: message = "Cursor account saved and selected. Refresh usage to load the imported account."
+            case .saved: message = "Cursor account saved and selected. Refresh usage to load the imported account."
+            case .alreadyAdded: message = "This Cursor session was already saved. The existing account is selected and its name is unchanged. Refresh usage to load it."
             case .refreshInProgress: message = "Usage is refreshing. Wait for it to finish, then import again."
             case .staleSelection: message = "The import expired or account settings changed. Import again."
             case .invalidInput: message = "The account name or session could not be accepted. Import again."
