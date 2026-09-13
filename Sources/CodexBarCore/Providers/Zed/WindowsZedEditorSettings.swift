@@ -8,7 +8,38 @@ public enum WindowsZedEditorSettings {
 
     public enum Failure: Error { case unavailable, invalid, separateCredentialOrigin }
 
+    public struct Configuration: Sendable, Equatable {
+        public let serverURL: String
+        public let credentialServiceURL: String
+
+        public init(serverURL: String, credentialServiceURL: String? = nil) throws {
+            self.serverURL = try ZedManualCredentialInput.normalizedServiceOrigin(serverURL)
+            self.credentialServiceURL = try ZedManualCredentialInput.normalizedServiceOrigin(credentialServiceURL ?? self.serverURL)
+            guard ZedClientSettings(credentialsURL: self.credentialServiceURL, serverURL: self.serverURL).cloudAPIURL != nil else {
+                throw ZedStatusProbeError.untrustedServerConfiguration
+            }
+        }
+
+        fileprivate func singleOrigin() throws -> String {
+            guard self.credentialServiceURL == self.serverURL else { throw Failure.separateCredentialOrigin }
+            return self.serverURL
+        }
+    }
+
+    // Compatibility callers must not silently discard a separate credential origin.
     public static func suggestedOrigin(environment: [String: String] = ProcessInfo.processInfo.environment) throws -> String {
+        try self.suggestedConfiguration(environment: environment).singleOrigin()
+    }
+
+    public static func suggestedOrigin(from url: URL) throws -> String {
+        try self.suggestedConfiguration(from: url).singleOrigin()
+    }
+
+    static func parseOrigin(_ data: Data) throws -> String {
+        try self.parseConfiguration(data).singleOrigin()
+    }
+
+    public static func suggestedConfiguration(environment: [String: String] = ProcessInfo.processInfo.environment) throws -> Configuration {
         try Task.checkCancellation()
         if let raw = CodexBarPlatformPaths.environmentValue(self.dataDirectoryEnvironmentKey, environment: environment) {
             let path = raw.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -18,36 +49,36 @@ public enum WindowsZedEditorSettings {
             let url = URL(fileURLWithPath: path, isDirectory: true)
                 .appendingPathComponent("config", isDirectory: true).appendingPathComponent("settings.json")
             // An explicit but missing profile must not silently select the default editor account.
-            return try self.suggestedOrigin(from: url, allowMissingDefaults: false)
+            return try self.suggestedConfiguration(from: url, allowMissingDefaults: false)
         }
         guard let root = CodexBarPlatformPaths.environmentValue("APPDATA", environment: environment),
               !root.isEmpty, NSString(string: root).isAbsolutePath else { throw Failure.unavailable }
         let url = URL(fileURLWithPath: root, isDirectory: true)
             .appendingPathComponent("Zed/settings.json")
-        return try self.suggestedOrigin(from: url)
+        return try self.suggestedConfiguration(from: url)
     }
 
-    public static func suggestedOrigin(from url: URL) throws -> String {
-        try self.suggestedOrigin(from: url, allowMissingDefaults: true)
+    public static func suggestedConfiguration(from url: URL) throws -> Configuration {
+        try self.suggestedConfiguration(from: url, allowMissingDefaults: true)
     }
 
-    private static func suggestedOrigin(from url: URL, allowMissingDefaults: Bool) throws -> String {
+    private static func suggestedConfiguration(from url: URL, allowMissingDefaults: Bool) throws -> Configuration {
         try Task.checkCancellation()
         let handle: FileHandle
         do { handle = try FileHandle(forReadingFrom: url) }
         catch let error as NSError where error.domain == NSCocoaErrorDomain && error.code == NSFileReadNoSuchFileError {
             guard allowMissingDefaults else { throw Failure.unavailable }
-            return ZedStatusProbe.defaultKeychainServiceURL
+            return try Configuration(serverURL: ZedStatusProbe.defaultKeychainServiceURL)
         } catch { throw Failure.unavailable }
         defer { try? handle.close() }
         let data: Data
         do { data = try handle.read(upToCount: 1_048_577) ?? Data() }
         catch { throw Failure.unavailable }
         try Task.checkCancellation()
-        return try self.parseOrigin(data)
+        return try self.parseConfiguration(data)
     }
 
-    static func parseOrigin(_ data: Data) throws -> String {
+    static func parseConfiguration(_ data: Data) throws -> Configuration {
         guard data.count <= 1_048_576, String(data: data, encoding: .utf8) != nil else { throw Failure.invalid }
         let json = try self.removingCommentsAndTrailingCommas(data)
         guard let object = try? JSONSerialization.jsonObject(with: json),
@@ -62,11 +93,7 @@ public enum WindowsZedEditorSettings {
             return result
         }
         let server = try origin("server_url") ?? ZedStatusProbe.defaultKeychainServiceURL
-        if let credentials = try origin("credentials_url"), credentials != server {
-            // Current import bundles bind one origin to both the vault and the API.
-            throw Failure.separateCredentialOrigin
-        }
-        return server
+        return try Configuration(serverURL: server, credentialServiceURL: origin("credentials_url"))
     }
 
     private static func removingCommentsAndTrailingCommas(_ data: Data) throws -> Data {

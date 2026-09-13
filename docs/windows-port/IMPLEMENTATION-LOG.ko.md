@@ -2793,3 +2793,11 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - 기존 3-field 수동 bundle 계약을 변경하지 않는다. 가져오기 후 조회는 편집기 vault 재조회 없이 보호 저장한 token과 API server를 사용한다.
 - 남은 소요: settings loader의 두 주소 모델/명시적 UI 확인 연결, 편집기 디렉터리 자동 발견, 실제 Windows 검증 및 전체 계획 나머지.
 - CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·Credential Manager·API 검증 미실행.
+
+## IMPL-245 — Zed 설정의 두 origin 보존
+
+- WindowsZedEditorSettings.Configuration은 정규화한 serverURL/credentialServiceURL을 보존하고 공통 ZedClientSettings 신뢰 규칙을 적용한다.
+- 환경 경로/명시 URL 읽기와 JSON 파싱을 Configuration 반환 경로로 확장했다. 누락된 credentials_url은 선택 server로, 없는 기본 설정 파일은 production 설정으로 해석한다.
+- 기존 suggestedOrigin/parseOrigin은 compatibility wrapper로 유지한다. 분리된 주소를 단일 문자열로 축소하지 않고 기존 오류를 반환한다.
+- 남은 소요: Main/mailbox/서버 확인 창을 Configuration으로 전환해 두 주소 확인 후 전달, 실제 Windows 검증 및 전체 계획 나머지.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 파서·빌드·테스트·lint·설정 조회·인증 검증 미실행.

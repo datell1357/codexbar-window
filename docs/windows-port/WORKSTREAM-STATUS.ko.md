@@ -1,5 +1,7 @@
 # Windows 전용 제품 작업 현황
 
+- IMPL-245: Zed settings loader에 server/credential origin을 보존하는 Configuration 모델을 추가했다. 단일 origin 호출은 분리된 주소를 버리지 않고 오류 처리한다. UI 전환은 남아 있다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
 - IMPL-244: Zed 가져오기 backend/runtime에서 credential origin과 API server를 구분했다. 기존 신뢰 규칙을 vault 조회 전에 적용한다. 설정/UI 연결은 남아 있다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
 
 - IMPL-243: CODEXBAR_ZED_DATA_DIR의 config/settings.json을 서버 추천 입력에 연결하고 가져오기 안내를 작성했다. 잘못된 명시 경로는 기본 프로필로 대체하지 않는다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
