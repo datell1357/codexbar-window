@@ -1,5 +1,7 @@
 # Windows 전용 제품 작업 현황
 
+IMPL-072: Receipt-bound registration recovery and fill-only registry publication written; reference migration and Windows validation remain pending.
+
 IMPL-071: Current-user development Apps registration and interactive uninstall invocation written; reference migration, recovery and Windows validation remain pending.
 
 IMPL-070: Shipped lifecycle tools and shared first-party signing/install contract written; Apps registration and Windows validation remain pending.

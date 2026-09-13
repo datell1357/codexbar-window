@@ -1154,3 +1154,13 @@
 - 등록용 도구 2개도 공통 배포/서명 목록에 포함했다. 필수 lifecycle tools는 10개, 앱·CLI·PATH resource 포함 서명 대상은 13개다. 실행 명령은 시스템 PowerShell과 AllSigned 정책을 사용한다.
 
 남은 범위: 선택 중인 version의 shortcut/PATH/startup 자동 전환, registry 생성·비교·삭제 race 및 제거 후 복원 동시 실행, 부분 등록 재개/등록 상태 journal 조정, management/staging/복구 사본 정리, 완전한 uninstall UI/localization·bootstrap trust·전체 Windows 검증. 현재는 개발 표시 등록이며 영구 삭제/공간 회수나 일반 출시 완료가 아니다.
+
+## IMPL-072 — 중단된 앱 등록 재개
+
+상태 CODE_WRITTEN_UNVERIFIED. PowerShell/레지스트리/파일 복사·서명/앱 등록/빌드/테스트/컴파일/검증 실행 미실시. guidelines/COMMITS.md 부재로 제공된 핵심 커밋 규칙을 따른다.
+
+- Register-CodexBarInstallation에 ResumeRegistrationID를 추가하고 schema 2 기록을 tool 복사 전에 저장하도록 변경했다. receipt 원본 해시·VersionID·signer·등록 ID가 같은 PREPARING_TOOLS/PREPARED/REGISTERED 상태만 재개한다.
+- 기존 관리 파일을 덮어쓰지 않고 hash/서명/timestamp를 다시 확인한다. 누락된 tool만 복사하며 기존 명령 문자열이 달라지면 등록을 갱신하지 않는다.
+- registry의 동일 소유권 ID와 허용 값 이름/자료형/값을 사전 대조한 뒤 누락된 값만 채운다. 이미 완성된 동일 등록은 유지하고 journal을 완료 상태로 마무리할 수 있다. 추가 데이터/다른 값/owner 없는 항목은 보존한다.
+
+남은 범위: CreateSubKey 및 값 읽기/쓰기 사이 외부 race, owner 기록 전 중단된 빈 key, schema 1 및 기록 없는 관리 폴더, 일부만 복사된 tool의 자동 수리, receipt 동시 변경, reference migration/backup 정리/전체 Windows 검증. 실제 복구나 registry 동작을 검증하지 않았다.

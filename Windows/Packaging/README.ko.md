@@ -149,3 +149,11 @@ Register-CodexBarInstallation.ps1은 VersionID, ExpectedSignerThumbprint, AllowU
 이 두 스크립트 추가로 필수 tools는 10개, 전체 first-party 서명 대상은 13개다. 이전 8개/11개 설명은 과거 단계다. 실제 앱 목록 노출, WinForms 창, 스크립트 실행 정책/인증서 신뢰, 레지스트리 쓰기/삭제, 제거 실행은 하지 않았다. registry 작업은 전체 transaction이 아니며 외부 쓰기와 생성/비교/삭제 사이 race가 남아 있다. 부분 등록 복구와 자동 참조 migration, 관리 사본 공간 정리도 남아 있다.
 
 등록 필드의 참고 자료: [Microsoft의 Uninstall registry 필드 문서](https://learn.microsoft.com/en-us/windows/win32/msi/uninstall-registry-key), [NoModify 설명](https://learn.microsoft.com/en-us/windows/win32/msi/arpnomodify). 이 자료의 MSI 설명만으로 사용자별 비-MSI 스크립트의 실제 Windows 동작이 검증된 것은 아니다.
+
+## 앱 등록 재개
+
+Register-CodexBarInstallation.ps1의 ResumeRegistrationID에 management 폴더명에 있는 32자리 ID를 지정하면 같은 VersionID·ExpectedSignerThumbprint·설치 receipt 해시에 결합된 schema 2 기록을 재사용한다. AllowUnvalidatedBuild는 여전히 필요하다. 새 기록은 관리 도구를 복사하기 전에 PREPARING_TOOLS로 저장하므로 복사 중단 후 일치한 파일을 재사용하고 없는 파일만 추가할 수 있다. 일부만 복사된 파일은 덮어쓰지 않으며 hash 불일치로 중단한다.
+
+등록 key가 있으면 같은 CodexBarRegistrationID를 요구한다. 기존 허용 값은 자료형과 내용까지 일치해야 하며 다른 값이나 하위 key/추가 데이터가 있으면 중단한다. 일치한 값은 다시 쓰지 않고 누락된 값만 채운다. 마지막 journal 저장이 끊겼어도 동일한 완성 등록을 확인한 뒤 완료 상태를 기록할 수 있다. 기존 command와 새로 계산한 command가 다르면 자동 경로 변경을 하지 않는다.
+
+schema 1 기록, 소유권 값이 없는 빈 registry key, 기록 없는 management 폴더를 자동 인수하지 않는다. registry 값 대조와 쓰기는 atomic compare-and-set이 아니며 외부 변경 race가 남아 있다. 관리 폴더/receipt의 동시 변경, legacy 복구·손상 tool 수리·공간 정리·Windows 실행 검증도 남아 있다. 이전 절의 기존 등록 무조건 거절 설명은 이 명시적 재개 옵션에 한해 보완됐다.
