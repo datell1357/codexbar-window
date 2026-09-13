@@ -2718,3 +2718,11 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - 원본 URL은 main 가변 참조이며 실제 설치 버전 호환성은 검증하지 않았다. reader는 기본 fetch/UI에 아직 연결하지 않았다.
 - 남은 소요: 편집기 설정/계정 선택과 가져오기 UI 연결, 실제 Windows 검증 및 전체 계획 나머지.
 - CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·Credential Manager 검증 미실행.
+
+## IMPL-236 — Zed 편집기 세션 가져오기 백엔드
+
+- 명시적으로 호출하는 WindowsZedEditorSessionImporter를 추가했다. origin을 정규화하고 detached task에서 exact credential을 한 번 읽으며 부모 취소를 전달한다.
+- 읽은 credential을 고정 reader에 주입하여 편집기가 계정을 바꾸더라도 API 확인과 반환 bundle이 같은 계정을 사용한다. 기존 probe의 응답 user ID 검사와 격리 HTTP 전송을 사용한다.
+- 확인 결과는 user ID, snapshot, service origin과 보호 저장용 secret bundle을 반환한다. 자동 저장이나 계정 선택 변경은 하지 않는다.
+- 남은 소요: runtime의 가져오기 ticket/만료/동시성 처리, 보호 저장 및 명시적 사용자 선택 UI, 편집기 custom server 설정 탐색과 전체 계획 나머지.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·Credential Manager·API 검증 미실행.
