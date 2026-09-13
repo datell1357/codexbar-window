@@ -1,5 +1,7 @@
 # Windows 전용 제품 작업 현황
 
+- IMPL-262: 기존 LevelDB LOCK 파일의 Windows 잠금 획득/해제 코드를 작성했다. 실제 snapshot 읽기 연결은 남아 있다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
 - IMPL-261: LevelDB CURRENT 및 번호별 파일 inventory 해석을 작성했다. 실제 파일 확보는 남아 있다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
 
 - IMPL-260: SSTable index/data 순회, 내부 키 정렬, index 및 manifest 경계 검사를 연결했다. 파일 snapshot 통합은 남아 있다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.

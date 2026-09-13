@@ -2940,3 +2940,12 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - 파일 자체를 읽거나 최신 DB 상태로 사용하지 않는다. 일관된 디렉터리 확보 단계의 입력 해석 모듈이다.
 - 남은 소요: LOCK/CURRENT/manifest 및 선택된 table/log 파일 확보와 통합, Chromium/Windsurf 연결 및 전체 계획 나머지.
 - CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 파서 실행·빌드·테스트·lint·실제 브라우저 파일 조회 미실행.
+
+## IMPL-262 — Windows LevelDB 읽기 잠금
+
+- 원본 https://github.com/google/leveldb/blob/main/util/env_windows.cc의 LOCK 및 LockFile 범위를 읽고 동기 read closure 동안 기존 LOCK을 유지하는 helper를 작성했다.
+- OPEN_EXISTING/GENERIC_READ/공유 없음으로 열어 생성·쓰기 없이 사용 중인 저장소를 거부한다. 원본과 같은 전체 LockFile 범위를 사용한다.
+- 열린 LOCK handle이 일반 disk file인지 확인하고 최종 reparse point/디렉터리를 거부한다. 사용 중 오류는 브라우저를 정상 종료한 뒤 재시도하라는 고정 안내로 반환한다.
+- operation 성공/오류/취소 시 unlock 및 CloseHandle을 정리하고 정상 경로의 unlock 실패를 숨기지 않는다. 브라우저 종료나 강제 잠금 해제는 수행하지 않는다.
+- 남은 소요: 잠금 내부에서 CURRENT/manifest/table/log 확보 및 통합, Chromium/Windsurf 연결과 전체 계획 나머지.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·실제 LOCK/브라우저 파일 조회 미실행.
