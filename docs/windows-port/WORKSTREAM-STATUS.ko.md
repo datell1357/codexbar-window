@@ -1,5 +1,7 @@
 # Windows 전용 제품 작업 현황
 
+- IMPL-274: Brave Stable/Beta/Nightly의 Windows 기본 프로필 경로와 Windsurf 선택 항목을 추가했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
 - IMPL-273: Windsurf 가져오기에 이번 요청만 사용하는 선택적 프로필 경로 입력 창을 연결했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
 
 - IMPL-272: Windsurf 개별 브라우저 프로필 경로 환경 변수와 실패 시 기본 탐색 금지를 추가했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.

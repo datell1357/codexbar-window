@@ -57,6 +57,11 @@ enum WindowsBrowserProfileLocator {
         case .chromeBeta: "Google/Chrome Beta/User Data"
         case .chromeCanary: "Google/Chrome SxS/User Data"
         case .chromium: "Chromium/User Data"
+        // Brave official install modes use independent product suffixes for each channel.
+        // https://github.com/brave/brave-core/blob/master/chromium_src/chrome/install_static/chromium_install_modes.h
+        case .brave: "BraveSoftware/Brave-Browser/User Data"
+        case .braveBeta: "BraveSoftware/Brave-Browser-Beta/User Data"
+        case .braveNightly: "BraveSoftware/Brave-Browser-Nightly/User Data"
         case .edge: "Microsoft/Edge/User Data"
         case .edgeBeta: "Microsoft/Edge Beta/User Data"
         case .edgeCanary: "Microsoft/Edge SxS/User Data"

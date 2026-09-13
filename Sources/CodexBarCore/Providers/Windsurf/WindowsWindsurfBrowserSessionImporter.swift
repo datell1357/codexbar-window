@@ -27,7 +27,10 @@ public struct WindowsWindsurfBrowserSessionImporter: Sendable {
 
     public static let profileDirectoryEnvironmentKey = "CODEXBAR_WINDSURF_BROWSER_PROFILE_DIRECTORY"
 
-    public static let supportedBrowsers: [Browser] = [.chrome, .edge, .chromium, .chromeBeta, .chromeCanary, .edgeBeta, .edgeCanary]
+    public static let supportedBrowsers: [Browser] = [
+        .chrome, .edge, .brave, .chromium,
+        .chromeBeta, .chromeCanary, .edgeBeta, .edgeCanary, .braveBeta, .braveNightly,
+    ]
 
     public init() {}
 

@@ -3046,3 +3046,12 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - 입력 취소 또는 개인정보 숨김 상태 변경 시 가져오기를 시작하지 않는다. 경로를 설정 파일에 저장하거나 자동으로 환경 변수를 변경하지 않는다.
 - 남은 소요: 추가 브라우저/압축 및 전체 계획 나머지. Windows 동작 검증은 보류 상태다.
 - CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·UI·파일/브라우저 실행 미실행.
+
+## IMPL-274 — Brave Windows 프로필 지원
+
+- 공유 WindowsBrowserProfileLocator에 Brave Stable/Beta/Nightly의 별도 기본 User Data 경로를 추가하고 Windsurf 브라우저 선택 목록에 연결했다.
+- 원본 근거: https://github.com/brave/brave-core/blob/master/chromium_src/chrome/install_static/chromium_install_modes.h 의 BraveSoftware/Brave-Browser와 -Beta/-Nightly suffix. Stable User Data 경로는 https://support.brave.com/hc/en-us/articles/29808985123085-Sensitive-data-storage 에도 명시되어 있다.
+- 선택한 채널만 탐색하며 기존 access gate/프로필 분리/LOCK/크기 제한/사용자 지정 경로를 재사용한다. Brave Origin/개발 빌드를 Stable 경로로 추정하지 않는다.
+- 공유 경로 탐색 확장은 쿠키 복호화 지원을 증명하지 않는다. 이번 연결은 Windsurf localStorage 가져오기를 위한 것이다.
+- 남은 소요: 추가 브라우저/압축 및 전체 계획 나머지.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·실제 브라우저/UI/네트워크 검증 미실행.
