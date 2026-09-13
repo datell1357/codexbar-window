@@ -74,6 +74,9 @@ public enum HookProviderStatus: String, Sendable {
 public struct HookProviderObservation: Sendable {
     public let provider: String
     public let lanes: [HookQuotaLaneObservation]
+    /// Previously known lanes omitted by a non-authoritative partial response.
+    /// These retain their baseline without contributing a sample or firing an event.
+    public let unavailableLaneKeys: Set<HookQuotaLaneKey>
     public let status: HookProviderStatus
     /// Coarse failure category when the refresh itself failed. Never a raw error
     /// string: provider errors can embed response-body previews.
@@ -85,8 +88,10 @@ public struct HookProviderObservation: Sendable {
         lanes: [HookQuotaLaneObservation] = [],
         status: HookProviderStatus = .unknown,
         refreshFailureStatus: String? = nil,
-        accountDisplayName: String? = nil)
+        accountDisplayName: String? = nil,
+        unavailableLaneKeys: Set<HookQuotaLaneKey> = [])
     {
+        self.unavailableLaneKeys = unavailableLaneKeys
         self.provider = provider
         self.lanes = lanes
         self.status = status
@@ -194,7 +199,8 @@ public final class HookTransitionDetector {
                 config: config,
                 now: now))
         }
-        self.pruneLanes(provider: observation.provider, keeping: observedKeys)
+        let preservedKeys = observation.unavailableLaneKeys.filter { $0.provider == observation.provider }
+        self.pruneLanes(provider: observation.provider, keeping: observedKeys.union(preservedKeys))
 
         return dispatches
     }

@@ -50,11 +50,15 @@ public actor WindowsHookDispatchQueue {
         var laneCount = 0
         for observation in observations {
             guard providers.insert(observation.provider).inserted else { throw ObservationFailure.duplicateProvider }
-            laneCount += observation.lanes.count
+            laneCount += observation.lanes.count + observation.unavailableLaneKeys.count
             guard laneCount <= 4096 else { throw ObservationFailure.oversized }
             var keys = Set<HookQuotaLaneKey>()
+            guard observation.unavailableLaneKeys.allSatisfy({ $0.provider == observation.provider }) else {
+                throw ObservationFailure.inconsistentLane
+            }
             for lane in observation.lanes {
-                guard lane.key.provider == observation.provider, keys.insert(lane.key).inserted else {
+                guard lane.key.provider == observation.provider, !observation.unavailableLaneKeys.contains(lane.key),
+                      keys.insert(lane.key).inserted else {
                     throw ObservationFailure.inconsistentLane
                 }
             }

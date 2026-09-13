@@ -3115,3 +3115,11 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - 실패 변환은 고정 유형만 받으며 원문 오류/응답 본문을 hook payload로 보내지 않는다.
 - 남은 소요: runtime batch 수집/부분 응답 보존/ownership digest/설정·종료·초과 표시 연결 및 전체 계획 나머지.
 - CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·외부 명령 실행 미실행.
+
+## IMPL-282 — Hook 부분 응답 기준값 보존
+
+- HookProviderObservation에 unavailableLaneKeys 기본 빈 집합을 추가했다. 명시된 누락 구간은 표본/이벤트 없이 기준값만 유지한다. 기존 호출자는 기존 누락 구간 삭제 동작을 유지한다.
+- Windows 대기열은 다른 공급자 구간 또는 현재 표본과 보존 목록이 겹치는 입력을 거부하고 보존 구간도 전체 lane 제한에 포함한다.
+- Windows mapper에 비권위적 추가 구간 목록의 누락 key를 계산하는 도우미를 추가했다. 같은 계정만 대상으로 하며 완전한 목록 또는 같은 window ID의 새 source가 있으면 이전 key를 유지하지 않는다.
+- 남은 소요: runtime batch 수집과 이전 key 전달/설정·종료 연결 및 전체 계획 나머지.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·훅 실행 미실행.

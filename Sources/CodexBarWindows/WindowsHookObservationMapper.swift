@@ -36,6 +36,23 @@ enum WindowsHookObservationMapper {
         return AccountLanes(lanes: lanes, extraWindowsAuthoritative: selected.reconciliation.authoritative)
     }
 
+    /// Keep only missing extra lanes from this account when the extra list is incomplete.
+    /// Explicitly reported nil/synthetic ordinary windows still reset through the detector.
+    static func unavailableExtraLanes(
+        previous: Set<HookQuotaLaneKey>, current: AccountLanes,
+        providerInstanceID: String, accountDiscriminator: String) -> Set<HookQuotaLaneKey>
+    {
+        guard !current.extraWindowsAuthoritative else { return [] }
+        let observed = Set(current.lanes.map(\.key))
+        let reportedWindowIDs = Set(current.lanes.compactMap { $0.key.windowID })
+        let ownerPrefix = accountDiscriminator + "\u{1F}"
+        return Set(previous.filter { key in
+            key.provider == providerInstanceID && key.windowID != nil &&
+                key.accountDiscriminator?.hasPrefix(ownerPrefix) == true && !observed.contains(key) &&
+                !reportedWindowIDs.contains(key.windowID!)
+        })
+    }
+
     enum RefreshFailure: String, Sendable {
         case authentication, unavailable, timeout, invalidResponse, unknown
     }
