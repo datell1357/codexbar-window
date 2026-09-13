@@ -38,8 +38,7 @@ struct WindowsAccountRemovalJournal {
         }
         let data = try JSONEncoder().encode(Envelope(version: 1, entries: entries))
         guard data.count <= Self.maximumBytes else { throw Failure.invalidRecord }
-        try FileManager.default.createDirectory(at: self.fileURL.deletingLastPathComponent(), withIntermediateDirectories: true)
-        try data.write(to: self.fileURL, options: [.atomic])
+        try WindowsCredentialFileWriter.writePrivate(data, to: self.fileURL)
     }
 }
 #endif

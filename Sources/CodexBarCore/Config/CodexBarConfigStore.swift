@@ -124,8 +124,13 @@ public struct CodexBarConfigStore: @unchecked Sendable {
         if !self.fileManager.fileExists(atPath: directory.path) {
             try self.fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
         }
+        #if os(Windows)
+        // Encrypt first, then stage with a protected current-user DACL before writing bytes.
+        try WindowsCredentialFileWriter.writePrivate(storedData, to: self.fileURL)
+        #else
         try storedData.write(to: self.fileURL, options: [.atomic])
         try self.applySecurePermissionsIfNeeded()
+        #endif
     }
 
     public func deleteIfPresent() throws {

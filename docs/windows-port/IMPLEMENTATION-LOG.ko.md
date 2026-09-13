@@ -1692,3 +1692,13 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - 최초 refresh에서 journal을 복원하며 읽기 실패는 빈 목록으로 처리하지 않고 Antigravity 수집을 보류한다. 정상적인 파일 부재만 빈 기록으로 처리한다. 빈 journal은 파일 삭제 없이 저장한다.
 
 남은 범위: 프로세스 간 동시 writer lock, 복구 journal ACL 및 내구성/크래시 검증, 손상 복구 UI, credential 캐시 자체 보호 저장과 전체 Windows 검증. 실제 journal 생성·DPAPI·삭제는 실행하지 않았다.
+
+## IMPL-125 — recovery/config private ACL 저장
+
+상태 CODE_WRITTEN_UNVERIFIED. 컴파일/빌드/테스트/ACL·파일 접근/검증 미실시. guidelines/COMMITS.md 부재로 핵심 커밋 규칙을 적용한다.
+
+- 기존 WindowsCredentialFileWriter의 writePrivate만 public으로 노출해 Windows host의 recovery journal이 사용하도록 연결했다. 임시 파일 생성 시 current-user protected DACL, write/flush, publish 전 DACL 재적용, 동일 디렉터리 교체 경로를 재사용한다.
+- Windows 암호화 config 저장도 같은 writer로 연결했다. 암호화를 먼저 완료하며 파일 권한 실패를 성공으로 처리하지 않는다. 다른 플랫폼의 저장 경로는 그대로 둔다.
+- 기존 파일은 다음 성공적인 저장 때 교체되며 이번 작업에서 사용자 파일이나 ACL을 실제 변경하지 않았다.
+
+남은 범위: 이미 존재하는 파일의 read-time ACL 보정 정책, 디렉터리/프로세스 간 동시 쓰기, ACL·교체 실패·강제 종료 Windows 검증 및 전체 구현.

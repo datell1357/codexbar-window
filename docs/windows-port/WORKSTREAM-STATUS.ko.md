@@ -1,5 +1,7 @@
 # Windows 전용 제품 작업 현황
 
+- IMPL-125: recovery journal·암호화 config를 기존 사용자 전용 DACL writer로 저장하도록 연결했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
 - IMPL-124: 삭제 전 DPAPI recovery journal 저장과 재시작 복구·읽기 실패 수집 보류를 작성했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
 
 - IMPL-123: 실행 중 cache cleanup 재시도와 실패 시 Antigravity fetch 중단을 작성했다. 재시작 지속성은 남아 있다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.

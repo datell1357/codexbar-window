@@ -8,8 +8,8 @@ import WinSDK
 /// token's user SID before the first WriteFile call. Publication occurs only
 /// after the handle is closed, using MoveFileExW replacement in the same
 /// directory.
-enum WindowsCredentialFileWriter {
-    static func writePrivate(
+public enum WindowsCredentialFileWriter {
+    public static func writePrivate(
         _ data: Data,
         to url: URL,
         beforePublish: ((URL) throws -> Void)? = nil) throws
