@@ -440,3 +440,22 @@
 2. SQLite title fallback, 증분 cache, source 소유권과 전체 Windows 기능·배포 검증은 남아 있다.
 
 다음 구현: 명시적으로 지정한 SQLite title source를 Codex의 매칭된 UUID에 한정하여 연결하는 경로를 구현한다. index 제목 우선과 source 경계를 보존한다.
+
+## IMPL-022 — 명시적 Codex SQLite title fallback
+
+상태: CODE_WRITTEN_UNVERIFIED. 빌드·컴파일·테스트·lint·앱·실제 DB/계정/source 조회·검증 스크립트를 실행하지 않았다. 계약: WIN-040/042.
+
+작성한 코드:
+
+- CLI --codex-title-database 및 앱 환경변수 CODEXBAR_WINDOWS_CODEX_TITLE_DATABASE로 선언한 absolute DB 경로만 사용한다. 자동 HOME/profile/DB version 탐색을 추가하지 않는다. roots snapshot에 포함하므로 GUI runtime도 환경 source 변경 비교 경로를 사용한다.
+- declared root/cwd/explicit UUID로 이미 매칭된 Codex 세션만 조회한다. index가 미설정이거나 완전히 읽은 범위에서 해당 UUID 기록이 없을 때만 DB fallback한다. index 이름·명시적 빈 rename·범위 밖 미해결·읽기 실패는 DB로 덮어쓰지 않는다.
+- 기존 SQLite 모듈이 있을 때 READONLY open, busy timeout0, SQL length limit64KiB, progress callback/deadline/cancel을 사용한다. UUID를 바인딩하고 title만 읽으며 duplicate UUID row는 거부한다. 경로 기반 전후 file metadata 비교를 유지하고 DB 제목 출처를 표시한다. 모듈이 없으면 안내와 기존 label fallback이다.
+
+남은 범위:
+
+1. Windows SQLite 모듈 배포/링크 및 WinSDK·SQLite signature/실행은 미검증이다. GUI 파일 선택·source 표시/해제 UI, agent_path DB 보강은 미구현이다.
+2. SQLite는 별도 경로 open이므로 사전 Win32 handle과 동일 open을 보장하는 custom VFS가 아니다. ancestor junction/path race, WAL/shared-memory 동작과 DB snapshot·source 소유권은 추가 구현/검증 범위다. read-only는 SQL connection의 쓰기 금지이며 SQLite sidecar OS 동작 전체를 증명하지 않는다.
+3. 동기 SQLite open/prepare와 OS I/O를 deadline이 강제로 중단하는 것은 아니다. progress callback과 행 사이 예산을 갖지만 실제 취소 지연은 미검증이다.
+4. 증분 cache, 신규 추론 제목, 전체 Windows 기능/배포 검증은 남아 있다.
+
+다음 구현: SQLite title source의 GUI 선택·해제/표시 및 읽기 실패 복구 안내를 연결한다. DB ownership와 Windows 검증은 별도 미완료로 유지한다.

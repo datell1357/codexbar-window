@@ -1,11 +1,17 @@
 #if os(Windows)
 import Foundation
 import WinSDK
+#if canImport(SQLite3)
+import SQLite3
+#elseif canImport(CSQLite3)
+import CSQLite3
+#endif
 
 /// Explicitly selected source roots. These are not inferred from the target process's environment.
 public struct WindowsSessionMetadataRoots: Equatable, Sendable {
     public let codexSessions: String?
     public let claudeProjects: String?
+    public let codexTitleDatabase: String?
     public let codexTitleIndex: String?
     public let readClaudeTitles: Bool
     public let allowNewSessions: Bool
@@ -13,7 +19,7 @@ public struct WindowsSessionMetadataRoots: Equatable, Sendable {
     public var isEmpty: Bool { self.codexSessions == nil && self.claudeProjects == nil }
 
     public init(codexSessions: String?, claudeProjects: String?, allowNewSessions: Bool = false,
-                codexTitleIndex: String? = nil, readClaudeTitles: Bool = false) throws {
+                codexTitleIndex: String? = nil, readClaudeTitles: Bool = false, codexTitleDatabase: String? = nil) throws {
         func normalize(_ raw: String?) throws -> String? {
             guard let raw, !raw.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
             guard let path = WindowsSessionLaunchHints.absolutePath(raw) else { throw ConfigurationError.invalidPath }
@@ -21,16 +27,17 @@ public struct WindowsSessionMetadataRoots: Equatable, Sendable {
         }
         self.codexSessions = try normalize(codexSessions)
         self.claudeProjects = try normalize(claudeProjects)
+        self.codexTitleDatabase = try normalize(codexTitleDatabase)
         self.codexTitleIndex = try normalize(codexTitleIndex)
         self.readClaudeTitles = readClaudeTitles
         self.allowNewSessions = allowNewSessions
     }
-    private init(codex: String?, claude: String?) { self.codexSessions = codex; self.claudeProjects = claude; self.allowNewSessions = false; self.codexTitleIndex = nil; self.readClaudeTitles = false }
+    private init(codex: String?, claude: String?) { self.codexSessions = codex; self.claudeProjects = claude; self.allowNewSessions = false; self.codexTitleIndex = nil; self.readClaudeTitles = false; self.codexTitleDatabase = nil }
 
     public static func load(
         codexOverride: String? = nil, claudeOverride: String? = nil,
         allowNewSessions: Bool = false, codexTitleIndexOverride: String? = nil,
-        readClaudeTitles: Bool = false,
+        readClaudeTitles: Bool = false, codexTitleDatabaseOverride: String? = nil,
         environment: [String: String] = ProcessInfo.processInfo.environment) throws -> Self
     {
         try Self(
@@ -41,7 +48,9 @@ public struct WindowsSessionMetadataRoots: Equatable, Sendable {
             allowNewSessions: allowNewSessions,
             codexTitleIndex: codexTitleIndexOverride ?? CodexBarPlatformPaths.environmentValue(
                 "CODEXBAR_WINDOWS_CODEX_TITLE_INDEX", environment: environment),
-            readClaudeTitles: readClaudeTitles)
+            readClaudeTitles: readClaudeTitles,
+            codexTitleDatabase: codexTitleDatabaseOverride ?? CodexBarPlatformPaths.environmentValue(
+                "CODEXBAR_WINDOWS_CODEX_TITLE_DATABASE", environment: environment))
     }
     enum ConfigurationError: LocalizedError {
         case invalidPath
@@ -123,7 +132,8 @@ enum WindowsSessionMetadataCorrelator {
                     do {
                         let names = try self.stableTitleNames(path, ids: [id.lowercased()], deadline: budget.deadline, claude: true)
                         guard let latest = self.fileInfo(path), latest == info else { throw TitleReadFailure.changed }
-                        if !names.unresolvedIDs.isEmpty { claudeTitleFailures.insert(.outsideWindow) }
+                        databaseIDs = ids.subtracting(names.seenIDs).subtracting(names.unresolvedIDs)
+                if !names.unresolvedIDs.isEmpty { claudeTitleFailures.insert(.outsideWindow) }
                         output[index].sessionName = names[id.lowercased()]
                         output[index].metadataTitleSource = output[index].sessionName == nil ? nil : "claude_custom_title"
                     } catch {
@@ -137,6 +147,7 @@ enum WindowsSessionMetadataCorrelator {
         for failure in TitleReadFailure.allCases where claudeTitleFailures.contains(failure) {
             notices.append("Claude titles: \(failure.message) Project labels are retained.")
         }
+        var databaseIDs = roots.codexTitleIndex == nil ? Set(matchedHeaders.values.map { $0.sessionID.lowercased() }) : []
         if let titlePath = roots.codexTitleIndex, !matchedHeaders.isEmpty {
             let ids = Set(matchedHeaders.values.map { $0.sessionID.lowercased() })
             do {
@@ -154,6 +165,19 @@ enum WindowsSessionMetadataCorrelator {
             } catch {
                 let failure = (error as? TitleReadFailure) ?? .unavailable
                 notices.append("Codex titles: \(failure.message) Header/project labels are retained.")
+            }
+        }
+        if let path = roots.codexTitleDatabase, !databaseIDs.isEmpty {
+            do {
+                let titles = try self.databaseTitles(path, ids: databaseIDs, deadline: budget.deadline)
+                for (index, header) in matchedHeaders {
+                    guard let title = titles[header.sessionID.lowercased()] else { continue }
+                    output[index].sessionName = header.descriptiveName(
+                        threadMetadata: CodexThreadMetadata(title: title, agentPath: nil)).map(WindowsSessionLaunchHints.label)
+                    output[index].metadataTitleSource = "codex_title_database"
+                }
+            } catch {
+                notices.append("Codex title database is unavailable, unsupported, or over budget; existing labels are retained.")
             }
         }
         if unresolved || budget.exhausted || budget.rootUnavailable {
@@ -439,6 +463,7 @@ enum WindowsSessionMetadataCorrelator {
 
     private struct TitleNames {
         let names: [String: String]
+        let seenIDs: Set<String>
         let unresolvedIDs: Set<String>
         subscript(_ id: String) -> String? { self.names[id] }
     }
@@ -510,7 +535,67 @@ enum WindowsSessionMetadataCorrelator {
         guard let after = self.fileInfo(handle: handle), let current = self.fileInfo(absolute)
         else { throw TitleReadFailure.unavailable }
         guard before == after, current == after else { throw TitleReadFailure.changed }
-        return TitleNames(names: names, unresolvedIDs: startOffset > 0 ? ids.subtracting(seenIDs) : [])
+        return TitleNames(names: names, seenIDs: seenIDs, unresolvedIDs: startOffset > 0 ? ids.subtracting(seenIDs) : [])
+    }
+
+    #if canImport(SQLite3) || canImport(CSQLite3)
+    private final class DatabaseDeadline {
+        let date: Date
+        init(_ date: Date) { self.date = date }
+    }
+    #endif
+
+    private static func databaseTitles(_ path: String, ids: Set<String>, deadline: Date) throws -> [String: String] {
+        try self.checkTitleDeadline(deadline)
+        guard let absolute = WindowsSessionLaunchHints.absolutePath(path),
+              let separator = absolute.lastIndex(of: "\\"),
+              self.directoryAllowed(String(absolute[..<separator])), let before = self.fileInfo(absolute)
+        else { throw TitleReadFailure.unavailable }
+        #if canImport(SQLite3) || canImport(CSQLite3)
+        var database: OpaquePointer?
+        let opened = sqlite3_open_v2(absolute, &database, SQLITE_OPEN_READONLY, nil)
+        guard opened == SQLITE_OK, let database else {
+            if let database { sqlite3_close(database) }
+            throw TitleReadFailure.unavailable
+        }
+        defer { sqlite3_close(database) }
+        sqlite3_busy_timeout(database, 0)
+        sqlite3_limit(database, SQLITE_LIMIT_LENGTH, 64 * 1024)
+        let clock = DatabaseDeadline(deadline)
+        let context = Unmanaged.passRetained(clock).toOpaque()
+        defer { sqlite3_progress_handler(database, 0, nil, nil); Unmanaged<DatabaseDeadline>.fromOpaque(context).release() }
+        sqlite3_progress_handler(database, 1000, { pointer in
+            guard let pointer else { return 1 }
+            let deadline = Unmanaged<DatabaseDeadline>.fromOpaque(pointer).takeUnretainedValue().date
+            return Task.isCancelled || Date() >= deadline ? 1 : 0
+        }, context)
+        var statement: OpaquePointer?
+        guard sqlite3_prepare_v2(database, "SELECT title FROM threads WHERE id = ?1 LIMIT 2", -1, &statement, nil) == SQLITE_OK,
+              let statement else { throw TitleReadFailure.format }
+        defer { sqlite3_finalize(statement) }
+        var titles: [String: String] = [:]
+        let transient = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
+        for id in ids.sorted() {
+            try self.checkTitleDeadline(deadline)
+            guard UUID(uuidString: id) != nil else { throw TitleReadFailure.format }
+            sqlite3_reset(statement)
+            sqlite3_clear_bindings(statement)
+            guard sqlite3_bind_text(statement, 1, id, -1, transient) == SQLITE_OK else { throw TitleReadFailure.format }
+            let status = sqlite3_step(statement)
+            if status == SQLITE_DONE { continue }
+            guard status == SQLITE_ROW else { throw TitleReadFailure.unavailable }
+            if sqlite3_column_type(statement, 0) == SQLITE_TEXT, let raw = sqlite3_column_text(statement, 0) {
+                let title = WindowsSessionLaunchHints.label(String(cString: raw))
+                if !title.isEmpty { titles[id] = title }
+            }
+            guard sqlite3_step(statement) == SQLITE_DONE else { throw TitleReadFailure.format }
+        }
+        try self.checkTitleDeadline(deadline)
+        guard let after = self.fileInfo(absolute), before == after else { throw TitleReadFailure.changed }
+        return titles
+        #else
+        throw TitleReadFailure.unavailable
+        #endif
     }
 
     private static func join(_ base: String, _ component: String) -> String {
