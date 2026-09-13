@@ -253,6 +253,9 @@ struct WindowsSpendDashboardModel: Equatable, Sendable {
         let totalTokens: Int?
         let totalCost: Double?
         let modelName: String?
+        var requestCount: Int? = nil
+        var tokenMix = CostUsageTokenMix()
+        var models: [ModelRow] = []
     }
 
     struct HourlyPoint: Identifiable, Equatable, Sendable {
@@ -1192,7 +1195,28 @@ struct WindowsSpendDashboardModel: Equatable, Sendable {
                     lastActivity: session.lastActivity,
                     totalTokens: session.totalTokens,
                     totalCost: session.costUSD.map { $0 * summary.costMultiplier },
-                    modelName: modelName)
+                    modelName: modelName,
+                    requestCount: Self.nonnegative(session.requestCount),
+                    tokenMix: CostUsageTokenMix(
+                        inputTokens: Self.nonnegative(session.inputTokens),
+                        outputTokens: Self.nonnegative(session.outputTokens),
+                        cacheReadTokens: Self.nonnegative(session.cachedInputTokens),
+                        reasoningTokens: Self.nonnegative(session.reasoningTokens)),
+                    models: session.modelBreakdowns.map { breakdown in
+                        ModelRow(
+                            rank: 0,
+                            provider: summary.input.provider,
+                            providerName: summary.input.displayName,
+                            modelName: breakdown.modelName,
+                            totalTokens: Self.nonnegative(breakdown.totalTokens),
+                            totalCost: Self.validCost(breakdown.costUSD).map { $0 * summary.costMultiplier },
+                            tokenMix: CostUsageTokenMix(
+                                inputTokens: Self.nonnegative(breakdown.inputTokens),
+                                outputTokens: Self.nonnegative(breakdown.outputTokens),
+                                cacheReadTokens: Self.nonnegative(breakdown.cacheReadTokens),
+                                cacheCreationTokens: Self.nonnegative(breakdown.cacheCreationTokens),
+                                reasoningTokens: Self.nonnegative(breakdown.reasoningTokens)))
+                    })
             }
         }
         .sorted { lhs, rhs in

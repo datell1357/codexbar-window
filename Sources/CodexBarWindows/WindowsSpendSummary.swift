@@ -76,6 +76,17 @@ enum WindowsSpendSummary {
                     + cost(session.totalCost, currency: group.currencyCode) + " · " + tokens(session.totalTokens) + " tokens")
                 rows.append("    Last activity: " + formatter.string(from: session.lastActivity)
                     + (session.modelName.map { " · " + safe($0) } ?? ""))
+                if expanded {
+                    rows.append("    Requests: " + (session.requestCount.map { $0.formatted() } ?? "Unknown"))
+                    rows.append("    " + tokenMixDetails(session.tokenMix))
+                    if session.models.isEmpty { rows.append("    No per-model session breakdown is available.") }
+                    for breakdown in session.models {
+                        rows.append("      " + safe(breakdown.modelName) + " · "
+                            + cost(breakdown.totalCost, currency: group.currencyCode)
+                            + " · " + tokens(breakdown.totalTokens) + " tokens")
+                        rows.append("        " + tokenMixDetails(breakdown.tokenMix))
+                    }
+                }
             }
             if !expanded, group.sessions.count > 12 {
                 rows.append("  \(group.sessions.count - 12) more sessions. Choose Show all rows to expand.")

@@ -2536,3 +2536,12 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - 세션 합계는 마지막 활동으로 기간에 포함한 수집 세션의 합계이므로 기간 이전 활동을 포함할 수 있다는 설명을 추가한다. 기간 총액으로 오인하지 않도록 기존 불완전 breakdown 설명도 유지한다.
 - 원본 스캐너가 제공하지 않은 세션을 복원하는 기능은 아니다. 개별 세션/프로젝트 탐색, Windsurf 브라우저 가져오기 및 전체 계획 나머지는 남아 있다.
 - CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·UI·실제 비용 로그 검증 미실행.
+
+## IMPL-215 — 비용 세션별 모델 상세
+
+- 수집된 CostUsageSessionBreakdown에서 요청 수, 입력/출력/캐시 읽기/추론 토큰과 전체 모델 breakdown을 Windows SessionRow로 전달한다.
+- 전체 행 보기에서 각 세션의 요청 수와 토큰 유형, 모델별 비용/토큰 유형을 표시한다. 기본 요약은 기존 크기를 유지한다.
+- 모델 비용에는 해당 소스의 기존 통화 배수를 적용한다. 음수 토큰/잘못된 비용은 기존 nonnegative/validCost를 거쳐 누락값으로 처리하고 누락된 요청 수/토큰은 Unknown으로 표시한다. 세션에 없는 캐시 쓰기 값을 추측하지 않는다.
+- 원본 세션 ID/로그 경로는 화면에 추가하지 않으며 기존 privacy와 snapshot 유효성 처리를 유지한다. 모델 내역의 합계 일치나 전체 coverage를 주장하지 않는다.
+- 남은 소요: 개별 세션/프로젝트 탐색 UI, Windsurf 브라우저 가져오기 및 전체 계획 나머지.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·UI·실제 로그 검증 미실행.
