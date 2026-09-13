@@ -1802,3 +1802,13 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - 취소를 각 scan/optional activity 이후 확인하며 required scan 실패는 controller의 실패 상태로 전달한다. 환경/cookie는 출력하지 않는다. provider 지원 여부는 Core의 계약을 따르며 가짜 결과를 만들지 않는다.
 
 남은 범위: config/managed/live/profile에서 Source를 만드는 resolver, 캐시 소유권 경로·provider cost 설정·OpenCodeX 입력, Main/host/dashboard/share 화면, per-source 부분 실패 표현, Windows 실행 검증. 실제 수집은 실행하지 않았다.
+
+## IMPL-136 — 비용 수집 source별 부분 실패
+
+상태 CODE_WRITTEN_UNVERIFIED. 컴파일/빌드/테스트/수집/검증 미실시. guidelines/COMMITS.md 부재로 핵심 커밋 규칙을 적용한다.
+
+- loader는 개별 source 실패 시 비밀정보 없는 source ID/provider만 기록하고 다음 source 수집을 계속하도록 작성했다. task 취소는 부분 실패로 삼키지 않고 전체 generation을 취소한다.
+- controller snapshot에 sourceFailures와 partial phase를 추가했다. 성공 결과는 최신 데이터로 집계하며 실패 source를 0 사용량 데이터로 만들지 않는다. 성공/실패 목록을 합쳐 중복 source ID를 거절한다.
+- partial 상태에서는 share payload를 제공하지 않아 일부 공급자가 빠진 통계를 전체 수집 결과처럼 공유하지 않는다. 전체 loader 실패에서 이전 데이터 stale 보존은 유지한다.
+
+남은 범위: source resolver·Main/host 연결, 실패 행과 재시도 UI, 사용자 선택에 따른 부분 공유 정책, 실제 수집·Windows 실행 검증 및 전체 계획 구현.

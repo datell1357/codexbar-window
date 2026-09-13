@@ -4,9 +4,15 @@ import CodexBarCore
 
 /// Owns one coherent spend scan. Native UI can change its projection without rescanning logs.
 actor WindowsSpendDashboardController {
+    struct SourceFailure: Sendable {
+        let sourceID: String
+        let provider: UsageProvider
+        // Display a generic explanation; never retain raw provider/credential error text.
+    }
     struct Scan: Sendable {
         let inputs: [WindowsSpendDashboardModel.ProviderInput]
         let subscriptionNames: [String: WindowsShareStatsSubscriptionName]
+        var sourceFailures: [SourceFailure] = []
     }
     struct Options: Sendable {
         var days = 30
@@ -15,7 +21,7 @@ actor WindowsSpendDashboardController {
         var hideNativeCodexWhenOpenCodexPresent = false
         var selectedDay: Date?
     }
-    enum Phase: Sendable { case idle, refreshing, ready, failed, stopped }
+    enum Phase: Sendable { case idle, refreshing, ready, partial, failed, stopped }
     enum Failure: Sendable { case scanFailed, duplicateSourceIDs }
     struct Snapshot: Sendable {
         let generation: UInt64
@@ -25,6 +31,7 @@ actor WindowsSpendDashboardController {
         let loadedAt: Date?
         let stale: Bool
         let failure: Failure?
+        let sourceFailures: [SourceFailure]
     }
     typealias Loader = @Sendable (_ historyDays: Int) async throws -> Scan
     typealias Publisher = @Sendable (Snapshot) -> Void
@@ -63,7 +70,8 @@ actor WindowsSpendDashboardController {
         let share = self.phase == .ready
             ? WindowsShareStatsBuilder.make(model: model, subscriptionNames: self.scan?.subscriptionNames ?? [:]) : nil
         return Snapshot(generation: self.generation, phase: self.phase, model: model, sharePayload: share,
-            loadedAt: self.loadedAt, stale: self.scan != nil && self.phase != .ready, failure: self.failure)
+            loadedAt: self.loadedAt, stale: self.scan != nil && (self.phase == .refreshing || self.phase == .failed),
+            failure: self.failure, sourceFailures: self.scan?.sourceFailures ?? [])
     }
 
     func refresh() async {
@@ -111,7 +119,8 @@ actor WindowsSpendDashboardController {
             let scan = try await self.loader(WindowsSpendHistoryPolicy.scanDays)
             try Task.checkCancellation()
             guard !self.stopped, self.generation == generation else { return }
-            guard Set(scan.inputs.map(\.id)).count == scan.inputs.count else {
+            let sourceIDs = scan.inputs.map(\.id) + scan.sourceFailures.map(\.sourceID)
+            guard Set(sourceIDs).count == sourceIDs.count else {
                 self.failure = .duplicateSourceIDs
                 self.phase = .failed
                 self.publish()
@@ -119,7 +128,7 @@ actor WindowsSpendDashboardController {
             }
             self.scan = scan
             self.loadedAt = Date()
-            self.phase = .ready
+            self.phase = scan.sourceFailures.isEmpty ? .ready : .partial
             self.failure = nil
         } catch {
             guard !self.stopped, self.generation == generation else { return }
