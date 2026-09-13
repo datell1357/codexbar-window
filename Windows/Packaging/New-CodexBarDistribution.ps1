@@ -91,18 +91,41 @@ if (-not $PSCmdlet.ShouldProcess('New Windows distribution directory', 'Copy exp
 # New-Item without Force fails if another producer created the output in the meantime.
 $null = New-Item -ItemType Directory -Path $outputRoot
 $inventory = [Collections.Generic.List[object]]::new()
+$heldFiles = [Collections.Generic.List[IO.FileStream]]::new()
+$stagedDependencies = [Collections.Generic.List[object]]::new()
+$expectedMachine = if ($manifest.architecture -eq 'x64') { 0x8664 } else { 0xAA64 }
 try {
     foreach ($file in $prepared) {
         $destination = Join-Path $outputRoot $file.Destination
         $parent = [IO.Path]::GetDirectoryName($destination)
         $null = [IO.Directory]::CreateDirectory($parent)
         [IO.File]::Copy($file.Source, $destination, $false)
-        $item = Get-Item -LiteralPath $destination
+        # Analyze the copied image while a read-sharing handle excludes writes/deletion.
+        # Keep every handle until the final inventory has been written.
+        $held = [IO.File]::Open($destination, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::Read)
+        $heldFiles.Add($held)
+        if ($file.Kind -in @('application', 'cli', 'runtime')) {
+            foreach ($import in @(Read-CodexBarPEImports $destination $expectedMachine)) {
+                if ($stagedDependencies.Count -ge 100000) { throw 'Staged dependency edge limit exceeded.' }
+                $resolution = if ($includedDLLs.Contains($import.name)) { 'included' }
+                    elseif ($systemLibraries.ContainsKey($import.name)) { 'declared_system' }
+                    else { throw 'A copied image has an unresolved dependency. Staging is incomplete.' }
+                $stagedDependencies.Add([pscustomobject] @{
+                    importer = $file.Destination.Replace('\', '/')
+                    library = $import.name
+                    kind = $import.kind
+                    resolution = $resolution
+                })
+            }
+        }
+        $held.Position = 0
+        $hasher = [Security.Cryptography.SHA256]::Create()
+        try { $digest = $hasher.ComputeHash($held) } finally { $hasher.Dispose() }
         $inventory.Add([pscustomobject] @{
             path = $file.Destination.Replace('\', '/')
             kind = $file.Kind
-            bytes = $item.Length
-            sha256 = (Get-FileHash -LiteralPath $destination -Algorithm SHA256).Hash.ToLowerInvariant()
+            bytes = $held.Length
+            sha256 = [BitConverter]::ToString($digest).Replace('-', '').ToLowerInvariant()
         })
     }
     $record = [ordered] @{
@@ -110,6 +133,8 @@ try {
         architecture = $manifest.architecture
         status = 'STAGED_UNVERIFIED'
         dependencyScope = 'STATIC_AND_RVA_DELAY_IMPORT_NAMES'
+        analysisSource = 'HELD_STAGED_FILES'
+        dependencies = @($stagedDependencies.ToArray())
         systemPolicy = $policy
         files = @($inventory.ToArray())
     }
@@ -120,4 +145,6 @@ try {
 } catch {
     Write-Warning 'Staging failed. Partial output was preserved; inspect it and use a new output directory on retry.'
     throw
+} finally {
+    foreach ($held in $heldFiles) { $held.Dispose() }
 }

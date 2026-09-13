@@ -1,5 +1,5 @@
 # Dot-sourced helper; reads PE32+ metadata without loading the image.
-function Read-CodexBarPEImports([string] $Path) {
+function Read-CodexBarPEImports([string] $Path, [int] $ExpectedMachine = 0) {
     $stream = [IO.File]::Open($Path, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::Read)
     $reader = [IO.BinaryReader]::new($stream)
     try {
@@ -16,6 +16,9 @@ function Read-CodexBarPEImports([string] $Path) {
         if ((Read-U16 0) -ne 0x5A4D) { throw 'Missing DOS signature.' }
         [long] $pe = Read-U32 0x3C
         if ($pe -lt 64 -or $pe -gt 1048576 -or (Read-U32 $pe) -ne 0x4550) { throw 'Invalid PE signature.' }
+        if ($ExpectedMachine -ne 0 -and (Read-U16 ($pe + 4)) -ne $ExpectedMachine) {
+            throw 'PE machine does not match the distribution architecture.'
+        }
         $sectionCount = Read-U16 ($pe + 6)
         $optionalSize = Read-U16 ($pe + 20)
         $optional = $pe + 24

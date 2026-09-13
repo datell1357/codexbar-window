@@ -1020,3 +1020,13 @@
 - 정책과 import 범위를 배포 인벤토리에 기록한다. dependency 상태 문자열을 통과 증거로 신뢰하지 않는다.
 
 남은 범위: 실제 지원 OS 정책 근거 확정, 복사 바이트와 분석 일치, dynamic imports/forwarders/API symbols, 서명/MSIX 및 Windows 실행 검증.
+
+## IMPL-059 — 대상 바이트와 분석·해시 연결
+
+상태: CODE_WRITTEN_UNVERIFIED. 코드 편집만 수행. 파일 공유/PE 조회/PowerShell/패키징/빌드/컴파일/테스트/검증 실행 미실시.
+
+- 복사한 각 파일의 read-sharing handle을 인벤토리 기록까지 유지하도록 작성했다. staged app/CLI/runtime의 machine과 import를 다시 읽고 미해결·아키텍처 불일치에서 중단한다.
+- held stream에서 SHA-256을 계산하고 staged dependencies와 analysisSource=HELD_STAGED_FILES를 기록한다. 성공·실패 모두 finally에서 핸들을 닫고 부분 출력을 보존한다.
+- 원본 preflight만으로 대상 바이트 분석을 대신하지 않는다. 실제 file-sharing 보장/상위 폴더 교체/서명 후 변경과 동적 의존성은 여전히 미검증이다.
+
+다음 구현: Windows 서명 인계와 배포 출처 기록을 연결한다.
