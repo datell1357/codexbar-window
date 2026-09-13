@@ -1532,3 +1532,13 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - WindowsMain 시작 시 publisher를 연결하고 mailboxLock 안에서 세 알림 대기열을 정리하도록 작성했다.
 
 남은 범위: 이미 mailbox에서 꺼내 렌더링 중인 알림, 표시된 OS balloon/overlay 철회, 외부 config 변경·OAuth 전환 경로의 invalidation, 실제 계정/스레드 race/Windows 검증. 이번 변경은 대기열 단계만 다룬다.
+
+## IMPL-109 — 외부 config 계정 변경 감지
+
+상태 CODE_WRITTEN_UNVERIFIED. 컴파일/빌드/테스트/설정·계정/알림/검증 미실시. guidelines/COMMITS.md 부재로 핵심 커밋 규칙을 적용한다.
+
+- refresh에서 읽은 선택 계정 UUID/credential/조직·scope와 공급자 인증 source·region 등을 길이 구분 digest로 비교한다. 이전 refresh와 달라진 공급자 및 활성 목록에서 제거된 공급자에 기존 계정 상태/알림 mailbox 철회 경로를 적용한다.
+- 이름과 계정 목록 순서는 비교값에 넣지 않아 이름 수정이나 비선택 계정 재정렬로 baseline을 불필요하게 초기화하지 않는다. 비교용 저장에는 digest만 남기며 출력하지 않는다.
+- 최초 load는 baseline으로 받아들이고 shutdown 시 비교값을 비운다. historical generation snapshot은 계정 reconciliation 이후 잡아 이번 refresh의 새 계정 결과가 과거 generation으로 오인되지 않도록 작성했다.
+
+남은 범위: config 밖 OAuth/CLI/browser identity 변화, Codex active-source/profile 설정의 별도 owner 비교, 이미 표시된 알림 철회, 실제 외부 config 변경과 Windows race 검증. digest는 내부 변화 감지용이며 보안 인증 수단이 아니다.

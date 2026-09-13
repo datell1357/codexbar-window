@@ -117,6 +117,7 @@ public actor WindowsUsageRuntime {
     private var quotaWarningStates: [QuotaWarningTransitionCore.Key: QuotaWarningTransitionCore.State] = [:]
     private var latestProviderConfigs: [ProviderInstanceID: ProviderConfig] = [:]
     private var latestEnabledProviderIDs: Set<ProviderInstanceID>?
+    private var observedAccountSignatures: [ProviderInstanceID: String]?
     private var quotaWarningGeneration: UInt64 = 0
     private var predictivePaceWarningGeneration: UInt64 = 0
     private var predictivePaceWarningKeys: Set<PredictivePaceWarningTransitionCore.Key> = []
@@ -319,6 +320,29 @@ public actor WindowsUsageRuntime {
             self.publishRenderEntries(settings: WindowsUsagePresentationSettings.load())
             return .saved(account.id)
         } catch { return .failed }
+    }
+
+    private func reconcileConfiguredAccounts(_ config: CodexBarConfig) {
+        var current: [ProviderInstanceID: String] = [:]
+        for id in config.enabledProviders() {
+            guard id.firstPartyProvider != nil, let entry = config.providerConfig(for: id) else { continue }
+            let data = entry.tokenAccounts
+            let account = data.flatMap { $0.accounts.isEmpty ? nil : $0.accounts[$0.clampedActiveIndex()] }
+            // Length-prefix every optional field to avoid ambiguous concatenations. Keep only
+            // the digest between refreshes; labels and account ordering do not define ownership.
+            let fields: [String?] = [account?.id.uuidString, account?.token, account?.externalIdentifier,
+                account?.sanitizedUsageScope, account?.sanitizedOrganizationID, account?.sanitizedWorkspaceID,
+                entry.apiKey, entry.secretKey, entry.cookieHeader, entry.source?.rawValue,
+                entry.cookieSource?.rawValue, entry.region, entry.workspaceID, entry.enterpriseHost]
+            let value = fields.map { field in field.map { "s:\($0.utf8.count):\($0)" } ?? "n:" }.joined()
+            current[id] = SHA256.hash(data: Data(value.utf8)).map { String(format: "%02x", $0) }.joined()
+        }
+        if let previous = self.observedAccountSignatures {
+            for id in Set(previous.keys).union(current.keys) where previous[id] != current[id] {
+                self.invalidateSelectedAccountState(id)
+            }
+        }
+        self.observedAccountSignatures = current
     }
 
     private func invalidateSelectedAccountState(_ providerID: ProviderInstanceID) {
@@ -733,7 +757,6 @@ public actor WindowsUsageRuntime {
     private func performRefresh() async {
         let refreshQuotaWarningGeneration = self.quotaWarningGeneration
         let refreshPredictivePaceWarningGeneration = self.predictivePaceWarningGeneration
-        let refreshHistoricalTrackingGeneration = self.historicalTrackingGeneration
         let presentationSettings = WindowsUsagePresentationSettings.load()
         let fetchOptionalUsage = presentationSettings.showOptionalCreditsAndExtraUsage
         do {
@@ -742,6 +765,8 @@ public actor WindowsUsageRuntime {
                 self.pluginDiscoveryInitialized = true
             }
             let config = try self.configStore.loadOrCreateDefault()
+            self.reconcileConfiguredAccounts(config)
+            let refreshHistoricalTrackingGeneration = self.historicalTrackingGeneration
             let enabledIDs = Set(config.enabledProviders())
             self.latestEnabledProviderIDs = enabledIDs
             self.predictivePaceWarningKeys = self.predictivePaceWarningKeys.filter {
@@ -1036,6 +1061,7 @@ public actor WindowsUsageRuntime {
         self.codexHistoricalDatasetAccountKey = nil
         self.latestProviderConfigs.removeAll(keepingCapacity: false)
         self.latestEnabledProviderIDs = nil
+        self.observedAccountSignatures = nil
         await CLIProbeSessionResetter.resetAll()
     }
 
