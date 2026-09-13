@@ -3088,3 +3088,11 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - payload 생성/크기 제한 실패를 포함한 반환 경로에서 stdin 파이프 양쪽 핸들을 닫도록 Windows 전용 defer를 추가했다.
 - 남은 소요: Windows runtime 이벤트/설정 및 종료 작업 관리 연결, 전체 훅 시나리오와 나머지 계획. 이 변경만으로 Hooks 기능이 연결된 것은 아니다.
 - CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·외부 명령 실행 미실행.
+
+## IMPL-279 — Windows hook 실행 대기열
+
+- actor 소유의 단일 실행 작업과 최대 256개 대기 이벤트를 구현했다. 초과 이벤트 수를 반환하며 런타임에서 표시하는 연결은 남아 있다.
+- 설정/개인정보 상태 변경 시 대기 이벤트를 비우고 현재 작업을 취소한다. 현재 작업 완료 전 새 명령을 시작하지 않는다. shutdown은 취소 후 작업 반환을 기다린다.
+- detector가 지정한 규칙은 현재 설정에 동일하게 존재하는 경우만 실행한다. 개인정보 숨김 시 account 필드를 제거하며 기존 matching/rate limiter/process 실행기를 재사용한다.
+- 남은 소요: runtime의 관측/transition producer, 설정 갱신/종료/초과 건수 표시 연결과 전체 계획 나머지. 대기열만으로 자동 훅 이벤트가 발생하지 않는다.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·외부 명령 실행 미실행.
