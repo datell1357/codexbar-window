@@ -207,3 +207,11 @@ Restore-CodexBarUninstall.ps1에 RegistrationID, uninstall 파일명의 Uninstal
 schema 2 handoff의 버전과 child record를 대조하며 완료 결과가 있는데 해당 기록이 없으면 거절한다. PLANNED 상태에 실제 child 기록이 없으면 NO_CHILD_RECORDS_FOUND 등 실제 발견 범위만 기록한다. 이는 변경이 전혀 없었다는 증명이 아니다. 별도 uninstall-recovery journal에 현재 단계를 남기며 Apps 등록은 변경하지 않는다.
 
 도구별 operations.lock은 사용하지만 전체 복구를 포괄하는 잠금은 아직 없다. 외부 동시 변경/기록 누락 원인 판별/앱 등록 복구 통합/자동 정리/Windows 검증은 남아 있다. tools 14개와 앱·CLI·PATH resource를 합한 서명 대상은 17개다. 이번 작업에서 복구나 검증 명령을 실행하지 않았다.
+
+## 앱 등록까지 복원하는 옵션
+
+Restore-CodexBarUninstall.ps1의 RestoreRegistration 옵션은 파일과 참조 복구 후 같은 management 등록 기록을 재사용해 Apps 항목까지 복원하도록 작성됐다. 기본값은 미지정이며 기존처럼 파일·참조만 처리한다. 등록 기록의 schema/ID/버전/signer를 먼저 대조하고, 이전 단계의 구조화된 완료 결과가 맞을 때만 등록 단계를 호출한다. 등록 정보가 변경되면 기존 등록 재개 규칙대로 충돌을 보존한다.
+
+Register-CodexBarInstallation은 이제 관리 tools뿐 아니라 실제 앱·CLI의 크기/hash/서명/timestamp를 확인하고 파일 handle을 작업 종료까지 유지한다. 앱 파일이 없거나 바뀐 상태를 관리 사본만으로 등록하지 않는다. 전체 runtime DLL/resource 정상 동작이나 실제 설치 적합성까지 증명하는 것은 아니다.
+
+복구 기록에 RESTORING_REGISTRATION 및 registrationState를 남긴다. 단계별 파일 잠금은 있으나 전체 단계를 하나의 transaction으로 만들지는 않으며 단계 사이 동시 변경은 남아 있다. 이번 작업에서는 등록·복원·서명 확인·PowerShell·빌드·테스트를 실행하지 않았다.

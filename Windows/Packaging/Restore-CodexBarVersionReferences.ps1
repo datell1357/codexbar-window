@@ -2,7 +2,8 @@
 param(
     [Parameter(Mandatory = $true)][ValidatePattern('^[0-9a-f]{32}$')][string] $TransactionID,
     [Parameter(Mandatory = $true)][ValidatePattern('^[0-9a-fA-F]{40}$')][string] $ExpectedSignerThumbprint,
-    [switch] $AllowUnvalidatedBuild
+    [switch] $AllowUnvalidatedBuild,
+    [switch] $PassThru
 )
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
@@ -120,7 +121,11 @@ try {
     }
     $recovery.state = 'REFERENCES_RESTORED_RUNTIME_UNVERIFIED'
     Write-CodexBarJournal $recoveryPath $recovery
-    Write-Output 'Recorded references restored. Reopen shells to use the restored environment; recovery copies remain.'
+    if ($PassThru) {
+        [pscustomobject] @{ transactionID = $TransactionID; versionID = $record.fromVersionID; state = $recovery.state }
+    } else {
+        Write-Output 'Recorded references restored. Reopen shells to use the restored environment; recovery copies remain.'
+    }
 } catch {
     Write-Warning 'Reference recovery incomplete. Earlier writes may have succeeded; preserved journals and shortcut copies remain available.'
     throw

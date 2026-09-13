@@ -1,10 +1,11 @@
-# Explicit recovery of a recorded uninstall; does not launch the app or change Apps registration.
+# Explicit recovery of a recorded uninstall; registration restoration is opt-in and the app is never launched.
 [CmdletBinding(SupportsShouldProcess = $true)]
 param(
     [Parameter(Mandatory = $true)][ValidatePattern('^[0-9a-f]{32}$')][string] $RegistrationID,
     [Parameter(Mandatory = $true)][ValidatePattern('^[0-9a-f]{32}$')][string] $UninstallID,
     [Parameter(Mandatory = $true)][ValidatePattern('^[0-9a-fA-F]{40}$')][string] $ExpectedSignerThumbprint,
-    [switch] $AllowUnvalidatedBuild
+    [switch] $AllowUnvalidatedBuild,
+    [switch] $RestoreRegistration
 )
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
@@ -45,11 +46,19 @@ if ($hasReferences) {
 # A missing record after a reported completion is an inconsistency, not proof that nothing happened.
 if (-not $hasRemoval -and $handoff.removalState -ne 'PLANNED') { throw 'Recorded removal output is missing; automatic recovery refused.' }
 if (-not $hasReferences -and $handoff.referenceState -ne 'PLANNED') { throw 'Recorded reference output is missing; automatic recovery refused.' }
-if (-not $PSCmdlet.ShouldProcess($handoff.versionID, 'Restore available removal payload first, then recorded launch references')) { return }
+if ($RestoreRegistration) {
+    $registration = Read-RecoveryRecord (Join-Path $bundle 'registration.json')
+    if ($registration.schemaVersion -ne 2 -or $registration.registrationID -ne $RegistrationID -or
+        $registration.versionID -ne $handoff.versionID -or $registration.signerThumbprint -ine $ExpectedSignerThumbprint -or
+        $registration.state -notin @('PREPARING_TOOLS', 'PREPARED', 'REGISTERED_RUNTIME_UNVERIFIED')) { throw 'Registration recovery boundary differs from the uninstall.' }
+}
+$action = if ($RestoreRegistration) { 'Restore files, launch references and the recorded Apps registration' } else { 'Restore available removal payload first, then recorded launch references' }
+if (-not $PSCmdlet.ShouldProcess($handoff.versionID, $action)) { return }
 $recoveryPath = Join-Path $bundle ('uninstall-recovery-' + [Guid]::NewGuid().ToString('N') + '.json')
 $progress = [ordered] @{ schemaVersion = 1; uninstallID = $UninstallID; versionID = $handoff.versionID;
     stage = 'RESTORING_FILES'; removalTransactionID = $handoff.removalTransactionID;
-    referenceTransactionID = $handoff.referenceTransactionID }
+    referenceTransactionID = $handoff.referenceTransactionID; restoreRegistration = [bool] $RestoreRegistration;
+    registrationState = 'NOT_REQUESTED' }
 Write-CodexBarJournal $recoveryPath $progress
 try {
     if ($hasRemoval) {
@@ -60,11 +69,26 @@ try {
     $progress.stage = 'RESTORING_REFERENCES'
     Write-CodexBarJournal $recoveryPath $progress
     if ($hasReferences) {
-        & (Join-Path $PSScriptRoot 'Restore-CodexBarVersionReferences.ps1') -TransactionID $handoff.referenceTransactionID -ExpectedSignerThumbprint $ExpectedSignerThumbprint -AllowUnvalidatedBuild
+        $referenceResult = & (Join-Path $PSScriptRoot 'Restore-CodexBarVersionReferences.ps1') -TransactionID $handoff.referenceTransactionID -ExpectedSignerThumbprint $ExpectedSignerThumbprint -AllowUnvalidatedBuild -PassThru
+        if ($null -eq $referenceResult -or $referenceResult.transactionID -ne $handoff.referenceTransactionID -or
+            $referenceResult.versionID -ne $handoff.versionID -or $referenceResult.state -ne 'REFERENCES_RESTORED_RUNTIME_UNVERIFIED') {
+            throw 'Reference recovery did not complete; registration restoration was not started.'
+        }
     }
-    $progress.stage = if ($hasRemoval -or $hasReferences) { 'RECORDED_STEPS_RESTORED_UNVERIFIED' } else { 'NO_CHILD_RECORDS_FOUND' }
+    if ($RestoreRegistration) {
+        $progress.stage = 'RESTORING_REGISTRATION'
+        Write-CodexBarJournal $recoveryPath $progress
+        $registered = & (Join-Path $PSScriptRoot 'Register-CodexBarInstallation.ps1') -VersionID $handoff.versionID -ExpectedSignerThumbprint $ExpectedSignerThumbprint -ResumeRegistrationID $RegistrationID -AllowUnvalidatedBuild -PassThru
+        if ($null -eq $registered -or $registered.registrationID -ne $RegistrationID -or
+            $registered.versionID -ne $handoff.versionID -or $registered.state -ne 'REGISTERED_RUNTIME_UNVERIFIED') {
+            throw 'Registration recovery did not return a matching completion record.'
+        }
+        $progress.registrationState = $registered.state
+    }
+    $progress.stage = if ($hasRemoval -or $hasReferences -or $RestoreRegistration) { 'RECORDED_STEPS_RESTORED_UNVERIFIED' } else { 'NO_CHILD_RECORDS_FOUND' }
     Write-CodexBarJournal $recoveryPath $progress
-    Write-Output ($progress.stage + '. Apps registration was not changed. Preserved management and recovery files remain available.')
+    $registrationMessage = if ($RestoreRegistration) { ' Recorded Apps registration restored.' } else { ' Apps registration was not changed.' }
+    Write-Output ($progress.stage + '.' + $registrationMessage + ' Preserved management and recovery files remain available.')
 } catch {
     Write-Warning ('Recovery stopped during ' + $progress.stage + '. Earlier recovery steps may have succeeded. Record: ' + $recoveryPath)
     throw

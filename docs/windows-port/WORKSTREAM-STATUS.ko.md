@@ -1,5 +1,7 @@
 # Windows 전용 제품 작업 현황
 
+IMPL-079: Opt-in Apps registration restoration and structured recovery gates written; whole-operation concurrency and Windows validation remain pending.
+
 IMPL-078: Recorded uninstall file/reference recovery orchestration written; registration integration and Windows validation remain pending.
 
 IMPL-077: Child operation IDs persisted before uninstall execution with collision and result checks; lifecycle recovery and Windows validation remain pending.

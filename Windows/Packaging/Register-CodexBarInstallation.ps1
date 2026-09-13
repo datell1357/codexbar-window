@@ -3,7 +3,8 @@ param(
     [Parameter(Mandatory = $true)][ValidatePattern('^[0-9]+\.[0-9]+\.[0-9]+([+-][0-9A-Za-z.-]+)?-(x64|arm64)-[0-9a-fA-F]{40}$')][string] $VersionID,
     [Parameter(Mandatory = $true)][ValidatePattern('^[0-9a-fA-F]{40}$')][string] $ExpectedSignerThumbprint,
     [switch] $AllowUnvalidatedBuild,
-    [ValidatePattern('^[0-9a-f]{32}$')][string] $ResumeRegistrationID
+    [ValidatePattern('^[0-9a-f]{32}$')][string] $ResumeRegistrationID,
+    [switch] $PassThru
 )
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
@@ -33,6 +34,23 @@ try {
     if ($receipt.schemaVersion -ne 1 -or $receipt.product -ne 'CodexBarWindows' -or $receipt.versionID -ne $VersionID -or
         $receipt.state -ne 'INSTALLED_INACTIVE_RUNTIME_UNVERIFIED' -or $receipt.signerThumbprint -ine $ExpectedSignerThumbprint) { throw 'Receipt mismatch.' }
     $null = Assert-CodexBarFirstPartyFiles @($receipt.files)
+    # Registration must not resurrect an entry for a retired or modified app/CLI.
+    foreach ($name in @('CodexBarWindows.exe', 'CodexBarCLI.exe')) {
+        $entries = @($receipt.files | Where-Object { $_.path -ieq $name })
+        $path = Join-Path $version $name
+        $item = Get-Item -LiteralPath $path -Force
+        if ($entries.Count -ne 1 -or $item.PSIsContainer -or
+            ($item.Attributes -band [IO.FileAttributes]::ReparsePoint)) { throw 'Registered executable is missing or invalid.' }
+        $stream = [IO.File]::Open($path, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::Read)
+        $held.Add($stream)
+        $hasher = [Security.Cryptography.SHA256]::Create()
+        try { $hash = [BitConverter]::ToString($hasher.ComputeHash($stream)).Replace('-', '') } finally { $hasher.Dispose() }
+        $signature = Get-AuthenticodeSignature -LiteralPath $path
+        if ($stream.Length -ne $entries[0].bytes -or $hash -ine $entries[0].sha256 -or
+            $signature.Status -ne 'Valid' -or $null -eq $signature.SignerCertificate -or
+            $signature.SignerCertificate.Thumbprint -ine $ExpectedSignerThumbprint -or
+            $null -eq $signature.TimeStamperCertificate) { throw 'Registered executable differs from its signed receipt.' }
+    }
     $registry = [Microsoft.Win32.RegistryKey]::OpenBaseKey([Microsoft.Win32.RegistryHive]::CurrentUser, [Microsoft.Win32.RegistryView]::Registry64)
     $keyPath = 'Software\Microsoft\Windows\CurrentVersion\Uninstall\CodexBarWindows-' + $VersionID
     $resuming = -not [string]::IsNullOrWhiteSpace($ResumeRegistrationID)
@@ -139,7 +157,11 @@ try {
     $key.Flush()
     $record.state = 'REGISTERED_RUNTIME_UNVERIFIED'
     Write-CodexBarJournal $journalPath $record
-    Write-Output ('Development installation registered. Management ID: ' + $registrationID)
+    if ($PassThru) {
+        [pscustomobject] @{ registrationID = $registrationID; versionID = $VersionID; state = $record.state }
+    } else {
+        Write-Output ('Development installation registered. Management ID: ' + $registrationID)
+    }
 } catch {
     Write-Warning 'Registration incomplete. Inspect the registry entry and management-ID directory; ResumeRegistrationID can reuse a matching schema-2 record without replacing conflicting files or values.'
     throw

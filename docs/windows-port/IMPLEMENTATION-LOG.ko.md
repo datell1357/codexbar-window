@@ -1224,3 +1224,13 @@
 - 새 도구를 배포·서명 계약에 포함했다. tools 14개, 전체 first-party 대상 17개다.
 
 남은 범위: 전체 단계 통합 잠금, 기록 조회 후 동시 변경, PLANNED 기록 누락의 원인 판별, Apps 등록 복구 통합, 실패 후 UI 재진입·보존 파일 정리·Windows 검증. child별 잠금만 사용하며 자동 전체 rollback이나 런타임 정상 상태를 보장하지 않는다.
+
+## IMPL-079 — 통합 복구의 앱 등록 연결
+
+상태 CODE_WRITTEN_UNVERIFIED. PowerShell/파일·서명/registry/복구/빌드/컴파일/테스트/검증 실행 미실시. guidelines/COMMITS.md 부재로 핵심 커밋 규칙을 적용한다.
+
+- Restore-CodexBarUninstall에 RestoreRegistration opt-in을 추가했다. schema 2 등록 기록의 ID/버전/signer를 사전 대조하고 파일·참조 복구 후 같은 등록 ID로 등록 재개를 호출한다.
+- 참조 복구와 앱 등록에 PassThru 결과를 추가해 버전/ID/완료 상태가 일치해야 다음 단계 및 최종 결과를 수용한다. 등록 단계와 결과를 recovery journal에 저장한다.
+- 앱 등록 시 앱·CLI의 크기/hash/서명/timestamp를 확인하고 읽기 handle을 등록 완료까지 유지한다. 관리 tool만 남은 제거 상태의 재등록을 방지하도록 작성했다.
+
+남은 범위: 전체 단계 통합 잠금, 단계 사이 외부 변경/등록 정책 변경, dependency/resource 전체 설치 신뢰, legacy 등록 복구, UI 통합/보존 파일 정리/전체 Windows 검증. 미지정 시 기존처럼 Apps 등록은 변경하지 않는다.
