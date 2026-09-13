@@ -2545,3 +2545,13 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - 원본 세션 ID/로그 경로는 화면에 추가하지 않으며 기존 privacy와 snapshot 유효성 처리를 유지한다. 모델 내역의 합계 일치나 전체 coverage를 주장하지 않는다.
 - 남은 소요: 개별 세션/프로젝트 탐색 UI, Windsurf 브라우저 가져오기 및 전체 계획 나머지.
 - CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·UI·실제 로그 검증 미실행.
+
+## IMPL-216 — 개별 프로젝트·세션 탐색 연결
+
+- 비용 summary 결과에 개인정보 표시 설정을 적용한 프로젝트/세션 section을 함께 전달한다. 네이티브 드롭다운 선택으로 개별 항목의 비용·토큰·세션 모델 상세를 열고 Summary 선택으로 기존 요약에 돌아간다.
+- 현재 선택한 section에 Ctrl+F/F3 검색을 적용하며, 개별 section 선택 중 전체 행 확장 버튼은 비활성화한다. 요약 복귀 시 기존 확장 상태를 복원한다.
+- 프로젝트 경로는 개인정보 숨김 해제 상태에서만 redactor/문자 제한을 거쳐 표시한다. 세션 ID/로그 경로는 추가하지 않는다. 각 항목은 통화/시간대/불완전 집계/토큰 중첩/세션 기간 설명을 포함하고 stale 및 실패 소스 안내를 전달한다.
+- 기존 snapshot validity/개인정보 timer와 DPI/font/layout 경로를 사용한다. 목록 추가 실패는 창 생성 실패로 반환한다.
+- IMPL-214/215 후에도 runtime의 확장 버튼 조건이 모델/프로젝트 개수에만 의존하던 누락을 수정했다. 세션이 있으면 상세 확장을 제공하고, 현재 설정과 일치하는 유지된 snapshot에도 동일한 section을 제공한다.
+- 남은 소요: 프로젝트별 일별/모델별 심화 탐색, 대규모 목록 사용성, Windsurf 자동 가져오기 및 전체 계획 나머지. 개별 항목 선택 UI가 작성되었으나 동작 확인 증거는 없다.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·UI·실제 데이터 검증 미실행.

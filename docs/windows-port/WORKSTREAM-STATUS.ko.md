@@ -1,5 +1,7 @@
 # Windows 전용 제품 작업 현황
 
+- IMPL-216: 비용 상세의 프로젝트/세션 선택 목록과 개별 표시·검색·요약 복귀를 연결하고 세션 확장 버튼 노출 조건을 보완했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
 - IMPL-215: 비용 전체 행 보기에 세션 요청 수·토큰 유형·전체 모델별 비용/토큰 상세를 연결했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
 
 - IMPL-214: 비용 세션의 모델 단계 12개 제한을 제거하고 요약/모든 행 보기에서 최근 12개/전체 전환을 연결했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.

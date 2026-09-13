@@ -769,7 +769,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
                 self.showMessage("Privacy settings changed. Reopen the cost summary.", caption: "Cost summary")
                 return
             }
-            self.showProviderDetails(result.text, title: "Cost summary", links: [], expectedPrivacy: result.hidePersonalInfo, expandedText: result.expandedText)
+            self.showProviderDetails(result.text, title: "Cost summary", links: [], expectedPrivacy: result.hidePersonalInfo, expandedText: result.expandedText, sections: result.sections)
         }
     }
 
@@ -2236,7 +2236,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
                          caption: caption)
     }
 
-    private func showProviderDetails(_ body: String, title: String, links: [WindowsProviderDetailsDialog.Link], expectedPrivacy: Bool? = nil, expandedText: String? = nil) {
+    private func showProviderDetails(_ body: String, title: String, links: [WindowsProviderDetailsDialog.Link], expectedPrivacy: Bool? = nil, expandedText: String? = nil, sections: [WindowsSnapshotSection] = []) {
         guard !self.remoteEditorOpen, !self.quitInvoked, let window = self.window,
               case .idle = self.providerEditorPhase, case .idle = self.codexWebSettingsEditorPhase else { return }
         self.remoteEditorOpen = true
@@ -2244,7 +2244,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
         let result = WindowsProviderDetailsDialog.show(
             owner: window, title: title,
             text: "Redacted snapshot from the opened menu. Refresh all closes this window and requests usage and session updates. Reopen details after the update.\r\n\r\n" + body,
-            links: links, hidePersonalInfo: privacy, expandedText: expandedText, isCurrent: self.snapshotValidity.capture())
+            links: links, hidePersonalInfo: privacy, expandedText: expandedText, sections: sections, isCurrent: self.snapshotValidity.capture())
         self.remoteEditorOpen = false
         if !self.quitInvoked {
             PostMessageW(window, Self.wakeMessage, 0, 0)

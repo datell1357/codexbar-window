@@ -2,6 +2,11 @@
 import Foundation
 import CodexBarCore
 
+struct WindowsSnapshotSection: Sendable {
+    let title: String
+    let text: String
+}
+
 /// Text projection for the native read-only summary; currency groups stay separate.
 enum WindowsSpendSummary {
     static func text(snapshot: WindowsSpendDashboardController.Snapshot, hidePersonalInfo: Bool, expanded: Bool = false) -> String {
@@ -97,6 +102,54 @@ enum WindowsSpendSummary {
         rows.append("")
         rows.append("Unknown values mean missing coverage, not zero usage. Refresh all and reopen to update this snapshot.")
         return rows.joined(separator: "\r\n")
+    }
+
+    static func sections(snapshot: WindowsSpendDashboardController.Snapshot,
+                         hidePersonalInfo: Bool) -> [WindowsSnapshotSection] {
+        var sections: [WindowsSnapshotSection] = []
+        for group in snapshot.model.groups {
+            var context = ["Currency: " + safe(group.currencyCode),
+                           "Bucket time zone: " + group.timeZone.identifier,
+                           "Captured snapshot; refresh and reopen to update.",
+                           "Breakdowns can be incomplete and need not sum to the period total.",
+                           "Token classes may overlap; do not add them to infer the total."]
+            if !snapshot.sourceFailures.isEmpty {
+                context.append("Partial collection: unavailable sources are excluded. Return to Summary for collection details.")
+            }
+            for (index, project) in group.projects.enumerated() {
+                let name = hidePersonalInfo ? "Project \(index + 1)" : safe(project.projectName)
+                let title = "Project · " + name + " · " + safe(project.providerName) + " · " + safe(group.currencyCode)
+                var rows = context + [title,
+                    "Cost: " + cost(project.totalCost, currency: group.currencyCode),
+                    "Tokens: " + tokens(project.totalTokens)]
+                if !hidePersonalInfo, let path = project.path { rows.append("Path: " + safe(path)) }
+                if snapshot.stale { rows.append("Stale data: a new collection has not completed.") }
+                sections.append(WindowsSnapshotSection(title: title, text: rows.joined(separator: "\r\n")))
+            }
+            for (index, session) in group.sessions.enumerated() {
+                let title = "Session \(index + 1) · " + safe(session.displayName) + " · " + safe(group.currencyCode)
+                let formatter = DateFormatter()
+                formatter.dateStyle = .medium
+                formatter.timeStyle = .short
+                formatter.timeZone = group.timeZone
+                var rows = context + [title,
+                    "Last activity: " + formatter.string(from: session.lastActivity),
+                    "Cost: " + cost(session.totalCost, currency: group.currencyCode),
+                    "Tokens: " + tokens(session.totalTokens),
+                    "Requests: " + (session.requestCount.map { $0.formatted() } ?? "Unknown"),
+                    tokenMixDetails(session.tokenMix),
+                    "Session totals may include activity before the selected period."]
+                if snapshot.stale { rows.append("Stale data: a new collection has not completed.") }
+                if session.models.isEmpty { rows.append("No per-model session breakdown is available.") }
+                for model in session.models {
+                    rows.append(safe(model.modelName) + " · " + cost(model.totalCost, currency: group.currencyCode)
+                        + " · " + tokens(model.totalTokens) + " tokens")
+                    rows.append(tokenMixDetails(model.tokenMix))
+                }
+                sections.append(WindowsSnapshotSection(title: title, text: rows.joined(separator: "\r\n")))
+            }
+        }
+        return sections
     }
 
     /// Use the same captured accounting metadata in the summary and chart detail views.

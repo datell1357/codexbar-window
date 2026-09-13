@@ -12,6 +12,7 @@ enum WindowsProviderDetailsDialog {
     private static let searchID: Int32 = 102
     private static let findID: Int32 = 5
     private static let searchLabelID: Int32 = 103
+    private static let sectionID: Int32 = 104
     private static let linkBaseID: Int32 = 201
 
     struct Link {
@@ -32,6 +33,14 @@ enum WindowsProviderDetailsDialog {
         let isCurrent: @Sendable () -> Bool
         let text: String
         let expandedText: String?
+        let sections: [WindowsSnapshotSection]
+        var selectedSection: Int? = nil
+        var displayedText: String {
+            if let selectedSection, self.sections.indices.contains(selectedSection) {
+                return self.sections[selectedSection].text
+            }
+            return self.expanded ? (self.expandedText ?? self.text) : self.text
+        }
         var expanded = false
         var searchOffset = 0
         var searchQuery = ""
@@ -42,20 +51,21 @@ enum WindowsProviderDetailsDialog {
         var font: HFONT?
         deinit { if let font { DeleteObject(font) } }
         func pixels(_ value: Int32) -> Int32 { MulDiv(value, Int32(self.dpi), 96) }
-        init(text: String, links: [Link], hidePersonalInfo: Bool, expandedText: String?, isCurrent: @escaping @Sendable () -> Bool) {
+        init(text: String, links: [Link], hidePersonalInfo: Bool, expandedText: String?, sections: [WindowsSnapshotSection], isCurrent: @escaping @Sendable () -> Bool) {
+            self.sections = sections
             self.isCurrent = isCurrent
             self.expandedText = expandedText
             self.text = text; self.links = Array(links.prefix(3)); self.hidePersonalInfo = hidePersonalInfo
         }
     }
 
-    static func show(owner: HWND, title: String, text: String, links: [Link], hidePersonalInfo: Bool, expandedText: String? = nil, isCurrent: @escaping @Sendable () -> Bool = { true }) -> Result? {
+    static func show(owner: HWND, title: String, text: String, links: [Link], hidePersonalInfo: Bool, expandedText: String? = nil, sections: [WindowsSnapshotSection] = [], isCurrent: @escaping @Sendable () -> Bool = { true }) -> Result? {
         guard isCurrent(), hidePersonalInfo == WindowsUsagePresentationSettings.load().hidePersonalInfo else { return .privacyChanged }
         let normalized = text.replacingOccurrences(of: "\r\n", with: "\n")
             .replacingOccurrences(of: "\r", with: "\n").replacingOccurrences(of: "\n", with: "\r\n")
         let expanded = expandedText?.replacingOccurrences(of: "\r\n", with: "\n")
             .replacingOccurrences(of: "\r", with: "\n").replacingOccurrences(of: "\n", with: "\r\n")
-        let context = Context(text: normalized, links: links, hidePersonalInfo: hidePersonalInfo, expandedText: expanded, isCurrent: isCurrent)
+        let context = Context(text: normalized, links: links, hidePersonalInfo: hidePersonalInfo, expandedText: expanded, sections: sections, isCurrent: isCurrent)
         let instance = GetModuleHandleW(nil)
         var klass = WNDCLASSEXW()
         klass.cbSize = UINT(MemoryLayout<WNDCLASSEXW>.size)
@@ -176,6 +186,17 @@ enum WindowsProviderDetailsDialog {
                     DWORD(WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_BORDER | ES_AUTOHSCROLL)),
                   Self.addControl(hwnd, "BUTTON", "Find &next", Self.findID,
                     DWORD(WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON)) != nil else { return -1 }
+            if !context.sections.isEmpty {
+                guard let picker = Self.addControl(hwnd, "COMBOBOX", "", Self.sectionID,
+                    DWORD(WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_VSCROLL | CBS_DROPDOWNLIST)) else { return -1 }
+                for title in ["Summary — choose a project or session"] + context.sections.map(\.title) {
+                    let added = (Array(title.utf16) + [0]).withUnsafeBufferPointer {
+                        SendMessageW(picker, UINT(CB_ADDSTRING), 0, LPARAM(Int(bitPattern: $0.baseAddress)))
+                    }
+                    guard added != LRESULT(CB_ERR), added != LRESULT(CB_ERRSPACE) else { return -1 }
+                }
+                SendMessageW(picker, UINT(CB_SETCURSEL), 0, 0)
+            }
             SendMessageW(search, UINT(EM_SETLIMITTEXT), 256, 0)
             guard SetTimer(hwnd, Self.privacyTimer, 250, nil) != 0 else { return -1 }
             Self.updateFont(hwnd, context: context)
@@ -216,9 +237,22 @@ enum WindowsProviderDetailsDialog {
         case UINT(WM_COMMAND):
             guard !Self.closeForPrivacyIfNeeded(hwnd, context: context) else { return 0 }
             let command = Int32(wParam & 0xffff)
+            if command == Self.sectionID, Int32((wParam >> 16) & 0xffff) == Int32(CBN_SELCHANGE) {
+                let selected = Int(SendMessageW(GetDlgItem(hwnd, Self.sectionID), UINT(CB_GETCURSEL), 0, 0))
+                guard selected >= 0, selected <= context.sections.count else { return 0 }
+                context.selectedSection = selected == 0 ? nil : selected - 1
+                context.searchOffset = 0
+                (Array(context.displayedText.utf16) + [0]).withUnsafeBufferPointer {
+                    _ = SetWindowTextW(GetDlgItem(hwnd, Self.textID), $0.baseAddress)
+                }
+                EnableWindow(GetDlgItem(hwnd, Self.expandID), selected == 0 ? 1 : 0)
+                SendMessageW(GetDlgItem(hwnd, Self.textID), UINT(EM_SETSEL), 0, 0)
+                SendMessageW(GetDlgItem(hwnd, Self.textID), UINT(EM_SCROLLCARET), 0, 0)
+                return 0
+            }
             if command == Self.findID { Self.findNext(hwnd, context: context); return 0 }
             if command == Self.closeID { DestroyWindow(hwnd); return 0 }
-            if command == Self.expandID, let expandedText = context.expandedText {
+            if command == Self.expandID, context.selectedSection == nil, let expandedText = context.expandedText {
                 context.expanded.toggle()
                 context.searchOffset = 0
                 let body = Array((context.expanded ? expandedText : context.text).utf16) + [0]
@@ -260,7 +294,7 @@ enum WindowsProviderDetailsDialog {
         guard count > 0 else { SetFocus(GetDlgItem(hwnd, Self.searchID)); return }
         let query = String(decoding: buffer.prefix(Int(count)), as: UTF16.self)
         if context.searchQuery != query { context.searchQuery = query; context.searchOffset = 0 }
-        let body = (context.expanded ? (context.expandedText ?? context.text) : context.text) as NSString
+        let body = context.displayedText as NSString
         let start = min(context.searchOffset, body.length)
         var match = body.range(of: query, options: [.caseInsensitive], range: NSRange(location: start, length: body.length - start))
         if match.location == NSNotFound, start > 0 {
@@ -305,7 +339,7 @@ enum WindowsProviderDetailsDialog {
               let font = CreateFontIndirectW(&metrics.lfMessageFont) else { return }
         let previous = context.font
         context.font = font
-        for id in [Self.textID, Self.closeID, Self.refreshID, Self.expandID, Self.searchID, Self.findID, Self.searchLabelID, Self.linkBaseID,
+        for id in [Self.textID, Self.closeID, Self.refreshID, Self.expandID, Self.searchID, Self.findID, Self.searchLabelID, Self.sectionID, Self.linkBaseID,
                    Self.linkBaseID + 1, Self.linkBaseID + 2] {
             if let control = GetDlgItem(hwnd, id) {
                 SendMessageW(control, UINT(WM_SETFONT), WPARAM(Int(bitPattern: font)), 1)
@@ -340,8 +374,12 @@ enum WindowsProviderDetailsDialog {
         MoveWindow(GetDlgItem(hwnd, Self.searchLabelID), px(12), px(16), labelWidth, px(24), 1)
         MoveWindow(GetDlgItem(hwnd, Self.searchID), px(12) + labelWidth, px(12), searchWidth, px(28), 1)
         MoveWindow(GetDlgItem(hwnd, Self.findID), px(12) + available - findWidth, px(12), findWidth, px(28), 1)
-        MoveWindow(GetDlgItem(hwnd, Self.textID), px(12), px(48), available,
-                   max(1, top - px(60)), 1)
+        let contentTop: Int32 = context.sections.isEmpty ? 48 : 84
+        if !context.sections.isEmpty {
+            MoveWindow(GetDlgItem(hwnd, Self.sectionID), px(12), px(48), available, px(260), 1)
+        }
+        MoveWindow(GetDlgItem(hwnd, Self.textID), px(12), px(contentTop), available,
+                   max(1, top - px(contentTop + 12)), 1)
         for (id, x, row, buttonWidth) in positions {
             MoveWindow(GetDlgItem(hwnd, id), px(12) + x, top + row * px(36), buttonWidth, px(28), 1)
         }

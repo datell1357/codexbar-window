@@ -243,6 +243,7 @@ public actor WindowsUsageRuntime {
     }
 
     public struct SpendSummaryResult: Sendable {
+        let sections: [WindowsSnapshotSection]
         public let expandedText: String?
         public let text: String
         public let hidePersonalInfo: Bool
@@ -251,11 +252,17 @@ public actor WindowsUsageRuntime {
     public func spendSummaryResult() -> SpendSummaryResult {
         let privacy = WindowsUsagePresentationSettings.load().hidePersonalInfo
         let expanded: String?
-        if case .available = self.spendState, let snapshot = self.spendSnapshot,
-           snapshot.model.groups.contains(where: { $0.models.count > 8 || $0.projects.count > 8 }) {
-            expanded = WindowsSpendSummary.text(snapshot: snapshot, hidePersonalInfo: privacy, expanded: true)
-        } else { expanded = nil }
-        return SpendSummaryResult(expandedText: expanded, text: self.spendSummaryText(hidePersonalInfo: privacy), hidePersonalInfo: privacy)
+        let sections: [WindowsSnapshotSection]
+        if let snapshot = self.spendSnapshot,
+           self.collectedSpendSettings == WindowsSpendSettings.load(),
+           self.spendState != .stopped, self.spendState != .disabled {
+            expanded = snapshot.model.groups.contains(where: {
+                $0.models.count > 8 || $0.projects.count > 8 || !$0.sessions.isEmpty
+            }) ? WindowsSpendSummary.text(snapshot: snapshot, hidePersonalInfo: privacy, expanded: true) : nil
+            sections = WindowsSpendSummary.sections(snapshot: snapshot, hidePersonalInfo: privacy)
+        } else { expanded = nil; sections = [] }
+        return SpendSummaryResult(sections: sections, expandedText: expanded,
+            text: self.spendSummaryText(hidePersonalInfo: privacy), hidePersonalInfo: privacy)
     }
 
     private func spendSummaryText(hidePersonalInfo: Bool) -> String {
