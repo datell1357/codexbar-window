@@ -24,7 +24,8 @@ public struct WindowsCursorBrowserSessionImporter: Sendable {
     public func discover(deadline: Date = Date().addingTimeInterval(15)) throws -> Discovery {
         try Self.check(deadline)
         guard BrowserCookieAccessGate.shouldAttempt(.firefox) else { throw Failure.browserUnavailable }
-        let query = BrowserCookieQuery(domains: ["cursor.com"], domainMatch: .exact, origin: .domainBased)
+        var query = BrowserCookieQuery(domains: ["cursor.com"], domainMatch: .exact, origin: .domainBased)
+        query.includePartitionedCookies = true
         let names: Set<String> = ["WorkosCursorSessionToken", "__Secure-next-auth.session-token",
                                  "next-auth.session-token", "wos-session", "__Secure-wos-session",
                                  "authjs.session-token", "__Secure-authjs.session-token"]
@@ -35,18 +36,22 @@ public struct WindowsCursorBrowserSessionImporter: Sendable {
             do {
                 let records = try self.client.records(matching: query, in: store)
                 try Self.check(deadline)
-                let cookies = BrowserCookieClient.makeHTTPCookies(records, origin: query.origin).filter {
-                    ($0.expiresDate == nil || $0.expiresDate! > Date()) && $0.path == "/"
+                let partitions = Dictionary(grouping: records, by: \.storagePartition)
+                for (index, partition) in partitions.keys.sorted().enumerated() {
+                    try Self.check(deadline)
+                    let cookies = BrowserCookieClient.makeHTTPCookies(partitions[partition] ?? [], origin: query.origin).filter {
+                        ($0.expiresDate == nil || $0.expiresDate! > Date()) && $0.path == "/"
+                    }
+                    guard cookies.contains(where: { cookie in
+                        names.contains(cookie.name) || names.contains(where: { cookie.name.hasPrefix($0 + ".") })
+                    }) else { continue }
+                    let raw = cookies.map { "\($0.name)=\($0.value)" }.joined(separator: "; ")
+                    guard raw.utf8.count <= 65_536, let header = CookieHeaderNormalizer.normalize(raw) else {
+                        failures += 1
+                        continue
+                    }
+                    candidates.append(Candidate(profileID: store.profile.id + "#partition-\(index)", sourceLabel: store.label + " session \(index + 1)", cookieHeader: header))
                 }
-                guard cookies.contains(where: { cookie in
-                    names.contains(cookie.name) || names.contains(where: { cookie.name.hasPrefix($0 + ".") })
-                }) else { continue }
-                let raw = cookies.map { "\($0.name)=\($0.value)" }.joined(separator: "; ")
-                guard raw.utf8.count <= 65_536, let header = CookieHeaderNormalizer.normalize(raw) else {
-                    failures += 1
-                    continue
-                }
-                candidates.append(Candidate(profileID: store.profile.id, sourceLabel: store.label, cookieHeader: header))
             } catch is CancellationError { throw CancellationError() }
             catch let error as URLError where error.code == .timedOut { throw error }
             catch { failures += 1 }

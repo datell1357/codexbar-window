@@ -2400,3 +2400,11 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - 해제는 Swift 객체 참조 해제이며 메모리 zeroization 보장이 아니다. 앱 suspend/actor 점유 및 timer 전달 지연으로 물리적 정리 시각은 늦어질 수 있지만 만료 ticket 저장은 거부한다.
 - 남은 소요: 계정 교체 UX, 팀 컨텍스트, 추가 브라우저 지원 및 전체 계획 나머지 항목.
 - CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·실제 UI/시간 경과 검증 미실행.
+
+## IMPL-198 — Firefox 컨테이너 세션 분리
+
+- Windows Firefox reader가 originAttributes 열을 읽어 cookie record의 storagePartition에 보존한다. 구버전 열 미존재는 기본 partition으로 처리하고 NULL/과대 속성은 제외한다.
+- query는 기본적으로 기본 partition만 읽는다. Cursor importer만 명시적으로 전체 partition을 요청하고 프로필 안에서도 partition별로 cookie header와 후보를 따로 생성한다.
+- 저장소 속성은 HTTP cookie나 UI에 포함하지 않는다. 각 후보는 기존 API 계정 확인/최대 후보 수/deadline 경로를 거친다.
+- 남은 소요: Firefox 컨테이너 이름 UX, partition의 인증 의미에 대한 Windows 실증, Chrome/Edge/WebView2 및 전체 계획 나머지 항목.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·실제 Firefox/SQLite/API 검증 미실행.

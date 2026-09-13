@@ -45,8 +45,10 @@ enum WindowsFirefoxCookieReader {
             }
         }
         let predicate = conditions.isEmpty ? "1=1" : conditions.joined(separator: " OR ")
+        // Older schemas do not have originAttributes; treat those as one default partition.
+        let partitionColumn = try Self.hasOriginAttributes(database) ? "originAttributes" : "''"
         let sql = """
-        SELECT host, name, path, value, expiry, isSecure, isHttpOnly
+        SELECT host, name, path, value, expiry, isSecure, isHttpOnly, \(partitionColumn)
         FROM moz_cookies
         WHERE \(predicate)
         """
@@ -77,6 +79,8 @@ enum WindowsFirefoxCookieReader {
                   let value = try Self.text(statement, column: 3)
             else { continue }
 
+            guard let partition = try Self.text(statement, column: 7), partition.utf8.count <= 4096 else { continue }
+            if !query.includePartitionedCookies, !partition.isEmpty { continue }
             let expiry = sqlite3_column_int64(statement, 4)
             let expires = expiry > 0 ? Date(timeIntervalSince1970: TimeInterval(expiry)) : nil
             if !query.includeExpired, let expires, expires < query.referenceDate { continue }
@@ -88,7 +92,24 @@ enum WindowsFirefoxCookieReader {
                 expires: expires,
                 isSecure: sqlite3_column_int(statement, 5) != 0,
                 isHTTPOnly: sqlite3_column_int(statement, 6) != 0,
-                scope: BrowserCookieDomainMatcher.scope(forStoredDomain: host)))
+                scope: BrowserCookieDomainMatcher.scope(forStoredDomain: host), storagePartition: partition))
+        }
+    }
+
+    private static func hasOriginAttributes(_ database: OpaquePointer) throws -> Bool {
+        var statement: OpaquePointer?
+        let result = sqlite3_prepare_v2(database, "PRAGMA table_info(moz_cookies)", -1, &statement, nil)
+        guard result == SQLITE_OK, let statement else {
+            if let statement { sqlite3_finalize(statement) }
+            throw Self.failure(result == SQLITE_OK ? SQLITE_ERROR : result)
+        }
+        defer { sqlite3_finalize(statement) }
+        while true {
+            try Task.checkCancellation()
+            let step = sqlite3_step(statement)
+            if step == SQLITE_DONE { return false }
+            guard step == SQLITE_ROW else { throw Self.failure(step) }
+            if try Self.text(statement, column: 1) == "originAttributes" { return true }
         }
     }
 

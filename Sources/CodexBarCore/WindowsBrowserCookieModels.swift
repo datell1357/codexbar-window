@@ -39,6 +39,8 @@ public enum BrowserCookieOriginStrategy: Sendable {
 
 /// Query definition for fetching browser cookies.
 public struct BrowserCookieQuery: Sendable {
+    /// Opt in only when the caller keeps each Firefox origin-attribute partition separate.
+    public var includePartitionedCookies = false
     /// Domain patterns to match (empty = no filtering).
     public var domains: [String]
     /// Matching strategy for domains.
@@ -133,6 +135,8 @@ public enum BrowserCookieScope: Sendable, Equatable {
 
 /// A browser cookie record normalized for cross-browser handling.
 public struct BrowserCookieRecord: Sendable {
+    /// Firefox origin attributes. Metadata only; never send as an HTTP cookie.
+    public let storagePartition: String
     /// Stored domain; normalization is performed separately during matching and HTTP conversion.
     public let domain: String
     /// Whether the browser stored this as an exact-host or domain cookie.
@@ -173,8 +177,10 @@ public struct BrowserCookieRecord: Sendable {
         expires: Date?,
         isSecure: Bool,
         isHTTPOnly: Bool,
-        scope: BrowserCookieScope)
+        scope: BrowserCookieScope,
+        storagePartition: String = "")
     {
+        self.storagePartition = storagePartition
         self.domain = domain
         self.scope = scope
         self.name = name
