@@ -147,6 +147,12 @@ public final class WindowsTrayHost: @unchecked Sendable {
     private let onTokenAccountAdd: @Sendable (UUID, WindowsTokenAccountAddRequest) -> Void
     private var popupTokenAccountAdds: [UINT_PTR: (UsageProvider, UUID?)] = [:]
     private var tokenAccountAddResult: WindowsTokenAccountAddResult?
+    private let onAccountRemovalBegin: @Sendable (UUID, ProviderInstanceID, UUID) -> Void
+    private let onAccountRemovalSave: @Sendable (UUID, UUID) -> Void
+    private let onAccountRemovalCancel: @Sendable (UUID) -> Void
+    private var popupAccountRemovals: [UINT_PTR: (ProviderInstanceID, UUID)] = [:]
+    private var accountRemovalLoadResult: WindowsTokenAccountRemovalLoadResult?
+    private var accountRemovalSaveResult: WindowsTokenAccountRemovalSaveResult?
     private let onMetadataEditBegin: @Sendable (UUID, ProviderInstanceID, UUID) -> Void
     private let onMetadataEditSave: @Sendable (UUID, UUID, WindowsTokenAccountMetadataPatch) -> Void
     private var popupMetadataEdits: [UINT_PTR: (ProviderInstanceID, UUID)] = [:]
@@ -270,6 +276,9 @@ public final class WindowsTrayHost: @unchecked Sendable {
         onSessionQuotaNotificationSettingsChanged: @escaping SessionQuotaNotificationSettingsChangedHandler = {},
         onQuotaWarningSettingsChanged: @escaping QuotaWarningSettingsChangedHandler = {},
         onTokenAccountAdd: @escaping @Sendable (UUID, WindowsTokenAccountAddRequest) -> Void = { _, _ in },
+        onAccountRemovalBegin: @escaping @Sendable (UUID, ProviderInstanceID, UUID) -> Void = { _, _, _ in },
+        onAccountRemovalSave: @escaping @Sendable (UUID, UUID) -> Void = { _, _ in },
+        onAccountRemovalCancel: @escaping @Sendable (UUID) -> Void = { _ in },
         onMetadataEditBegin: @escaping @Sendable (UUID, ProviderInstanceID, UUID) -> Void = { _, _, _ in },
         onMetadataEditSave: @escaping @Sendable (UUID, UUID, WindowsTokenAccountMetadataPatch) -> Void = { _, _, _ in },
         onCredentialEditBegin: @escaping @Sendable (UUID, ProviderInstanceID, UUID) -> Void = { _, _, _ in },
@@ -301,6 +310,9 @@ public final class WindowsTrayHost: @unchecked Sendable {
         self.onSessionQuotaNotificationSettingsChanged = onSessionQuotaNotificationSettingsChanged
         self.onQuotaWarningSettingsChanged = onQuotaWarningSettingsChanged
         self.onTokenAccountAdd = onTokenAccountAdd
+        self.onAccountRemovalBegin = onAccountRemovalBegin
+        self.onAccountRemovalSave = onAccountRemovalSave
+        self.onAccountRemovalCancel = onAccountRemovalCancel
         self.onMetadataEditBegin = onMetadataEditBegin
         self.onMetadataEditSave = onMetadataEditSave
         self.onCredentialEditBegin = onCredentialEditBegin
@@ -545,6 +557,93 @@ public final class WindowsTrayHost: @unchecked Sendable {
         case .failed: message = "Could not add or protect the account. Check your Windows profile and configuration access, then try again."
         }
         self.showMessage(message, caption: "Add saved account")
+    }
+
+    public func postAccountRemovalLoad(requestID: UUID, result: WindowsTokenAccountRemovalLoadResult) {
+        self.mailboxLock.lock()
+        guard !self.quitInvoked, self.tokenAccountPendingID == requestID,
+              self.accountRemovalLoadResult == nil else {
+            self.mailboxLock.unlock()
+            if case let .loaded(snapshot) = result { self.onAccountRemovalCancel(snapshot.ticketID) }
+            return
+        }
+        self.accountRemovalLoadResult = result
+        let window = self.window
+        self.mailboxLock.unlock()
+        if let window { PostMessageW(window, Self.wakeMessage, 0, 0) }
+    }
+
+    public func postAccountRemovalSave(requestID: UUID, result: WindowsTokenAccountRemovalSaveResult) {
+        self.mailboxLock.lock()
+        guard !self.quitInvoked, self.tokenAccountPendingID == requestID,
+              self.accountRemovalSaveResult == nil else { self.mailboxLock.unlock(); return }
+        self.accountRemovalSaveResult = result
+        let window = self.window
+        self.mailboxLock.unlock()
+        if let window { PostMessageW(window, Self.wakeMessage, 0, 0) }
+    }
+
+    private func drainAccountRemoval() {
+        guard !self.quitInvoked, !self.remoteEditorOpen, let window = self.window,
+              case .idle = self.providerEditorPhase, case .idle = self.codexWebSettingsEditorPhase else { return }
+        self.mailboxLock.lock()
+        let loaded = self.accountRemovalLoadResult
+        let saved = self.accountRemovalSaveResult
+        let requestID = self.tokenAccountPendingID
+        self.accountRemovalLoadResult = nil
+        self.accountRemovalSaveResult = nil
+        self.mailboxLock.unlock()
+        guard loaded != nil || saved != nil, let requestID else { return }
+        var message: String?
+        if let loaded {
+            switch loaded {
+            case let .loaded(snapshot):
+                let ticketID = snapshot.ticketID
+                let providerName = ProviderDescriptorRegistry.descriptor(for: snapshot.provider).metadata.displayName
+                let impact: String
+                if snapshot.remainingAccountCount == 0 {
+                    impact = "This is the last saved account. Future refreshes may use another configured or ambient authentication source."
+                } else if snapshot.removesSelectedAccount {
+                    impact = "This account is selected. Another remaining saved account will be selected."
+                } else {
+                    impact = "The currently selected saved account will stay selected."
+                }
+                let body = "Remove the saved account selected from the " + providerName + " menu?\n\n" + impact +
+                    "\nRemaining saved accounts: " + String(snapshot.remainingAccountCount) +
+                    "\n\nThis removes its saved credential from CodexBar configuration. It does not revoke the remote account or token. To restore it, add the credential again."
+                self.remoteEditorOpen = true
+                let choice = body.withCString(encodedAs: UTF16.self) { text in
+                    "Remove saved account".withCString(encodedAs: UTF16.self) { title in
+                        MessageBoxW(window, text, title, UINT(MB_YESNO | MB_ICONWARNING | MB_DEFBUTTON2))
+                    }
+                }
+                self.remoteEditorOpen = false
+                if !self.quitInvoked { PostMessageW(window, Self.wakeMessage, 0, 0) }
+                if !self.quitInvoked, choice == IDYES {
+                    self.onAccountRemovalSave(requestID, ticketID)
+                    return
+                }
+                self.onAccountRemovalCancel(ticketID)
+                if choice == 0 { message = "Could not open the removal confirmation. No removal was requested." }
+            case .unavailable: message = "The saved account is no longer available. Refresh usage and try again."
+            case .refreshInProgress: message = "Usage is refreshing. Try again after it finishes."
+            case .shuttingDown: break
+            case .failed: message = "Could not load the account. Check configuration access and try again."
+            }
+        }
+        if let saved {
+            switch saved {
+            case .removed: message = "Saved account removed. Usage refresh was requested. Remote authentication was not revoked."
+            case .staleAccount: message = "The account list or selection changed, or confirmation expired. Refresh usage and try again."
+            case .refreshInProgress: message = "Usage is refreshing. Reopen Saved accounts after it finishes."
+            case .shuttingDown: break
+            case .failed: message = "Could not remove the saved account. Check configuration access and try again."
+            }
+        }
+        self.mailboxLock.lock()
+        if self.tokenAccountPendingID == requestID { self.tokenAccountPendingID = nil }
+        self.mailboxLock.unlock()
+        if !self.quitInvoked, let message { self.showMessage(message, caption: "Remove saved account") }
     }
 
     public func postMetadataEditLoad(requestID: UUID, result: WindowsTokenAccountMetadataLoadResult) {
@@ -1038,6 +1137,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
         self.popupTokenAccountRenames.removeAll(keepingCapacity: true)
         self.popupCredentialEdits.removeAll(keepingCapacity: true)
         self.popupMetadataEdits.removeAll(keepingCapacity: true)
+        self.popupAccountRemovals.removeAll(keepingCapacity: true)
         self.popupTokenAccountAdds.removeAll(keepingCapacity: true)
         self.popupTokenAccountPages.removeAll(keepingCapacity: true)
         var continuingPage = false
@@ -1053,6 +1153,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
         self.popupTokenAccountRenames.removeAll(keepingCapacity: true)
         self.popupCredentialEdits.removeAll(keepingCapacity: true)
         self.popupMetadataEdits.removeAll(keepingCapacity: true)
+        self.popupAccountRemovals.removeAll(keepingCapacity: true)
         self.popupTokenAccountAdds.removeAll(keepingCapacity: true)
             self.popupTokenAccountPages.removeAll(keepingCapacity: true)
             self.mailboxLock.lock()
@@ -1142,6 +1243,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
                 }
             }
             var commands: [UINT_PTR: WindowsTokenAccountSelectionRequest] = [:]
+            var removals: [UINT_PTR: (ProviderInstanceID, UUID)] = [:]
             var metadataEdits: [UINT_PTR: (ProviderInstanceID, UUID)] = [:]
             var credentialEdits: [UINT_PTR: (ProviderInstanceID, UUID)] = [:]
             var renames: [UINT_PTR: (ProviderInstanceID, UUID, String)] = [:]
@@ -1153,6 +1255,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
                 let end = min(selection.accounts.count, accountEnd - providerStart)
                 guard start < end, let providerMenu = CreatePopupMenu() else { continue }
                 var providerCommands: [UINT_PTR: WindowsTokenAccountSelectionRequest] = [:]
+                var providerRemovals: [UINT_PTR: (ProviderInstanceID, UUID)] = [:]
                 var providerMetadataEdits: [UINT_PTR: (ProviderInstanceID, UUID)] = [:]
                 var providerCredentialEdits: [UINT_PTR: (ProviderInstanceID, UUID)] = [:]
                 var providerRenames: [UINT_PTR: (ProviderInstanceID, UUID, String)] = [:]
@@ -1172,6 +1275,10 @@ public final class WindowsTrayHost: @unchecked Sendable {
                                 AppendMenuW(providerMenu, UINT(MF_STRING), metadataCommand, $0)
                             }) != 0 { providerMetadataEdits[metadataCommand] = (selection.providerID, account.id) }
                         }
+                        let removalCommand = UINT_PTR(0x8400) + command - UINT_PTR(0x7E00)
+                        if ("Remove " + title + "…").withCString(encodedAs: UTF16.self, {
+                            AppendMenuW(providerMenu, UINT(MF_STRING), removalCommand, $0)
+                        }) != 0 { providerRemovals[removalCommand] = (selection.providerID, account.id) }
                         let credentialCommand = UINT_PTR(0x8200) + command - UINT_PTR(0x7E00)
                         if ("Replace credential for " + title + "…").withCString(encodedAs: UTF16.self, {
                             AppendMenuW(providerMenu, UINT(MF_STRING), credentialCommand, $0)
@@ -1190,6 +1297,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
                 }
                 if attached {
                     commands.merge(providerCommands) { _, new in new }
+                    removals.merge(providerRemovals) { _, new in new }
                     metadataEdits.merge(providerMetadataEdits) { _, new in new }
                     credentialEdits.merge(providerCredentialEdits) { _, new in new }
                     renames.merge(providerRenames) { _, new in new }
@@ -1204,6 +1312,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
                 self.popupTokenAccountRenames = renames
                 self.popupCredentialEdits = credentialEdits
                 self.popupMetadataEdits = metadataEdits
+                self.popupAccountRemovals = removals
                 self.popupTokenAccountPages = pageCommands
                 savedAccountsMenuPosition = menuPosition
             } else { DestroyMenu(accountsMenu) }
@@ -2266,6 +2375,25 @@ public final class WindowsTrayHost: @unchecked Sendable {
             self.onMetadataEditBegin(requestID, providerID, accountID)
             return
         }
+        if let (providerID, accountID) = self.popupAccountRemovals[command] {
+            guard !self.quitInvoked, !self.remoteEditorOpen,
+                  case .idle = self.providerEditorPhase, case .idle = self.codexWebSettingsEditorPhase else { return }
+            guard self.popupCopyPrivacy == WindowsUsagePresentationSettings.load().hidePersonalInfo else {
+                self.showMessage("Privacy settings changed. Reopen Saved accounts.", caption: "Saved accounts")
+                return
+            }
+            self.mailboxLock.lock()
+            guard self.tokenAccountPendingID == nil else {
+                self.mailboxLock.unlock()
+                self.showMessage("An account change is already in progress. Please wait.", caption: "Saved accounts")
+                return
+            }
+            let requestID = UUID()
+            self.tokenAccountPendingID = requestID
+            self.mailboxLock.unlock()
+            self.onAccountRemovalBegin(requestID, providerID, accountID)
+            return
+        }
         if let (providerID, accountID) = self.popupCredentialEdits[command] {
             guard !self.quitInvoked, !self.remoteEditorOpen,
                   case .idle = self.providerEditorPhase, case .idle = self.codexWebSettingsEditorPhase else { return }
@@ -2909,6 +3037,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
         if message == Self.wakeMessage {
             host.drainCLISetup()
             if host.remoteEditorOpen { return 0 }
+            host.drainAccountRemoval()
             host.drainMetadataEdit()
             host.drainCredentialEdit()
             host.drainTokenAccountAdd()

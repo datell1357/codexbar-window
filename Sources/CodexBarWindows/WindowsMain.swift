@@ -98,6 +98,26 @@ private final class WindowsTrayApplication: @unchecked Sendable {
                 self.host.postTokenAccountAdd(requestID: requestID, result: result)
             }
         },
+        onAccountRemovalBegin: { [weak self] requestID, providerID, accountID in
+            guard let self else { return }
+            Task {
+                let result = await self.runtime.beginTokenAccountRemoval(providerID: providerID, accountID: accountID)
+                self.host.postAccountRemovalLoad(requestID: requestID, result: result)
+            }
+        },
+        onAccountRemovalSave: { [weak self] requestID, ticketID in
+            guard let self else { return }
+            Task {
+                let result = await self.runtime.removeTokenAccount(ticketID: ticketID)
+                await self.runtime.cancelTokenAccountRemoval(ticketID: ticketID)
+                if case .removed = result { Task { await self.runtime.refresh() } }
+                self.host.postAccountRemovalSave(requestID: requestID, result: result)
+            }
+        },
+        onAccountRemovalCancel: { [weak self] ticketID in
+            guard let self else { return }
+            Task { await self.runtime.cancelTokenAccountRemoval(ticketID: ticketID) }
+        },
         onMetadataEditBegin: { [weak self] requestID, providerID, accountID in
             guard let self else { return }
             Task {

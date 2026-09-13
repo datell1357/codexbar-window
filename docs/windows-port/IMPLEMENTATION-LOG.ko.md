@@ -1642,3 +1642,13 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - catalog API key 제거 규칙과 selected/source 변경의 session/history/mailbox 상태 철회를 연결한다. config 파일·history 파일은 삭제하지 않는다. 실제 계정 삭제는 실행하지 않았다.
 
 남은 범위: 명시적 삭제 확인 UI/host/Main 연결, 마지막 계정 삭제 후 ambient source 안내, Antigravity shared OAuth cache 정리 parity, 동시 저장 및 Windows 검증. 이번 API는 config 계정 제거만 담당한다.
+
+## IMPL-120 — 저장 계정 삭제 확인 및 메뉴 연결
+
+상태 CODE_WRITTEN_UNVERIFIED. 컴파일/빌드/테스트/UI/실제 계정 삭제/검증 미실시. guidelines/COMMITS.md 부재로 핵심 커밋 규칙을 적용한다.
+
+- 저장 계정 메뉴 Remove 항목에서 impact ticket을 요청하고 UI thread의 기본 No 확인 창을 통과한 경우에만 삭제 API를 호출한다. 선택 계정 변경·남은 계정 수·마지막 계정 삭제 후 ambient source 가능성·복원 시 credential 재추가를 안내한다.
+- 취소·확인 창 실패·늦은 load 거절·save 종료 시 removal ticket을 정리한다. 기존 pending slot/모달 가드/메일박스를 사용하고 성공 후 refresh를 요청한다.
+- 원격 계정이나 토큰 취소와 로컬 config 제거를 구분한다. 실제 계정 삭제/인증 요청은 실행하지 않았다.
+
+남은 범위: 확인 창의 대상 식별 UX, Antigravity shared OAuth cache 정리, 마지막 계정의 source parity, Windows 클릭/취소/동시 변경/종료 검증 및 전체 기능 구현.
