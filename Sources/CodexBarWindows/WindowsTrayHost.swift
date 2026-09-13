@@ -24,6 +24,9 @@ public final class WindowsTrayHost: @unchecked Sendable {
     public typealias QuitHandler = @Sendable () -> Void
 
     private static let startupRegistrationCommand = UINT_PTR(0x7546)
+    private var cliSetupRunning = false // Protected by mailboxLock.
+    private var cliSetupCancelled = false
+    private var cliSetupResult: (text: String, hidePaths: Bool)?
     private static let cliSetupCommand = UINT_PTR(0x7549)
     private static let startupDetailsCommand = UINT_PTR(0x7548)
     private static let startupSettingsCommand = UINT_PTR(0x7547)
@@ -1391,6 +1394,8 @@ public final class WindowsTrayHost: @unchecked Sendable {
             return
         }
         self.quitInvoked = true
+        self.cliSetupCancelled = true
+        self.cliSetupResult = nil
         self.mailboxAgentSessions = .disabled
         self.mailboxRemoteSessions = .disabled
         self.popupRemoteCommands.removeAll()
@@ -1959,9 +1964,50 @@ public final class WindowsTrayHost: @unchecked Sendable {
     }
 
     private func showCLISetup() {
-        guard let hwnd = self.window, !self.quitInvoked else { return }
+        guard self.window != nil, !self.quitInvoked else { return }
         let hidePaths = self.presentationDefaults.object(forKey: "hidePersonalInfo") as? Bool ?? false
-        let body = Array(WindowsCLISetup.guidance(hidePaths: hidePaths).utf16) + [0]
+        self.mailboxLock.lock()
+        if self.cliSetupRunning {
+            self.cliSetupCancelled = true
+            self.mailboxLock.unlock()
+            self.showProviderEditorNotice("CLI discovery cancellation requested. Reopen setup after the current file query returns.")
+            return
+        }
+        self.cliSetupRunning = true
+        self.cliSetupCancelled = false
+        self.cliSetupResult = nil
+        self.mailboxLock.unlock()
+        Thread.detachNewThread { [weak self] in
+            guard let self else { return }
+            let text = WindowsCLISetup.guidance(hidePaths: hidePaths) {
+                self.mailboxLock.lock()
+                defer { self.mailboxLock.unlock() }
+                return self.cliSetupCancelled || self.quitInvoked
+            }
+            self.mailboxLock.lock()
+            self.cliSetupRunning = false
+            if !self.cliSetupCancelled, !self.quitInvoked {
+                self.cliSetupResult = (text, hidePaths)
+                // Post while holding the lifetime lock used by window teardown.
+                if let hwnd = self.window { PostMessageW(hwnd, Self.wakeMessage, 0, 0) }
+            }
+            self.mailboxLock.unlock()
+        }
+    }
+
+    private func drainCLISetup() {
+        guard !self.popupIsOpen, !self.remoteEditorOpen, !self.quitInvoked,
+              case .idle = self.providerEditorPhase, case .idle = self.codexWebSettingsEditorPhase,
+              let hwnd = self.window else { return }
+        self.mailboxLock.lock()
+        let result = self.cliSetupResult
+        self.cliSetupResult = nil
+        self.mailboxLock.unlock()
+        guard let result else { return }
+        let hidePaths = self.presentationDefaults.object(forKey: "hidePersonalInfo") as? Bool ?? false
+        // Never surface previously collected paths after privacy has been enabled.
+        guard hidePaths == result.hidePaths else { self.showCLISetup(); return }
+        let body = Array(result.text.utf16) + [0]
         let title = Array("CodexBar command-line setup".utf16) + [0]
         _ = body.withUnsafeBufferPointer { text in
             title.withUnsafeBufferPointer { caption in
@@ -2061,6 +2107,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
             return 0
         }
         if message == Self.wakeMessage {
+            host.drainCLISetup()
             if host.remoteEditorOpen { return 0 }
             host.drainProviderQuotaWarningEditor()
             host.drainCodexWebSettingsEditor()

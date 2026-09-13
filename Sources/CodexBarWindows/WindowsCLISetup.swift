@@ -4,7 +4,7 @@ import WinSDK
 
 /// Installation guidance only: never executes the candidate or changes PATH.
 enum WindowsCLISetup {
-    static func guidance(hidePaths: Bool) -> String {
+    static func guidance(hidePaths: Bool, cancelled: () -> Bool = { false }) -> String {
         var units = [UInt16](repeating: 0, count: 32768)
         let count = GetModuleFileNameW(nil, &units, DWORD(units.count))
         guard count > 0, count < DWORD(units.count) else {
@@ -21,6 +21,7 @@ enum WindowsCLISetup {
         var available: [String] = []
         var lines: [String] = []
         for name in names {
+            if cancelled() { return "CLI discovery cancelled." }
             let path = directory + "\\" + name
             let attributes = path.withCString(encodedAs: UTF16.self) { GetFileAttributesW($0) }
             if attributes == INVALID_FILE_ATTRIBUTES {
@@ -48,12 +49,12 @@ enum WindowsCLISetup {
             lines.append("Obtain the complete Windows distribution containing the CLI and its libraries. " +
                 "This app does not download or install the CLI yet. A CLI elsewhere on your computer is not ruled out.")
         }
-        lines.append(self.pathGuidance(hidePaths: hidePaths))
+        lines.append(self.pathGuidance(hidePaths: hidePaths, cancelled: cancelled))
         lines.append("Package aliases, shell resolution, binary identity and dependencies " +
             "were not checked. No command was run and no environment setting was changed.")
         return lines.joined(separator: "\n\n")
     }
-    private static func pathGuidance(hidePaths: Bool) -> String {
+    private static func pathGuidance(hidePaths: Bool, cancelled: () -> Bool) -> String {
         // Read only this process's PATH; newly edited user settings may require an app restart.
         var buffer = [UInt16](repeating: 0, count: 32768)
         let count = "PATH".withCString(encodedAs: UTF16.self) {
@@ -71,7 +72,7 @@ enum WindowsCLISetup {
         var matchCount = 0
         let started = GetTickCount64()
         for (index, entry) in entries.prefix(64).enumerated() {
-            if GetTickCount64() - started > 200 {
+            if cancelled() || GetTickCount64() - started > 200 {
                 skipped += min(64, entries.count) - index
                 break
             }

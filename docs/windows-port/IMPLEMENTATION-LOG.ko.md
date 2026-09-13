@@ -890,3 +890,13 @@
 남은 범위: 개별 OS 호출은 중단할 수 없고 fixed drive의 상위 reparse 경로가 network를 가리킬 수도 있어 wall-clock hard limit이 아니다. UI thread 밖 실행·취소·오래된 결과 처리, PATH 설치/제거, MSIX alias 및 Windows 검증은 남아 있다.
 
 다음 구현: CLI 안내 탐색을 tray message thread 밖으로 옮기고 취소/오래된 결과 처리를 연결한다.
+
+## IMPL-048 — CLI 탐색 worker와 취소
+
+상태: CODE_WRITTEN_UNVERIFIED. 사용자 지시에 따라 빌드/컴파일/테스트/실행/검증 미실시. 계약 WIN-052.
+
+- CLI file/PATH 조회를 detached Thread에서 실행하고 mailbox lock으로 단일 진행 요청과 결과를 보호한다. 반복 선택은 진행 요청의 협력 취소를 설정하며 worker 종료 전 새 worker를 만들지 않는다.
+- sibling/PATH 반복에 취소 확인을 전달한다. quit은 취소 및 결과 제거를 수행하며 worker는 종료 뒤 UI 결과를 게시하지 않는다.
+- wake message에서 UI thread dialog를 표시하고 privacy 값이 변경됐으면 결과를 버리고 새 설정으로 다시 수집한다. 열린 popup/editor 동안은 결과를 보류한다.
+
+남은 범위: 개별 Win32 조회 중단은 불가하다. 모달 종료 뒤 보류 결과의 확실한 재전달 및 진행/취소 상태 UI 보강이 다음 작업이다. thread/종료/privacy 경쟁과 Windows 실행은 미검증이다. 자동 PATH 설치와 MSIX 등 전체 의무는 남아 있다.
