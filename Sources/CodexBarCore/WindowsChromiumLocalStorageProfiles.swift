@@ -39,6 +39,11 @@ enum WindowsChromiumLocalStorageProfiles {
                 directoryContents: { path in
                     guard !Task.isCancelled, Date() < deadline else { return nil }
                     return try? manager.contentsOfDirectory(atPath: path)
+                },
+                isDirectory: { path in
+                    guard !Task.isCancelled, Date() < deadline else { return false }
+                    let attributes = try? URL(fileURLWithPath: path).resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey])
+                    return attributes?.isDirectory == true && attributes?.isSymbolicLink != true
                 })
             for (index, directory) in directories.enumerated() {
                 try self.check(deadline)

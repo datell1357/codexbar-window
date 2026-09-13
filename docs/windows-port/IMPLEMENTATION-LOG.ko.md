@@ -3063,3 +3063,11 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - WINDSURF-BROWSER-IMPORT.ko.md에 연결된 가져오기 흐름, 경로 우선순위, 저장과 조회 의미, 제한을 정리했다.
 - 남은 소요: 추가 브라우저/압축 지원 및 전체 계획 나머지.
 - CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·UI·실제 브라우저/파일/네트워크 조회 미실행.
+
+## IMPL-276 — Chromium 프로필 순서와 탐색
+
+- Windows 공유 프로필 locator를 Default 우선, 숫자 Profile N 순으로 정렬하도록 변경했다. 숫자가 같거나 비표준 이름이면 고정 UTF-16 순서를 사용한다.
+- localStorage 탐색은 프로필 디렉터리 확인에 내부 파일 전체 목록 대신 디렉터리/링크 속성 조회를 주입한다. 기존 호출자는 기존 동작을 유지한다.
+- 기존 표준 경로 중복 제거와 64개 제한을 유지한다. 루트 디렉터리 열거 자체의 완전한 streaming 제한은 아직 구현하지 않았다.
+- 남은 소요: 추가 브라우저/압축 및 전체 계획 나머지.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·실제 파일/브라우저 실행 미실행.

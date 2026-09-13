@@ -9,7 +9,8 @@ enum WindowsBrowserProfileLocator {
         environment: [String: String],
         fileExists: (String) -> Bool,
         directoryContents: (String) -> [String]?,
-        readText: ((String) -> String?)? = nil) -> [URL]
+        readText: ((String) -> String?)? = nil,
+        isDirectory: ((String) -> Bool)? = nil) -> [URL]
     {
         if browser == .firefox {
             let root = CodexBarPlatformPaths.roamingAppDataURL(home: home, environment: environment)
@@ -29,14 +30,32 @@ enum WindowsBrowserProfileLocator {
 
         // Preserve the upstream Chromium profile-name heuristic. Confirm candidates are readable directories;
         // cookie databases and Local State are never opened here. Custom policy/command-line roots remain unsupported.
-        return names.sorted().compactMap { name in
+        return names.sorted(by: self.profileNamePrecedes).compactMap { name in
             guard !name.contains("/"), !name.contains("\\"), !name.contains(":"), !name.contains("\0"),
                   name == "Default" || name.hasPrefix("Profile ") || name.hasPrefix("user-")
             else { return nil }
             let profile = root.appendingPathComponent(name, isDirectory: true)
-            guard directoryContents(profile.path) != nil else { return nil }
+            guard isDirectory?(profile.path) ?? (directoryContents(profile.path) != nil) else { return nil }
             return profile
         }
+    }
+
+    private static func profileNamePrecedes(_ lhs: String, _ rhs: String) -> Bool {
+        if lhs == rhs { return false }
+        if lhs == "Default" { return true }
+        if rhs == "Default" { return false }
+        func number(_ name: String) -> UInt64? {
+            guard name.hasPrefix("Profile ") else { return nil }
+            let suffix = name.dropFirst(8)
+            guard !suffix.isEmpty, suffix.utf8.allSatisfy({ (48...57).contains($0) }) else { return nil }
+            return UInt64(suffix)
+        }
+        let left = number(lhs), right = number(rhs)
+        if let left, let right, left != right { return left < right }
+        if left != nil && right == nil { return true }
+        if left == nil && right != nil { return false }
+        // Fixed code-unit ordering avoids locale-dependent account selection order.
+        return lhs.utf16.lexicographicallyPrecedes(rhs.utf16)
     }
 
     private static func readProfileRegistry(at path: String) -> String? {
