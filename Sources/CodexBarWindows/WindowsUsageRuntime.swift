@@ -2641,6 +2641,7 @@ public actor WindowsUsageRuntime {
                 claudeFetcher: self.claudeFetcher,
                 browserDetection: self.browserDetection,
                 selectedTokenAccountID: account?.id,
+                selectedTokenAccountExternalIdentifier: account?.externalIdentifier,
                 tokenAccountTokenUpdater: context.tokenUpdater(for: account),
                 providerManualTokenUpdater: context.manualTokenUpdater(),
                 persistsCLISessions: true,

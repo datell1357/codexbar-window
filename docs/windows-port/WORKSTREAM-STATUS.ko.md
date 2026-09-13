@@ -1,5 +1,7 @@
 # Windows 전용 제품 작업 현황
 
+- IMPL-190: Windows Cursor quota 응답을 저장된 외부 계정 ID와 비교하고 미확인/불일치 응답 게시를 차단하도록 작성했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
 - IMPL-189: Cursor 가져오기에서 확인한 계정 ID 저장과 credential 변경 시 ID 철회를 연결했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
 
 - IMPL-188: Cursor 후보 메뉴와 가져오기 이름 입력 대화상자의 privacy 변경 감지/닫기/저장 차단을 작성했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.

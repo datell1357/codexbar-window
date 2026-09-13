@@ -2336,3 +2336,11 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - Cursor credential이 다른 값으로 교체되면 이전 외부 ID를 제거한다. 이름 변경 또는 같은 credential 유지 시 기존 ID를 보존한다.
 - 남은 소요: 갱신 응답 계정 ID 불일치 차단, 팀 ID 모델, 기존 계정 가져오기 중복 정책, 추가 브라우저 지원 및 전체 계획의 나머지 항목.
 - CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·실제 저장/API 검증 미실행.
+
+## IMPL-190 — Cursor quota 계정 소유권 확인
+
+- Windows runtime이 선택 계정의 externalIdentifier를 fetch context에 전달한다. 다른 provider나 ambient 계정에서 ID를 가져오지 않는다.
+- Windows Cursor status strategy는 저장된 ID가 있으면 응답 ID를 확인한 뒤 usage snapshot으로 변환한다. ID가 없거나 다르면 식별자를 노출하지 않는 오류를 반환하고 fallback하지 않는다.
+- ID가 없는 기존/수동 계정은 기존 경로를 유지한다. macOS 동작 변경 없이 context 새 인자는 nil 기본값이다.
+- 남은 소요: Cursor 비용 수집의 별도 응답 소유권 확인, CLI context 전달, 팀 ID 모델, 추가 브라우저 지원 및 전체 계획의 나머지 항목.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·실제 계정/API 검증 미실행.

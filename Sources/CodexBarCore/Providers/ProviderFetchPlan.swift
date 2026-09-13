@@ -38,6 +38,8 @@ public struct ProviderFetchContext: Sendable {
     public let fetcher: UsageFetcher
     public let claudeFetcher: any ClaudeUsageFetching
     public let browserDetection: BrowserDetection
+    /// Verified identity of the selected credential, when the host has one. Never an ambient account identity.
+    public let selectedTokenAccountExternalIdentifier: String?
     public let selectedTokenAccountID: UUID?
     public let tokenAccountTokenUpdater: TokenAccountTokenUpdater?
     public let providerManualTokenUpdater: ProviderManualTokenUpdater?
@@ -73,6 +75,7 @@ public struct ProviderFetchContext: Sendable {
         claudeFetcher: any ClaudeUsageFetching,
         browserDetection: BrowserDetection,
         selectedTokenAccountID: UUID? = nil,
+        selectedTokenAccountExternalIdentifier: String? = nil,
         tokenAccountTokenUpdater: TokenAccountTokenUpdater? = nil,
         providerManualTokenUpdater: ProviderManualTokenUpdater? = nil,
         costUsageHistoryDays: Int = 30,
@@ -94,6 +97,7 @@ public struct ProviderFetchContext: Sendable {
         self.fetcher = fetcher
         self.claudeFetcher = claudeFetcher
         self.browserDetection = browserDetection
+        self.selectedTokenAccountExternalIdentifier = selectedTokenAccountExternalIdentifier
         self.selectedTokenAccountID = selectedTokenAccountID
         self.tokenAccountTokenUpdater = tokenAccountTokenUpdater
         self.providerManualTokenUpdater = providerManualTokenUpdater

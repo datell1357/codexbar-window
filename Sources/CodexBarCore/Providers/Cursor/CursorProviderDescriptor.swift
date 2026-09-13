@@ -151,6 +151,18 @@ public enum CursorProviderDescriptor {
     }
 }
 
+#if os(Windows)
+private enum CursorSelectedAccountIdentityError: LocalizedError {
+    case unavailable, mismatch
+    var errorDescription: String? {
+        switch self {
+        case .unavailable: "Cursor account identity could not be confirmed. Retry or import the account again."
+        case .mismatch: "The Cursor session belongs to a different account. Import the intended account again."
+        }
+    }
+}
+#endif
+
 struct CursorStatusFetchStrategy: ProviderFetchStrategy {
     let id: String = "cursor.web"
     let kind: ProviderFetchKind = .web
@@ -170,6 +182,13 @@ struct CursorStatusFetchStrategy: ProviderFetchStrategy {
             cookieHeaderOverride: manual,
             allowAppAuthFallback: context.sourceMode != .web,
             logger: logger)
+        #if os(Windows)
+        if let expected = context.selectedTokenAccountExternalIdentifier {
+            guard let actual = snap.accountID?.trimmingCharacters(in: .whitespacesAndNewlines),
+                  !actual.isEmpty, !expected.isEmpty else { throw CursorSelectedAccountIdentityError.unavailable }
+            guard actual == expected else { throw CursorSelectedAccountIdentityError.mismatch }
+        }
+        #endif
         return self.makeResult(
             usage: snap.toUsageSnapshot(),
             sourceLabel: "web")
