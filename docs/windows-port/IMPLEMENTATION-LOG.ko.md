@@ -2986,3 +2986,12 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - 후보는 구조상 유효한 데이터일 뿐 서버 인증이나 계정 소유권 확인 결과가 아니다. API 검증 전 자동 저장하지 않는다.
 - 남은 소요: 후보 선택, API 조회 및 계정 저장 UI/runtime 연결, 추가 압축 지원과 전체 계획 나머지.
 - CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·실제 브라우저/네트워크 조회 미실행.
+
+## IMPL-267 — Windsurf Windows 브라우저 탐색과 API probe
+
+- 공개 WindowsWindsurfBrowserSessionImporter에 Chrome 기본 탐색과 후보별 API probe를 추가했다. 브라우저 접근 gate를 확인하며 프로필 읽기 실패/잠금/생략, origin 불완전/오류를 별도로 집계한다.
+- 기존 격리 HTTP transport와 세션 parser를 재사용하고 GetPlanStatus가 없는 응답은 가져오기 probe 성공으로 취급하지 않는다.
+- 공유 deadline을 적용한 task group timer, 취소 전파와 응답 후 deadline 확인을 포함했다. 발견/조회만으로 계정을 저장하거나 선택하지 않는다.
+- GetPlanStatus 모델에는 서버 계정 ID가 없으므로 결과는 ProbedCandidate이며 검증된 계정 ID를 제공하지 않는다. 브라우저 입력 account ID를 서버에서 확인된 신원으로 표시하지 않는다.
+- 남은 소요: runtime의 임시 후보 수명/설정 변경 방어, 후보 선택 및 계정 저장 UI, 추가 압축 지원과 전체 계획 나머지.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·실제 브라우저/네트워크 요청 미실행.

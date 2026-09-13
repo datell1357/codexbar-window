@@ -1,5 +1,7 @@
 # Windows 전용 제품 작업 현황
 
+- IMPL-267: Windows Windsurf Chrome 탐색과 후보 API probe를 작성했다. 서버 신원 확인과 구분하며 runtime/UI 저장 연결은 남아 있다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
 - IMPL-266: Windows Windsurf localStorage 세션 후보 backend를 추가했다. profile/origin 분리와 기존 bundle 구조 검사를 연결했으며 API/UI 통합은 남아 있다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
 
 - IMPL-265: Chromium schema 1의 정확한 origin 경계와 Latin-1/UTF-16 문자열 decoder를 작성했다. Windsurf 후보 및 UI 연결은 남아 있다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.

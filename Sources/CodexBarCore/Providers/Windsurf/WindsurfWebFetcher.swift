@@ -219,6 +219,23 @@ public enum WindsurfWebFetcher {
         #endif
     }
 
+    #if os(Windows)
+    /// Explicit import probe. GetPlanStatus does not return an authoritative account identifier.
+    static func probeBrowserSession(
+        _ bundle: String, timeout: TimeInterval,
+        transport: any ProviderHTTPTransport) async throws -> UsageSnapshot
+    {
+        try Task.checkCancellation()
+        let auth = try self.checkedManualSessionInput(bundle)
+        let response = try await self.fetchPlanStatus(auth: auth, timeout: timeout, transport: transport)
+        try Task.checkCancellation()
+        guard response.planStatus != nil else {
+            throw WindsurfWebFetcherError.apiCallFailed("The account response did not contain plan status.")
+        }
+        return response.toUsageSnapshot()
+    }
+    #endif
+
     /// Structural validation only. Makes no network request and does not establish account authentication.
     public static func validateManualSessionInput(_ raw: String) throws {
         _ = try self.checkedManualSessionInput(raw)
