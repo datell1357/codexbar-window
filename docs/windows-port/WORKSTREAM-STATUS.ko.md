@@ -1,5 +1,7 @@
 # Windows 전용 제품 작업 현황
 
+- IMPL-099: 사용자 범위 DPAPI token codec을 작성했다. 저장소 미연결, CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
 - IMPL-098: 새 토큰 계정 추가 backend를 작성했다. UI/보호 저장 이전 미연결, CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
 
 - IMPL-097: 계정 이름 창 DPI 배치·system font·초기 작업 영역 배치를 작성했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.

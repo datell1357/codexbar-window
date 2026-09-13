@@ -1429,3 +1429,15 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/hidpi/wm-dpichanged 
 - 성공 후 이전 계정 표시를 철회하며 caller가 새로고침해야 한다. 현재 UI 미연결이다.
 
 제한: 기존 CodexBarConfigStore는 JSON token 필드를 사용한다. 이 backend 자체에 Credential Manager/DPAPI 이전은 없으며 새 credential 입력 UI를 배포 가능한 기능으로 판정하기 전에 해당 보호 저장·마이그레이션/호환성 계약을 연결해야 한다. 추가 UI, provider별 credential 검증, 삭제·수정·OAuth·동시 계정 표시와 전체 Windows 검증도 남아 있다.
+
+## IMPL-099 — Windows 사용자 범위 토큰 DPAPI codec
+
+상태 CODE_WRITTEN_UNVERIFIED. 컴파일/빌드/manifest 평가/테스트/DPAPI/실계정/검증 미실시. guidelines/COMMITS.md 부재로 핵심 커밋 규칙을 적용한다.
+
+- WindowsTokenAccountProtection protect/unprotect 계층을 작성했다. 사용자 범위 DPAPI, UI_FORBIDDEN, provider+account UUID의 domain entropy와 versioned payload를 사용한다. machine-wide 보호 옵션은 사용하지 않는다.
+- 입력·출력 크기를 제한하고 복원 시 payload version/공급자/계정/토큰 크기를 확인한다. 원문/암호문/OS 예외 내용을 로그에 출력하지 않으며 실패를 평문 반환으로 대체하지 않는다.
+- Windows 시스템 Crypt32 링크를 Core에 추가했다. Native output은 LocalFree로 정리한다. Swift Data/String 복제 메모리의 완전한 zeroization은 구현되지 않았다.
+
+남은 범위: config의 보호 token schema/읽기/쓰기 연결과 legacy migration, CLI/다른 호출부 호환성, 저장 실패·profile 변경·잘못된 암호문·복구 UX, Windows ABI 및 DPAPI 검증. 이 codec은 아직 저장 호출부에 연결되지 않아 기존 JSON token 저장을 변경하지 않는다.
+
+API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-cryptprotectdata , https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-cryptunprotectdata
