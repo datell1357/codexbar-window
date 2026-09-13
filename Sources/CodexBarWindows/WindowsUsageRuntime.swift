@@ -126,6 +126,15 @@ public actor WindowsUsageRuntime {
         let storeUnreadable: Bool
     }
     private var observedCodexOwner: CodexObservedOwner?
+    private struct CredentialEditTicket {
+        let id: UUID
+        let providerID: ProviderInstanceID
+        let accountID: UUID
+        let revision: Data
+        let expiresAt: Date
+    }
+    private var credentialEditTicket: CredentialEditTicket?
+
     private var quotaWarningGeneration: UInt64 = 0
     private var predictivePaceWarningGeneration: UInt64 = 0
     private var predictivePaceWarningKeys: Set<PredictivePaceWarningTransitionCore.Key> = []
@@ -405,6 +414,91 @@ public actor WindowsUsageRuntime {
 
     private static func accountLabelRevision(_ label: String) -> String {
         SHA256.hash(data: Data(label.utf8)).map { String(format: "%02x", $0) }.joined()
+    }
+
+    private static func credentialEditRevision(_ account: ProviderTokenAccount) throws -> Data {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        return Data(SHA256.hash(data: try encoder.encode(account)))
+    }
+
+    public func beginTokenAccountCredentialEdit(providerID: ProviderInstanceID,
+                                                accountID: UUID) -> WindowsTokenAccountCredentialLoadResult {
+        guard !self.shuttingDown else { return .shuttingDown }
+        guard self.refreshTask == nil else { return .refreshInProgress }
+        self.credentialEditTicket = nil
+        do {
+            guard let provider = providerID.firstPartyProvider,
+                  TokenAccountSupportCatalog.support(for: provider) != nil,
+                  let config = try self.configStore.load(), config.enabledProviders().contains(providerID),
+                  let data = config.providerConfig(for: providerID)?.tokenAccounts,
+                  Set(data.accounts.map(\.id)).count == data.accounts.count,
+                  let account = data.accounts.first(where: { $0.id == accountID }) else { return .unavailable }
+            let ticket = CredentialEditTicket(id: UUID(), providerID: providerID, accountID: accountID,
+                revision: try Self.credentialEditRevision(account), expiresAt: Date().addingTimeInterval(600))
+            self.credentialEditTicket = ticket
+            return .loaded(ticketID: ticket.id)
+        } catch { return .failed }
+    }
+
+    public func cancelTokenAccountCredentialEdit(ticketID: UUID) {
+        if self.credentialEditTicket?.id == ticketID { self.credentialEditTicket = nil }
+    }
+
+    /// The replacement contains a secret and must never be logged or returned to the UI.
+    public func replaceTokenAccountCredential(ticketID: UUID,
+                                              replacement: String) -> WindowsTokenAccountCredentialSaveResult {
+        guard !self.shuttingDown else { return .shuttingDown }
+        guard self.refreshTask == nil else { return .refreshInProgress }
+        guard let ticket = self.credentialEditTicket, ticket.id == ticketID else { return .staleAccount }
+        guard ticket.expiresAt > Date() else {
+            self.credentialEditTicket = nil
+            return .staleAccount
+        }
+        let token = replacement.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !token.isEmpty, token.utf8.count <= 65_536, !token.contains("\0") else { return .invalidInput }
+        do {
+            guard let provider = ticket.providerID.firstPartyProvider,
+                  let support = TokenAccountSupportCatalog.support(for: provider),
+                  var config = try self.configStore.load(), config.enabledProviders().contains(ticket.providerID),
+                  var entry = config.providerConfig(for: ticket.providerID), let data = entry.tokenAccounts,
+                  Set(data.accounts.map(\.id)).count == data.accounts.count,
+                  let index = data.accounts.firstIndex(where: { $0.id == ticket.accountID }),
+                  try Self.credentialEditRevision(data.accounts[index]) == ticket.revision else {
+                self.credentialEditTicket = nil
+                return .staleAccount
+            }
+            let existing = data.accounts[index]
+            guard existing.token != token else {
+                self.credentialEditTicket = nil
+                return .unchanged
+            }
+            var accounts = data.accounts
+            accounts[index] = ProviderTokenAccount(id: existing.id, label: existing.label, token: token,
+                addedAt: existing.addedAt, lastUsed: existing.lastUsed,
+                externalIdentifier: existing.externalIdentifier, usageScope: existing.usageScope,
+                organizationID: existing.organizationID, workspaceID: existing.workspaceID)
+            entry.tokenAccounts = ProviderTokenAccountData(version: data.version, accounts: accounts,
+                                                           activeIndex: data.activeIndex)
+            let isSelected = index == data.clampedActiveIndex()
+            if isSelected {
+                if support.clearsAPIKeyOnMutation { entry.apiKey = nil }
+                if support.requiresManualCookieSource { entry.cookieSource = .manual }
+            }
+            config.setProviderConfig(entry)
+            try self.configStore.save(config)
+            self.credentialEditTicket = nil
+            self.latestProviderConfigs[ticket.providerID] = entry
+            if isSelected {
+                self.invalidateSelectedAccountState(ticket.providerID)
+                self.presentations.removeValue(forKey: ticket.providerID)
+                self.providerCopyErrors.removeValue(forKey: ticket.providerID.rawValue)
+                self.renderEntries = [.row("Account credential updated. Refresh usage to load the account.")]
+                self.statusMenuEntries.removeAll()
+            }
+            self.publishRenderEntries(settings: WindowsUsagePresentationSettings.load())
+            return .saved
+        } catch { return .failed }
     }
 
     /// Rename only: no credential normalization, account activation or auth-source mutation.
@@ -1105,6 +1199,7 @@ public actor WindowsUsageRuntime {
         self.latestEnabledProviderIDs = nil
         self.observedAccountSignatures = nil
         self.observedCodexOwner = nil
+        self.credentialEditTicket = nil
         await CLIProbeSessionResetter.resetAll()
     }
 

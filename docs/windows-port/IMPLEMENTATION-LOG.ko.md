@@ -1552,3 +1552,13 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - historical generation은 config 및 Codex owner reconciliation 이후 캡처한다. 표시 이름과 OAuth token rotation은 owner 비교에 포함하지 않는다. 비교값은 현재 선택 계정만 메모리에 보관하고 출력·영구 저장하지 않는다.
 
 남은 범위: unresolved 상태끼리 식별 불가능한 외부 credential 교체, 다른 공급자의 ambient OAuth/browser identity, 이미 표시된 알림 철회, 실제 profile/managed/live 전환 및 Windows race 검증. 전체 계정 기능 완료를 의미하지 않는다.
+
+## IMPL-111 — 저장 계정 credential 교체 backend
+
+상태 CODE_WRITTEN_UNVERIFIED. 컴파일/빌드/테스트/credential/검증 미실시. guidelines/COMMITS.md 부재로 핵심 커밋 규칙을 적용한다.
+
+- 기존 토큰을 UI에 전달하지 않는 단일 opaque UUID 편집 티켓 begin/cancel/save API를 작성했다. 현재 계정 전체 revision digest는 runtime 내부에만 유지하며 10분 만료와 새 편집 시작·shutdown 정리를 적용한다.
+- 저장 시 config를 다시 읽어 account UUID·revision·활성 공급자·중복 UUID를 확인한다. refresh 중에는 변경을 거절한다. 기존 계정 ID/이름/metadata/선택 index를 유지하고 토큰만 교체한다.
+- 현재 선택 계정 교체에만 공급자 manual source/API key 규칙과 기존 session/history/mailbox 상태 철회를 적용한다. 비선택 계정 교체는 활성 계정을 바꾸지 않는다. 저장은 Windows 보호 config 경로를 사용한다.
+
+남은 범위: native 교체 UI/host/Main 연결, provider별 credential 구조 안내·정규화, scope/org 편집, 프로세스 간 동시 저장 및 원자 쓰기 후 권한 오류 처리, Windows 실행 검증. 이 batch는 사용자에게 노출되는 기능 완료가 아니다.
