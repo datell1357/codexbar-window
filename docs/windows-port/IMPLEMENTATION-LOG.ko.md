@@ -1134,3 +1134,13 @@
 - receipt가 있는데 파일/부모 폴더가 누락되면 수리나 재설치로 간주하지 않고 중단한다. 새 설치 실패 시 임시 사본은 보존되며 다음 재개는 새 임시 위치를 쓴다.
 
 남은 범위: 옛 최종 경로의 불완전 파일/수정 파일 처리, staging·journal 이전 세대 공간 정리, 서명 확인과 Move 사이 및 상위 경로 외부 변경, receipt 자체 동시 변경, 파일시스템/전원 손실 내구성, Apps 등록·참조 migration·전체 Windows 검증.
+
+## IMPL-070 — 설치 도구 배포 및 전체 서명 계약
+
+상태 CODE_WRITTEN_UNVERIFIED. manifest/PowerShell/패키징/인증서/서명/설치/빌드/컴파일/테스트/검증 실행 미실시. guidelines/COMMITS.md 부재로 제공된 핵심 커밋 규칙을 따른다.
+
+- 설치된 앱 등록의 선행 조건으로 설치·선택·제거·복구 도구가 배포물에 실제 포함되도록 manifest producer를 연결했다. tools 아래에 8개 명시적 스크립트를 넣고 중복 목적지는 기존 규칙대로 거절한다.
+- Read-CodexBarFirstPartyFiles.ps1에 앱/CLI/단일 PATH resource/8개 tools의 공통 계약을 작성했다. producer·stager·signing request·signer·installer에서 동일 목록의 누락과 서명 대상 개수를 처리한다.
+- installer는 tools를 포함한 모든 first-party 파일에 서명자/timestamp 확인을 적용하도록 작성했다. 기존 3개만 서명하는 인벤토리는 새 계약으로 다시 조립·서명해야 하며 실제 서명 작업은 하지 않았다.
+
+남은 범위: Apps 등록 및 버전 제거 중에도 유지되는 invocation 위치, installer bootstrap trust, 제거가 실행 중인 helper에 미치는 영향, staging/backup 공간 회수·PATH/startup migration·전체 Windows 검증. 도구 배포가 완전한 설치 프로그램/UI 통합을 의미하지 않는다.

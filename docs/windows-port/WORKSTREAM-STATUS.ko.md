@@ -1,5 +1,7 @@
 # Windows 전용 제품 작업 현황
 
+IMPL-070: Shipped lifecycle tools and shared first-party signing/install contract written; Apps registration and Windows validation remain pending.
+
 IMPL-069: Staged payload publication and interrupted receipt/plan reconciliation written; registration, cleanup and Windows validation remain pending.
 
 IMPL-068: Recorded incomplete-install resumption written; exact inventory/signer binding and existing-file comparison added. Registration and Windows validation remain pending.

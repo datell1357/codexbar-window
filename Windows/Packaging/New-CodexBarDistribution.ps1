@@ -6,6 +6,7 @@ param(
 )
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot 'Read-CodexBarFirstPartyFiles.ps1')
 . (Join-Path $PSScriptRoot 'Read-CodexBarPEImports.ps1')
 . (Join-Path $PSScriptRoot 'Read-CodexBarSystemPolicy.ps1')
 . (Join-Path $PSScriptRoot 'Read-CodexBarBuildProvenance.ps1')
@@ -19,6 +20,7 @@ if ($manifest.schemaVersion -ne 1 -or $manifest.architecture -notin @('x64', 'ar
 $provenance = Read-CodexBarBuildProvenance $manifest.provenance
 $files = @($manifest.files)
 if ($files.Count -lt 4 -or $files.Count -gt 10000) { throw 'Invalid distribution file count.' }
+$null = Assert-CodexBarFirstPartyFiles $files 'destination'
 $outputRoot = [IO.Path]::GetFullPath($OutputDirectory)
 if (Test-Path -LiteralPath $outputRoot) { throw 'Output already exists. Choose a new directory; nothing is overwritten.' }
 $seen = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)

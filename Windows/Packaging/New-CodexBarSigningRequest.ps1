@@ -6,6 +6,7 @@ param(
 )
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot 'Read-CodexBarFirstPartyFiles.ps1')
 . (Join-Path $PSScriptRoot 'Read-CodexBarBuildProvenance.ps1')
 $root = Get-Item -LiteralPath $DistributionDirectory -Force
 if (-not $root.PSIsContainer -or ($root.Attributes -band [IO.FileAttributes]::ReparsePoint)) { throw 'Invalid distribution root.' }
@@ -22,6 +23,7 @@ $seen = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgno
 $targets = [Collections.Generic.List[object]]::new()
 $files = @($inventory.files)
 if ($files.Count -lt 4 -or $files.Count -gt 10000) { throw 'Invalid inventory file count.' }
+$expectedTargets = Assert-CodexBarFirstPartyFiles $files
 foreach ($file in $files) {
     $relative = ([string] $file.path).Replace('/', '\')
     if ([string]::IsNullOrWhiteSpace($relative) -or [IO.Path]::IsPathRooted($relative) -or
@@ -38,15 +40,12 @@ foreach ($file in $files) {
         (Get-FileHash -LiteralPath $item.FullName -Algorithm SHA256).Hash -ine $file.sha256) {
         throw 'Distribution bytes differ from inventory. Regenerate the distribution before signing.'
     }
-    $isApp = $relative -ieq 'CodexBarWindows.exe' -and $file.kind -eq 'application'
-    $isCLI = $relative -ieq 'CodexBarCLI.exe' -and $file.kind -eq 'cli'
-    $isScript = [IO.Path]::GetFileName($relative) -ieq 'Set-CodexBarUserPath.ps1' -and $file.kind -eq 'resource'
-    if ($isApp -or $isCLI -or $isScript) {
+    if (Test-CodexBarFirstPartyFile $relative ([string] $file.kind)) {
         $targets.Add([pscustomobject] @{ path = $file.path; sha256BeforeSigning = $file.sha256; kind = $file.kind })
     }
 }
-if ($targets.Count -ne 3 -or -not $seen.Contains('CodexBarWindows.exe') -or -not $seen.Contains('CodexBarCLI.exe')) {
-    throw 'Expected exactly the app, CLI and one PATH operation script as signing targets.'
+if ($targets.Count -ne $expectedTargets -or -not $seen.Contains('CodexBarWindows.exe') -or -not $seen.Contains('CodexBarCLI.exe')) {
+    throw 'Signing targets must cover the complete first-party contract.'
 }
 $request = [ordered] @{
     schemaVersion = 1

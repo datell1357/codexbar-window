@@ -9,6 +9,7 @@ param(
 )
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot 'Read-CodexBarFirstPartyFiles.ps1')
 . (Join-Path $PSScriptRoot 'Read-CodexBarBuildProvenance.ps1')
 . (Join-Path $PSScriptRoot 'Read-CodexBarPEImports.ps1')
 . (Join-Path $PSScriptRoot 'Read-CodexBarSystemPolicy.ps1')
@@ -50,7 +51,8 @@ foreach ($target in @($request.targets)) {
     if ($targets.ContainsKey([string] $target.path)) { throw 'Duplicate signing target.' }
     $targets.Add([string] $target.path, $target)
 }
-if ($targets.Count -ne 3) { throw 'Expected exactly three first-party signing targets.' }
+$expectedTargets = Assert-CodexBarFirstPartyFiles @($inventory.files)
+if ($targets.Count -ne $expectedTargets) { throw 'Signing target count does not match the first-party contract.' }
 $prepared = [Collections.Generic.List[object]]::new()
 $seen = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
 $matched = 0
@@ -72,9 +74,7 @@ foreach ($file in $files) {
         (Get-FileHash -LiteralPath $source -Algorithm SHA256).Hash -ine $file.sha256) { throw 'Unsigned input has changed.' }
     $sign = $targets.ContainsKey([string] $file.path)
     if ($sign) {
-        $allowed = ($relative -ieq 'CodexBarWindows.exe' -and $file.kind -eq 'application') -or
-            ($relative -ieq 'CodexBarCLI.exe' -and $file.kind -eq 'cli') -or
-            ([IO.Path]::GetFileName($relative) -ieq 'Set-CodexBarUserPath.ps1' -and $file.kind -eq 'resource')
+        $allowed = Test-CodexBarFirstPartyFile $relative ([string] $file.kind)
         $target = $targets[[string] $file.path]
         if (-not $allowed -or $target.kind -ne $file.kind -or $target.sha256BeforeSigning -ine $file.sha256) {
             throw 'Signing target is outside the first-party contract or has changed.'
@@ -83,11 +83,11 @@ foreach ($file in $files) {
     }
     $prepared.Add([pscustomobject] @{ source = $source; relative = $relative; entry = $file; sign = $sign })
 }
-if ($matched -ne 3 -or -not $targets.ContainsKey('CodexBarWindows.exe') -or -not $targets.ContainsKey('CodexBarCLI.exe')) {
-    throw 'Signing targets do not cover the expected app, CLI and script.'
+if ($matched -ne $expectedTargets -or -not $targets.ContainsKey('CodexBarWindows.exe') -or -not $targets.ContainsKey('CodexBarCLI.exe')) {
+    throw 'Signing targets do not cover the complete first-party contract.'
 }
 # WhatIf stops before certificate/private-key access and before any output mutation.
-if (-not $PSCmdlet.ShouldProcess('New signed distribution', 'Sign three first-party files with the selected certificate')) { return }
+if (-not $PSCmdlet.ShouldProcess('New signed distribution', 'Sign all first-party files with the selected certificate')) { return }
 $certificate = Get-Item -LiteralPath ('Cert:\CurrentUser\My\' + $CertificateThumbprint)
 $codeSigning = @($certificate.EnhancedKeyUsageList | Where-Object { $_.ObjectId -eq '1.3.6.1.5.5.7.3.3' })
 if (-not $certificate.HasPrivateKey -or $codeSigning.Count -eq 0 -or

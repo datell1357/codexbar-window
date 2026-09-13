@@ -8,6 +8,7 @@ param(
 )
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot 'Read-CodexBarFirstPartyFiles.ps1')
 . (Join-Path $PSScriptRoot 'Read-CodexBarBuildProvenance.ps1')
 . (Join-Path $PSScriptRoot 'Write-CodexBarJournal.ps1')
 if ([Environment]::OSVersion.Platform -ne [PlatformID]::Win32NT) { throw 'Windows is required.' }
@@ -32,6 +33,7 @@ if ($files.Count -lt 4 -or $files.Count -gt 10000) { throw 'Invalid payload size
 $prepared = [Collections.Generic.List[object]]::new()
 $seen = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
 $firstParty = 0
+$expectedFirstParty = Assert-CodexBarFirstPartyFiles $files
 foreach ($file in $files) {
     $relative = ([string] $file.path).Replace('/', '\')
     if ([string]::IsNullOrWhiteSpace($relative) -or [IO.Path]::IsPathRooted($relative) -or
@@ -46,13 +48,11 @@ foreach ($file in $files) {
     }
     if ($item.PSIsContainer -or $item.Length -ne $file.bytes -or
         (Get-FileHash -LiteralPath $source -Algorithm SHA256).Hash -ine $file.sha256) { throw 'Payload hash mismatch.' }
-    $signed = ($relative -ieq 'CodexBarWindows.exe' -and $file.kind -eq 'application') -or
-        ($relative -ieq 'CodexBarCLI.exe' -and $file.kind -eq 'cli') -or
-        ([IO.Path]::GetFileName($relative) -ieq 'Set-CodexBarUserPath.ps1' -and $file.kind -eq 'resource')
+    $signed = Test-CodexBarFirstPartyFile $relative ([string] $file.kind)
     if ($signed) { $firstParty++ }
     $prepared.Add([pscustomobject] @{ source = $source; relative = $relative; entry = $file; signed = $signed })
 }
-if ($firstParty -ne 3 -or -not $seen.Contains('CodexBarWindows.exe') -or -not $seen.Contains('CodexBarCLI.exe')) {
+if ($firstParty -ne $expectedFirstParty -or -not $seen.Contains('CodexBarWindows.exe') -or -not $seen.Contains('CodexBarCLI.exe')) {
     throw 'Missing first-party payload files.'
 }
 $localData = [Environment]::GetFolderPath([Environment+SpecialFolder]::LocalApplicationData)

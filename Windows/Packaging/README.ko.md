@@ -131,3 +131,11 @@ receipt는 마지막에 임시 파일 기반 저장 함수로 게시하고 그 �
 앞선 설명에서 receipt가 있으면 항상 중단한다고 한 부분은 보완됐다. PREPARED/COPYING 기록과 같은 배포물의 ResumeIncomplete에 한해 기존 receipt의 제품/버전/아키텍처/출처/서명자/파일 목록 및 모든 최종 파일을 다시 대조한다. 모두 일치하면 receipt를 교체하지 않고 진행 기록만 완료 상태로 갱신한다. receipt가 있는데 파일이나 부모 디렉터리가 없거나 내용이 다르면 중단한다. 완료된 설치를 임의 수리·재활성화하는 경로는 아니다.
 
 임시 파일 확인 후 handle을 닫고 Move하므로 그 사이 외부 변경 가능성이 있으며 게시 후 재확인이 실패하면 해당 파일을 자동 삭제하지 않는다. 상위 경로/receipt 동시 변경, 전원 차단 내구성, 공간 회수와 실제 Windows 실행 검증은 남아 있다. 현재 구현·문서 작성만 수행했으며 설치/서명/복사 실행은 하지 않았다.
+
+## 배포에 포함되는 설치 도구
+
+New-CodexBarDistributionManifest.ps1은 이제 tools 아래에 Install-CodexBarVersion, Select-CodexBarVersion, Restore-CodexBarActivation, Remove-CodexBarVersion, Restore-CodexBarRemovedVersion, Write-CodexBarJournal, Read-CodexBarBuildProvenance, Read-CodexBarFirstPartyFiles의 8개 ps1 파일을 추가한다. 파일은 producer와 같은 소스 폴더에서 가져온다. 사용자가 ResourceDirectories로 같은 tools 목적지를 중복 제공하면 거절한다.
+
+Read-CodexBarFirstPartyFiles.ps1이 앱·CLI·단일 PATH resource·8개 tools의 필수 목록과 분류를 정의한다. manifest 생성/배포 조립/서명 요청/실제 서명/설치가 이 계약을 사용하며 모든 first-party 대상이 서명 대상으로 포함된다. 따라서 이전 문서의 정확히 3개 대상이라는 설명은 과거 단계다. 새 계약은 11개 대상을 요구하며 기존 인벤토리·서명 요청은 새로 생성해야 한다. 타사 파일은 여전히 원래 서명을 보존한다.
+
+배포물의 tools만으로 설치/선택/제거/복구 helper 상대 경로를 찾을 수 있도록 작성했지만 실제 설치된 앱 목록 등록과 안전한 제거 invocation은 아직 연결하지 않았다. 서명된 installer를 처음 실행하기 전의 신뢰 확인과 PowerShell 실행 정책은 이 계약만으로 해결되지 않으며, 도구 실행·서명·설치/제거 상호작용은 미검증이다. 현재 패키징 및 실제 서명 명령은 실행하지 않았다.

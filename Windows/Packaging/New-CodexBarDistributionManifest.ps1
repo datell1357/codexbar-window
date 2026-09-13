@@ -14,6 +14,7 @@ param(
 )
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot 'Read-CodexBarFirstPartyFiles.ps1')
 . (Join-Path $PSScriptRoot 'Read-CodexBarPEImports.ps1')
 . (Join-Path $PSScriptRoot 'Read-CodexBarSystemPolicy.ps1')
 . (Join-Path $PSScriptRoot 'Read-CodexBarBuildProvenance.ps1')
@@ -99,6 +100,10 @@ foreach ($directory in $ResourceDirectories) {
     Add-ManifestTree $root.FullName $root.Name 'resource'
 }
 Add-ManifestTree $LicenseDirectory 'licenses' 'license'
+foreach ($name in Get-CodexBarLifecycleFileNames) {
+    Add-ManifestFile (Join-Path $PSScriptRoot $name) ('tools/' + $name) 'resource'
+}
+$null = Assert-CodexBarFirstPartyFiles $entries.ToArray() 'destination'
 $dependencies = [Collections.Generic.List[object]]::new()
 $runtimeNames = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
 foreach ($file in $entries) {
