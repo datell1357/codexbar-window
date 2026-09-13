@@ -912,3 +912,16 @@
 남은 범위: timer/중첩 모달/취소/privacy/teardown 실제 Windows 동작은 미검증이다. 개별 파일 조회 hard cancellation, PATH 자동 설치/제거, MSIX alias, 전체 기능 구현 및 배포 검증은 남아 있다.
 
 다음 구현: Windows CLI 설치·환경 설정 계약을 계속 연결한다.
+
+## IMPL-050 — 사용자 PATH 등록·제거 작업
+
+상태: CODE_WRITTEN_UNVERIFIED. PowerShell/앱/빌드/컴파일/테스트/registry/검증 실행은 하지 않았다. 계약 WIN-052.
+
+- Windows/PackagingAndOperations/Set-CodexBarUserPath.ps1에 명시적 Add/Remove와 Directory 입력을 받는 작업을 작성했다. Add는 regular CLI 후보를 요구하며, Remove는 사라진 설치 폴더도 literal PATH 항목으로 제거할 수 있다.
+- 원래 PATH 문자열의 비대상 항목·순서·값 형식을 유지하고 동일 항목 추가를 생략한다. 환경 변수는 확장하지 않는다. Remove는 사용자가 지정한 동일 literal 항목을 모두 제거하며 파일을 삭제하지 않는다.
+- ShouldProcess/WhatIf, 입력·크기·형식 제한, 쓰기 직전 외부 변경 감지, handle 정리를 추가했다. machine PATH와 process 환경은 변경하지 않고 로그아웃·로그인 안내를 제공한다. CLI 실행/신뢰 검증 성공으로 표현하지 않는다.
+- CLI-SETUP.ko.md에 사용법·제거 의미·경쟁 조건과 미검증 범위를 기록했다. guidelines/COMMITS.md가 없어 제공된 핵심 커밋 규칙을 적용했다.
+
+남은 범위: 앱 UI에서 설치 작업 연결, 배포물 동봉/서명, MSIX alias, 환경 변경 broadcast 및 전체 Windows 검증은 남아 있다. 재조회/쓰기는 atomic CAS가 아니며 기존 외부 writer race는 보장하지 않는다.
+
+다음 구현: Windows host에서 명시적인 설치 작업 실행 및 결과 처리를 연결한다.
