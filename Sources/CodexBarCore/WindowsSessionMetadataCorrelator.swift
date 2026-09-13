@@ -89,6 +89,7 @@ enum WindowsSessionMetadataCorrelator {
         } else { codexFiles = [] }
         let codexEnumerationComplete = !budget.exhausted && !budget.rootUnavailable
         var matchedHeaders: [Int: CodexRolloutMetadata] = [:]
+        var matchedClaude: [(index: Int, id: String, path: String, info: FileInfo)] = []
         for index in output.indices {
             guard budget.hasTime else { unresolved = true; break }
             let session = output[index]
@@ -128,22 +129,34 @@ enum WindowsSessionMetadataCorrelator {
                 output[index].metadataMatch = "explicit_uuid"
                 output[index].transcriptPath = path
                 output[index].lastActivityAt = min(info.modifiedAt, now)
-                if roots.readClaudeTitles {
-                    do {
-                        let names = try self.stableTitleNames(path, ids: [id.lowercased()], deadline: budget.deadline, claude: true)
-                        guard let latest = self.fileInfo(path), latest == info else { throw TitleReadFailure.changed }
-                        databaseIDs = ids.subtracting(names.seenIDs).subtracting(names.unresolvedIDs)
-                if !names.unresolvedIDs.isEmpty { claudeTitleFailures.insert(.outsideWindow) }
-                        output[index].sessionName = names[id.lowercased()]
-                        output[index].metadataTitleSource = output[index].sessionName == nil ? nil : "claude_custom_title"
-                    } catch {
-                        claudeTitleFailures.insert((error as? TitleReadFailure) ?? .unavailable)
-                    }
-                }
+                if roots.readClaudeTitles { matchedClaude.append((index, id.lowercased(), path, info)) }
             }
             output[index].state = config.state(lastActivityAt: output[index].lastActivityAt, now: now, hasLiveProcess: true)
         }
         var notices: [String] = []
+        if roots.allowNewSessions {
+            let inferred = self.inferNewSessions(
+                sessions: output, eligibleIDs: newSessionIDs, roots: roots, config: config, now: now, budget: budget)
+            output = inferred.sessions
+            if let message = inferred.message { notices.append(message) }
+        }
+        // Optional titles run only after every base match/inference attempt. Each provider gets
+        // its own bounded lane, so a large Claude transcript cannot consume Codex title time.
+        let titleLaneDuration = min(duration, 0.25) / 2
+        let claudeDeadline = Date().addingTimeInterval(titleLaneDuration)
+        for match in matchedClaude {
+            do {
+                let names = try self.stableTitleNames(match.path, ids: [match.id], deadline: claudeDeadline, claude: true)
+                guard let latest = self.fileInfo(match.path), latest == match.info else { throw TitleReadFailure.changed }
+                if !names.unresolvedIDs.isEmpty { claudeTitleFailures.insert(.outsideWindow) }
+                output[match.index].sessionName = names[match.id]
+                output[match.index].metadataTitleSource = output[match.index].sessionName == nil ? nil : "claude_custom_title"
+            } catch {
+                claudeTitleFailures.insert((error as? TitleReadFailure) ?? .unavailable)
+                if Task.isCancelled || Date() >= claudeDeadline { break }
+            }
+        }
+        let codexDeadline = Date().addingTimeInterval(titleLaneDuration)
         for failure in TitleReadFailure.allCases where claudeTitleFailures.contains(failure) {
             notices.append("Claude titles: \(failure.message) Project labels are retained.")
         }
@@ -151,7 +164,8 @@ enum WindowsSessionMetadataCorrelator {
         if let titlePath = roots.codexTitleIndex, !matchedHeaders.isEmpty {
             let ids = Set(matchedHeaders.values.map { $0.sessionID.lowercased() })
             do {
-                let names = try self.stableTitleNames(titlePath, ids: ids, deadline: budget.deadline)
+                let names = try self.stableTitleNames(titlePath, ids: ids, deadline: codexDeadline)
+                databaseIDs = ids.subtracting(names.seenIDs).subtracting(names.unresolvedIDs)
                 if !names.unresolvedIDs.isEmpty {
                     notices.append("Codex titles: \(TitleReadFailure.outsideWindow.message)")
                 }
@@ -169,7 +183,7 @@ enum WindowsSessionMetadataCorrelator {
         }
         if let path = roots.codexTitleDatabase, !databaseIDs.isEmpty {
             do {
-                let metadata = try self.databaseMetadata(path, ids: databaseIDs, deadline: budget.deadline)
+                let metadata = try self.databaseMetadata(path, ids: databaseIDs, deadline: codexDeadline)
                 for (index, header) in matchedHeaders {
                     guard let row = metadata[header.sessionID.lowercased()],
                           let name = header.descriptiveName(threadMetadata: row).map(WindowsSessionLaunchHints.label),
@@ -187,12 +201,6 @@ enum WindowsSessionMetadataCorrelator {
         }
         if unresolved || budget.exhausted || budget.rootUnavailable {
             notices.append("Some metadata matches are unresolved or budget-limited; PID identity is retained.")
-        }
-        if roots.allowNewSessions {
-            let inferred = self.inferNewSessions(
-                sessions: output, eligibleIDs: newSessionIDs, roots: roots, config: config, now: now, budget: budget)
-            output = inferred.sessions
-            if let message = inferred.message { notices.append(message) }
         }
         return Result(sessions: output, message: notices.isEmpty ? nil : notices.joined(separator: " "))
     }

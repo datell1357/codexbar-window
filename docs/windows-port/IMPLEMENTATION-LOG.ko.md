@@ -512,3 +512,21 @@
 2. index title+DB role 조합의 별도 provenance 정책, 증분 cache·신규 추론 제목, DB ownership/WAL·전체 Windows 기능/배포 검증은 남아 있다.
 
 다음 구현: session metadata 읽기 예산을 제목 보강과 기본 세션 매칭 사이에서 분리하여 선택적 제목 조회가 다른 세션의 기본 연결을 방해하지 않도록 한다.
+
+## IMPL-026 — 기본 매칭과 선택적 제목 예산 분리
+
+상태: CODE_WRITTEN_UNVERIFIED. 빌드·컴파일·테스트·lint·앱·실제 source/DB 조회·검증 스크립트를 실행하지 않았다. 계약: WIN-040/042.
+
+작성한 코드:
+
+- Claude 기본 UUID 매칭 중에는 file identity와 후속 title 작업 정보만 수집한다. 전체 기본 매칭 및 신규 추론을 마친 후 title 작업을 수행하도록 순서를 변경했다.
+- title 추가 예산은 min(directoryScanBudget,0.25초)의 절반씩 Claude/Codex에 배정한다. 각 provider lane 시작 시 deadline을 만들고 Claude 여러 파일은 하나의 lane을 공유한다. Codex index/DB도 하나의 lane을 공유한다. 기본 매칭 entry/time budget은 기존값을 유지한다.
+- Claude title을 늦게 읽는 만큼 저장된 base file identity와 최신 pathname identity를 계속 비교한다. 취소/시간 소진 시 Claude title loop를 끝내며 기본 행을 버리지 않는다. caller의 전체 scan 취소 정책은 유지한다.
+- 소스 편집 중 발견한 DB 후보 계산 위치 오류를 함께 수정했다. databaseIDs/ids 계산이 Claude 분기에 들어가 있던 코드를 제거하고 Codex index 성공 뒤로 이동했다. 이 변경으로 선언 범위와 index seen/unresolved 제외 의도를 맞췄으며 컴파일 검증을 수행한 것은 아니다.
+
+남은 범위:
+
+1. 추가 title 예산으로 메타데이터 처리의 명목상 최대 시간이 기본1초+title0.25초가 될 수 있다. 동기 OS/SQLite I/O 강제 중단을 보장하지 않으며 실제 지연/성능은 미측정이다.
+2. 같은 provider 내 여러 파일의 공정성/증분 cache 및 SQLite snapshot/소유권은 미완료다. Windows 빌드·실행·배포 검증도 남아 있다.
+
+다음 구현: 제목 읽기에서 개별 Claude 파일이 provider 예산을 모두 소비하지 않도록 파일별 상한과 건너뛴 작업 안내를 연결한다.
