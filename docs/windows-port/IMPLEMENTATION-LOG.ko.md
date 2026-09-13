@@ -1542,3 +1542,13 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - 최초 load는 baseline으로 받아들이고 shutdown 시 비교값을 비운다. historical generation snapshot은 계정 reconciliation 이후 잡아 이번 refresh의 새 계정 결과가 과거 generation으로 오인되지 않도록 작성했다.
 
 남은 범위: config 밖 OAuth/CLI/browser identity 변화, Codex active-source/profile 설정의 별도 owner 비교, 이미 표시된 알림 철회, 실제 외부 config 변경과 Windows race 검증. digest는 내부 변화 감지용이며 보안 인증 수단이 아니다.
+
+## IMPL-110 — Codex 실제 선택 소스와 계정 변경 감지
+
+상태 CODE_WRITTEN_UNVERIFIED. 컴파일/빌드/테스트/실계정/알림/검증 미실시. guidelines/COMMITS.md 부재로 핵심 커밋 규칙을 적용한다.
+
+- refresh에서 이미 캡처한 Codex reconciliation snapshot으로 요청 source, 실제 표시 계정의 source, runtime identity, managed home 경로 및 store unreadable 상태를 비교한다. 추가 credential 읽기나 인증 probe는 실행하지 않는다.
+- 이전 관측과 달라지면 기존 Codex session baseline·history generation/cache·host 알림 mailbox 철회 경로를 사용한다. 최초 관측은 baseline으로 기록하고 shutdown에서는 비운다.
+- historical generation은 config 및 Codex owner reconciliation 이후 캡처한다. 표시 이름과 OAuth token rotation은 owner 비교에 포함하지 않는다. 비교값은 현재 선택 계정만 메모리에 보관하고 출력·영구 저장하지 않는다.
+
+남은 범위: unresolved 상태끼리 식별 불가능한 외부 credential 교체, 다른 공급자의 ambient OAuth/browser identity, 이미 표시된 알림 철회, 실제 profile/managed/live 전환 및 Windows race 검증. 전체 계정 기능 완료를 의미하지 않는다.

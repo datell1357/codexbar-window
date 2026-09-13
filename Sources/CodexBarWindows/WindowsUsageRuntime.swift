@@ -118,6 +118,14 @@ public actor WindowsUsageRuntime {
     private var latestProviderConfigs: [ProviderInstanceID: ProviderConfig] = [:]
     private var latestEnabledProviderIDs: Set<ProviderInstanceID>?
     private var observedAccountSignatures: [ProviderInstanceID: String]?
+    private struct CodexObservedOwner: Equatable {
+        let requestedSource: CodexActiveSource
+        let resolvedSource: CodexActiveSource
+        let identity: CodexIdentity
+        let managedHomePath: String?
+        let storeUnreadable: Bool
+    }
+    private var observedCodexOwner: CodexObservedOwner?
     private var quotaWarningGeneration: UInt64 = 0
     private var predictivePaceWarningGeneration: UInt64 = 0
     private var predictivePaceWarningKeys: Set<PredictivePaceWarningTransitionCore.Key> = []
@@ -320,6 +328,39 @@ public actor WindowsUsageRuntime {
             self.publishRenderEntries(settings: WindowsUsagePresentationSettings.load())
             return .saved(account.id)
         } catch { return .failed }
+    }
+
+    private func reconcileCodexOwner(_ context: CodexAccountContextSnapshot?) {
+        guard let context else {
+            if self.observedCodexOwner != nil {
+                self.invalidateSelectedAccountState(UsageProvider.codex.instanceID)
+            }
+            self.observedCodexOwner = nil
+            return
+        }
+        let projection = context.visibleAccounts
+        let active = projection.visibleAccounts.first { $0.id == projection.activeVisibleAccountID }
+        let source = active?.selectionSource ?? context.resolvedActiveSource.resolvedSource
+        let selected = context.selecting(activeSource: source)
+        let managedHomePath: String?
+        if case let .managedAccount(id) = source {
+            managedHomePath = selected.reconciliationSnapshot.storedAccounts.first { $0.id == id }
+                .flatMap { CodexHomeScope.normalizedHomePath($0.managedHomePath) }
+        } else {
+            managedHomePath = nil
+        }
+        // Compare ownership, not OAuth token rotation or display labels. Retain
+        // only the selected owner in memory; never publish or persist this value.
+        let current = CodexObservedOwner(
+            requestedSource: context.reconciliationSnapshot.activeSource,
+            resolvedSource: source,
+            identity: selected.identity(for: source),
+            managedHomePath: managedHomePath,
+            storeUnreadable: selected.reconciliationSnapshot.hasUnreadableAddedAccountStore)
+        if let previous = self.observedCodexOwner, previous != current {
+            self.invalidateSelectedAccountState(UsageProvider.codex.instanceID)
+        }
+        self.observedCodexOwner = current
     }
 
     private func reconcileConfiguredAccounts(_ config: CodexBarConfig) {
@@ -766,7 +807,6 @@ public actor WindowsUsageRuntime {
             }
             let config = try self.configStore.loadOrCreateDefault()
             self.reconcileConfiguredAccounts(config)
-            let refreshHistoricalTrackingGeneration = self.historicalTrackingGeneration
             let enabledIDs = Set(config.enabledProviders())
             self.latestEnabledProviderIDs = enabledIDs
             self.predictivePaceWarningKeys = self.predictivePaceWarningKeys.filter {
@@ -806,6 +846,8 @@ public actor WindowsUsageRuntime {
             // this same snapshot so an account switch cannot mix owners.
             let codexAccountContext: CodexAccountContextSnapshot? = enabledIDs.contains(UsageProvider.codex.instanceID)
                 ? accountContext.codexAccountContextSnapshot() : nil
+            self.reconcileCodexOwner(codexAccountContext)
+            let refreshHistoricalTrackingGeneration = self.historicalTrackingGeneration
             var entries: [RenderEntry] = []
             self.presentations.removeAll(keepingCapacity: true)
             self.providerCopyErrors.removeAll(keepingCapacity: true)
@@ -1062,6 +1104,7 @@ public actor WindowsUsageRuntime {
         self.latestProviderConfigs.removeAll(keepingCapacity: false)
         self.latestEnabledProviderIDs = nil
         self.observedAccountSignatures = nil
+        self.observedCodexOwner = nil
         await CLIProbeSessionResetter.resetAll()
     }
 

@@ -1,5 +1,7 @@
 # Windows 전용 제품 작업 현황
 
+- IMPL-110: Codex reconciliation의 선택 source·runtime identity 변경 시 상태 철회를 연결했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
 - IMPL-109: refresh 시 외부 config 계정 변경 비교·상태 철회를 작성했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
 
 - IMPL-108: 계정 변경 후 해당 공급자의 대기 중 알림 철회를 작성했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
