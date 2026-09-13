@@ -722,11 +722,7 @@ public actor CursorSessionStore {
         self.hasLoadedFromDisk = true
         self.sessionCookies = []
         do {
-            try FileManager.default.removeItem(at: self.fileURL)
-            self.persistenceFailure = nil
-            return true
-        } catch let error as NSError where error.domain == NSCocoaErrorDomain &&
-            (error.code == NSFileNoSuchFileError || error.code == NSFileReadNoSuchFileError) {
+            try WindowsCursorSessionFile.revoke(at: self.fileURL)
             self.persistenceFailure = nil
             return true
         } catch {

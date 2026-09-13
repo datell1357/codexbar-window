@@ -2257,3 +2257,13 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - 일부 cookie의 속성 변환이 실패해 수가 줄거나 JSON 인코딩이 실패하면 저장 실패를 기록한다. 빈 세션은 명시적 clear 경로로 처리한다.
 
 남은 범위: 로그인 UI가 반환값을 처리하는 연결, clear 실패의 영속 tombstone/재시작 차단, 다중 계정 및 세션 선택, 실제 DPAPI/ACL/실패 경로 검증, 전체 계획 구현. 파일 삭제/저장 또는 세션 조회는 실행하지 않았다.
+
+## IMPL-181 — Cursor 세션의 영속 로그아웃
+
+상태 CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·DPAPI/파일/실행 검증 미실시. guidelines/COMMITS.md 부재로 핵심 규칙을 적용한다.
+
+- clearCookiesPersisted는 WindowsCursorSessionFile.revoke를 호출한다. 먼저 기존 파일을 암호화된 빈 JSON 배열로 private atomic write한 뒤 제거한다.
+- 제거에 실패해도 빈 세션 교체가 성공했다면 persistent logout 성공이다. 정상 reader가 빈 배열을 읽으므로 다음 실행에서 기존 쿠키를 복원하지 않는다. 남은 파일에는 이전 인증 정보가 없다.
+- 보호 교체가 실패해도 파일 제거 또는 확인된 부재로 로그아웃을 마칠 수 있다. 교체/제거가 모두 실패하면 기존 generic 실패를 반환하고 메모리는 비워 둔다.
+
+남은 범위: 동시 프로세스의 세션 재기록 조정, 쓰기/삭제 모두 거절되는 환경의 사용자 복구 안내, UI 연결과 실제 DPAPI/ACL/crash/restart 검증, 전체 계획 구현. 실제 파일을 쓰거나 지우지 않았다.
