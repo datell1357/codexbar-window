@@ -1722,3 +1722,13 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - host의 save callback 호출 직전에도 숨김 상태를 확인한다. 실제 설정 또는 창은 실행하지 않았다.
 
 남은 범위: 타이머/메시지 큐 지연과 OS 표시 race, 다른 detail/삭제 확인 창의 live privacy 대응, Windows 실행·접근성 검증 및 전체 계획 구현.
+
+## IMPL-128 — provider 상세 창 privacy 변경 대응
+
+상태 CODE_WRITTEN_UNVERIFIED. 컴파일/빌드/테스트/UI/검증 미실시. guidelines/COMMITS.md 부재로 핵심 커밋 규칙을 적용한다.
+
+- host가 캡처한 privacy 상태를 상세 창에 전달하고 진입·메시지 처리·command에서 재확인한다. 250ms native timer가 유휴 중 설정 변경을 감지하도록 작성했다.
+- 변경 시 창을 숨긴 후 닫고 link/refresh action 대신 privacyChanged 결과를 반환한다. host는 현재 표시 설정으로 다시 열도록 안내한다.
+- timer 설치 실패는 창 열기 실패로 처리하고 종료 시 timer를 해제한다. 실제 설정·창·clipboard 접근은 실행하지 않았다.
+
+남은 범위: 메시지 큐 지연 중 표시/clipboard race, 삭제 확인 등 다른 창 대응, Windows DPI/접근성/UI 검증 및 전체 기능 구현.

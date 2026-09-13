@@ -16,11 +16,15 @@ enum WindowsProviderDetailsDialog {
     }
     enum Result {
         case closed
+        case privacyChanged
         case openURL(String)
         case refreshAll
     }
 
+    private static let privacyTimer: UINT_PTR = 1
+
     private final class Context {
+        let hidePersonalInfo: Bool
         let text: String
         let links: [Link]
         var result: Result = .closed
@@ -29,13 +33,16 @@ enum WindowsProviderDetailsDialog {
         var font: HFONT?
         deinit { if let font { DeleteObject(font) } }
         func pixels(_ value: Int32) -> Int32 { MulDiv(value, Int32(self.dpi), 96) }
-        init(text: String, links: [Link]) { self.text = text; self.links = Array(links.prefix(3)) }
+        init(text: String, links: [Link], hidePersonalInfo: Bool) {
+            self.text = text; self.links = Array(links.prefix(3)); self.hidePersonalInfo = hidePersonalInfo
+        }
     }
 
-    static func show(owner: HWND, title: String, text: String, links: [Link]) -> Result? {
+    static func show(owner: HWND, title: String, text: String, links: [Link], hidePersonalInfo: Bool) -> Result? {
+        guard hidePersonalInfo == WindowsUsagePresentationSettings.load().hidePersonalInfo else { return .privacyChanged }
         let normalized = text.replacingOccurrences(of: "\r\n", with: "\n")
             .replacingOccurrences(of: "\r", with: "\n").replacingOccurrences(of: "\n", with: "\r\n")
-        let context = Context(text: normalized, links: links)
+        let context = Context(text: normalized, links: links, hidePersonalInfo: hidePersonalInfo)
         let instance = GetModuleHandleW(nil)
         var klass = WNDCLASSEXW()
         klass.cbSize = UINT(MemoryLayout<WNDCLASSEXW>.size)
@@ -83,6 +90,7 @@ enum WindowsProviderDetailsDialog {
                 let result = GetMessageW(&message, nil, 0, 0)
                 if result == -1 { succeeded = false; break }
                 if result == 0 { PostQuitMessage(Int32(message.wParam)); break }
+                if Self.closeForPrivacyIfNeeded(hwnd, context: context) { break }
                 let target = message.hwnd == hwnd || IsChild(hwnd, message.hwnd) != 0
                 if target, message.message == UINT(WM_KEYDOWN) {
                     if message.wParam == WPARAM(VK_ESCAPE) {
@@ -136,8 +144,12 @@ enum WindowsProviderDetailsDialog {
                     return -1
                 }
             }
+            guard SetTimer(hwnd, Self.privacyTimer, 250, nil) != 0 else { return -1 }
             Self.updateFont(hwnd, context: context)
             Self.layout(hwnd, context: context)
+            return 0
+        case UINT(WM_TIMER):
+            if wParam == Self.privacyTimer { _ = Self.closeForPrivacyIfNeeded(hwnd, context: context) }
             return 0
         case UINT(WM_SIZE): Self.layout(hwnd, context: context); return 0
         case UINT(WM_DPICHANGED):
@@ -169,6 +181,7 @@ enum WindowsProviderDetailsDialog {
             }
             return 0
         case UINT(WM_COMMAND):
+            guard !Self.closeForPrivacyIfNeeded(hwnd, context: context) else { return 0 }
             let command = Int32(wParam & 0xffff)
             if command == Self.closeID { DestroyWindow(hwnd); return 0 }
             if command == Self.refreshID {
@@ -184,11 +197,21 @@ enum WindowsProviderDetailsDialog {
             return 0
         case UINT(WM_CLOSE): DestroyWindow(hwnd); return 0
         case UINT(WM_NCDESTROY):
+            KillTimer(hwnd, Self.privacyTimer)
             context.closed = true
             SetWindowLongPtrW(hwnd, Int32(GWLP_USERDATA), 0)
             return DefWindowProcW(hwnd, message, wParam, lParam)
         default: return DefWindowProcW(hwnd, message, wParam, lParam)
         }
+    }
+
+    private static func closeForPrivacyIfNeeded(_ hwnd: HWND, context: Context) -> Bool {
+        guard !context.closed,
+              context.hidePersonalInfo != WindowsUsagePresentationSettings.load().hidePersonalInfo else { return false }
+        context.result = .privacyChanged
+        ShowWindow(hwnd, Int32(SW_HIDE))
+        DestroyWindow(hwnd)
+        return true
     }
 
     private static func updateFont(_ hwnd: HWND, context: Context) {

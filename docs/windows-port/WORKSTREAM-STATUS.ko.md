@@ -1,5 +1,7 @@
 # Windows 전용 제품 작업 현황
 
+- IMPL-128: provider 상세 snapshot의 privacy 변경 시 숨김·닫기 및 command 재확인을 작성했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
 - IMPL-127: 열린 metadata editor의 privacy 설정 변경 감지·취소 및 저장 직전 재확인을 작성했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
 
 - IMPL-126: 기존 z.ai 계정 scope 편집에 Personal/Team 라디오 및 조건부 필드 활성화를 작성했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.

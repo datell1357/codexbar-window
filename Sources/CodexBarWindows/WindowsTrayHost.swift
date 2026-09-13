@@ -1885,13 +1885,16 @@ public final class WindowsTrayHost: @unchecked Sendable {
         let result = WindowsProviderDetailsDialog.show(
             owner: window, title: title,
             text: "Redacted snapshot from the opened menu. Refresh all closes this window and requests usage and session updates. Reopen details after the update.\r\n\r\n" + body,
-            links: links)
+            links: links, hidePersonalInfo: privacy)
         self.remoteEditorOpen = false
         if !self.quitInvoked {
             PostMessageW(window, Self.wakeMessage, 0, 0)
             if let result {
                 switch result {
                 case .closed: break
+                case .privacyChanged:
+                    self.showMessage("Privacy settings changed. Reopen provider details to load the current display settings.",
+                                     caption: "Provider details")
                 case .refreshAll: self.onRefresh()
                 case let .openURL(url):
                     guard privacy == WindowsUsagePresentationSettings.load().hidePersonalInfo else {
