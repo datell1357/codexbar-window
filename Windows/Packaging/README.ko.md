@@ -98,3 +98,12 @@ Select-CodexBarVersion.ps1은 VersionID, ExpectedSignerThumbprint, AllowUnvalida
 선택 스크립트는 실제 link 교체 전에 candidateHash를 기록하도록 보완했다. Restore-CodexBarActivation.ps1은 TransactionID(activation 파일명의32자리 ID)를 받아 현재 link가 기록된 candidateHash와 일치할 때만 이전 backup을 복원한다. 현재 상태가 이미 previousHash와 같으면 변경하지 않는다. 초기 설치처럼 이전 link가 없었으면 현재 link를 별도 displaced backup으로 이동한다. 모든 version과 link backup을 보존한다.
 
 외부 변경·누락/변경된 backup·candidateHash 없는 옛 journal은 거절한다. 원래 journal 경로 필드는 예상 관리 경로와 대조하고 임의 경로에 쓰지 않는다. 복구도 operations.lock·WhatIf·별도 recovery journal을 사용한다. 작업 마지막 기록 전에 실패할 수 있으므로 실제 shortcut 상태가 우선이다. hash 확인과 replace/move는 atomic compare-and-swap이 아니며 journal 자체의 원자적 기록/복구, 상위 경로 race, 설정/프로세스/PATH/startup 복구와 Windows 실행 검증은 남아 있다.
+
+
+## 복구 가능한 버전 제거
+
+Remove-CodexBarVersion.ps1은 VersionID와 AllowUnvalidatedBuild를 받아 완료 receipt가 있는 버전의 기록된 파일만 처리한다. 시작 메뉴가 해당 버전을 선택했거나 User/Machine/Process PATH, 현재 registry view의 Run/RunOnce, 실행 중 CodexBar 앱/CLI가 해당 버전을 참조하면 중단한다. 참조는 먼저 별도 전환해야 한다. WhatIf는 조회 후 파일 이동 전에 반환한다.
+
+해시가 일치하는 일반 파일을 install root의 removed-<transaction>/payload 아래로 옮기며 원본 receipt 사본과 removal-journal.json을 남긴다. 원래 receipt·디렉터리·설정·알 수 없는 파일은 보존한다. 수정된 파일/링크/디렉터리는 그대로 두고, 이미 없는 파일은 ALREADY_ABSENT로 처리하므로 중단 뒤 재실행 시 남은 파일을 처리할 수 있다. 복구 사본은 여러 transaction에 나뉠 수 있다. 영구 삭제나 디스크 공간 회수는 하지 않는다.
+
+이동 뒤 해시가 달라지면 RETIRED_CHANGED_CONCURRENTLY로 기록하고 중단한다. 외부 변경과 파일 이동은 원자적으로 묶이지 않으므로 해당 파일이 원래 위치가 아닌 복구 폴더에 남을 수 있다. journal 쓰기 실패 시 파일은 이미 이동했을 수 있으며 실제 두 폴더 상태가 우선이다. 자동 복구/정리·불완전 설치 receipt 복구·상위 경로 race·새 프로세스 및 새로운 참조 생성·다른 registry view/예약 작업/별도 shortcut 검색·Apps 제거 등록은 미구현이다. 로컬 receipt는 서명된 권한 증명이 아니다. 현재 스크립트와 모든 프로세스/registry/파일 이동 동작은 실행하지 않았으며 제품 제거 완료를 의미하지 않는다.

@@ -1094,3 +1094,13 @@
 - operations.lock/ShouldProcess/별도 recovery 기록과 부분 실패 안내를 연결한다. old/incomplete journal은 추측해 복원하지 않는다.
 
 남은 범위: journal 원자적 쓰기, compare/replace race, managed uninstall/부분 설치 복구, 설정/프로세스/PATH/startup migration과 Windows 검증.
+
+## IMPL-066 — 복구 가능한 버전 제거 경로
+
+상태 CODE_WRITTEN_UNVERIFIED. PowerShell/프로세스/레지스트리/바로가기/파일 이동/빌드/컴파일/테스트/검증 실행 미실시. guidelines/COMMITS.md는 없어 제공된 커밋 핵심 규칙을 적용한다.
+
+- Remove-CodexBarVersion.ps1에 명시적 VersionID·개발 opt-in·설치 receipt 경로 제한·operations.lock·ShouldProcess를 연결했다. 시작 메뉴/PATH/Run·RunOnce/실행 중 CodexBar 참조를 만나면 제거를 거절하도록 작성했다.
+- receipt의 경로/hash를 받아 일치한 파일만 별도 removed transaction의 payload로 이동한다. 수정/링크/디렉터리는 보존하고 없는 파일은 ALREADY_ABSENT로 기록한다. 임의 파일은 제거 대상으로 열거하지 않으며 기존 receipt/디렉터리/설정은 남긴다.
+- 파일별 journal과 부분 완료 상태를 작성한다. 이동 직후 hash가 달라지면 바이트를 복구 폴더에 보존한 채 중단한다. 실제 삭제/이동은 실행하지 않았다.
+
+남은 범위: 영구 삭제 및 공간 회수, 자동 removal rollback/부분 설치 복구, 원자적 journal, 경로/프로세스/참조 변경 race, 다른 registry view/작업 스케줄러/별도 shortcut 참조, Apps 제거 등록 및 Windows 검증. 이 변경은 전체 제거 기능 완료가 아니다.
