@@ -1,5 +1,7 @@
 # Windows 전용 제품 작업 현황
 
+- IMPL-253: LevelDB WriteBatch의 sequence 및 put/delete 메모리 파서를 작성했다. 최신 상태 통합은 남아 있다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
 - IMPL-252: Windows LevelDB 물리 로그의 block/fragment/CRC32C 파서를 작성했다. 실제 저장소 연결 미완료. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
 
 - IMPL-251: Windows Chromium localStorage 프로필 디렉터리 탐색 모듈을 작성했다. LevelDB 읽기/세션 복원 미연결. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.

@@ -2861,3 +2861,12 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - 메모리 Data만 해석하는 모듈이다. 실제 파일 읽기, WriteBatch/manifest/table 처리, origin별 최신 상태와 삭제 복원은 다음 단계이다.
 - 남은 소요: snapshot 및 table/log 상태 통합, Chromium key encoding, Windsurf importer/UI, 실제 Windows 검증 및 전체 계획 나머지.
 - CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 파서 실행·빌드·테스트·lint·실제 브라우저 파일 조회 미실행.
+
+## IMPL-253 — LevelDB WriteBatch 파서
+
+- 원본 https://github.com/google/leveldb/blob/main/db/write_batch.cc 및 db/dbformat.h를 읽고 fixed64 sequence, fixed32 count, put/delete 및 varint32 length-prefixed bytes 계약을 구현했다. 원본은 가변 main 참조이다.
+- 56-bit sequence 범위와 batch 내 마지막 sequence를 검사하며, 삭제 nil과 빈 Data 값을 구분한다. key/value를 문자열로 손실 변환하지 않는다.
+- 4MiB 입력/100000 operation 상한, 취소, 잘린 입력, varint overflow, unknown tag, 개수/후행 데이터 불일치를 처리한다.
+- 메모리 record 해석만 수행하며 manifest/table/log 통합 및 실제 파일 읽기는 아직 연결하지 않았다.
+- 남은 소요: manifest/table 해석, 최신 상태와 삭제 복원, Chromium origin key 해석 및 Windsurf importer/UI와 전체 계획 나머지.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 파서 실행·빌드·테스트·lint·실제 브라우저 파일 조회 미실행.
