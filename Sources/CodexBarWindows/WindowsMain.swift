@@ -146,6 +146,25 @@ private final class WindowsTrayApplication: @unchecked Sendable {
             self.augmentBrowserImports.cancel(id: ticket)
             Task { await self.runtime.cancelAugmentBrowserImport(requestID: ticket) }
         },
+        onZedEditorServerRequested: { [weak self] requestID in
+            guard let self else { return }
+            self.zedEditorImports.start(id: requestID) { [weak self] in
+                guard let self else { return }
+                let privacy = WindowsUsagePresentationSettings.load().hidePersonalInfo
+                let task = Task.detached(priority: .utility) {
+                    try WindowsZedEditorSettings.suggestedOrigin()
+                }
+                let origin: String?
+                do {
+                    origin = try await withTaskCancellationHandler {
+                        try await task.value
+                    } onCancel: { task.cancel() }
+                } catch { origin = nil }
+                guard !Task.isCancelled else { return }
+                self.host.postZedEditorImport(requestID: requestID,
+                    result: .serverSuggestion(origin: origin, privacy: privacy))
+            }
+        },
         onZedEditorImportRequested: { [weak self] requestID, origin in
             guard let self else { return }
             self.zedEditorImports.start(id: requestID) { [weak self] in

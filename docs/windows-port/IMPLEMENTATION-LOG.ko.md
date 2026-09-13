@@ -2759,3 +2759,11 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - credentials_url과 server_url이 다르면 현재 단일 origin bundle로 잘못 가져오지 않도록 별도 오류를 반환한다. 이 구성의 완전한 지원은 남은 소요이다.
 - 남은 소요: UI 추천 기본값 연결, custom data dir 발견, 분리된 credential/API origin 계약, 중복 key 정책 및 실제 Windows 검증과 전체 계획 나머지.
 - CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 파서·빌드·테스트·lint·설정 파일 실행 검증 미실행.
+
+## IMPL-241 — Zed 서버 추천값의 UI 연결
+
+- 트레이 가져오기 요청은 먼저 별도 task에서 설정 origin을 읽고 request ID가 같은 UI mailbox로 추천값을 전달한다. 부모 취소를 파일 읽기 task에 전달하고 취소된 결과는 게시하지 않는다.
+- 서버 입력 창은 추천값을 기본으로 표시한다. loader 오류는 빈 입력과 고정 안내로 표시하며 실패를 production 기본값으로 숨기지 않는다. 파일 없음에 따른 기본값은 안내에 명시한다.
+- 개인정보 모드 변경은 추천값 표시 전과 창 내부/확인 이후 검사한다. Continue 확인 이후에만 기존 credential reader/API 확인 흐름으로 진행한다.
+- 남은 소요: custom data dir 탐색, 분리된 credential/API origin, 중복 JSON key 정책, 실제 Windows 검증 및 전체 계획 나머지.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·UI·실제 설정 조회/인증 검증 미실행.

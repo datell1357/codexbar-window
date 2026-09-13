@@ -111,6 +111,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
     private static let cursorBrowserImportCancelCommand = UINT_PTR(0x703F)
     private static let zedEditorImportCancelCommand = UINT_PTR(0x7F20)
     private static let zedEditorImportCommand = UINT_PTR(0x7F21)
+    private let onZedEditorServerRequested: @Sendable (UUID) -> Void
     private let onZedEditorImportRequested: @Sendable (UUID, String) -> Void
     private let onZedEditorImportSave: @Sendable (UUID, UUID, String) -> Void
     private let onZedEditorImportCancel: @Sendable (UUID) -> Void
@@ -348,6 +349,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
         onAugmentBrowserImportRequested: @escaping @Sendable (UUID) -> Void = { _ in },
         onAugmentBrowserImportSave: @escaping @Sendable (UUID, UUID, UUID, String) -> Void = { _, _, _, _ in },
         onAugmentBrowserImportCancel: @escaping @Sendable (UUID) -> Void = { _ in },
+        onZedEditorServerRequested: @escaping @Sendable (UUID) -> Void = { _ in },
         onZedEditorImportRequested: @escaping @Sendable (UUID, String) -> Void = { _, _ in },
         onZedEditorImportSave: @escaping @Sendable (UUID, UUID, String) -> Void = { _, _, _ in },
         onZedEditorImportCancel: @escaping @Sendable (UUID) -> Void = { _ in },
@@ -403,6 +405,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
         self.onAugmentBrowserImportSave = onAugmentBrowserImportSave
         self.onCursorBrowserImportCancel = onCursorBrowserImportCancel
         self.onAugmentBrowserImportCancel = onAugmentBrowserImportCancel
+        self.onZedEditorServerRequested = onZedEditorServerRequested
         self.onZedEditorImportRequested = onZedEditorImportRequested
         self.onZedEditorImportSave = onZedEditorImportSave
         self.onZedEditorImportCancel = onZedEditorImportCancel
@@ -781,6 +784,25 @@ public final class WindowsTrayHost: @unchecked Sendable {
         guard let discovery else { return }
         switch discovery {
         case let .unavailable(message): self.showMessage(message, caption: "Import Zed account")
+        case let .serverSuggestion(suggested, privacy):
+            guard privacy == WindowsUsagePresentationSettings.load().hidePersonalInfo else {
+                self.onZedEditorImportCancel(hostID)
+                self.mailboxLock.lock(); self.zedImportRequest = nil; self.mailboxLock.unlock()
+                return
+            }
+            self.remoteEditorOpen = true
+            let input = WindowsAccountNameDialog.showZedServer(owner: window, expectedPrivacy: privacy,
+                suggestedOrigin: suggested)
+            self.remoteEditorOpen = false
+            PostMessageW(window, Self.wakeMessage, 0, 0)
+            if case let .saved(rawOrigin) = input, !self.quitInvoked,
+               privacy == WindowsUsagePresentationSettings.load().hidePersonalInfo,
+               let origin = try? ZedManualCredentialInput.normalizedServiceOrigin(rawOrigin) {
+                self.onZedEditorImportRequested(hostID, origin)
+                return
+            }
+            self.onZedEditorImportCancel(hostID)
+            if case .failed = input { self.showMessage("The server dialog could not be opened.", caption: "Import Zed account") }
         case let .ready(ticket, title, privacy, expires):
             self.remoteEditorOpen = true
             let input = WindowsAccountNameDialog.showImportedAccount(owner: window, expectedPrivacy: privacy,
@@ -3060,26 +3082,14 @@ public final class WindowsTrayHost: @unchecked Sendable {
             return
         }
         if command == Self.zedEditorImportCommand {
-            guard !self.quitInvoked, !self.remoteEditorOpen, let window = self.window,
+            guard !self.quitInvoked, !self.remoteEditorOpen,
                   case .idle = self.providerEditorPhase, case .idle = self.codexWebSettingsEditorPhase else { return }
-            self.mailboxLock.lock()
-            let importing = self.zedImportRequest != nil
-            self.mailboxLock.unlock()
-            guard !importing else { return }
-            let privacy = WindowsUsagePresentationSettings.load().hidePersonalInfo
-            self.remoteEditorOpen = true
-            let input = WindowsAccountNameDialog.showZedServer(owner: window, expectedPrivacy: privacy)
-            self.remoteEditorOpen = false
-            PostMessageW(window, Self.wakeMessage, 0, 0)
-            guard case let .saved(rawOrigin) = input, !self.quitInvoked,
-                  privacy == WindowsUsagePresentationSettings.load().hidePersonalInfo,
-                  let origin = try? ZedManualCredentialInput.normalizedServiceOrigin(rawOrigin) else { return }
             self.mailboxLock.lock()
             guard self.zedImportRequest == nil else { self.mailboxLock.unlock(); return }
             let requestID = UUID()
             self.zedImportRequest = requestID
             self.mailboxLock.unlock()
-            self.onZedEditorImportRequested(requestID, origin)
+            self.onZedEditorServerRequested(requestID)
             return
         }
         if let (provider, expectedSelectedID) = self.popupTokenAccountAdds[command] {

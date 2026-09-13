@@ -21,7 +21,9 @@ enum WindowsAccountNameDialog {
         let provider: UsageProvider?
         let providerName: String?
         let accountTitle: String?
-        init(mode: Mode, provider: UsageProvider?, expectedPrivacy: Bool?, expires: Date?, accountTitle: String?) {
+        let suggestedOrigin: String?
+        init(mode: Mode, provider: UsageProvider?, expectedPrivacy: Bool?, expires: Date?, accountTitle: String?, suggestedOrigin: String?) {
+            self.suggestedOrigin = suggestedOrigin
             self.accountTitle = accountTitle
             self.provider = provider
             self.expires = expires
@@ -31,7 +33,11 @@ enum WindowsAccountNameDialog {
             self.providerName = provider.map { ProviderDescriptorRegistry.descriptor(for: $0).metadata.displayName }
         }
         var guidance: String {
-            if self.mode == .zedServer { return "Use https://zed.dev or the HTTPS origin configured in your Zed editor. Continue reads only that server’s saved editor credential." }
+            if self.mode == .zedServer {
+                return self.suggestedOrigin == nil
+                    ? "Editor settings could not supply a server. Enter its HTTPS origin. Continue reads the saved credential for that server."
+                    : "Server from editor settings (or the default if no settings file exists). Confirm or edit it before continuing."
+            }
             if self.mode == .importedAccount { return (self.accountTitle.map { $0 + "\r\n" } ?? "") + "Choose a name for the imported \(self.providerName ?? "Cursor") account. Saving protects the session and selects this account." }
             guard self.mode == .credential else { return "Only the name changes; credentials and selection stay the same." }
             let description = self.support.map { $0.subtitle + "\r\nInput: " + $0.placeholder }
@@ -45,8 +51,8 @@ enum WindowsAccountNameDialog {
         deinit { if let font { DeleteObject(font) } }
         func pixels(_ value: Int32) -> Int32 { MulDiv(value, Int32(self.dpi), 96) }
     }
-    static func showZedServer(owner: HWND, expectedPrivacy: Bool) -> Result {
-        Self.show(owner: owner, mode: .zedServer, provider: .zed, expectedPrivacy: expectedPrivacy)
+    static func showZedServer(owner: HWND, expectedPrivacy: Bool, suggestedOrigin: String?) -> Result {
+        Self.show(owner: owner, mode: .zedServer, provider: .zed, expectedPrivacy: expectedPrivacy, suggestedOrigin: suggestedOrigin)
     }
 
     static func show(owner: HWND) -> Result { Self.show(owner: owner, mode: .name) }
@@ -60,8 +66,8 @@ enum WindowsAccountNameDialog {
         Self.show(owner: owner, mode: .credential, provider: provider)
     }
 
-    private static func show(owner: HWND, mode: Mode, provider: UsageProvider? = nil, expectedPrivacy: Bool? = nil, expires: Date? = nil, accountTitle: String? = nil) -> Result {
-        let context = Context(mode: mode, provider: provider, expectedPrivacy: expectedPrivacy, expires: expires, accountTitle: accountTitle)
+    private static func show(owner: HWND, mode: Mode, provider: UsageProvider? = nil, expectedPrivacy: Bool? = nil, expires: Date? = nil, accountTitle: String? = nil, suggestedOrigin: String? = nil) -> Result {
+        let context = Context(mode: mode, provider: provider, expectedPrivacy: expectedPrivacy, expires: expires, accountTitle: accountTitle, suggestedOrigin: suggestedOrigin)
         guard context.inputContextIsValid else { return .cancelled }
         let instance = GetModuleHandleW(nil)
         var klass = WNDCLASSEXW()
@@ -169,7 +175,7 @@ enum WindowsAccountNameDialog {
                   Self.control(hwnd, "BUTTON", "Cancel", 2, DWORD(WS_TABSTOP | BS_PUSHBUTTON), 336, 126, 90, 28) != nil else { return -1 }
             SendMessageW(edit, UINT(EM_SETLIMITTEXT), context.mode == .zedServer ? 2048 : context.mode != .credential ? 160 : 65_536, 0)
             if context.mode == .zedServer {
-                "https://zed.dev".withCString(encodedAs: UTF16.self) { SetWindowTextW(edit, $0) }
+                (context.suggestedOrigin ?? "").withCString(encodedAs: UTF16.self) { SetWindowTextW(edit, $0) }
             }
             Self.updateFont(hwnd, context: context)
             Self.layout(hwnd, context: context)
