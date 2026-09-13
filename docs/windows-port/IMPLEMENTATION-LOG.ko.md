@@ -3132,3 +3132,12 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - 완전한 계정 roster에서 사라진 계정은 이전 lane을 유지하지 않는다. runtime은 실제 roster와 안정된 opaque discriminator를 제공해야 한다.
 - 남은 소요: runtime refresh 세대별 batch/설정/소유권 digest/종료/누락 표시 연결 및 전체 계획 나머지.
 - CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·훅 실행 미실행.
+
+## IMPL-284 — 실제 Windows refresh hook 자료 수집
+
+- performRefresh의 시작/종료에 임시 계정 관측을 관리하고 first-party fetch 성공 시 기존 quota 소유권 식별과 mapper를 사용해 자료를 수집한다.
+- 저장 token 계정의 실패는 같은 opaque owner digest에 고정 unknown 실패로 수집한다. 소유권이 확정되지 않은 결과는 unresolved 건수로 남긴다.
+- 완료 시 전체 설정 digest/개인정보 상태가 그대로이고 취소되지 않은 경우에만 pending batch를 보관한다. 종료 시 pending 자료를 해제한다.
+- 아직 대기열에 제출하거나 훅 명령을 실행하는 연결은 없다. plugin/미확정 외부 계정, fetch 진입 오류와 status probe 자료 수집도 남아 있다.
+- 남은 소요: 실제 batch 제출과 이전 key/소유권 digest 갱신, 훅 설정 변경/종료/누락 표시 연결 및 전체 계획 나머지.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·사용량/훅 실행 미실행.

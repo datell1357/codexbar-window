@@ -27,6 +27,17 @@ public struct WindowsUsagePresentationSettings: Sendable {
 /// Owns the Windows tray's provider refresh lifecycle.  Win32 callbacks only
 /// enqueue work; all provider I/O stays on this actor and is serialized.
 public actor WindowsUsageRuntime {
+    private var hookRefreshAccounts: [WindowsHookObservationBatch.Account] = []
+    private var hookUnresolvedAccountCount = 0
+    private var pendingHookRefresh: (accounts: [WindowsHookObservationBatch.Account], config: HooksConfig,
+                                     privacy: Bool, configRevision: Data, unresolved: Int)?
+
+    private func hookConfigRevision(_ config: CodexBarConfig) throws -> Data {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        return Data(SHA256.hash(data: try encoder.encode(config)))
+    }
+
     public typealias RowPublisher = @Sendable ([String]) -> Void
     public typealias CombinedPublisher = @Sendable ([String], [WindowsTrayMenuEntry]) -> Void
     public typealias NotificationPublisher = @Sendable (WindowsSessionQuotaNotification) -> Void
@@ -2132,6 +2143,10 @@ public actor WindowsUsageRuntime {
     }
 
     private func performRefresh() async {
+        self.hookRefreshAccounts.removeAll()
+        self.hookUnresolvedAccountCount = 0
+        self.pendingHookRefresh = nil
+        defer { self.hookRefreshAccounts.removeAll() }
         self.spendGeneration &+= 1
         self.spendSnapshot = nil
         self.spendState = .idle
@@ -2346,6 +2361,15 @@ public actor WindowsUsageRuntime {
                 self.queuedOptionalRefresh = true
                 return
             }
+            if config.hooks?.enabled == true, !Task.isCancelled {
+                let revision = try self.hookConfigRevision(config)
+                if let current = try self.configStore.load(),
+                   try self.hookConfigRevision(current) == revision,
+                   presentationSettings.hidePersonalInfo == WindowsUsagePresentationSettings.load().hidePersonalInfo {
+                    self.pendingHookRefresh = (self.hookRefreshAccounts, config.hooks ?? HooksConfig(),
+                        presentationSettings.hidePersonalInfo, revision, self.hookUnresolvedAccountCount)
+                }
+            }
             self.renderEntries = entries
             self.scheduleResetBoundaryRefreshIfNeeded(
                 snapshots: self.currentSnapshots(from: entries),
@@ -2491,6 +2515,8 @@ public actor WindowsUsageRuntime {
     public func shutdown() async {
         guard !self.shuttingDown else { return }
         self.shuttingDown = true
+        self.pendingHookRefresh = nil
+        self.hookRefreshAccounts.removeAll()
         self.cancelCursorBrowserImport()
         self.cancelAugmentBrowserImport()
         self.cancelZedEditorImport()
@@ -3267,6 +3293,24 @@ public actor WindowsUsageRuntime {
                 let title = accountLabel.map { "\(metadata.displayName) [\($0)]" } ?? metadata.displayName
                 let presentation = WindowsUsagePresentation(instanceID: provider.instanceID, provider: provider, title: title, privacyTitle: metadata.displayName, result: result, snapshot: labeledUsage, hidePersonalInfo: presentationSettings.hidePersonalInfo, showOptionalUsage: presentationSettings.showOptionalCreditsAndExtraUsage, usageBarsShowUsed: presentationSettings.usageBarsShowUsed, resetTimesShowAbsolute: presentationSettings.resetTimesShowAbsolute)
                 self.presentations[provider.instanceID] = presentation
+                if config.hooks?.enabled == true, !Task.isCancelled, !self.shuttingDown {
+                    let owner = self.quotaAccountDiscriminator(provider: provider, snapshot: result.usage,
+                        codexVisibleAccount: codexVisibleAccount, tokenAccount: account, environment: env,
+                        strategyKind: result.strategyKind, oauthHistoryOwnerIdentifier: result.claudeOAuthHistoryOwnerIdentifier,
+                        claudeAccountUUIDBefore: claudeAccountUUIDBefore,
+                        claudeAccountUUIDAfter: provider == .claude ? ClaudeAccountProfile.accountUuid(environment: env) : nil)
+                    if let owner {
+                        let discriminator = SHA256.hash(data: Data(owner.utf8)).map { String(format: "%02x", $0) }.joined()
+                        let base = WindowsQuotaWarningSettings.load()
+                        let settings = config.providerConfig(for: provider.instanceID).map { base.resolved(providerConfig: $0) } ?? base
+                        let lanes = WindowsHookObservationMapper.lanes(provider: provider,
+                            providerInstanceID: provider.instanceID.rawValue, snapshot: result.usage,
+                            accountDiscriminator: discriminator, settings: settings,
+                            hidePersonalInfo: presentationSettings.hidePersonalInfo)
+                        self.hookRefreshAccounts.append(.init(providerInstanceID: provider.instanceID.rawValue,
+                            discriminator: discriminator, lanes: lanes, failure: nil))
+                    } else { self.hookUnresolvedAccountCount += 1 }
+                }
                 self.evaluateSessionQuota(provider: provider, snapshot: result.usage, codexVisibleAccount: codexVisibleAccount, tokenAccount: account)
                 self.evaluateQuotaWarnings(provider: provider, snapshot: result.usage,
                     codexVisibleAccount: codexVisibleAccount, tokenAccount: account, environment: env, config: config,
@@ -3294,6 +3338,14 @@ public actor WindowsUsageRuntime {
                     oauthHistoryOwnerIdentifier: result.claudeOAuthHistoryOwnerIdentifier)
                 return presentation.rows()
             case let .failure(error):
+                if config.hooks?.enabled == true, !Task.isCancelled, !self.shuttingDown {
+                    if let account {
+                        let owner = "token-account:" + account.id.uuidString.lowercased()
+                        let discriminator = SHA256.hash(data: Data(owner.utf8)).map { String(format: "%02x", $0) }.joined()
+                        self.hookRefreshAccounts.append(.init(providerInstanceID: provider.instanceID.rawValue,
+                            discriminator: discriminator, lanes: nil, failure: .unknown))
+                    } else { self.hookUnresolvedAccountCount += 1 }
+                }
                 self.recordStartupConnectivityRetryableFailure(error)
                 self.providerCopyErrors[provider.rawValue] = WindowsClipboard.summary(rows: [provider.rawValue, error.localizedDescription])
                 return ["\(provider.rawValue): \(error.localizedDescription)"]

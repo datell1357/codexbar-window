@@ -1,5 +1,7 @@
 # Windows 전용 제품 작업 현황
 
+- IMPL-284: 실제 first-party refresh에서 소유권이 정해진 hook 관측을 수집하고 변경 없는 설정의 pending batch로 보관한다. 제출은 미연결이다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
 - IMPL-283: Windows 계정별 hook 성공/실패 결과의 batch 구성과 실패 이벤트 제출 경로를 작성했다. runtime 연결은 남아 있다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
 
 - IMPL-282: 부분 응답의 hook 추가 구간 기준값 보존 계약과 Windows mapper를 작성했다. runtime 연결은 남아 있다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
