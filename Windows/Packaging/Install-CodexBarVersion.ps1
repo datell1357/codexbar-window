@@ -103,8 +103,45 @@ try {
         $item = Get-Item -LiteralPath $target -Force
         if (-not $item.PSIsContainer -or ($item.Attributes -band [IO.FileAttributes]::ReparsePoint)) { throw 'Invalid version directory.' }
     } else { $null = New-Item -ItemType Directory -Path $target }
+    $existingReceipt = $null
     if (Test-Path -LiteralPath $receiptPath) {
-        throw 'A receipt already exists. This command does not repair, replace or reactivate a completed installation.'
+        if (-not $ResumeIncomplete) { throw 'Installation receipt already exists.' }
+        $item = Get-Item -LiteralPath $receiptPath -Force
+        if ($item.PSIsContainer -or $item.Length -gt 16777216 -or
+            ($item.Attributes -band [IO.FileAttributes]::ReparsePoint)) { throw 'Invalid existing receipt.' }
+        $existingReceipt = Get-Content -LiteralPath $receiptPath -Raw | ConvertFrom-Json
+        if ($existingReceipt.schemaVersion -ne 1 -or $existingReceipt.product -ne 'CodexBarWindows' -or
+            $existingReceipt.versionID -ne $versionID -or $existingReceipt.architecture -ne $inventory.architecture -or
+            $existingReceipt.signerThumbprint -ine $ExpectedSignerThumbprint -or
+            $existingReceipt.state -ne 'INSTALLED_INACTIVE_RUNTIME_UNVERIFIED' -or
+            $existingReceipt.provenance.repository -ne $provenance.repository -or
+            $existingReceipt.provenance.revision -ne $provenance.revision -or
+            $existingReceipt.provenance.version -ne $provenance.version) { throw 'Receipt differs from the recorded installation.' }
+        $receiptFiles = @($existingReceipt.files)
+        if ($receiptFiles.Count -ne $files.Count) { throw 'Receipt inventory differs.' }
+        for ($index = 0; $index -lt $files.Count; $index++) {
+            if ($receiptFiles[$index].path -cne $files[$index].path -or
+                $receiptFiles[$index].kind -ne $files[$index].kind -or
+                $receiptFiles[$index].bytes -ne $files[$index].bytes -or
+                $receiptFiles[$index].sha256 -ine $files[$index].sha256) { throw 'Receipt file differs from the inventory.' }
+        }
+    }
+    $staging = $null
+    function Open-VerifiedInstalledFile([string] $Path, [object] $File) {
+        $stream = [IO.File]::Open($Path, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::Read)
+        try {
+            if ($stream.Length -ne $File.entry.bytes) { throw 'Installed file size differs from payload.' }
+            $hasher = [Security.Cryptography.SHA256]::Create()
+            try { $digest = $hasher.ComputeHash($stream) } finally { $hasher.Dispose() }
+            if ([BitConverter]::ToString($digest).Replace('-', '') -ine $File.entry.sha256) { throw 'Installed bytes differ from payload.' }
+            if ($File.signed) {
+                $signature = Get-AuthenticodeSignature -LiteralPath $Path
+                if ($signature.Status -ne 'Valid' -or $null -eq $signature.SignerCertificate -or
+                    $signature.SignerCertificate.Thumbprint -ine $ExpectedSignerThumbprint -or
+                    $null -eq $signature.TimeStamperCertificate) { throw 'Installed first-party signature is not accepted.' }
+            }
+            return $stream
+        } catch { $stream.Dispose(); throw }
     }
     $plan.state = 'COPYING'
     Write-CodexBarJournal $planPath $plan
@@ -116,25 +153,37 @@ try {
             if (Test-Path -LiteralPath $destination) {
                 $item = Get-Item -LiteralPath $destination -Force
                 if (-not $item.PSIsContainer -or ($item.Attributes -band [IO.FileAttributes]::ReparsePoint)) { throw 'Invalid installed parent directory.' }
-            } else { $null = New-Item -ItemType Directory -Path $destination }
+            } else {
+                if ($null -ne $existingReceipt) { throw 'Completed receipt has a missing directory; reconciliation does not repair files.' }
+                $null = New-Item -ItemType Directory -Path $destination
+            }
         }
         $destination = Join-Path $destination $parts[-1]
         if (Test-Path -LiteralPath $destination) {
             $item = Get-Item -LiteralPath $destination -Force
             if (-not $ResumeIncomplete -or $item.PSIsContainer -or
                 ($item.Attributes -band [IO.FileAttributes]::ReparsePoint)) { throw 'Installed file conflict; preserved without overwrite.' }
-        } else { [IO.File]::Copy($file.source, $destination, $false) }
-        $held = [IO.File]::Open($destination, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::Read)
-        $heldFiles.Add($held)
-        $hasher = [Security.Cryptography.SHA256]::Create()
-        try { $digest = $hasher.ComputeHash($held) } finally { $hasher.Dispose() }
-        if ([BitConverter]::ToString($digest).Replace('-', '') -ine $file.entry.sha256) { throw 'Installed bytes differ from payload.' }
-        if ($file.signed) {
-            $signature = Get-AuthenticodeSignature -LiteralPath $destination
-            if ($signature.Status -ne 'Valid' -or $null -eq $signature.SignerCertificate -or
-                $signature.SignerCertificate.Thumbprint -ine $ExpectedSignerThumbprint -or
-                $null -eq $signature.TimeStamperCertificate) { throw 'Installed first-party signature is not accepted.' }
+        } else {
+            if ($null -ne $existingReceipt) { throw 'Completed receipt has a missing file; reconciliation does not repair files.' }
+            if ($null -eq $staging) {
+                $staging = Join-Path $installRoot ('install-staging-' + [Guid]::NewGuid().ToString('N'))
+                $null = New-Item -ItemType Directory -Path $staging
+            }
+            # Preserve the file extension for Authenticode script handling. Partial copies stay outside the version.
+            $temporary = Join-Path $staging ([Guid]::NewGuid().ToString('N') + [IO.Path]::GetExtension($destination))
+            $inputStream = [IO.File]::Open($file.source, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::Read)
+            try {
+                $outputStream = [IO.File]::Open($temporary, [IO.FileMode]::CreateNew, [IO.FileAccess]::Write, [IO.FileShare]::None)
+                try { $inputStream.CopyTo($outputStream); $outputStream.Flush($true) }
+                finally { $outputStream.Dispose() }
+            } finally { $inputStream.Dispose() }
+            $stagedHandle = Open-VerifiedInstalledFile $temporary $file
+            $stagedHandle.Dispose()
+            [IO.File]::Move($temporary, $destination)
         }
+        # Recheck after publication and retain the installed handle through receipt finalization.
+        $held = Open-VerifiedInstalledFile $destination $file
+        $heldFiles.Add($held)
     }
     $receipt = [ordered] @{
         schemaVersion = 1; product = 'CodexBarWindows'; versionID = $versionID
@@ -143,10 +192,14 @@ try {
         state = 'INSTALLED_INACTIVE_RUNTIME_UNVERIFIED'
         files = $files; installedAtUtc = [DateTime]::UtcNow.ToString('o')
     }
-    Write-CodexBarJournal $receiptPath $receipt
+    if ($null -eq $existingReceipt) { Write-CodexBarJournal $receiptPath $receipt }
     $plan.state = 'RECEIPT_PUBLISHED_RUNTIME_UNVERIFIED'
     Write-CodexBarJournal $planPath $plan
-    Write-Output 'Version payload installed but inactive. Shortcuts, PATH, startup and user settings were not changed.'
+    if ($null -ne $existingReceipt) {
+        Write-Output 'Existing receipt and payload matched; interrupted installation record finalized without replacing the receipt or payload.'
+    } else {
+        Write-Output 'Version payload installed but inactive. Shortcuts, PATH, startup and user settings were not changed.'
+    }
 } catch {
     Write-Warning 'Installation did not finish cleanly. Inspect the receipt and installation record: receipt publication may already have completed. Existing versions and partial output were preserved; no activation occurred.'
     throw

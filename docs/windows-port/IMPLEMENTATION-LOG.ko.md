@@ -1124,3 +1124,13 @@
 - 완료 receipt와 설치 단계 기록에 공통 journal 저장 함수를 연결했다. receipt가 이미 있으면 재설치/활성화하지 않으며 마지막 단계 기록 실패는 receipt 게시 후일 수도 있음을 안내한다.
 
 남은 범위: 복사 도중 끊겨 바이트가 일부만 기록된 파일의 자동 복구, 옛 기록 없는 부분 설치, 완료 receipt와 미완료 journal의 조정, unknown 파일 혼재 및 외부 동시 변경/경로 race, Apps 등록·PATH/startup migration·Windows 검증. 현재 재개는 일치한 파일 재사용과 없는 파일 추가에 한정한다.
+
+## IMPL-069 — 설치 파일 게시와 완료 기록 조정
+
+상태 CODE_WRITTEN_UNVERIFIED. PowerShell/파일 복사·교체/서명/설치/빌드/컴파일/테스트/검증 실행 미실시. guidelines/COMMITS.md 부재로 제공된 핵심 커밋 규칙을 따른다.
+
+- 새 payload 파일을 version 밖의 install-staging transaction 폴더에 복사하고 Flush(true) 및 크기/hash/first-party 서명 확인 후 Move로 최종 경로에 게시하도록 작성했다. 이미 존재한 목적지는 덮어쓰지 않는다. 게시 후 파일을 다시 대조하고 완료 receipt까지 handle을 유지한다.
+- COPY 단계 기록이 남았으나 receipt가 게시된 경우, ResumeIncomplete에서 같은 배포/서명자와 receipt의 버전·출처·파일 목록을 대조한다. 최종 파일이 모두 그대로 있을 때만 진행 기록을 마무리하고 receipt/파일은 교체하지 않는다.
+- receipt가 있는데 파일/부모 폴더가 누락되면 수리나 재설치로 간주하지 않고 중단한다. 새 설치 실패 시 임시 사본은 보존되며 다음 재개는 새 임시 위치를 쓴다.
+
+남은 범위: 옛 최종 경로의 불완전 파일/수정 파일 처리, staging·journal 이전 세대 공간 정리, 서명 확인과 Move 사이 및 상위 경로 외부 변경, receipt 자체 동시 변경, 파일시스템/전원 손실 내구성, Apps 등록·참조 migration·전체 Windows 검증.
