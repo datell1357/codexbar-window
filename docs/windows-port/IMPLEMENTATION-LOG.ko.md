@@ -1040,3 +1040,15 @@
 - request 경로는 distribution 밖, CreateNew, status SIGNING_REQUEST_ONLY이며 서명 후 인벤토리 갱신 의무를 기록한다.
 
 남은 범위: 실제 signer 입력 재대조·인증서 명시 선택·timestamp/AuthentiCode 결과·서명 후 인벤토리, provenance attestation 및 모든 Windows 검증.
+
+## IMPL-061 — 명시적 Authenticode 서명과 새 인벤토리
+
+상태 CODE_WRITTEN_UNVERIFIED. 공식 API 문서와 소스 읽기/편집만 수행. PowerShell/인증서/서명/파일 대조/빌드/컴파일/테스트/검증 미실시.
+
+- 서명 요청·인벤토리·출처·대상 hash를 대조한 뒤 새 output에 복사해 지정 CurrentUser/My 인증서로 first-party3개를 서명하는 스크립트를 작성했다. 원본과 vendor 파일은 보존한다.
+- 인증서 유효기간/코드서명 용도/private key, SHA256, 지정 timestamp, Valid/signer/timeStamper 확인을 코드에 연결했다. WhatIf는 인증서 접근 전에 중단한다.
+- 서명 후 새 파일 크기/hash/signer를 기록하고 SIGNED_RUNTIME_UNVERIFIED/releaseApproved=false로 출력한다. 실패 partial output을 삭제/복원하지 않는다.
+
+근거: Microsoft Set-AuthenticodeSignature 및 Get-AuthenticodeSignature 공식 문서.
+
+남은 범위: 최종 signed bytes/의존성 재분석 결합, 동시 변경, 실제 cert/timestamp chain, OS 정책/installer/MSIX/릴리스 및 모든 Windows 검증.

@@ -1,5 +1,7 @@
 # Windows 전용 제품 작업 현황
 
+IMPL-061: 명시적 인증서 Authenticode 서명·새 output·서명 후 해시 기록 코드를 작성했다. 실제 서명/Windows 검증은 미실시다.
+
 IMPL-060: 선언된 빌드 출처와 first-party 서명 요청 인계를 연결했다. 실제 서명/attestation/실행 검증은 남아 있다.
 
 IMPL-059: 복사 대상 handle 유지·machine/import 재분석·동일 stream 해시 기록을 연결했다. 실행/서명/OS 정책 검증은 남아 있다.

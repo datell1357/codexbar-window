@@ -26,8 +26,8 @@
   "static_qa_status": "NOT_RUN_DURING_IMPLEMENTATION",
   "windows_runtime_status": "NOT_VALIDATED",
   "completion_claim": false,
-  "latest_completed_slice": "IMPL-060 code written: declared build provenance and first-party signing request handoff; unverified",
-  "next": "Implement explicit Windows signing execution and post-sign inventory regeneration; certificate choice, validation and release remain separate.",
+  "latest_completed_slice": "IMPL-061 code written: explicit Authenticode signing into new output and post-sign hash inventory; unverified",
+  "next": "Bind final signed inventory to held files and post-sign dependency analysis; OS policy evidence, installer/MSIX and all runtime validation remain pending.",
   "inventory": {
     "baseline_entries": 2844,
     "provider_ids": 69,
@@ -49,7 +49,7 @@
     "widget_provider_choices": 17
   },
   "automation_action_this_revision": "Created active thread heartbeat codexbar-windows-30 at 30-minute intervals",
-  "publication_action_this_revision": "Commit and push IMPL-060; actual publication output is evidence",
+  "publication_action_this_revision": "Commit and push IMPL-061; actual publication output is evidence",
   "historical_state_before_2026_09_12": {
     "phase": "IMPLEMENTING",
     "repository": "/Users/yeoreum/Documents/codexbar-window/fork",
@@ -691,6 +691,14 @@
     },
     {
       "id": "IMPL-060",
+      "contracts": [
+        "WIN-052"
+      ],
+      "status": "CODE_WRITTEN_UNVERIFIED",
+      "validation": "NOT_RUN_BY_USER_INSTRUCTION"
+    },
+    {
+      "id": "IMPL-061",
       "contracts": [
         "WIN-052"
       ],

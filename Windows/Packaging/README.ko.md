@@ -59,3 +59,12 @@ Windows에서 사용할 명령 형식:
 New-CodexBarSigningRequest.ps1은 DistributionDirectory와 배포 폴더 밖의 OutputRequest를 받아 인벤토리 크기·해시와 파일 내용을 대조한 다음 앱·CLI·PATH 스크립트3개를 서명 대상으로 기록하도록 작성했다. third-party DLL을 재서명 대상으로 자동 선정하지 않는다. request는 CreateNew로 만들며 경로별 서명 전 해시와 provenance만 담고 인증서·비밀정보를 요구하지 않는다.
 
 실제 서명은 아직 연결하지 않았다. 인계 파일은 SIGNING_REQUEST_ONLY이며 시간 경과/다른 프로세스 변경을 막는 lock이나 서명 요청 인증은 없다. signer가 서명 직전 입력을 다시 대조하고 Authenticode/타임스탬프를 확인해야 한다. 서명 후 인벤토리를 갱신해야 하며 기존 해시로 릴리스하면 안 된다. 현재 작업에서 인계 생성/파일 대조/인증서 접근/서명은 실행하지 않았다.
+
+
+## 서명 실행 코드
+
+Sign-CodexBarDistribution.ps1은 DistributionDirectory, SigningRequest, CertificateThumbprint, TimestampServer, 새 OutputDirectory를 명시적으로 받는다. Windows CurrentUser/My의 지정 인증서만 선택하며 PFX·암호 입력/저장·인증서 자동 선택을 하지 않는다. WhatIf는 입력 파일을 읽지만 인증서 접근/서명/출력 생성 전 멈춘다. 실제 서명 실행은 현재 작업에서 하지 않았다.
+
+원본을 보존하고 새 폴더에 복사한 바이트를 요청의 해시와 대조한 뒤 앱·CLI·스크립트만 SHA256/NotRoot로 서명한다. Valid 상태·지정 signer thumbprint·timestamp certificate를 요구하며 실패한 부분 출력은 보존한다. 타사 파일은 복사 후 원래 해시와 대조하고 재서명하지 않는다. timestamp URL은 사용자가 명시하며 실제 호출 시 네트워크와 키 공급자 UI가 필요할 수 있다.
+
+성공하면 새 크기/해시/signer thumbprint로 인벤토리를 작성하며 SIGNED_RUNTIME_UNVERIFIED와 releaseApproved=false를 유지한다. dependencyAnalysis는 PRE_SIGN_INVENTORY_ONLY다. 현재 Windows 실행·실제 인증서/신뢰 체인/타임스탬프 동작은 미검증이며 서명 뒤 PE 재분석, 파일의 외부 동시 변경, inventory 서명·배포 검증은 남아 있다. 기존의 ‘실제 서명 미연결’ 문구는 이전 단계 기록이며 이 스크립트 추가로 코드 경로만 연결됐다.
