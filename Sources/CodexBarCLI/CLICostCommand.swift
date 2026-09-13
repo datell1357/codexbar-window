@@ -38,13 +38,17 @@ extension CodexBarCLI {
         // Cursor cost reuses the same cookie-source policy as usage fetches: reject the fetch when the
         // user set Cursor cookies to Off, and forward the Manual header so the dashboard request uses
         // the configured session instead of auto-resolving a different one.
+        let cursorExpectedAccountID: String?
         let cursorCookieSettings: ProviderSettingsSnapshot.CursorProviderSettings?
         let cursorCookieSettingsError: Error?
         do {
-            cursorCookieSettings = try Self.cursorCookieSettings(config: config, providers: providers)
+            let credentials = try Self.cursorCostCredentials(config: config, providers: providers)
+            cursorCookieSettings = credentials.settings
+            cursorExpectedAccountID = credentials.expectedAccountID
             cursorCookieSettingsError = nil
         } catch {
             cursorCookieSettings = nil
+            cursorExpectedAccountID = nil
             cursorCookieSettingsError = error
         }
         let groupBy = Self.decodeCostGroupBy(from: values)
@@ -91,6 +95,7 @@ extension CodexBarCLI {
                     forceRefresh: forceRefresh,
                     historyDays: historyDays,
                     cursorCookieHeaderOverride: Self.cursorCostHeaderOverride(provider, settings: cursorCookieSettings),
+                    cursorExpectedAccountID: provider == .cursor ? cursorExpectedAccountID : nil,
                     refreshPricingInBackground: false,
                     includePiSessions: Self.costIncludePiSessions(
                         provider: provider,
@@ -808,12 +813,21 @@ extension CodexBarCLI {
         config: CodexBarConfig,
         providers: [UsageProvider]) throws -> ProviderSettingsSnapshot.CursorProviderSettings?
     {
-        // Provider-specific by design: Cursor cost fetches must resolve its selected dashboard-cookie account.
-        guard providers.contains(.cursor) else { return nil }
+        try Self.cursorCostCredentials(config: config, providers: providers).settings
+    }
+
+    struct CursorCostCredentials: Sendable {
+        let settings: ProviderSettingsSnapshot.CursorProviderSettings?
+        let expectedAccountID: String?
+    }
+
+    static func cursorCostCredentials(config: CodexBarConfig, providers: [UsageProvider]) throws -> CursorCostCredentials {
+        guard providers.contains(.cursor) else { return .init(settings: nil, expectedAccountID: nil) }
         let selection = TokenAccountCLISelection(label: nil, index: nil, allAccounts: false)
         let context = try TokenAccountCLIContext(selection: selection, config: config, verbose: false)
         let account = try context.resolvedAccounts(for: .cursor).first
-        return context.settingsSnapshot(for: .cursor, account: account)?.cursor
+        return .init(settings: context.settingsSnapshot(for: .cursor, account: account)?.cursor,
+                     expectedAccountID: account?.externalIdentifier)
     }
 
     /// Return the actionable error for a Cursor cost fetch disabled by cookie-source policy.

@@ -15,7 +15,7 @@ struct DashboardSnapshotBuilderTests {
             providers: [.cursor],
             config: config,
             context: self.costCollectionContext())
-        { provider, header in
+        { provider, header, _ in
             await recorder.record(provider: provider, cursorCookieHeaderOverride: header)
             return CodexBarCLI.makeCostPayload(provider: provider, snapshot: nil, error: nil)
         }
@@ -41,7 +41,7 @@ struct DashboardSnapshotBuilderTests {
             providers: [.cursor],
             config: config,
             context: self.costCollectionContext())
-        { provider, header in
+        { provider, header, _ in
             await recorder.record(provider: provider, cursorCookieHeaderOverride: header)
             return CodexBarCLI.makeCostPayload(provider: provider, snapshot: nil, error: nil)
         }

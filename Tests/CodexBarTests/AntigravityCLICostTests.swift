@@ -55,7 +55,7 @@ struct AntigravityCLICostTests {
                 requestDeadline: nil,
                 now: { ContinuousClock().now },
                 providerOperations: CLIServeOperationCoordinator()))
-        { provider, header in
+        { provider, header, _ in
             #expect(provider == .antigravity)
             #expect(header == nil)
             return CodexBarCLI.makeCostPayload(

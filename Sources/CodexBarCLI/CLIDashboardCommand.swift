@@ -114,12 +114,13 @@ struct DashboardSnapshotProducer: Sendable {
                     providers: providers,
                     config: config,
                     context: context.costCollection)
-                { provider, cursorCookieHeaderOverride in
+                { provider, cursorCookieHeaderOverride, cursorExpectedAccountID in
                     do {
                         let snapshot = try await costFetcher.loadTokenSnapshot(
                             provider: provider,
                             forceRefresh: false,
                             cursorCookieHeaderOverride: cursorCookieHeaderOverride,
+                            cursorExpectedAccountID: cursorExpectedAccountID,
                             refreshPricingInBackground: context.costRefreshesPricingInBackground)
                         return CodexBarCLI.makeCostPayload(provider: provider, snapshot: snapshot, error: nil)
                     } catch {

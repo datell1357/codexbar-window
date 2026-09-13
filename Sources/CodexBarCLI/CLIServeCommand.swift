@@ -1475,12 +1475,13 @@ extension CodexBarCLI {
             providers: providers,
             config: context.config,
             context: context.collection)
-        { provider, cursorCookieHeaderOverride in
+        { provider, cursorCookieHeaderOverride, cursorExpectedAccountID in
             do {
                 let snapshot = try await fetcher.loadTokenSnapshot(
                     provider: provider,
                     forceRefresh: false,
                     cursorCookieHeaderOverride: cursorCookieHeaderOverride,
+                    cursorExpectedAccountID: cursorExpectedAccountID,
                     refreshPricingInBackground: Self.serveCostRefreshesPricingInBackground)
                 return Self.makeCostPayload(provider: provider, snapshot: snapshot, error: nil)
             } catch {
@@ -1495,17 +1496,21 @@ extension CodexBarCLI {
         providers: [UsageProvider],
         config: CodexBarConfig,
         context: ServeCostCollectionContext,
-        fetch: @Sendable @escaping (UsageProvider, String?) async -> CostPayload) async -> [CostPayload]
+        fetch: @Sendable @escaping (UsageProvider, String?, String?) async -> CostPayload) async -> [CostPayload]
     {
         // Keep every dashboard transport aligned with the configured Cursor credential source.
         // Policy failures remain row-local so other providers still render.
+        let cursorExpectedAccountID: String?
         let cursorCookieSettings: ProviderSettingsSnapshot.CursorProviderSettings?
         let cursorCookieSettingsError: Error?
         do {
-            cursorCookieSettings = try Self.cursorCookieSettings(config: config, providers: providers)
+            let credentials = try Self.cursorCostCredentials(config: config, providers: providers)
+            cursorCookieSettings = credentials.settings
+            cursorExpectedAccountID = credentials.expectedAccountID
             cursorCookieSettingsError = nil
         } catch {
             cursorCookieSettings = nil
+            cursorExpectedAccountID = nil
             cursorCookieSettingsError = error
         }
 
@@ -1522,7 +1527,8 @@ extension CodexBarCLI {
             }
             return await fetch(
                 provider,
-                Self.cursorCostHeaderOverride(provider, settings: cursorCookieSettings))
+                Self.cursorCostHeaderOverride(provider, settings: cursorCookieSettings),
+                provider == .cursor ? cursorExpectedAccountID : nil)
         }
     }
 

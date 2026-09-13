@@ -2368,3 +2368,11 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - Windows loader의 이전 전후 확인 helper를 공통 Core 경로로 옮겨 중복 네트워크 요청을 피한다. 추가 확인 요청 수는 기존 두 번을 유지한다.
 - 남은 소요: CLI cost/dashboard/serve가 선택 ID를 전달하는 연결, 원격 이벤트 자체의 계정 증명 및 기존 stale 데이터 정책. 계정 조회와 비용 조회 간 서버 상태 변경을 원자적으로 막는 보장은 아니다.
 - CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·실제 API/캐시 검증 미실행.
+
+## IMPL-194 — CLI 비용 계정 컨텍스트
+
+- Cursor 비용 자격 정보를 한 번 해석하여 settings와 externalIdentifier를 같은 선택 계정에서 얻는다. 기존 cookie settings helper는 이 공통 resolver에 위임한다.
+- cost 명령 및 dashboard/serve의 공통 수집 callback에 ID를 전달하고 Core 비용 조회에 연결한다. 비-Cursor에는 nil을 전달한다.
+- callback 인자가 추가된 기존 테스트 호출부만 맞췄으며 테스트를 실행하지 않았다. 출력 형식이나 ID 로그는 추가하지 않는다.
+- 남은 소요: 기존 stale 비용 보존 정책의 소유권 실패 처리, 팀 컨텍스트, 추가 브라우저 지원 및 전체 계획 나머지 항목.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. CLI 실행·빌드·테스트·lint·실제 API 검증 미실행.
