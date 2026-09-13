@@ -261,6 +261,61 @@ public actor WindowsUsageRuntime {
         } catch { return .failed }
     }
 
+    /// Add to the existing config account schema. Persistence uses the configured store;
+    /// no claim of Credential Manager migration is made by this API.
+    public func addTokenAccount(_ request: WindowsTokenAccountAddRequest) -> WindowsTokenAccountAddResult {
+        guard !self.shuttingDown else { return .shuttingDown }
+        guard self.refreshTask == nil else { return .refreshInProgress }
+        let token = request.token.trimmingCharacters(in: .whitespacesAndNewlines)
+        let label = request.label.trimmingCharacters(in: .whitespacesAndNewlines)
+        func field(_ raw: String?) -> String? {
+            guard let text = raw?.trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty else { return nil }
+            return text
+        }
+        let scope = field(request.usageScope), organization = field(request.organizationID), workspace = field(request.workspaceID)
+        func safeText(_ text: String, limit: Int) -> Bool {
+            text.utf16.count <= limit && !text.unicodeScalars.contains { $0.value < 0x20 || $0.value == 0x7F }
+        }
+        guard !token.isEmpty, token.utf8.count <= 65_536, !token.contains("\0"),
+              safeText(label, limit: 160), [scope, organization, workspace].compactMap({ $0 }).allSatisfy({ safeText($0, limit: 512) })
+        else { return .invalidInput }
+        do {
+            guard let provider = request.providerID.firstPartyProvider,
+                  let support = TokenAccountSupportCatalog.support(for: provider),
+                  var config = try self.configStore.load(), config.enabledProviders().contains(request.providerID),
+                  var entry = config.providerConfig(for: request.providerID) else { return .unavailable }
+            let data = entry.tokenAccounts
+            let accounts = data?.accounts ?? []
+            guard Set(accounts.map(\.id)).count == accounts.count else { return .unavailable }
+            let resolvedLabel = label.isEmpty ? "Account \(accounts.count + 1)" : label
+            if let existing = accounts.first(where: { $0.id == request.accountID }) {
+                guard existing.token == token, (label.isEmpty || existing.label == label),
+                      existing.usageScope == scope, existing.organizationID == organization,
+                      existing.workspaceID == workspace else { return .staleSelection }
+                return .alreadyAdded(existing.id)
+            }
+            let selectedID = accounts.isEmpty ? nil : accounts[data!.clampedActiveIndex()].id
+            guard selectedID == request.expectedSelectedID else { return .staleSelection }
+            let account = ProviderTokenAccount(id: request.accountID, label: resolvedLabel, token: token,
+                addedAt: Date().timeIntervalSince1970, lastUsed: nil, usageScope: scope,
+                organizationID: organization, workspaceID: workspace)
+            entry.tokenAccounts = ProviderTokenAccountData(version: data?.version ?? 1,
+                                                           accounts: accounts + [account], activeIndex: accounts.count)
+            if support.clearsAPIKeyOnMutation { entry.apiKey = nil }
+            if support.requiresManualCookieSource { entry.cookieSource = .manual }
+            config.setProviderConfig(entry)
+            try self.configStore.save(config)
+            self.latestProviderConfigs[request.providerID] = entry
+            self.dashboardContextCache.removeValue(forKey: request.providerID)
+            self.presentations.removeValue(forKey: request.providerID)
+            self.providerCopyErrors.removeValue(forKey: request.providerID.rawValue)
+            self.renderEntries = [.row("Account added. Refresh usage to load the selected account.")]
+            self.statusMenuEntries.removeAll()
+            self.publishRenderEntries(settings: WindowsUsagePresentationSettings.load())
+            return .saved(account.id)
+        } catch { return .failed }
+    }
+
     private static func accountLabelRevision(_ label: String) -> String {
         SHA256.hash(data: Data(label.utf8)).map { String(format: "%02x", $0) }.joined()
     }

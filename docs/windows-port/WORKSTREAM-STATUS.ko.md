@@ -1,5 +1,7 @@
 # Windows 전용 제품 작업 현황
 
+- IMPL-098: 새 토큰 계정 추가 backend를 작성했다. UI/보호 저장 이전 미연결, CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
 - IMPL-097: 계정 이름 창 DPI 배치·system font·초기 작업 영역 배치를 작성했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
 
 - IMPL-096: Saved accounts 이름 입력 UI와 비동기 저장을 연결했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.

@@ -41,6 +41,29 @@ public enum WindowsTokenAccountRenameResult: Sendable {
     case failed
 }
 
+/// Contains a credential: never log, serialize for diagnostics, or pass this draft back to the UI.
+public struct WindowsTokenAccountAddRequest: Sendable {
+    public let providerID: ProviderInstanceID
+    public let accountID: UUID
+    public let label: String
+    public let token: String
+    public let usageScope: String?
+    public let organizationID: String?
+    public let workspaceID: String?
+    public let expectedSelectedID: UUID?
+}
+
+public enum WindowsTokenAccountAddResult: Sendable {
+    case saved(UUID)
+    case alreadyAdded(UUID)
+    case invalidInput
+    case staleSelection
+    case refreshInProgress
+    case unavailable
+    case shuttingDown
+    case failed
+}
+
 public enum WindowsTokenAccountSelectionLoadResult: Sendable {
     case loaded(WindowsTokenAccountSelectionSnapshot)
     case unavailable

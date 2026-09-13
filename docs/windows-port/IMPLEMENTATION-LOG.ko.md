@@ -1418,3 +1418,14 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/hidpi/wm-dpichanged 
 - DPI/글꼴 변경이 입력 내용이나 저장 요청을 변경하지 않도록 기존 control을 유지한다.
 
 남은 범위: 매우 작은 작업 영역에서 수직 스크롤, 앱 전체 DPI awareness, 실제 다중 모니터/텍스트 크기/접근성/지역화 검증. 계정 관리 전체 완료가 아니다.
+
+## IMPL-098 — 새 토큰 계정 추가 backend
+
+상태 CODE_WRITTEN_UNVERIFIED. 컴파일/빌드/테스트/설정 쓰기/실계정/검증 미실시. guidelines/COMMITS.md 부재로 핵심 커밋 규칙을 적용한다.
+
+- 새 계정 UUID를 요청에서 고정해 동일 요청 재시도 시 기존 등록 여부를 확인하고 중복 추가하지 않는 backend를 작성했다. 다른 payload가 같은 UUID를 사용하면 충돌로 처리한다.
+- 선택 ID가 바뀌거나 수집 중이면 추가하지 않는다. 기존 계정들을 유지하고 새 계정을 끝에 추가·선택하며 label/token/scope/organization/workspace를 정리한다. 입력 크기/NUL/label 제어 문자 제한을 적용하고 입력·예외를 로그에 출력하지 않는다.
+- 원본 add 규칙의 빈 이름 fallback, catalog의 clearsAPIKeyOnMutation 및 requiresManualCookieSource를 반영했다. UUID/token/metadata 외부 검증이나 로그인 성공을 주장하지 않는다.
+- 성공 후 이전 계정 표시를 철회하며 caller가 새로고침해야 한다. 현재 UI 미연결이다.
+
+제한: 기존 CodexBarConfigStore는 JSON token 필드를 사용한다. 이 backend 자체에 Credential Manager/DPAPI 이전은 없으며 새 credential 입력 UI를 배포 가능한 기능으로 판정하기 전에 해당 보호 저장·마이그레이션/호환성 계약을 연결해야 한다. 추가 UI, provider별 credential 검증, 삭제·수정·OAuth·동시 계정 표시와 전체 Windows 검증도 남아 있다.
