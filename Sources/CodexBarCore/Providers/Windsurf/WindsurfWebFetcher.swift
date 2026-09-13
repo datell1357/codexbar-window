@@ -403,7 +403,11 @@ public enum WindsurfWebFetcher {
         }
 
         var request = URLRequest(url: url)
+        #if os(Windows)
+        request.timeoutInterval = timeout.isFinite ? min(60, max(1, timeout)) : 15
+        #else
         request.timeoutInterval = timeout
+        #endif
         request.httpMethod = "POST"
         request.setValue("application/proto", forHTTPHeaderField: "Content-Type")
         request.setValue("1", forHTTPHeaderField: "Connect-Protocol-Version")
@@ -415,10 +419,18 @@ public enum WindsurfWebFetcher {
         let response: ProviderHTTPResponse
         do {
             response = try await transport.response(for: request)
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch let error as URLError where error.code == .cancelled {
+            throw CancellationError()
         } catch let error as URLError where error.code == .badServerResponse {
             throw WindsurfWebFetcherError.apiCallFailed("Invalid response")
         } catch {
+            #if os(Windows)
+            throw WindsurfWebFetcherError.apiCallFailed("Request failed. Check connectivity and retry.")
+            #else
             throw error
+            #endif
         }
 
         try Task.checkCancellation()
@@ -443,9 +455,17 @@ public enum WindsurfWebFetcher {
         }
 
         do {
-            return try WindsurfPlanStatusProtoCodec.decodeResponse(response.data)
+            let decoded = try WindsurfPlanStatusProtoCodec.decodeResponse(response.data)
+            try Task.checkCancellation()
+            return decoded
+        } catch is CancellationError {
+            throw CancellationError()
         } catch {
+            #if os(Windows)
+            throw WindsurfWebFetcherError.apiCallFailed("Unsupported account response")
+            #else
             throw WindsurfWebFetcherError.apiCallFailed("Parse error: \(error.localizedDescription)")
+            #endif
         }
     }
 

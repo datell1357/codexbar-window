@@ -2835,3 +2835,12 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - WindowsZedImportFailurePresentation은 알려진 오류만 고정 문구로 매핑하며 취소/timeout을 구분한다. runtime 가져오기 catch에 연결했다.
 - 남은 소요: Windows 실제 오류/인증 검증, 편집기 디렉터리 자동 발견 및 전체 계획 나머지.
 - CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·UI·인증 검증 미실행.
+
+## IMPL-250 — Windsurf 선택 계정 격리와 통신 처리
+
+- selectedTokenAccountID가 존재하면 수동 세션 모드를 요구하고 웹 오류 후 fallback과 로컬 캐시 strategy 가용성을 차단한다. 설정이 누락된 선택 계정을 다른 편집기 계정 데이터로 표시하지 않는다.
+- Windows 요청 timeout을 1~60초로 제한하고 비유한 입력은 15초를 사용한다. 전송/파싱 오류는 고정 문구로 전달한다.
+- CancellationError와 URLError.cancelled를 취소로 유지하며 protobuf decode 후에도 취소를 확인한다.
+- 코드상 Windows Chromium localStorage 자동 importer는 아직 없으며 이 변경으로 가져오기 지원을 완료했다고 판단하지 않는다.
+- 남은 소요: Windows 브라우저 저장소 가져오기, 실제 계정 전환/통신 검증 및 전체 계획 나머지.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·API·UI 검증 미실행.

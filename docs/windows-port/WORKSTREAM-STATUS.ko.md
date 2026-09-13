@@ -1,5 +1,7 @@
 # Windows 전용 제품 작업 현황
 
+- IMPL-250: Windsurf 선택 계정이 있을 때 로컬 캐시 fallback을 차단하고 Windows 통신 오류/timeout/취소 처리를 보완했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
 - IMPL-249: Zed Windows 인증 오류를 플랫폼에 맞게 분리하고 가져오기 UI의 고정 오류 안내를 연결했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
 
 - IMPL-248: Zed 자동 조회의 설정 오류 안내를 구분하고 선택적 null 설정을 처리했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.

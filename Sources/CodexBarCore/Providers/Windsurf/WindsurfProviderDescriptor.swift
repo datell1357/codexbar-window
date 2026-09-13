@@ -115,6 +115,11 @@ struct WindsurfWebFetchStrategy: ProviderFetchStrategy {
     func fetch(_ context: ProviderFetchContext) async throws -> ProviderFetchResult {
         #if os(macOS) || os(Windows)
         let cookieSource = context.settings?.windsurf?.cookieSource ?? .auto
+        #if os(Windows)
+        if context.selectedTokenAccountID != nil, cookieSource != .manual {
+            throw WindsurfWebFetcherError.invalidManualSession("The selected account has no manual session. Restore its credentials before refreshing.")
+        }
+        #endif
         let manualToken = Self.manualToken(from: context)
         let usage = try await WindsurfWebFetcher.fetchUsage(
             browserDetection: context.browserDetection,
@@ -130,7 +135,7 @@ struct WindsurfWebFetchStrategy: ProviderFetchStrategy {
 
     func shouldFallback(on _: Error, context: ProviderFetchContext) -> Bool {
         #if os(Windows)
-        if context.settings?.windsurf?.cookieSource == .manual { return false }
+        if context.selectedTokenAccountID != nil || context.settings?.windsurf?.cookieSource == .manual { return false }
         #endif
         return context.sourceMode == .auto
     }
@@ -149,7 +154,7 @@ struct WindsurfLocalFetchStrategy: ProviderFetchStrategy {
     func isAvailable(_ context: ProviderFetchContext) async -> Bool {
         #if os(Windows)
         // The editor cache cannot establish ownership of a selected manual web account.
-        if context.settings?.windsurf?.cookieSource == .manual { return false }
+        if context.selectedTokenAccountID != nil || context.settings?.windsurf?.cookieSource == .manual { return false }
         #endif
         return context.sourceMode != .web
     }
