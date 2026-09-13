@@ -1582,3 +1582,13 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - WindowsMain이 runtime begin/replace/cancel을 호출한다. save 결과 후 ticket을 정리하고 성공 시 refresh를 요청한다. 성공 메시지는 인증 검증과 구분하며 오류 메시지에 credential을 포함하지 않는다.
 
 남은 범위: 공급자별 credential parsing/안내, scope/org metadata 편집, 만료·refresh 경합·shutdown·접근성·작은 화면 Windows 검증, 실제 인증 성공 확인. 새 경로는 실행하지 않았다.
+
+## IMPL-114 — 공급자별 credential 교체 안내
+
+상태 CODE_WRITTEN_UNVERIFIED. 컴파일/빌드/테스트/UI/계정/검증 미실시. guidelines/COMMITS.md 부재로 핵심 커밋 규칙을 적용한다.
+
+- 원본 SettingsStore+TokenAccounts와 TokenAccountSupport를 읽고 저장 시 trim, 소비 시 공급자 credential routing을 유지한다. cookie header 일괄 변환으로 OAuth 등의 원본 입력 계약을 변경하지 않는다.
+- 편집 begin 결과에 비밀정보 없는 UsageProvider를 전달하여 native 교체 화면에서 카탈로그 title/subtitle/placeholder와 공급자 표시 이름을 사용한다. 기존 credential은 전달하지 않는다.
+- 설명 공간과 창 높이를 credential 모드에 맞게 늘리고 이름 편집 크기는 유지한다. 인증 성공 미검증 안내도 유지한다.
+
+남은 범위: 긴 설명·작은 화면·고배율·접근성 동작, 공급자별 실제 credential 적용, scope/org 편집, 전체 Windows 기능 및 실행 검증.

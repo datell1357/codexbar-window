@@ -543,7 +543,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
         guard !self.quitInvoked, self.tokenAccountPendingID == requestID,
               self.credentialLoadResult == nil else {
             self.mailboxLock.unlock()
-            if case let .loaded(ticketID) = result { self.onCredentialEditCancel(ticketID) }
+            if case let .loaded(ticketID, _) = result { self.onCredentialEditCancel(ticketID) }
             return
         }
         self.credentialLoadResult = result
@@ -576,9 +576,9 @@ public final class WindowsTrayHost: @unchecked Sendable {
         var message: String?
         if let loaded {
             switch loaded {
-            case let .loaded(ticketID):
+            case let .loaded(ticketID, provider):
                 self.remoteEditorOpen = true
-                let input = WindowsAccountNameDialog.showCredentialReplacement(owner: window)
+                let input = WindowsAccountNameDialog.showCredentialReplacement(owner: window, provider: provider)
                 self.remoteEditorOpen = false
                 if !self.quitInvoked { PostMessageW(window, Self.wakeMessage, 0, 0) }
                 if !self.quitInvoked, case let .saved(secret) = input {

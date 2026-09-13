@@ -437,7 +437,7 @@ public actor WindowsUsageRuntime {
             let ticket = CredentialEditTicket(id: UUID(), providerID: providerID, accountID: accountID,
                 revision: try Self.credentialEditRevision(account), expiresAt: Date().addingTimeInterval(600))
             self.credentialEditTicket = ticket
-            return .loaded(ticketID: ticket.id)
+            return .loaded(ticketID: ticket.id, provider: provider)
         } catch { return .failed }
     }
 

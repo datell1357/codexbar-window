@@ -121,7 +121,7 @@ public enum WindowsTokenAccountSelectionSaveResult: Sendable {
 }
 /// Opaque, short-lived authorization to replace one saved credential. No old secret is exposed.
 public enum WindowsTokenAccountCredentialLoadResult: Sendable {
-    case loaded(ticketID: UUID)
+    case loaded(ticketID: UUID, provider: UsageProvider)
     case unavailable
     case refreshInProgress
     case shuttingDown

@@ -1,5 +1,6 @@
 #if os(Windows)
 import Foundation
+import CodexBarCore
 import WinSDK
 
 /// Inputs begin empty. Credential mode never receives the previously stored secret.
@@ -9,7 +10,19 @@ enum WindowsAccountNameDialog {
     private enum Mode { case name, credential }
     private final class Context {
         let mode: Mode
-        init(mode: Mode) { self.mode = mode }
+        let support: TokenAccountSupport?
+        let providerName: String?
+        init(mode: Mode, provider: UsageProvider?) {
+            self.mode = mode
+            self.support = provider.flatMap { TokenAccountSupportCatalog.support(for: $0) }
+            self.providerName = provider.map { ProviderDescriptorRegistry.descriptor(for: $0).metadata.displayName }
+        }
+        var guidance: String {
+            guard self.mode == .credential else { return "Only the name changes; credentials and selection stay the same." }
+            let description = self.support.map { $0.subtitle + "\r\nInput: " + $0.placeholder }
+                ?? "Enter the complete replacement token or cookie header."
+            return description + "\r\nThe old credential is not shown. Saving does not verify authentication."
+        }
         var result: Result = .cancelled
         var closed = false
         var dpi: UINT = 96
@@ -20,12 +33,12 @@ enum WindowsAccountNameDialog {
     static func show(owner: HWND) -> Result { Self.show(owner: owner, mode: .name) }
 
     /// The returned string contains a secret; pass only to the credential save API.
-    static func showCredentialReplacement(owner: HWND) -> Result {
-        Self.show(owner: owner, mode: .credential)
+    static func showCredentialReplacement(owner: HWND, provider: UsageProvider) -> Result {
+        Self.show(owner: owner, mode: .credential, provider: provider)
     }
 
-    private static func show(owner: HWND, mode: Mode) -> Result {
-        let context = Context(mode: mode)
+    private static func show(owner: HWND, mode: Mode, provider: UsageProvider? = nil) -> Result {
+        let context = Context(mode: mode, provider: provider)
         let instance = GetModuleHandleW(nil)
         var klass = WNDCLASSEXW()
         klass.cbSize = UINT(MemoryLayout<WNDCLASSEXW>.size)
@@ -38,7 +51,7 @@ enum WindowsAccountNameDialog {
             return RegisterClassExW(&klass)
         }
         guard registered != 0 || GetLastError() == ERROR_CLASS_ALREADY_EXISTS else { return .failed }
-        let caption = Array((mode == .name ? "Rename saved account" : "Replace account credential").utf16) + [0]
+        let caption = Array((mode == .name ? "Rename saved account" : "Replace account credential — " + (context.providerName ?? "Saved account")).utf16) + [0]
         let hwnd = name.withUnsafeBufferPointer { n in
             caption.withUnsafeBufferPointer { c in
                 CreateWindowExW(DWORD(WS_EX_DLGMODALFRAME), n.baseAddress, c.baseAddress,
@@ -113,12 +126,10 @@ enum WindowsAccountNameDialog {
         case UINT(WM_CREATE):
             let dpi = GetDpiForWindow(hwnd)
             context.dpi = dpi == 0 ? 96 : dpi
-            guard Self.control(hwnd, "STATIC", context.mode == .name ? "&New account name" : "&New credential", 100, 0, 16, 14, 400, 22) != nil,
+            guard Self.control(hwnd, "STATIC", context.mode == .name ? "&New account name" : "&New " + (context.support?.title ?? "credential").replacingOccurrences(of: "&", with: "&&"), 100, 0, 16, 14, 400, 22) != nil,
                   let edit = Self.control(hwnd, "EDIT", "", 101, DWORD(WS_TABSTOP | WS_BORDER | ES_AUTOHSCROLL) | (context.mode == .credential ? DWORD(ES_PASSWORD) : 0),
                                           16, 40, 410, 26),
-                  Self.control(hwnd, "STATIC", context.mode == .name
-                               ? "Only the name changes; credentials and selection stay the same."
-                               : "Enter the complete replacement token or cookie header. The old credential is not shown. Saving does not verify authentication.",
+                  Self.control(hwnd, "STATIC", context.guidance,
                                102, 0, 16, 76, 410, 40) != nil,
                   Self.control(hwnd, "BUTTON", "Save", 1, DWORD(WS_TABSTOP | BS_DEFPUSHBUTTON), 246, 126, 80, 28) != nil,
                   Self.control(hwnd, "BUTTON", "Cancel", 2, DWORD(WS_TABSTOP | BS_PUSHBUTTON), 336, 126, 90, 28) != nil else { return -1 }
@@ -180,15 +191,16 @@ enum WindowsAccountNameDialog {
         let width = max(1, rect.right - rect.left - px(32))
         MoveWindow(GetDlgItem(hwnd, 100), px(16), px(14), width, px(22), 1)
         MoveWindow(GetDlgItem(hwnd, 101), px(16), px(40), width, px(26), 1)
-        MoveWindow(GetDlgItem(hwnd, 102), px(16), px(76), width, px(54), 1)
+        MoveWindow(GetDlgItem(hwnd, 102), px(16), px(76), width, px(context.mode == .credential ? 150 : 54), 1)
+        let buttonY: Int32 = context.mode == .credential ? 236 : 140
         let buttonWidth = min(px(90), max(1, (width - px(10)) / 2))
-        MoveWindow(GetDlgItem(hwnd, 1), px(16) + max(0, width - buttonWidth * 2 - px(10)), px(140),
+        MoveWindow(GetDlgItem(hwnd, 1), px(16) + max(0, width - buttonWidth * 2 - px(10)), px(buttonY),
                    buttonWidth, px(28), 1)
-        MoveWindow(GetDlgItem(hwnd, 2), px(16) + max(0, width - buttonWidth), px(140), buttonWidth, px(28), 1)
+        MoveWindow(GetDlgItem(hwnd, 2), px(16) + max(0, width - buttonWidth), px(buttonY), buttonWidth, px(28), 1)
     }
 
     private static func place(_ hwnd: HWND, near owner: HWND, context: Context) {
-        var frame = RECT(left: 0, top: 0, right: context.pixels(450), bottom: context.pixels(184))
+        var frame = RECT(left: 0, top: 0, right: context.pixels(450), bottom: context.pixels(context.mode == .credential ? 280 : 184))
         guard AdjustWindowRectExForDpi(&frame, DWORD(WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU),
                                        0, DWORD(WS_EX_DLGMODALFRAME), context.dpi) != 0 else { return }
         var info = MONITORINFO()
