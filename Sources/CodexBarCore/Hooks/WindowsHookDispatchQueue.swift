@@ -11,6 +11,9 @@ public actor WindowsHookDispatchQueue {
         let event: HookEvent
         let config: HooksConfig
     }
+    public enum ObservationFailure: Error { case oversized, duplicateProvider, inconsistentLane }
+    private var detector = HookTransitionDetector()
+    private var observationContext: Data?
     private var config = HooksConfig()
     private var privacy = true
     private var pending: [Pending] = []
@@ -27,11 +30,51 @@ public actor WindowsHookDispatchQueue {
     public func configure(_ config: HooksConfig, hidePersonalInfo: Bool) {
         guard !self.stopped else { return }
         guard config != self.config || hidePersonalInfo != self.privacy else { return }
+        self.detector = HookTransitionDetector()
         self.config = config
         self.privacy = hidePersonalInfo
         self.pending.removeAll()
         self.active?.cancel()
         self.limiter = HookRateLimiter()
+    }
+
+    /// Submit a complete refresh batch, with all account lanes grouped once per provider instance.
+    /// contextRevision is an opaque digest of provider/account ownership, never credential bytes.
+    public func observe(
+        _ observations: [HookProviderObservation], config: HooksConfig,
+        hidePersonalInfo: Bool, contextRevision: Data, now: Date = Date()) throws -> Submission
+    {
+        try Task.checkCancellation()
+        guard observations.count <= 256, contextRevision.count <= 64 else { throw ObservationFailure.oversized }
+        var providers = Set<String>()
+        var laneCount = 0
+        for observation in observations {
+            guard providers.insert(observation.provider).inserted else { throw ObservationFailure.duplicateProvider }
+            laneCount += observation.lanes.count
+            guard laneCount <= 4096 else { throw ObservationFailure.oversized }
+            var keys = Set<HookQuotaLaneKey>()
+            for lane in observation.lanes {
+                guard lane.key.provider == observation.provider, keys.insert(lane.key).inserted else {
+                    throw ObservationFailure.inconsistentLane
+                }
+            }
+        }
+        self.configure(config, hidePersonalInfo: hidePersonalInfo)
+        if self.observationContext != contextRevision {
+            self.observationContext = contextRevision
+            self.detector = HookTransitionDetector()
+            self.pending.removeAll()
+            self.active?.cancel()
+            self.limiter = HookRateLimiter()
+        }
+        guard !self.stopped, config.enabled, config.events.count <= HooksConfig.maximumRuleCount else {
+            return Submission(accepted: 0, omitted: 0)
+        }
+        var events: [HookDispatch] = []
+        for observation in observations {
+            events.append(contentsOf: self.detector.evaluate(observation: observation, config: config, now: now))
+        }
+        return self.submit(events)
     }
 
     public func submit(_ dispatches: [HookDispatch]) -> Submission {
@@ -63,6 +106,8 @@ public actor WindowsHookDispatchQueue {
 
     public func shutdown() async {
         self.stopped = true
+        self.detector = HookTransitionDetector()
+        self.observationContext = nil
         self.pending.removeAll()
         let task = self.active
         task?.cancel()

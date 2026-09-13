@@ -3096,3 +3096,12 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - detector가 지정한 규칙은 현재 설정에 동일하게 존재하는 경우만 실행한다. 개인정보 숨김 시 account 필드를 제거하며 기존 matching/rate limiter/process 실행기를 재사용한다.
 - 남은 소요: runtime의 관측/transition producer, 설정 갱신/종료/초과 건수 표시 연결과 전체 계획 나머지. 대기열만으로 자동 훅 이벤트가 발생하지 않는다.
 - CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·외부 명령 실행 미실행.
+
+## IMPL-280 — Windows hook 관측과 기준 상태
+
+- Windows hook 대기열에 HookTransitionDetector 관측 경로를 추가했다. 완전한 refresh batch 안에서 공급자별 모든 계정 lane을 한 번에 전달하는 계약이다.
+- 최대 256개 공급자/4096개 lane, 중복 공급자/lane 및 서로 다른 공급자가 섞인 lane을 상태 갱신 전 거부한다.
+- 설정/개인정보 상태 또는 공급자·계정 구성 digest 변경 시 기준 상태를 초기화한다. 소유권 digest 변경 시 이전 대기 이벤트와 실행 작업도 취소한다.
+- 첫 quota 관측은 기존 detector 계약대로 기준점만 만든다. refresh 실패/상태 전환은 기존 detector 의미를 유지한다. runtime은 raw credential 대신 최대 64바이트 opaque digest를 제공해야 한다.
+- 남은 소요: runtime row를 observation으로 변환, config/ownership digest 생성 및 shutdown/초과 표시 연결과 전체 계획 나머지.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·훅 실행 미실행.
