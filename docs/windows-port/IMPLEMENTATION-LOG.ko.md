@@ -2216,3 +2216,14 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - Source의 supportsRetainedCollection 정책을 Codex verified fingerprint 및 Cursor normalized explicit cookie로 구성했다. runtime은 전체 Source 동등성/설정 동일성/OpenCodeX off/비어 있지 않은 source 조건과 함께 사용한다. 같은 계정 cookie/scoped cache가 유지되면 Cursor 및 Codex+Cursor 구성도 stale summary/chart/JSON을 사용할 수 있다.
 
 남은 범위: 계정 소유권이 확인된 CSV를 명시적 계정 fallback으로 제공하는 기능, 다른 provider/OpenCodeX retained lifecycle, per-source 실패 이력 보존, Cursor status/login 전체 흐름과 Windows 검증 및 전체 계획 구현. 현재 제한을 전체 Cursor parity 완료로 보지 않는다.
+
+## IMPL-177 — Windows Cursor 상태·쿼터 수동 쿠키 경로
+
+상태 CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·HTTP/인증/실행 검증 미실시. guidelines/COMMITS.md 부재로 핵심 규칙을 적용한다.
+
+- macOS/Linux에만 포함되던 CursorStatusProbe의 실제 응답 모델, snapshot 변환, HTTP fetch 및 parse 로직을 Windows에도 포함했다. Windows는 빈 snapshot/notSupported stub 대신 원본 모델을 사용한다.
+- Windows fetch는 명시적으로 전달된 normalized cookie만 사용해 fetchWithCookieHeader로 연결한다. 기존 CursorStatusFetchStrategy 호출이 required usage-summary 및 optional auth/me/Sand/legacy usage 조회와 원본 plan/request/extra window 변환을 사용한다.
+- 조회 전후 취소를 확인하며 쿠키가 없으면 noSessionCookie를 반환한다. resolveSession/browser import/기존 session store 자동 조회로 연결하지 않는다. 필요한 순수 CursorSessionIdentity 모델만 Windows 조건에 포함하고 macOS 앱 인증 코드는 기존 조건을 유지한다.
+- Windows usage-summary decode 오류에는 원본 JSON 조각을 포함하지 않는다. raw data 자체는 기존 snapshot 진단 구조를 따르므로 전체 개인정보 출력 경계는 후속 대상으로 유지한다.
+
+남은 범위: API/필드/플랜별 Windows 동작 검증, 선택적 endpoint 실패/취소 세부 처리, 자동 로그인/브라우저/WebView2/DPAPI 세션 저장, 전체 Cursor 및 전체 계획 구현. 수동 경로 포함을 전체 provider 완료로 주장하지 않는다.

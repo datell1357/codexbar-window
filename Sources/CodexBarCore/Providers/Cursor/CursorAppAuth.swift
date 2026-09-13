@@ -6,7 +6,7 @@ import SQLite3
 #endif
 #endif
 
-#if os(macOS) || os(Linux)
+#if os(macOS) || os(Linux) || os(Windows)
 struct CursorSessionIdentity: Equatable, Sendable {
     let subject: String?
     let email: String?

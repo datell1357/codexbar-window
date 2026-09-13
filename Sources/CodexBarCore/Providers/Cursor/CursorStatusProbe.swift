@@ -4,7 +4,7 @@ import FoundationNetworking
 #endif
 import SweetCookieKit
 
-#if os(macOS) || os(Linux)
+#if os(macOS) || os(Linux) || os(Windows)
 
 #if os(macOS)
 private let cursorCookieImportOrder: BrowserCookieImportOrder =
@@ -955,6 +955,15 @@ public struct CursorStatusProbe: Sendable {
         logger: ((String) -> Void)? = nil)
         async throws -> CursorStatusSnapshot
     {
+        #if os(Windows)
+        guard let cookie = CookieHeaderNormalizer.normalize(cookieHeaderOverride) else {
+            throw CursorStatusProbeError.noSessionCookie
+        }
+        try Task.checkCancellation()
+        let snapshot = try await self.fetchWithCookieHeader(cookie)
+        try Task.checkCancellation()
+        return snapshot
+        #else
         try await self.resolveSession(
             cookieHeaderOverride: cookieHeaderOverride,
             allowCachedSessions: allowCachedSessions,
@@ -965,6 +974,7 @@ public struct CursorStatusProbe: Sendable {
                 cookieHeader,
                 identityFallback: identityFallback)
         }
+        #endif
     }
 
     #if os(macOS)
@@ -1475,8 +1485,12 @@ public struct CursorStatusProbe: Sendable {
             let summary = try decoder.decode(CursorUsageSummary.self, from: data)
             return (summary, rawJSON)
         } catch {
+            #if os(Windows)
+            throw CursorStatusProbeError.parseFailed("Cursor usage summary could not be decoded")
+            #else
             throw CursorStatusProbeError
                 .parseFailed("JSON decode failed: \(error.localizedDescription). Raw: \(rawJSON.prefix(200))")
+            #endif
         }
     }
 
