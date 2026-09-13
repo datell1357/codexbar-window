@@ -157,3 +157,13 @@ Register-CodexBarInstallation.ps1의 ResumeRegistrationID에 management 폴더�
 등록 key가 있으면 같은 CodexBarRegistrationID를 요구한다. 기존 허용 값은 자료형과 내용까지 일치해야 하며 다른 값이나 하위 key/추가 데이터가 있으면 중단한다. 일치한 값은 다시 쓰지 않고 누락된 값만 채운다. 마지막 journal 저장이 끊겼어도 동일한 완성 등록을 확인한 뒤 완료 상태를 기록할 수 있다. 기존 command와 새로 계산한 command가 다르면 자동 경로 변경을 하지 않는다.
 
 schema 1 기록, 소유권 값이 없는 빈 registry key, 기록 없는 management 폴더를 자동 인수하지 않는다. registry 값 대조와 쓰기는 atomic compare-and-set이 아니며 외부 변경 race가 남아 있다. 관리 폴더/receipt의 동시 변경, legacy 복구·손상 tool 수리·공간 정리·Windows 실행 검증도 남아 있다. 이전 절의 기존 등록 무조건 거절 설명은 이 명시적 재개 옵션에 한해 보완됐다.
+
+## 버전 참조 전환과 제거 전 해제
+
+Set-CodexBarVersionReferences.ps1은 FromVersionID와 AllowUnvalidatedBuild를 받는다. ToVersionID와 ExpectedSignerThumbprint를 함께 지정하면 그 버전의 앱/CLI hash·서명을 확인하고 기존 참조를 새 버전으로 전환한다. 목적 버전을 생략하면 기존 참조를 해제한다. 대상은 literal 사용자 PATH 항목, 정확히 따옴표로 감싼 CodexBarWindows Run 명령, arguments 없는 해당 버전의 CodexBar Windows.lnk다. 활성화되지 않은 참조를 새로 만들지 않는다.
+
+PATH의 관련 없는 원문 항목과 String/ExpandString 형식을 유지한다. 사용자 정의 startup command와 shortcut arguments는 거절한다. 변경 전 references-ID.json과 시작 메뉴의 references.previous.lnk backup을 남기며 여러 쓰기는 순차 적용한다. 실패하면 앞선 변경은 이미 적용됐을 수 있다. journal에는 로컬 PATH가 포함되므로 외부 공유 자료로 취급하지 않는다.
+
+제거 확인창은 이제 known user references 해제를 안내하고 동의 후 이 helper를 먼저 호출한다. 현재 PowerShell PATH도 갱신하지만 이미 실행 중인 다른 프로세스의 환경은 바뀌지 않는다. 머신 PATH/간접 표현/다른 startup 항목과 살아 있는 프로세스는 제거 단계에서 계속 차단될 수 있다. 제거 실패 후 자동 참조 rollback 및 전체 환경 변경 broadcast는 미구현이다.
+
+필수 tools는 이 helper 포함 11개, first-party 서명 대상은 14개로 확대됐다. 앞선 대상 개수는 과거 기록이다. 자동 복구, 다중 쓰기의 원자성, 외부 동시 변경, 보존 backup 정리, 실제 Windows/COM/registry/서명/UI 동작은 미검증이며 이번 작업에서 실행하지 않았다.

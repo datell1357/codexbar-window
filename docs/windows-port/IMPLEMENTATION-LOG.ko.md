@@ -1164,3 +1164,13 @@
 - registry의 동일 소유권 ID와 허용 값 이름/자료형/값을 사전 대조한 뒤 누락된 값만 채운다. 이미 완성된 동일 등록은 유지하고 journal을 완료 상태로 마무리할 수 있다. 추가 데이터/다른 값/owner 없는 항목은 보존한다.
 
 남은 범위: CreateSubKey 및 값 읽기/쓰기 사이 외부 race, owner 기록 전 중단된 빈 key, schema 1 및 기록 없는 관리 폴더, 일부만 복사된 tool의 자동 수리, receipt 동시 변경, reference migration/backup 정리/전체 Windows 검증. 실제 복구나 registry 동작을 검증하지 않았다.
+
+## IMPL-073 — 버전 참조 전환 및 제거 연결
+
+상태 CODE_WRITTEN_UNVERIFIED. PowerShell/COM/registry/환경 변수/서명/설치·제거/빌드/테스트/검증 실행 미실시. guidelines/COMMITS.md 부재로 제공된 핵심 커밋 규칙을 따른다.
+
+- Set-CodexBarVersionReferences는 FromVersionID를 받아 지정 버전의 literal 사용자 PATH 항목, 정확한 CodexBarWindows Run 명령, arguments 없는 관리 시작 메뉴 링크를 처리한다. ToVersionID와 signer가 있으면 대상 앱/CLI receipt/hash/서명을 대조한 뒤 기존 참조만 전환하고, 생략하면 해제한다. 없는 참조를 새로 활성화하지 않는다.
+- PATH 원래 값/형식을 보존하고 unrelated 항목은 유지한다. 변경 전 journal과 shortcut backup을 남기며 registry/shortcut 현재 값을 쓰기 직전에 다시 대조한다. 현재 PowerShell 프로세스의 PATH도 같은 literal 규칙으로 바꾼다.
+- 제거 launcher의 확인 문구와 실행 순서를 연결해 동의 후 known user references를 해제하고 기존 payload 제거를 호출한다. 사용자 정의/머신 참조 및 실행 프로세스는 기존 제거 gate가 차단한다. 새 helper도 배포/서명 대상에 포함했다.
+
+남은 범위: 참조 transaction 자동 rollback/재개, environment broadcast, 새 프로세스·외부 registry/shortcut/receipt 변경 race, 머신/간접 PATH/다른 startup 참조, 실패 시 이미 해제된 참조 복구, management/backup 정리와 Windows 검증. payload 제거 실패 시 참조만 먼저 해제될 수 있으며 자동 rollback을 주장하지 않는다.

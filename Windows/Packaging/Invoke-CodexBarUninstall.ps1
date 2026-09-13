@@ -19,10 +19,11 @@ try {
         if (-not $item.PSIsContainer -or ($item.Attributes -band [IO.FileAttributes]::ReparsePoint)) { throw 'Invalid management directory.' }
     }
     $answer = [Windows.Forms.MessageBox]::Show(
-        'Remove this CodexBar Windows development version? Settings and recoverable file copies will be retained. Close this version and migrate its Start Menu, PATH and startup references first.',
+        'Remove this CodexBar Windows development version? Settings and recoverable file copies will be retained. Known Start Menu, user PATH and CodexBar startup references will be detached. Close this version first. Customized or machine-wide references may require manual changes.',
         'CodexBar Windows', [Windows.Forms.MessageBoxButtons]::YesNo, [Windows.Forms.MessageBoxIcon]::Question,
         [Windows.Forms.MessageBoxDefaultButton]::Button2)
     if ($answer -ne [Windows.Forms.DialogResult]::Yes) { exit 0 }
+    & (Join-Path $bundle 'Set-CodexBarVersionReferences.ps1') -FromVersionID $VersionID -AllowUnvalidatedBuild | Out-Null
     $result = & (Join-Path $bundle 'Remove-CodexBarVersion.ps1') -VersionID $VersionID -AllowUnvalidatedBuild -PassThru
     if ($null -eq $result -or $result.state -ne 'RECEIPT_PAYLOAD_RETIRED_UNVERIFIED') {
         throw 'Removal is partial. Registration and recoverable files were retained; inspect the removal journal.'
