@@ -2376,3 +2376,11 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - callback 인자가 추가된 기존 테스트 호출부만 맞췄으며 테스트를 실행하지 않았다. 출력 형식이나 ID 로그는 추가하지 않는다.
 - 남은 소요: 기존 stale 비용 보존 정책의 소유권 실패 처리, 팀 컨텍스트, 추가 브라우저 지원 및 전체 계획 나머지 항목.
 - CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. CLI 실행·빌드·테스트·lint·실제 API 검증 미실행.
+
+## IMPL-195 — 비용 계정 확인 실패 안내
+
+- Cursor ID 미확인/불일치를 일반 parse 오류에서 전용 typed error로 구분한다. 소스 실패에는 원문/계정 ID 대신 boolean 사유만 보관한다.
+- 비용 요약과 JSON 내보내기 안내에 계정 재가져오기 필요 및 실패 소스 제외를 표시한다. JSON 데이터 스키마는 변경하지 않는다.
+- 소스 실패는 새 scan에서 이미 제외되고 OpenCodeX 일반 읽기 오류도 내부에서 부분 실패로 처리되고 있어, 이전 결과 보존 정책을 추정으로 변경하지 않았다.
+- 남은 소요: 팀/세션 소유권 모델, 추가 브라우저 지원 및 나머지 전체 계획. 네트워크 오류를 계정 불일치라고 오분류하지 않는다.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·실제 API/UI 검증 미실행.

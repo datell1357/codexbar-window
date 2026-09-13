@@ -23,6 +23,9 @@ enum WindowsSpendSummary {
             rows.append("Partial collection: \(snapshot.sourceFailures.count) source(s) failed. Totals exclude those sources.")
             for failure in snapshot.sourceFailures {
                 rows.append("Unavailable: " + ProviderDescriptorRegistry.descriptor(for: failure.provider).metadata.displayName)
+                if failure.accountIdentityUnconfirmed {
+                    rows.append("Account identity could not be confirmed. Import the intended account again; this source is excluded.")
+                }
             }
         }
         if model.groups.isEmpty { rows.append("No cost groups are available for this period and source selection.") }

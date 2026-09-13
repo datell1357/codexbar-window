@@ -112,7 +112,8 @@ struct WindowsSpendSnapshotLoader {
                     // Cancellation aborts the whole generation; an individual source error does not.
                     try Task.checkCancellation()
                     if error is CancellationError { throw error }
-                    failures.append(.init(sourceID: source.id, provider: source.provider))
+                    failures.append(.init(sourceID: source.id, provider: source.provider,
+                        accountIdentityUnconfirmed: error is CursorCostAccountIdentityError))
                 }
             }
             return .init(inputs: inputs, subscriptionNames: names, sourceFailures: failures, capturedAt: now)

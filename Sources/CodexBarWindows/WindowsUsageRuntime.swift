@@ -184,6 +184,9 @@ public actor WindowsUsageRuntime {
             if !snapshot.sourceFailures.isEmpty {
                 notices.append("Partial collection: \(snapshot.sourceFailures.count) failed source(s) are excluded.")
             }
+            if snapshot.sourceFailures.contains(where: { $0.accountIdentityUnconfirmed }) {
+                notices.append("An account identity could not be confirmed. Re-import the intended account; its failed source is excluded.")
+            }
             if snapshot.openCodexObservation == .unavailable {
                 notices.append("OpenCodeX logs are unavailable and are excluded.")
             }

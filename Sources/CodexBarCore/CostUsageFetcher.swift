@@ -1,6 +1,13 @@
 // swiftlint:disable file_length
 import Foundation
 
+public enum CursorCostAccountIdentityError: LocalizedError, Sendable {
+    case unconfirmed
+    public var errorDescription: String? {
+        "Cursor cost account could not be confirmed. Import the intended account again."
+    }
+}
+
 public enum CostUsageError: LocalizedError, Sendable {
     case unsupportedProvider(UsageProvider)
     case timedOut(seconds: Int)
@@ -1776,7 +1783,7 @@ extension CostUsageFetcher {
                 try Task.checkCancellation()
                 guard !expected.isEmpty,
                       identity.accountID?.trimmingCharacters(in: .whitespacesAndNewlines) == expected else {
-                    throw CursorStatusProbeError.parseFailed("Cursor cost account could not be confirmed. Import the intended account again.")
+                    throw CursorCostAccountIdentityError.unconfirmed
                 }
             }
             try await verifyOwner()

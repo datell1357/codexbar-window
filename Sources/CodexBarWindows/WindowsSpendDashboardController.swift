@@ -7,6 +7,7 @@ actor WindowsSpendDashboardController {
     struct SourceFailure: Sendable {
         let sourceID: String
         let provider: UsageProvider
+        var accountIdentityUnconfirmed = false
         // Display a generic explanation; never retain raw provider/credential error text.
     }
     struct Scan: Sendable {
