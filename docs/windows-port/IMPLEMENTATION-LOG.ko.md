@@ -2432,3 +2432,11 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - 원문 쿠키는 오류에 포함하지 않고 기존 SQLite 오류 코드 경로를 사용한다. Swift 객체/SQLite 내부 전체 메모리를 8MiB로 보장하는 것은 아니다.
 - 남은 소요: 대용량 실제 프로필 호환성 검증, 추가 브라우저 지원 및 전체 계획의 나머지 항목.
 - CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·실제 SQLite/메모리 측정 미실행.
+
+## IMPL-202 — Cursor 후보 출처 표시
+
+- 후보 메뉴에 계정 표시와 함께 Firefox 프로필 및 기본/컨테이너/격리 세션 구분을 표시한다. 경로형 프로필 이름은 번호로 대체하고 제어문자/길이를 제한한다.
+- originAttributes 전체를 노출하지 않고 단일 유효 userContextId 숫자만 컨테이너 번호로 표시한다. 사용자 지정 컨테이너 이름을 읽었다고 표시하지 않는다.
+- 개인정보 숨김 모드에서는 프로필/컨테이너 이름 대신 일반 세션 번호를 사용한다. 기존 개인정보 설정 변경 시 화면 닫기와 만료 처리를 유지한다.
+- 남은 소요: 컨테이너 사용자 지정 이름, 추가 브라우저 지원 및 전체 계획 나머지 항목.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·실제 Firefox/UI 검증 미실행.

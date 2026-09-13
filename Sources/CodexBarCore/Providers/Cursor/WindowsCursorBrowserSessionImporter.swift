@@ -35,7 +35,7 @@ public struct WindowsCursorBrowserSessionImporter: Sendable {
                                  "authjs.session-token", "__Secure-authjs.session-token"]
         var candidates: [Candidate] = []
         var failures = 0
-        for store in self.client.stores(for: .firefox) {
+        for (profileIndex, store) in self.client.stores(for: .firefox).enumerated() {
             try Self.check(deadline)
             do {
                 let records = try self.client.records(matching: query, in: store)
@@ -53,7 +53,7 @@ public struct WindowsCursorBrowserSessionImporter: Sendable {
                         failures += 1
                         continue
                     }
-                    candidates.append(Candidate(profileID: store.profile.id + "#partition-\(index)", sourceLabel: store.label + " session \(index + 1)", cookieHeader: header))
+                    candidates.append(Candidate(profileID: store.profile.id + "#partition-\(index)", sourceLabel: Self.sourceLabel(profileName: store.profile.name, profileIndex: profileIndex, partition: partition, partitionIndex: index), cookieHeader: header))
                 }
             } catch is CancellationError { throw CancellationError() }
             catch let error as URLError where error.code == .timedOut { throw error }
@@ -61,6 +61,28 @@ public struct WindowsCursorBrowserSessionImporter: Sendable {
         }
         try Self.check(deadline)
         return Discovery(candidates: candidates, failedProfileCount: failures)
+    }
+
+    private static func sourceLabel(profileName: String, profileIndex: Int,
+                                    partition: String, partitionIndex: Int) -> String {
+        // Profile names are user-controlled. A path-like value is replaced instead of exposing its components.
+        let cleaned = profileName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let pathLike = cleaned.contains("/") || cleaned.contains("\\") || cleaned.contains(":")
+        let safeName = String(cleaned.unicodeScalars.filter { $0.value >= 32 && $0.value != 127 }
+            .map(String.init).joined().prefix(60))
+        let profile = !pathLike && !safeName.isEmpty ? safeName : "Profile \(profileIndex + 1)"
+        if partition.isEmpty { return "Firefox \(profile) · Default session" }
+        let pairs = partition.drop(while: { $0 == "^" }).split(separator: "&")
+        let contextValues = pairs.compactMap { pair -> String? in
+            let fields = pair.split(separator: "=", maxSplits: 1, omittingEmptySubsequences: false)
+            return fields.count == 2 && fields[0] == "userContextId" ? String(fields[1]) : nil
+        }
+        if contextValues.count == 1, let value = contextValues.first,
+           !value.isEmpty, value.utf8.allSatisfy({ (48...57).contains($0) }),
+           let identifier = UInt32(value), identifier > 0 {
+            return "Firefox \(profile) · Container \(identifier) · Session \(partitionIndex + 1)"
+        }
+        return "Firefox \(profile) · Isolated session \(partitionIndex + 1)"
     }
 
     /// Reject ambiguous host/domain duplicates and malformed header bytes; never choose an account by row order.

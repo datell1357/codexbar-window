@@ -630,7 +630,10 @@ public actor WindowsUsageRuntime {
                     let label = privacy ? "Cursor account \(rows.count + 1)" :
                         (result.snapshot.accountEmail ?? result.snapshot.accountName ?? "Cursor account \(rows.count + 1)")
                     let safe = String(LogRedactor.redact(label).unicodeScalars.filter { $0.value >= 32 && $0.value != 127 }.map(String.init).joined().prefix(160))
-                    rows.append(.init(id: id, title: safe))
+                    let source = privacy ? "Firefox session \(rows.count + 1)" :
+                        String(LogRedactor.redact(result.candidate.sourceLabel).unicodeScalars
+                            .filter { $0.value >= 32 && $0.value != 127 }.map(String.init).joined().prefix(120))
+                    rows.append(.init(id: id, title: safe + " — " + source))
                 } catch is CancellationError { throw CancellationError() }
                 catch let error as URLError where error.code == .timedOut {
                     failures += 1
