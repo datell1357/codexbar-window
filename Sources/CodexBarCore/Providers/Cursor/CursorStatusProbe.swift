@@ -689,10 +689,52 @@ public actor CursorSessionStore {
     }
 
     public func setCookies(_ cookies: [HTTPCookie]) {
+        #if os(Windows)
+        _ = self.setCookiesPersisted(cookies)
+        #else
         self.hasLoadedFromDisk = true
         self.sessionCookies = cookies
         self.saveToDisk()
+        #endif
     }
+
+    #if os(Windows)
+    /// Install a session only when its protected file has been written successfully.
+    @discardableResult
+    public func setCookiesPersisted(_ cookies: [HTTPCookie]) -> Bool {
+        guard !cookies.isEmpty else { return self.clearCookiesPersisted() }
+        self.loadFromDiskIfNeeded()
+        let previous = self.sessionCookies
+        self.hasLoadedFromDisk = true
+        self.persistenceFailure = nil
+        self.sessionCookies = cookies
+        self.saveToDisk()
+        guard self.persistenceFailure == nil else {
+            self.sessionCookies = previous
+            return false
+        }
+        return true
+    }
+
+    /// Clear memory even if disk removal fails; the caller must report/retry the failed persistent logout.
+    @discardableResult
+    public func clearCookiesPersisted() -> Bool {
+        self.hasLoadedFromDisk = true
+        self.sessionCookies = []
+        do {
+            try FileManager.default.removeItem(at: self.fileURL)
+            self.persistenceFailure = nil
+            return true
+        } catch let error as NSError where error.domain == NSCocoaErrorDomain &&
+            (error.code == NSFileNoSuchFileError || error.code == NSFileReadNoSuchFileError) {
+            self.persistenceFailure = nil
+            return true
+        } catch {
+            self.persistenceFailure = "The saved Cursor session could not be removed. Retry signing out before closing the app."
+            return false
+        }
+    }
+    #endif
 
     #if os(macOS)
     func persistAppSession(_ session: CursorAppAuthSession) {
@@ -708,9 +750,13 @@ public actor CursorSessionStore {
     }
 
     public func clearCookies() {
+        #if os(Windows)
+        _ = self.clearCookiesPersisted()
+        #else
         self.hasLoadedFromDisk = true
         self.sessionCookies = []
         try? FileManager.default.removeItem(at: self.fileURL)
+        #endif
     }
 
     public func hasValidSession() -> Bool {
@@ -752,11 +798,22 @@ public actor CursorSessionStore {
             }
             return serializable
         }
+        #if os(Windows)
+        guard cookieData.count == self.sessionCookies.count else {
+            self.persistenceFailure = "The Cursor session contains cookies that cannot be saved."
+            return
+        }
+        #endif
         guard !cookieData.isEmpty else {
+            #if os(Windows)
+            _ = self.clearCookiesPersisted()
+            #else
             try? FileManager.default.removeItem(at: self.fileURL)
+            #endif
             return
         }
         guard let data = try? JSONSerialization.data(withJSONObject: cookieData, options: [.prettyPrinted]) else {
+            self.persistenceFailure = "The Cursor session could not be encoded for storage."
             return
         }
         // These are Cursor auth session cookies. Write them owner-only (0600) with the permission

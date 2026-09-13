@@ -2247,3 +2247,13 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - 저장/읽기/JSON 형식 실패는 generic persistenceFailure 상태에 담는다. cookie/path/raw 오류는 이 상태에 포함하지 않는다. 기존 메모리 세션과 자동 로그인 경로는 확장하지 않는다.
 
 남은 범위: persistenceFailure UI 연결 및 저장 실패 rollback/재시도/clear 실패 처리, 계정별 다중 세션 및 로그인→보호 저장→조회 연결, 명시적 legacy import 정책, DPAPI/ACL Windows 검증과 전체 계획 구현. 현재 Windows 수동 쿠키 fetch는 이 store를 자동 조회하지 않는다.
+
+## IMPL-180 — Cursor 세션 저장 실패와 로그아웃 결과
+
+상태 CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·DPAPI/파일/실행 검증 미실시. guidelines/COMMITS.md 부재로 핵심 규칙을 적용한다.
+
+- Windows setCookiesPersisted는 기존 메모리 세션을 캡처하고 보호 저장이 실패하면 복원하며 false를 반환한다. 기존 setCookies는 Windows에서 이 경로를 사용하고 macOS/Linux 동작은 유지한다.
+- clearCookiesPersisted는 메모리를 즉시 비우고 파일 삭제 성공/확인된 부재만 true로 반환한다. 권한 등 삭제 실패는 false와 generic persistenceFailure로 알린다. 프로세스 재시작 후 잔존 파일 가능성을 숨기지 않고 재시도를 안내한다.
+- 일부 cookie의 속성 변환이 실패해 수가 줄거나 JSON 인코딩이 실패하면 저장 실패를 기록한다. 빈 세션은 명시적 clear 경로로 처리한다.
+
+남은 범위: 로그인 UI가 반환값을 처리하는 연결, clear 실패의 영속 tombstone/재시작 차단, 다중 계정 및 세션 선택, 실제 DPAPI/ACL/실패 경로 검증, 전체 계획 구현. 파일 삭제/저장 또는 세션 조회는 실행하지 않았다.
