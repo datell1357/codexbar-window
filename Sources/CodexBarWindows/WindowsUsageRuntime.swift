@@ -1617,9 +1617,8 @@ public actor WindowsUsageRuntime {
                     .appendingPathComponent("spend-cache", isDirectory: true),
                 codexContext: codexContext)
             let canReuse = self.collectedSpendSettings == settings && self.collectedSpendSources == sources &&
-                !settings.openCodexUsageLogsEnabled && sources.allSatisfy {
-                    $0.provider == .codex && $0.verifyCodexOwner && $0.expectedCodexAuthFingerprint != nil
-                }
+                !settings.openCodexUsageLogsEnabled && !sources.isEmpty &&
+                sources.allSatisfy(\.supportsRetainedCollection)
             let controller: WindowsSpendDashboardController
             if canReuse, let previous = self.spendController {
                 controller = previous

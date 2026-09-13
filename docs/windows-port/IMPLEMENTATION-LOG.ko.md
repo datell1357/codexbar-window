@@ -2206,3 +2206,13 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - Bedrock 및 macOS Cursor의 기존 분기는 유지한다. 공통 remote API의 새 인수는 기본 .current를 제공한다.
 
 남은 범위: 실제 DST/자정 이벤트 경계와 Windows 시간대 데이터 검증, Cursor local CSV 계정/소유권과 status/login 전체 경로, 전체 stale/cache 처리 및 전체 계획 구현. 실제 API 또는 날짜 검증은 실행하지 않았다.
+
+## IMPL-176 — Cursor 이전 결과 유지와 CSV 소유권 경계
+
+상태 CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·쿠키/CSV/HTTP/실행 검증 미실시. guidelines/COMMITS.md 부재로 핵심 규칙을 적용한다.
+
+- Windows에서 명시적 Cursor cookie가 전달된 수집이 실패하면 그 오류를 전파한다. ambient CSV는 선택 계정 소유권을 증명하지 않으므로 선택 계정의 성공 결과로 대신 게시하지 않는다. cookie가 없는 local CSV 경로는 유지한다.
+- 원격 비용 수집 취소 시 local fallback으로 진행하지 않고 취소를 전파한다. 일반 오류는 기존 provider별 정책을 따른다.
+- Source의 supportsRetainedCollection 정책을 Codex verified fingerprint 및 Cursor normalized explicit cookie로 구성했다. runtime은 전체 Source 동등성/설정 동일성/OpenCodeX off/비어 있지 않은 source 조건과 함께 사용한다. 같은 계정 cookie/scoped cache가 유지되면 Cursor 및 Codex+Cursor 구성도 stale summary/chart/JSON을 사용할 수 있다.
+
+남은 범위: 계정 소유권이 확인된 CSV를 명시적 계정 fallback으로 제공하는 기능, 다른 provider/OpenCodeX retained lifecycle, per-source 실패 이력 보존, Cursor status/login 전체 흐름과 Windows 검증 및 전체 계획 구현. 현재 제한을 전체 Cursor parity 완료로 보지 않는다.

@@ -18,6 +18,15 @@ struct WindowsSpendSnapshotLoader {
         let includePiSessions: Bool
         var verifyCodexOwner = false
         var expectedCodexAuthFingerprint: String? = nil
+
+        /// Reuse requires identical captured Source values as well as this ownership policy.
+        var supportsRetainedCollection: Bool {
+            switch self.provider {
+            case .codex: self.verifyCodexOwner && self.expectedCodexAuthFingerprint != nil
+            case .cursor: CookieHeaderNormalizer.normalize(self.cursorCookieHeader) != nil
+            default: false
+            }
+        }
     }
     enum Failure: Error { case invalidSources, missingCodexHome, codexOwnerChanged }
 

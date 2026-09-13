@@ -423,6 +423,12 @@ public struct CostUsageFetcher: Sendable {
                 cursorCalendar: Self.resolvedScannerOptions(overrideScannerOptions, provider: provider,
                                                            codexHomePath: codexHomePath).calendar)
         } catch {
+            try Task.checkCancellation()
+            if error is CancellationError { throw error }
+            #if os(Windows)
+            // A CSV in the ambient cache does not establish ownership of an explicitly selected account.
+            if provider == .cursor, cursorCookieHeaderOverride != nil { throw error }
+            #endif
             if provider != .cursor {
                 throw error
             }

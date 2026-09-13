@@ -1,5 +1,7 @@
 # Windows 전용 제품 작업 현황
 
+- IMPL-176: 명시적 Cursor cookie 수집의 이전 결과 유지와 계정 미확인 ambient CSV fallback 차단을 연결했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
 - IMPL-175: Windows Cursor 원격 비용 조회 범위/일별 집계/오늘 snapshot에 같은 bucket calendar를 전달한다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
 
 - IMPL-174: macOS에만 포함되던 Cursor usage-events 수집기를 Windows에 포함하고 명시적 cookie 비용 수집을 연결했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
