@@ -9,6 +9,13 @@ public struct WindowsSessionScanOutcome: Sendable {
     public let status: Status
     public let sessions: [AgentSession]
     public let message: String?
+    public var diagnostics: WindowsSessionDiagnostics? {
+        switch self.status {
+        case .complete: WindowsSessionDiagnostics(sessions: self.sessions, partial: false)
+        case .partial: WindowsSessionDiagnostics(sessions: self.sessions, partial: true)
+        case .failed, .cancelled: nil
+        }
+    }
 }
 
 public enum WindowsAgentSessionScanner {

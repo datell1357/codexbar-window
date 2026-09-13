@@ -175,6 +175,17 @@ public actor WindowsAgentSessionsRuntime {
                 self.sessions = result.sessions
                 self.fresh = true
                 self.message = result.message
+                if let diagnostics = result.diagnostics {
+                    let counts = diagnostics.providers.filter { $0.returned > 0 }.map { counts in
+                        "\(counts.provider.rawValue): \(counts.returned) returned, \(counts.knownDirectory) with cwd, " +
+                            "\(counts.explicitMetadata) explicit / \(counts.inferredMetadata) inferred metadata, " +
+                            "\(counts.withoutClassifiedMetadata) without classified metadata, \(counts.named) named."
+                    }
+                    let scope = diagnostics.partial ? "Returned rows only (partial scan)." : "Returned rows only."
+                    if !counts.isEmpty {
+                        self.message = ([self.message, scope].compactMap { $0 } + counts).joined(separator: " ")
+                    }
+                }
                 if !metadataRoots.isEmpty {
                     let cacheStatus = "Title cache: \(titleCache.storedEntryCount) stored entries. Manual refresh clears this cache."
                     self.message = [self.message, cacheStatus].compactMap { $0 }.joined(separator: " ")

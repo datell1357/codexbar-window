@@ -582,3 +582,20 @@
 2. 증분 parsing·장기 공정성, SQLite snapshot/소유권 및 전체 Windows 기능·배포 검증은 남아 있다.
 
 다음 구현: session 조회의 source별 처리량·미해결 정보를 데이터 모델로 분리해 현재 문자열 진단을 구조화한다. 전체 기능 완료와는 별도로 추적한다.
+
+## IMPL-030 — 구조화된 provider session 진단 집계
+
+상태: CODE_WRITTEN_UNVERIFIED. 빌드·컴파일·테스트·lint·앱·실제 source/프로세스 조회·검증 스크립트를 실행하지 않았다. 계약: WIN-010/040/042.
+
+작성한 코드:
+
+- WindowsSessionDiagnostics 및 ProviderCounts Codable/Sendable 모델을 추가했다. 반환된 row만 대상으로 provider별 총수/cwd 보유/explicit metadata/inferred metadata/분류된 metadata 없음/이름 보유 수와 partial 여부를 집계한다. identity/path/title/error text는 저장하지 않는다.
+- scan outcome에 diagnostics projection을 연결했다. complete/partial 결과만 반환하고 failed/cancelled는 nil이다. 실패를0개 성공 조회처럼 표현하지 않는다.
+- Windows runtime은 구조화된 집계를 상태 요약/기존 상세 창에 설명 문구로 연결한다. 수치는 시스템 전체 process count나 source 소유권 검증률이 아니라 반환된 행 범위임을 명시한다. unknown/nil provenance는 실패 건수로 단정하지 않고 without classified metadata로 구분한다.
+
+남은 범위:
+
+1. source별 실제 시도/오류 code/소요시간/캐시 hit 통계 전체를 모델로 옮긴 것은 아니다. 현재 집계는 최종 반환 row의 projection이다. CLI의 기존 session JSON shape는 이번에 바꾸지 않았다.
+2. 모델 합계·직렬화·UI 표시·partial 처리와 Windows 실행은 미검증이다. 증분 parsing, SQLite ownership, 나머지 Windows 기능/배포 검증은 남아 있다.
+
+다음 구현: 구조화 진단을 CLI의 명시적 옵션으로 제공하되 기존 session JSON 소비자의 배열 계약을 유지한다.
