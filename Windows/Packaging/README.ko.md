@@ -82,3 +82,12 @@ Install-CodexBarVersion.ps1은 DistributionDirectory와 ExpectedSignerThumbprint
 입력 및 복사한 파일의 hash를 대조하고 app/CLI/PATH resource의 Authenticode/지정 signer/timestamp를 확인한 뒤 INSTALLED_INACTIVE_RUNTIME_UNVERIFIED receipt를 마지막에 기록한다. 관리 작업은 operations.lock을 독점 열며 실패한 부분 출력은 보존한다. receipt가 없는 폴더는 완료된 설치로 사용하면 안 된다. installer를 현재 macOS에서 실행하지 않았다.
 
 현재 범위는 버전별 설치다. 활성 버전 전환·Start Menu·Apps 제거 등록·upgrade/rollback·uninstall 및 호스트 OS/CPU 적합성은 다음 필수 범위다. receipt는 암호학적으로 서명된 증명이 아니며 같은 사용자에 의한 변경·상위 경로 race·런타임/리소스 전체 신뢰는 별도 검증이 필요하다. releaseApproved=false인 개발 payload를 출시 가능으로 표현하지 않는다.
+
+
+## 시작 메뉴 버전 선택
+
+Select-CodexBarVersion.ps1은 VersionID, ExpectedSignerThumbprint, AllowUnvalidatedBuild를 받아 설치 receipt와 app hash/signer를 확인하고 사용자 시작 메뉴의 CodexBar Windows.lnk를 선택한 버전으로 연결한다. 앱을 실행하거나 기존 프로세스를 종료하지 않는다. PATH/startup 경로는 별도 작업이다.
+
+기존 링크가 관리 versions 아래 앱을 가리키고 arguments가 비어 있을 때만 교체한다. 같은 폴더의 임시 링크를 만들고 기존 링크 hash를 재확인한 뒤 File.Replace로 이전 링크 backup을 보존한다. 새 설치는 Move로 기존 파일 덮어쓰기를 거절한다. activation journal을 준비/선택 상태로 기록한다. 작업 중 실패하면 실제 링크가 이미 바뀌었을 수 있어 자동 성공이나 자동 rollback을 주장하지 않는다.
+
+이전 버전이 남아 있으면 같은 명령으로 그 VersionID를 다시 선택할 수 있다. 자동 recovery/backup 정리·설정 schema downgrade·프로세스 전환·PATH/startup migration·제거는 남아 있다. 모든 COM/바로가기/서명/파일 교체 동작은 현재 작업에서 실행하지 않았다.

@@ -1,5 +1,7 @@
 # Windows 전용 제품 작업 현황
 
+IMPL-064: 시작 메뉴 버전 선택·이전 shortcut 보존·activation journal을 연결했다. 복구/제거/실행 검증은 남아 있다.
+
 IMPL-063: 사용자별 version payload 설치·서명/hash 대조·완료 receipt 코드를 작성했다. 활성 전환/제거/실행 검증은 남아 있다.
 
 IMPL-062: 서명된 최종 파일 handle 유지·서명/import/hash 결합을 연결했다. 설치 lifecycle과 실행 검증은 남아 있다.

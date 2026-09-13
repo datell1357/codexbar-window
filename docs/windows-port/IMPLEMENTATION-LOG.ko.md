@@ -1074,3 +1074,13 @@
 - 기존 version·부분 출력·사용자 데이터를 보존하고 활성화/PATH/startup 변경을 하지 않는다. receipt는 INSTALLED_INACTIVE_RUNTIME_UNVERIFIED다.
 
 남은 범위: active version/shortcut 전환·upgrade rollback·uninstall/OS 적합성·receipt 신뢰 및 모든 Windows 검증.
+
+## IMPL-064 — 시작 메뉴 버전 선택
+
+상태 CODE_WRITTEN_UNVERIFIED. PowerShell/COM/shortcut/파일/서명/빌드/컴파일/테스트/검증 실행 미실시.
+
+- 설치 receipt의 app hash/signer와 VersionID를 확인하고 WScript.Shell로 사용자 시작 메뉴 링크를 작성하는 코드를 추가했다. 개발 설치 opt-in과 operations.lock을 유지한다.
+- 기존 관리 경로/arguments 조건을 요구하고 준비 journal, 임시 link, 직전 hash 비교, File.Replace backup 또는 신규 Move를 연결했다. 선택된 버전으로 앱을 자동 실행하지 않는다.
+- 실패 시 link는 이미 변경됐을 수 있음을 안내하며 journal/backup/기존 version을 보존한다. 이전 VersionID 재선택 경로는 동일하다.
+
+남은 범위: interrupted journal recovery, 상위 경로/동시 변경, 전체 installed payload 재확인, PATH/startup migration, uninstall/OS 적합성과 Windows 검증.
