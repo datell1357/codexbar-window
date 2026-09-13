@@ -4,12 +4,27 @@ import WinSDK
 
 /// Unpackaged per-user registration only. Does not alter StartupApproved or machine policy.
 enum WindowsStartupRegistration {
-    enum State: Equatable { case absent, registered, conflict, unavailable }
-    enum Failure: Error { case unavailable, conflict }
+    enum State: Equatable { case absent, registered, conflict, unavailable, packaged }
+    enum Failure: Error { case unavailable, conflict, packaged }
     private static let runKey = "Software\\Microsoft\\Windows\\CurrentVersion\\Run"
     private static let valueName = "CodexBarWindows"
 
+    private enum PackageIdentity { case none, present, unknown }
+    private static func packageIdentity() -> PackageIdentity {
+        // Size query only: never collect or display the package name.
+        var length: UINT32 = 0
+        let result = GetCurrentPackageFullName(&length, nil)
+        if result == APPMODEL_ERROR_NO_PACKAGE { return .none }
+        if result == ERROR_INSUFFICIENT_BUFFER, length > 0 { return .present }
+        return .unknown
+    }
+
     private static func command() throws -> String {
+        switch self.packageIdentity() {
+        case .none: break
+        case .present: throw Failure.packaged
+        case .unknown: throw Failure.unavailable
+        }
         var path = [UInt16](repeating: 0, count: 32768)
         let count = GetModuleFileNameW(nil, &path, DWORD(path.count))
         guard count > 0, count < DWORD(path.count) else { throw Failure.unavailable }
@@ -54,7 +69,8 @@ enum WindowsStartupRegistration {
             defer { RegCloseKey(key) }
             guard let existing = try self.read(key) else { return .absent }
             return existing == expected ? .registered : .conflict
-        } catch Failure.conflict { return .conflict }
+        } catch Failure.packaged { return .packaged }
+        catch Failure.conflict { return .conflict }
         catch { return .unavailable }
     }
 

@@ -920,9 +920,10 @@ public final class WindowsTrayHost: @unchecked Sendable {
         case .registered: startupTitle = "Registered at sign-in (Windows policy may override)"
         case .conflict: startupTitle = "Startup entry belongs to a different command"
         case .unavailable: startupTitle = "Startup registration unavailable for this executable"
+        case .packaged: startupTitle = "Packaged startup integration is not implemented yet"
         }
         startupTitle.withCString(encodedAs: UTF16.self) {
-            let disabled = startupState == .conflict || startupState == .unavailable
+            let disabled = startupState == .conflict || startupState == .unavailable || startupState == .packaged
             _ = AppendMenuW(menu, UINT(MF_STRING) | (startupState == .registered ? UINT(MF_CHECKED) : 0) |
                             (disabled ? UINT(MF_GRAYED) : 0), Self.startupRegistrationCommand, $0)
         }

@@ -806,3 +806,22 @@
 3. 파일 이동 시 이전 command가 conflict로 남는 복구 UI, 승인된 startup 정책 상태 표시 및 전체 Windows 기능/배포 검증은 남아 있다.
 
 다음 구현: packaged 환경에서는 Run 등록을 하지 않도록 package identity 구분과 안내를 연결한다.
+
+## IMPL-043 — package identity의 Run 등록 경계
+
+상태: CODE_WRITTEN_UNVERIFIED. 빌드·컴파일·테스트·lint·앱·실제 package/registry 조회·검증 스크립트를 실행하지 않았다. 구현에 필요한 Microsoft API 문서만 읽었다. 계약: WIN-052.
+
+작성한 코드:
+
+- GetCurrentPackageFullName size query로 package identity 없음/있음/알 수 없음을 구분한다. APPMODEL_ERROR_NO_PACKAGE인 경우만 기존 Run source 경로를 진행한다. insufficient-buffer+양수 length는 packaged, 기타 결과는 unknown으로 처리한다. package 이름은 가져오거나 기록하지 않는다.
+- state 조회와 실제 변경 양쪽이 공통 command 경계를 통과하도록 해 packaged/unknown에서는 registry open/create/query/write/delete를 진행하지 않는다. 메뉴는 packaged startup 연동이 아직 미구현임을 표시하고 Run action을 비활성화한다.
+- package 등록 실패/미구현을 일반 exe 방식으로 조용히 대체하지 않는다. 기존 unpackaged opt-in/conflict 보호와 정책 override 안내는 유지한다.
+
+근거: https://learn.microsoft.com/en-us/windows/win32/api/appmodel/nf-appmodel-getcurrentpackagefullname — size query 및 no-package/error 반환 계약.
+
+남은 범위:
+
+1. 실제 WinSDK binding/package identity 결과, packaged/unpackaged registry 경계와 UI는 미검증이다. StartupTask WinRT bridge·manifest 선언·사용자/정책 disabled 상태는 미구현이다.
+2. 기존 unpackaged Run 값의 migration/uninstall, StartupApproved 상태와 전체 Windows 기능·배포 검증은 남아 있다.
+
+다음 구현: Windows 자동 시작의 OS 설정 화면 진입을 연결해 정책/사용자 차단 상태를 확인할 수 있는 복구 경로를 제공한다. MSIX StartupTask 구현은 별도 필수 범위다.
