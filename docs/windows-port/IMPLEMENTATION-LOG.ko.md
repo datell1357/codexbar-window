@@ -1114,3 +1114,13 @@
 - Write-CodexBarJournal 공통 함수를 작성해 removal/restore/activation journal에 연결했다. 새 임시 파일에 UTF-8 JSON을 쓰고 Flush(true) 후 Move 또는 File.Replace로 교체하며 이전 generation과 실패한 임시 파일을 보존한다.
 
 남은 범위: 전원 차단/파일시스템별 교체 내구성 검증, previous generation 자동 선택·정리, 상위 경로 및 외부 writer race, 복원 중 새 프로세스, incomplete-install 복구·Apps 등록·PATH/startup migration·전체 Windows 검증. 복구는 payload 파일에 한정하며 런타임/서명 재승인이나 자동 활성화를 의미하지 않는다.
+
+## IMPL-068 — 기록된 중단 설치 재개
+
+상태 CODE_WRITTEN_UNVERIFIED. PowerShell/서명/파일 복사·설치·복구/빌드/테스트/컴파일/검증 실행 미실시. guidelines/COMMITS.md 부재로 제공된 핵심 커밋 규칙을 적용한다.
+
+- Install-CodexBarVersion.ps1에 ResumeIncomplete를 추가했다. version 폴더 생성 전에 설치 의도 기록을 저장하고 inventory 원본 바이트 SHA256·VersionID·signer를 결합한다. 같은 기록의 PREPARED/COPYING 상태만 재개한다.
+- 기존 목적지 파일은 덮어쓰지 않고 새 파일과 동일하게 read-sharing handle을 유지하면서 전체 해시와 first-party 서명/timestamp를 확인한다. 부모 디렉터리를 순서대로 확인하며 링크/파일 충돌을 거절한다. 새로 누락된 파일만 복사한다.
+- 완료 receipt와 설치 단계 기록에 공통 journal 저장 함수를 연결했다. receipt가 이미 있으면 재설치/활성화하지 않으며 마지막 단계 기록 실패는 receipt 게시 후일 수도 있음을 안내한다.
+
+남은 범위: 복사 도중 끊겨 바이트가 일부만 기록된 파일의 자동 복구, 옛 기록 없는 부분 설치, 완료 receipt와 미완료 journal의 조정, unknown 파일 혼재 및 외부 동시 변경/경로 race, Apps 등록·PATH/startup migration·Windows 검증. 현재 재개는 일치한 파일 재사용과 없는 파일 추가에 한정한다.

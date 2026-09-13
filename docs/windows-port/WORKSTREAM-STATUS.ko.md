@@ -1,5 +1,7 @@
 # Windows 전용 제품 작업 현황
 
+IMPL-068: Recorded incomplete-install resumption written; exact inventory/signer binding and existing-file comparison added. Registration and Windows validation remain pending.
+
 IMPL-067: Removed payload restoration and journal replacement written; incomplete-install recovery, registration and all Windows validation remain pending.
 
 IMPL-066: receipt 파일의 복구 가능한 버전 제거 경로·참조 차단·부분 상태 기록을 작성했다. 영구 정리/자동 복구/실행 검증은 남아 있다.
