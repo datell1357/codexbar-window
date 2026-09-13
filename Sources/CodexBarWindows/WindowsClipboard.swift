@@ -15,7 +15,7 @@ enum WindowsClipboard {
 
     /// Publishes both registered PNG and the standard DIB representation from one render.
     /// Allocate and fill both buffers before touching the existing clipboard contents.
-    static func writeImage(png: Data, dib: Data, owner: HWND) -> String? {
+    static func writeImage(png: Data, dib: Data, owner: HWND, isCurrent: @Sendable () -> Bool = { true }) -> String? {
         guard !png.isEmpty, !dib.isEmpty, png.count <= 16 * 1024 * 1024, dib.count <= 16 * 1024 * 1024 else {
             return "The share image is empty or too large to copy."
         }
@@ -38,6 +38,7 @@ enum WindowsClipboard {
         defer { if !dibTransferred { _ = GlobalFree(dibMemory) } }
         guard OpenClipboard(owner) != 0 else { return "The clipboard is busy. Try copying the image again." }
         defer { _ = CloseClipboard() }
+        guard isCurrent() else { return "The captured data changed. Reopen Share Stats before copying." }
         guard EmptyClipboard() != 0 else { return "Windows could not replace the clipboard contents." }
         guard SetClipboardData(format, pngMemory) != nil else {
             return "Windows could not copy the image. The previous clipboard contents may have been cleared."
@@ -51,7 +52,7 @@ enum WindowsClipboard {
     }
 
     /// A nil result means ownership was transferred to Windows. Errors are suitable for a dialog.
-    static func write(_ text: String, owner: HWND) -> String? {
+    static func write(_ text: String, owner: HWND, isCurrent: @Sendable () -> Bool = { true }) -> String? {
         guard !text.isEmpty, text.utf16.count <= 65_536 else { return "The summary is empty or too large to copy." }
         let units = Array(text.utf16) + [UInt16(0)]
         let byteCount = units.count * MemoryLayout<UInt16>.size
@@ -67,6 +68,7 @@ enum WindowsClipboard {
         _ = GlobalUnlock(memory)
         guard OpenClipboard(owner) != 0 else { return "The clipboard is busy. Try copying again." }
         defer { _ = CloseClipboard() }
+        guard isCurrent() else { return "The captured data changed. Reopen Share Stats before copying." }
         guard EmptyClipboard() != 0 else { return "Windows could not replace the clipboard contents." }
         guard SetClipboardData(UINT(CF_UNICODETEXT), memory) != nil else {
             return "Windows could not publish the summary. The previous clipboard contents may have been cleared."

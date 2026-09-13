@@ -548,6 +548,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
             self.showMessage("Privacy settings changed. Choose Copy Share Stats again.", caption: "Share Stats")
             return
         }
+        let isCurrent = self.snapshotValidity.capture()
         switch result {
         case let .unavailable(message): self.showMessage(message, caption: "Share Stats")
         case let .costHistory(snapshot):
@@ -579,20 +580,20 @@ public final class WindowsTrayHost: @unchecked Sendable {
                 if !succeeded { self.showMessage("The Share Stats preview could not be displayed.", caption: "Share Stats") }
             }
         case let .clipboardImage(png, dib):
-            if let error = WindowsClipboard.writeImage(png: png, dib: dib, owner: window) {
+            if let error = WindowsClipboard.writeImage(png: png, dib: dib, owner: window, isCurrent: isCurrent) {
                 self.showMessage(error, caption: "Share Stats")
             }
         case let .image(data, filename):
             self.remoteEditorOpen = true
             let error = WindowsShareStatsExporter.savePNG(data, filename: filename, owner: window,
-                                                        hidePersonalInfo: request.privacy)
+                                                        hidePersonalInfo: request.privacy, isCurrent: self.snapshotValidity.capture())
             self.remoteEditorOpen = false
             if !self.quitInvoked {
                 PostMessageW(window, Self.wakeMessage, 0, 0)
                 if let error { self.showMessage(error, caption: "Share Stats") }
             }
         case let .ready(text):
-            if let error = WindowsClipboard.write(text, owner: window) {
+            if let error = WindowsClipboard.write(text, owner: window, isCurrent: isCurrent) {
                 self.showMessage(error, caption: "Share Stats")
             }
         }

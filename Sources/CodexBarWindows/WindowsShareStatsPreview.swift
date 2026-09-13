@@ -123,9 +123,9 @@ enum WindowsShareStatsPreview {
             switch Int32(wParam & 0xffff) {
             case 2: DestroyWindow(hwnd); return 0
             case 3: error = WindowsShareStatsExporter.savePNG(context.image.png, filename: context.image.filename,
-                                                             owner: hwnd, hidePersonalInfo: context.privacy)
-            case 4: error = WindowsClipboard.writeImage(png: context.image.png, dib: context.image.dib, owner: hwnd)
-            case 5: error = WindowsClipboard.write(context.image.text, owner: hwnd)
+                                                             owner: hwnd, hidePersonalInfo: context.privacy, isCurrent: context.isCurrent)
+            case 4: error = WindowsClipboard.writeImage(png: context.image.png, dib: context.image.dib, owner: hwnd, isCurrent: context.isCurrent)
+            case 5: error = WindowsClipboard.write(context.image.text, owner: hwnd, isCurrent: context.isCurrent)
             default: return 0
             }
             if let error, IsWindow(hwnd) != 0 {

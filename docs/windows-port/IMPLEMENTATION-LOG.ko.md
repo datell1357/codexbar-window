@@ -2084,3 +2084,13 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - 창 수명 동안 상태를 공유하며 타 스레드가 직접 HWND를 파괴하지 않는다. 기존 개인정보 변경 처리와 owner 복원을 유지한다.
 
 남은 범위: 수집부터 mailbox 표시까지 동일 ownership ticket 유지, 별도 파일 저장 대화상자 도중 무효화와 최종 파일/클립보드 게시 경계, 외부 auth 변경 감지, live ledger/cache parity, Windows 검증 및 전체 계획 구현. 모든 계정 변경 경쟁 조건이 해결되었다고 주장하지 않는다.
+
+## IMPL-164 — 공유 저장·복사 직전 유효성 확인
+
+상태 CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·실행·검증 미실시. guidelines/COMMITS.md 부재로 핵심 규칙을 적용한다.
+
+- PNG exporter에 캡처 유효성 closure를 전달하고 저장 대화상자 전/확인 후/파일 쓰기 직전에 확인한다. 대화상자에서 기다리는 동안 계정·비용 설정이 바뀌면 저장을 거절한다.
+- PNG/DIB 및 텍스트 clipboard writer는 메모리를 준비하고 clipboard를 연 뒤 EmptyClipboard 직전에 확인한다. 실패 시 기존 클립보드를 비우지 않고 준비한 메모리를 반환한다.
+- Share preview는 열린 창의 동일 validity closure를 저장/복사에 전달한다. 직접 저장/복사도 host의 캡처 유효성을 전달한다. 기존 호출부는 기본 closure로 호환한다.
+
+남은 범위: 유효성 확인과 OS 게시 사이의 원자적 처리, 수집부터 mailbox까지 동일 소유권 ticket, 중첩 저장 dialog/owner 생명주기, 외부 auth 변경 감지, live ledger/cache parity와 Windows 검증 및 전체 계획 구현. 실제 파일 저장/클립보드 변경은 수행하지 않았다.

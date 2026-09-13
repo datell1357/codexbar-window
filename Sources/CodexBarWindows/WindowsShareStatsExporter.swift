@@ -4,8 +4,9 @@ import WinSDK
 
 enum WindowsShareStatsExporter {
     /// Nil means the selected file was saved or the user cancelled the save dialog.
-    static func savePNG(_ data: Data, filename: String, owner: HWND, hidePersonalInfo: Bool) -> String? {
+    static func savePNG(_ data: Data, filename: String, owner: HWND, hidePersonalInfo: Bool, isCurrent: @Sendable () -> Bool = { true }) -> String? {
         guard !data.isEmpty, data.count <= 16 * 1024 * 1024 else { return "The share image is unavailable or too large." }
+        guard isCurrent() else { return "The captured account or cost settings changed. Reopen Share Stats before saving." }
         guard hidePersonalInfo == WindowsUsagePresentationSettings.load().hidePersonalInfo else {
             return "Privacy settings changed. Choose Save Share Stats PNG again."
         }
@@ -32,12 +33,14 @@ enum WindowsShareStatsExporter {
         guard accepted != 0 else {
             return CommDlgExtendedError() == 0 ? nil : "Windows could not open the image save dialog."
         }
+        guard isCurrent() else { return "The captured account or cost settings changed. Reopen Share Stats before saving." }
         guard hidePersonalInfo == WindowsUsagePresentationSettings.load().hidePersonalInfo else {
             return "Privacy settings changed. The image was not saved. Choose Save Share Stats PNG again."
         }
         let selected = String(decoding: path.prefix { $0 != 0 }, as: UTF16.self)
         let url = URL(fileURLWithPath: selected)
         guard !selected.isEmpty, url.pathExtension.lowercased() == "png" else { return "Choose a filename ending in .png." }
+        guard isCurrent() else { return "The captured data changed. The image was not saved." }
         do { try data.write(to: url, options: .atomic); return nil }
         catch { return "The share image could not be saved to the selected file." }
     }
