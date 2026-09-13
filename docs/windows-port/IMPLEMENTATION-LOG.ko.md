@@ -720,3 +720,20 @@
 2. 전체 메뉴 mnemonic 충돌/현지화·scroll/마지막 선택 복원·임의 shortcut capture와 전체 Windows 기능/배포 검증은 남아 있다.
 
 다음 구현: 임의 shortcut 선택의 범위를 넓히되 예약 조합과 modifier 저장 모델을 명시적으로 다루는 설정 경로를 구현한다.
+
+## IMPL-038 — modifier/key 모델과 확장 shortcut 선택
+
+상태: CODE_WRITTEN_UNVERIFIED. 빌드·컴파일·테스트·lint·앱·실제 키 등록/입력·검증 스크립트를 실행하지 않았다. 계약: WIN-011/012.
+
+작성한 코드:
+
+- shortcut enum을 modifier/key 값 모델로 바꾸고 Ctrl+Alt 또는 Ctrl+Shift와 A–Z/0–9의72개 조합을 제공한다. failable initializer로 허용 범위를 검사하며 bare modifier/Win key/function/system key를 임의 채택하지 않는다.
+- 저장값은 v1:modifier:key 형식이며 기존 네 preset 문자열을 계속 읽는다. 알 수 없는 값은 기존 기본값으로 해석한다. 선택 시 기존 staged registration/실패 보존 경로를 재사용한다.
+- 선택 메뉴는 modifier별 A–M/N–Z/0–9 하위 메뉴로 나눠 그룹 최대13개 행으로 제한한다. 확장 command range는0x7900부터 사용해 기존 cleanup/local/remote 명령 범위와 분리한다. 부착 실패 그룹을 정리한다.
+
+남은 범위:
+
+1. 실제 키 capture editor와 모든 Windows virtual key 지원은 아니다. 모든72개 조합이 OS/다른 앱에서 비어 있다는 보장도 없다. 실제 등록 충돌/AltGr/layout/메뉴 keyboard 접근성은 미검증이다.
+2. legacy/versioned 저장값과 command dispatch, group menu 수명은 미검증이며 전체 WIN-011/012·Windows 배포 완료로 표시하지 않는다.
+
+다음 구현: 저장된 shortcut 값이 유효하지 않을 때 조용한 기본값 복귀 대신 비활성화와 명시적 재선택 안내를 연결한다.

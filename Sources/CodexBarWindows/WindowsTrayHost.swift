@@ -25,7 +25,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
 
     private static let menuHotkeyCommand = UINT_PTR(0x7533)
     private static let menuHotkeyID: Int32 = 0x4342
-    private static let shortcutChoiceBase = UINT_PTR(0x7540)
+    private static let shortcutChoiceBase = UINT_PTR(0x7900)
     private var activeHotkeyID: Int32 = 0x4342
     private var ownedHotkeyIDs: Set<Int32> = []
     private var menuHotkeyRegistered = false
@@ -599,10 +599,22 @@ public final class WindowsTrayHost: @unchecked Sendable {
                 AppendMenuW(child, UINT(MF_STRING), Self.cleanupHotkeyCommand, $0) != 0
             }
         }
-        for (index, choice) in WindowsMenuShortcut.allCases.enumerated() {
-            succeeded = succeeded && choice.title.withCString(encodedAs: UTF16.self) {
-                AppendMenuW(child, UINT(MF_STRING) | (choice == selected ? UINT(MF_CHECKED) : 0),
-                            Self.shortcutChoiceBase + UINT_PTR(index), $0) != 0
+        let choices = WindowsMenuShortcut.allCases
+        let groups: [(String, ClosedRange<UINT>)] = [("A–M", 0x41...0x4D), ("N–Z", 0x4E...0x5A), ("0–9", 0x30...0x39)]
+        for modifier in WindowsMenuShortcut.Modifier.allCases {
+            for (label, range) in groups {
+                guard succeeded, let group = CreatePopupMenu() else { succeeded = false; break }
+                var groupSucceeded = true
+                for (index, choice) in choices.enumerated() where choice.modifier == modifier && range.contains(choice.key) {
+                    groupSucceeded = groupSucceeded && choice.title.withCString(encodedAs: UTF16.self) {
+                        AppendMenuW(group, UINT(MF_STRING) | (choice == selected ? UINT(MF_CHECKED) : 0),
+                                    Self.shortcutChoiceBase + UINT_PTR(index), $0) != 0
+                    }
+                }
+                let attached = groupSucceeded && "\(modifier.title) + \(label)".withCString(encodedAs: UTF16.self) {
+                    AppendMenuW(child, UINT(MF_STRING | MF_POPUP), UINT_PTR(UInt(bitPattern: group)), $0) != 0
+                }
+                if !attached { _ = DestroyMenu(group); succeeded = false }
             }
         }
         let attached = succeeded && "Menu short&cut".withCString(encodedAs: UTF16.self) {
