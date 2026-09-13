@@ -2977,3 +2977,12 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - 원본 형식 근거: https://raw.githubusercontent.com/chromium/chromium/main/third_party/blink/renderer/modules/storage/cached_storage_area.cc 및 https://chromium.googlesource.com/chromium/src/+/4c9cdacbe6ebc7a1b5092c5e34fd1b932d4a0bdb/components/services/storage/dom_storage/local_storage_impl.cc . 현재 설치 브라우저의 schema 호환성을 검증한 것은 아니다.
 - 남은 소요: Windsurf profile/origin별 후보 구성과 API/UI 연결, 추가 압축 지원 및 전체 계획 나머지.
 - CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·브라우저 데이터 읽기 미실행.
+
+## IMPL-266 — Windows Windsurf 브라우저 세션 후보
+
+- 선택 프로필의 잠긴 LevelDB snapshot을 읽고 app.devin.ai 및 windsurf.com의 필수 localStorage 키 4개를 origin별로 분리해 후보를 구성하는 backend를 추가했다.
+- 기존 Windows 수동 세션 parser의 구조 검사를 재사용한다. JSON.stringify 값은 기존 parser가 한 겹 해석하며 서로 다른 프로필/origin의 값을 합치지 않는다.
+- 불완전한 origin과 형식 오류 origin을 별도 집계하고 schema 오류/취소/시간 제한은 상위로 전달한다. 후보에는 임시 UUID와 출처 label을 사용하며 비밀 값을 로그로 출력하지 않는다.
+- 후보는 구조상 유효한 데이터일 뿐 서버 인증이나 계정 소유권 확인 결과가 아니다. API 검증 전 자동 저장하지 않는다.
+- 남은 소요: 후보 선택, API 조회 및 계정 저장 UI/runtime 연결, 추가 압축 지원과 전체 계획 나머지.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·실제 브라우저/네트워크 조회 미실행.
