@@ -1,5 +1,7 @@
 # Windows 전용 제품 작업 현황
 
+- IMPL-242: Zed 설정의 중복 root key를 거부하도록 공통 Windows JSON key scanner를 연결했다. Windsurf는 기존 64KiB 제한을 유지한다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
 - IMPL-241: Zed 서버 설정을 UI 밖에서 읽고 입력 창 기본값으로 연결했다. 읽기 실패는 빈 입력과 안내를 표시하고 명시적 확인 뒤 credential 조회를 시작한다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
 
 - IMPL-240: Windows Zed settings.json에서 서버를 읽는 1MiB 제한 loader와 주석/후행 쉼표 처리를 작성했다. UI 기본값 연결은 남아 있다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.

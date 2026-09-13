@@ -2767,3 +2767,12 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - 개인정보 모드 변경은 추천값 표시 전과 창 내부/확인 이후 검사한다. Continue 확인 이후에만 기존 credential reader/API 확인 흐름으로 진행한다.
 - 남은 소요: custom data dir 탐색, 분리된 credential/API origin, 중복 JSON key 정책, 실제 Windows 검증 및 전체 계획 나머지.
 - CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·UI·실제 설정 조회/인증 검증 미실행.
+
+## IMPL-242 — Zed 설정 중복 key 처리
+
+- Foundation JSON object 변환에서 중복 key가 사라지기 전에 원본 정규화 JSON의 root key를 별도로 추적하도록 연결했다. 같은 root key가 두 번 나오면 설정을 invalid로 반환한다.
+- 기존 Windsurf scanner를 WindowsJSONRootKeys로 공유하고 caller별 상한을 받도록 했다. Windsurf wrapper는 기존 65536 byte 제한을 유지하고 Zed는 1MiB 제한을 적용한다.
+- key 문자열의 JSON escape를 decode하므로 server_url과 unicode escape로 쓴 동명 key도 동일하게 취급한다. 중첩 object key는 root 서버 선택과 구분한다.
+- loader 실패는 기존 UI의 직접 서버 입력 안내로 전달된다. 중복 설정을 임의의 첫 값/마지막 값으로 선택하지 않는다.
+- 남은 소요: custom data dir 탐색, 분리된 credential/API origin 계약, 실제 Windows 검증 및 전체 계획 나머지.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 파서·빌드·테스트·lint·실제 설정 조회 검증 미실행.

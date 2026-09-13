@@ -32,7 +32,8 @@ public enum WindowsZedEditorSettings {
         guard data.count <= 1_048_576, String(data: data, encoding: .utf8) != nil else { throw Failure.invalid }
         let json = try self.removingCommentsAndTrailingCommas(data)
         guard let object = try? JSONSerialization.jsonObject(with: json),
-              let fields = object as? [String: Any] else { throw Failure.invalid }
+              let fields = object as? [String: Any],
+              WindowsJSONRootKeys.areUnique(in: json, maximumBytes: 1_048_576) else { throw Failure.invalid }
         func origin(_ key: String) throws -> String? {
             guard let value = fields[key] else { return nil }
             guard let text = value as? String else { throw Failure.invalid }
