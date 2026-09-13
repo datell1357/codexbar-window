@@ -2801,3 +2801,12 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - 기존 suggestedOrigin/parseOrigin은 compatibility wrapper로 유지한다. 분리된 주소를 단일 문자열로 축소하지 않고 기존 오류를 반환한다.
 - 남은 소요: Main/mailbox/서버 확인 창을 Configuration으로 전환해 두 주소 확인 후 전달, 실제 Windows 검증 및 전체 계획 나머지.
 - CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 파서·빌드·테스트·lint·설정 조회·인증 검증 미실행.
+
+## IMPL-246 — Zed 두 주소 확인 UI 연결
+
+- Main의 설정 읽기와 mailbox를 Configuration으로 전환해 두 주소를 보존한다.
+- API 서버와 credential 저장 주소를 각각 확인하고 조합 검사 후 runtime으로 전달한다.
+- 취소/실패/개인정보 모드 변경 시 credential 조회를 진행하지 않는다.
+- 남은 소요: 편집기 디렉터리 자동 발견, 실제 Windows 검증 및 전체 계획 나머지.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·UI·인증 검증 미실행.
+- 코드 커밋 a4b302318 게시 후 문서 편집 명령의 인코딩 오류를 복구하여 이 기록을 별도 커밋으로 추가했다.
