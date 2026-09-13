@@ -2810,3 +2810,12 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - 남은 소요: 편집기 디렉터리 자동 발견, 실제 Windows 검증 및 전체 계획 나머지.
 - CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·UI·인증 검증 미실행.
 - 코드 커밋 a4b302318 게시 후 문서 편집 명령의 인코딩 오류를 복구하여 이 기록을 별도 커밋으로 추가했다.
+
+## IMPL-247 — Zed 편집기 자동 조회 연결
+
+- Windows Zed fetch strategy가 수동 환경 입력이나 selectedTokenAccountID가 있으면 기존 manual API 경로를 사용한다. 선택 계정 token 누락/오류는 편집기 계정으로 fallback하지 않는다.
+- 둘 다 없으면 actor 밖에서 설정 Configuration을 읽고 두 origin을 editor importer에 전달하여 동일 credential로 API 응답 ID를 확인한다.
+- 부모 취소를 설정 task에 전달하고 수신 전후 취소를 확인한다. editor API 출처 라벨을 제공하며 자동 저장/계정 선택은 하지 않는다.
+- 설정/인증 오류의 다른 프로필 대체는 없고 기존 source mode 및 shouldFallback false 계약을 유지한다.
+- 남은 소요: 실제 Windows 자동 조회/계정 전환 검증, 편집기 디렉터리 자동 발견 및 전체 계획 나머지.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·설정 조회·Credential Manager·API 검증 미실행.

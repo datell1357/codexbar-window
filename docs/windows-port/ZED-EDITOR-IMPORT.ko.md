@@ -4,6 +4,12 @@
 
 트레이의 `Add saved account…`에서 `Import Zed from editor…`를 선택한다. API 서버와 인증 저장 주소를 차례로 확인하고 Continue를 누르면 해당 서버의 Windows Credential Manager 항목을 읽고 API 계정 ID를 확인한다. 이름 입력 후 저장하면 기존 보호 계정 저장 경로로 추가하고 선택한다. 사용량은 Refresh로 갱신한다.
 
+## 자동 조회와 저장 계정
+
+저장 계정이 선택되지 않았고 `CODEXBAR_ZED_AUTHORIZATION` 수동 입력도 없으면 Zed 조회는 편집기 설정과 Credential Manager를 사용한다. 조회 결과의 source는 `editor API`이다. 이 경로는 계정을 자동 저장하거나 선택하지 않는다.
+
+수동 입력 또는 저장 계정이 있으면 `manual API` 경로를 사용한다. 선택 계정의 자격증명이 없거나 유효하지 않아도 편집기 계정으로 바꾸지 않고 오류를 반환한다. 자동 경로의 설정 읽기나 인증 실패 역시 다른 프로필로 대체하지 않는다.
+
 ## 서버 설정 위치
 
 기본 추천 서버는 `%APPDATA%\Zed\settings.json`의 `server_url`에서 읽는다. 기본 설정 파일이 없으면 `https://zed.dev`를 제안한다. 설정을 읽거나 해석할 수 없으면 서버 입력란을 비우고 직접 입력 안내를 표시한다.

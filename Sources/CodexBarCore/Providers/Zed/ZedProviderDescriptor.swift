@@ -83,12 +83,29 @@ struct ZedLocalFetchStrategy: ProviderFetchStrategy {
     func fetch(_ context: ProviderFetchContext) async throws -> ProviderFetchResult {
         _ = context
         #if os(Windows)
-        let reader = WindowsZedCredentialsReader(environment: context.env)
-        let settings = try reader.settings()
-        let snapshot = try await ZedStatusProbe(
-            credentialsReader: reader,
-            settingsLoader: { settings }).fetch()
-        return self.makeResult(usage: snapshot.toUsageSnapshot(), sourceLabel: "manual API")
+        let hasManualInput = CodexBarPlatformPaths.environmentValue(
+            WindowsZedCredentialsReader.environmentKey, environment: context.env) != nil
+        if hasManualInput || context.selectedTokenAccountID != nil {
+            // Missing or invalid selected credentials are an error, never permission to switch accounts.
+            let reader = WindowsZedCredentialsReader(environment: context.env)
+            let settings = try reader.settings()
+            let snapshot = try await ZedStatusProbe(
+                credentialsReader: reader,
+                settingsLoader: { settings }).fetch()
+            return self.makeResult(usage: snapshot.toUsageSnapshot(), sourceLabel: "manual API")
+        }
+        let environment = context.env
+        let settingsTask = Task.detached(priority: .utility) {
+            try WindowsZedEditorSettings.suggestedConfiguration(environment: environment)
+        }
+        let configuration = try await withTaskCancellationHandler {
+            try await settingsTask.value
+        } onCancel: { settingsTask.cancel() }
+        try Task.checkCancellation()
+        let account = try await WindowsZedEditorSessionImporter().loadAndValidate(
+            serviceURL: configuration.serverURL, credentialServiceURL: configuration.credentialServiceURL)
+        try Task.checkCancellation()
+        return self.makeResult(usage: account.snapshot.toUsageSnapshot(), sourceLabel: "editor API")
         #else
         let snapshot = try await ZedStatusProbe().fetch()
         return self.makeResult(usage: snapshot.toUsageSnapshot(), sourceLabel: "local")

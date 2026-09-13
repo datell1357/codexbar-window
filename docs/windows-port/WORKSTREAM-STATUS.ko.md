@@ -1,5 +1,7 @@
 # Windows 전용 제품 작업 현황
 
+- IMPL-247: Zed 수동/선택 계정이 없을 때 편집기 자동 API 조회를 연결했다. 선택 계정 오류는 자동 계정으로 대체하지 않는다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
 - IMPL-246: Zed API/credential 두 주소 확인 UI와 runtime 전달을 연결했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
 
 - IMPL-245: Zed settings loader에 server/credential origin을 보존하는 Configuration 모델을 추가했다. 단일 origin 호출은 분리된 주소를 버리지 않고 오류 처리한다. UI 전환은 남아 있다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
