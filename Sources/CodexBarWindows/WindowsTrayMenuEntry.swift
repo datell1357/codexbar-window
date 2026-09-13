@@ -20,6 +20,8 @@ public struct WindowsTrayMenuEntry: Sendable, Equatable {
     public let changelogURL: String?
     public let changelogVisible: Bool
     public let disabledText: String?
+    /// Redacted failure from this provider in the current refresh only.
+    public let errorCopyText: String?
 
     public init(
         providerID: String,
@@ -29,7 +31,8 @@ public struct WindowsTrayMenuEntry: Sendable, Equatable {
         dashboardVisible: Bool = true,
         changelogURL: String? = nil,
         changelogVisible: Bool = false,
-        disabledText: String? = "unavailable")
+        disabledText: String? = "unavailable",
+        errorCopyText: String? = nil)
     {
         self.providerID = providerID
         self.title = title
@@ -39,6 +42,7 @@ public struct WindowsTrayMenuEntry: Sendable, Equatable {
         self.changelogURL = changelogURL
         self.changelogVisible = changelogVisible
         self.disabledText = disabledText
+        self.errorCopyText = errorCopyText
     }
 
     public var isEnabled: Bool { self.statusURL != nil }

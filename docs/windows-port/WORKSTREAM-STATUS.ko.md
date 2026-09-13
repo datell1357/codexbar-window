@@ -1,5 +1,7 @@
 # Windows 전용 제품 작업 현황
 
+IMPL-081: Current-refresh provider error copy actions written; plugin/account-specific actions and Windows validation remain pending.
+
 IMPL-080: Redacted tray summary clipboard action written; detail-card actions and Windows validation remain pending.
 
 IMPL-079: Opt-in Apps registration restoration and structured recovery gates written; whole-operation concurrency and Windows validation remain pending.

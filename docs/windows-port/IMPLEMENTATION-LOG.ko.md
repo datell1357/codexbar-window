@@ -1246,3 +1246,13 @@
 남은 범위: 공급자별 상세 오류/카드 선택 복사, Share Stats 이미지/export, redactor의 실제 데이터별 비밀 처리 범위, 접근성/키보드/UI 및 Windows clipboard ABI 검증. 이 변경은 원본 copy action 전체 또는 WIN-010 완료를 의미하지 않는다.
 
 API 참고: https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-setclipboarddata
+
+## IMPL-081 — 공급자별 오류 복사
+
+상태 CODE_WRITTEN_UNVERIFIED. Swift 컴파일/빌드/테스트/UI/clipboard/검증 실행 미실시. guidelines/COMMITS.md 부재로 핵심 커밋 규칙을 적용한다.
+
+- 현재 새로고침의 first-party fetch 실패를 provider ID별 redacted copy text로 저장하고 최종 menu entry에 연결했다. 새 fetch 묶음 시작 시 이전 오류를 비우고 초기 action projection에는 과거 오류를 싣지 않는다.
+- Copy provider error 하위 메뉴에 실패 공급자만 표시하며 popup별 command/text 사본을 유지한다. 최대 128개, 메뉴 생성 실패 시 명령을 등록하지 않고 종료 시 사본을 제거한다.
+- 기존 clipboard 크기/필터/실패 처리와 privacy 설정 변경 guard를 재사용한다. 자동 clipboard 접근은 하지 않는다.
+
+남은 범위: plugin 오류, 개별 계정 동시 표시 오류 선택, config/account resolution 단계 오류, 상세 카드와 copy action 전체 계약, redaction 완전성 및 Windows ABI/UI 검증. WIN-010 완료를 의미하지 않는다.

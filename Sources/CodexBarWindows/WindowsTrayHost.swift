@@ -24,6 +24,8 @@ public final class WindowsTrayHost: @unchecked Sendable {
     public typealias QuitHandler = @Sendable () -> Void
 
     private static let startupRegistrationCommand = UINT_PTR(0x7546)
+    private static let copyErrorCommandBase = UINT_PTR(0x7B00)
+    private var popupCopyErrors: [UINT_PTR: String] = [:]
     private static let copySummaryCommand = UINT_PTR(0x754D)
     private var popupCopySummary: String?
     private var popupCopyPrivacy = false
@@ -728,10 +730,12 @@ public final class WindowsTrayHost: @unchecked Sendable {
         guard !self.remoteEditorOpen, !self.popupIsOpen, !self.quitInvoked else { return }
         self.popupIsOpen = true
         self.popupCopySummary = nil
+        self.popupCopyErrors.removeAll(keepingCapacity: true)
         var continuingPage = false
         defer {
             self.popupIsOpen = false
             self.popupCopySummary = nil
+            self.popupCopyErrors.removeAll(keepingCapacity: true)
             self.mailboxLock.lock()
             let cliReady = self.cliSetupResult != nil
             self.mailboxLock.unlock()
@@ -775,6 +779,22 @@ public final class WindowsTrayHost: @unchecked Sendable {
             "Copy &redacted summary".withCString(encodedAs: UTF16.self) {
                 _ = AppendMenuW(menu, UINT(MF_STRING), Self.copySummaryCommand, $0)
             }
+        }
+        let failures = menuEntries.filter { $0.errorCopyText != nil }
+        if !failures.isEmpty, let errorMenu = CreatePopupMenu() {
+            var commands: [UINT_PTR: String] = [:]
+            for (index, entry) in failures.prefix(128).enumerated() {
+                guard let text = entry.errorCopyText else { continue }
+                let command = Self.copyErrorCommandBase + UINT_PTR(index)
+                let title = entry.title.replacingOccurrences(of: "&", with: "&&")
+                if title.withCString(encodedAs: UTF16.self, { AppendMenuW(errorMenu, UINT(MF_STRING), command, $0) }) != 0 {
+                    commands[command] = text
+                }
+            }
+            let attached = !commands.isEmpty && "Copy provider &error".withCString(encodedAs: UTF16.self) {
+                AppendMenuW(menu, UINT(MF_STRING | MF_POPUP), UINT_PTR(UInt(bitPattern: errorMenu)), $0) != 0
+            }
+            if attached { self.popupCopyErrors = commands } else { _ = DestroyMenu(errorMenu) }
         }
         if !rows.isEmpty { _ = AppendMenuW(menu, UINT(MF_SEPARATOR), 0, nil) }
         if !menuEntries.isEmpty, let statusMenu = CreatePopupMenu() {
@@ -1684,6 +1704,16 @@ public final class WindowsTrayHost: @unchecked Sendable {
     }
 
     private func dispatchCommand(_ command: UINT_PTR) {
+        if let text = self.popupCopyErrors[command], let owner = self.window {
+            guard self.popupCopyPrivacy == WindowsUsagePresentationSettings.load().hidePersonalInfo else {
+                self.showSessionMessage("Privacy settings changed. Reopen the menu before copying.", caption: "Copy provider error")
+                return
+            }
+            if let error = WindowsClipboard.write(text, owner: owner) {
+                self.showSessionMessage(error, caption: "Copy provider error")
+            }
+            return
+        }
         if let page = self.popupPageCommands[command] {
             if page.remote { self.onRemoteSessionPage(page.request) } else { self.onLocalSessionPage(page.request) }
             return

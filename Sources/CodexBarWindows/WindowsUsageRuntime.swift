@@ -88,6 +88,7 @@ public actor WindowsUsageRuntime {
     private var presentations: [ProviderInstanceID: WindowsUsagePresentation] = [:]
     private enum RenderEntry { case presentation(WindowsUsagePresentation); case row(String) }
     private var renderEntries: [RenderEntry] = []
+    private var providerCopyErrors: [String: String] = [:]
     private var statusMenuEntries: [WindowsTrayMenuEntry] = []
     private struct DashboardContextKey: Equatable {
         let accountID: UUID?
@@ -606,6 +607,7 @@ public actor WindowsUsageRuntime {
                 ? accountContext.codexAccountContextSnapshot() : nil
             var entries: [RenderEntry] = []
             self.presentations.removeAll(keepingCapacity: true)
+            self.providerCopyErrors.removeAll(keepingCapacity: true)
             if let errorCode = self.signalProvider().powerStateError {
                 entries.append(.row("Windows power status unavailable (error \(errorCode))"))
             }
@@ -729,7 +731,8 @@ public actor WindowsUsageRuntime {
                     dashboardVisible: metadata.dashboardURL != nil,
                     changelogURL: metadata.changelogURL,
                     changelogVisible: metadata.changelogURL != nil,
-                    disabledText: metadata.statusPageURL == nil && metadata.statusLinkURL == nil ? "unavailable" : nil)
+                    disabledText: metadata.statusPageURL == nil && metadata.statusLinkURL == nil ? "unavailable" : nil,
+                    errorCopyText: self.providerCopyErrors[provider.rawValue])
             }
             if self.refreshSettings.frequency == .adaptiveAgentAware
             {
@@ -1575,13 +1578,15 @@ public actor WindowsUsageRuntime {
                 return presentation.rows()
             case let .failure(error):
                 self.recordStartupConnectivityRetryableFailure(error)
+                self.providerCopyErrors[provider.rawValue] = WindowsClipboard.summary(rows: [provider.rawValue, error.localizedDescription])
                 return ["\(provider.rawValue): \(error.localizedDescription)"]
             }
         } catch is CancellationError {
             return []
         } catch {
             self.recordStartupConnectivityRetryableFailure(error)
-            return ["\(provider.rawValue): \(error.localizedDescription)"]
+            self.providerCopyErrors[provider.rawValue] = WindowsClipboard.summary(rows: [provider.rawValue, error.localizedDescription])
+                return ["\(provider.rawValue): \(error.localizedDescription)"]
         }
     }
 

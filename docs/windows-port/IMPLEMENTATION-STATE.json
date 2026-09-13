@@ -26,8 +26,8 @@
   "static_qa_status": "NOT_RUN_DURING_IMPLEMENTATION",
   "windows_runtime_status": "NOT_VALIDATED",
   "completion_claim": false,
-  "latest_completed_slice": "IMPL-080 code written: redacted tray summary clipboard action with popup snapshot ownership and failure reporting; unverified",
-  "next": "Continue Windows detail-card actions and native settings/UI integration; clipboard Windows validation, lifecycle concurrency and remaining full feature scope are pending.",
+  "latest_completed_slice": "IMPL-081 code written: current-refresh provider error copy actions bound to popup snapshots; unverified",
+  "next": "Continue detail-card actions, plugin/account-specific errors and native settings integration; Windows validation remains pending.",
   "inventory": {
     "baseline_entries": 2844,
     "provider_ids": 69,
@@ -49,7 +49,7 @@
     "widget_provider_choices": 17
   },
   "automation_action_this_revision": "Created active thread heartbeat codexbar-windows-30 at 30-minute intervals",
-  "publication_action_this_revision": "Commit and push IMPL-080 to origin/main; no validation by user instruction.",
+  "publication_action_this_revision": "Commit and push IMPL-081 to origin/main; no validation by user instruction.",
   "historical_state_before_2026_09_12": {
     "phase": "IMPLEMENTING",
     "repository": "/Users/yeoreum/Documents/codexbar-window/fork",
@@ -851,6 +851,14 @@
     },
     {
       "id": "IMPL-080",
+      "contracts": [
+        "WIN-010"
+      ],
+      "status": "CODE_WRITTEN_UNVERIFIED",
+      "validation": "NOT_RUN_BY_USER_INSTRUCTION"
+    },
+    {
+      "id": "IMPL-081",
       "contracts": [
         "WIN-010"
       ],
