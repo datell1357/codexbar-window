@@ -57,6 +57,8 @@ enum WindowsBrowserProfileLocator {
         case .chromeBeta: "Google/Chrome Beta/User Data"
         case .chromeCanary: "Google/Chrome SxS/User Data"
         case .chromium: "Chromium/User Data"
+        // Official default profile: help.vivaldi.com/desktop/privacy/preventing-vivaldi-profiles-from-being-uploaded-to-git-repositories/
+        case .vivaldi: "Vivaldi/User Data"
         // Brave official install modes use independent product suffixes for each channel.
         // https://github.com/brave/brave-core/blob/master/chromium_src/chrome/install_static/chromium_install_modes.h
         case .brave: "BraveSoftware/Brave-Browser/User Data"

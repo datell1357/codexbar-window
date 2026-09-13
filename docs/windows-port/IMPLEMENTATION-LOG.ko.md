@@ -3055,3 +3055,11 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - 공유 경로 탐색 확장은 쿠키 복호화 지원을 증명하지 않는다. 이번 연결은 Windsurf localStorage 가져오기를 위한 것이다.
 - 남은 소요: 추가 브라우저/압축 및 전체 계획 나머지.
 - CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·실제 브라우저/UI/네트워크 검증 미실행.
+
+## IMPL-275 — Vivaldi와 Windsurf 가져오기 안내
+
+- Vivaldi의 기본 LocalAppData/Vivaldi/User Data 경로를 공유 locator에 추가하고 Windsurf 선택 목록에 연결했다.
+- 근거: https://help.vivaldi.com/desktop/privacy/preventing-vivaldi-profiles-from-being-uploaded-to-git-repositories/ . standalone 설치는 기본 경로로 추정하지 않으며 기존 사용자 지정 프로필 입력을 사용한다.
+- WINDSURF-BROWSER-IMPORT.ko.md에 연결된 가져오기 흐름, 경로 우선순위, 저장과 조회 의미, 제한을 정리했다.
+- 남은 소요: 추가 브라우저/압축 지원 및 전체 계획 나머지.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·UI·실제 브라우저/파일/네트워크 조회 미실행.
