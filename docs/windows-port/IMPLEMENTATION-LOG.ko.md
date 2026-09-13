@@ -1338,3 +1338,12 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winus
 남은 범위: 앱/스레드 전체 DPI awareness 통합, 실제 다중 모니터·배율·작업 영역 초과·접근성 텍스트 크기, 지역화 및 WinSDK ABI 검증. 이번 상세 창 코드만으로 전체 DPI 지원 완료를 주장하지 않는다.
 
 API 참고: https://learn.microsoft.com/en-us/windows/win32/hidpi/wm-dpichanged , https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-systemparametersinfofordpi
+
+## IMPL-090 — 상세 창 작업 영역 배치와 버튼 줄바꿈
+
+상태 CODE_WRITTEN_UNVERIFIED. 빌드/컴파일/테스트/UI/모니터/검증 미실시. guidelines/COMMITS.md 부재로 핵심 커밋 규칙을 적용한다.
+
+- owner 모니터의 작업 영역 내에서 상세 창 초기 크기를 제한하고 중앙 배치하도록 작성했다. 조회 실패 시 기존 기본 위치를 유지한다.
+- 최소 창 크기가 현재 모니터 작업 영역보다 커지지 않도록 제한한다. 버튼은 실제 사용 가능한 client 폭에 맞춰 줄바꿈하고 필요한 footer 높이만큼 텍스트 영역을 조절한다.
+
+남은 범위: 극단적으로 작은 작업 영역에서 전체 footer 스크롤, DPI awareness 통합, monitor 변경 중 실제 배치·키보드 순서·접근성·지역화 검증. rich card 및 전체 Windows 기능 완료를 의미하지 않는다.

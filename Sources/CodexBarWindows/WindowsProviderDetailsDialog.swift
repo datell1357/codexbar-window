@@ -60,8 +60,17 @@ enum WindowsProviderDetailsDialog {
         var initial = RECT(left: 0, top: 0, right: context.pixels(700), bottom: context.pixels(500))
         if AdjustWindowRectExForDpi(&initial, DWORD(WS_OVERLAPPEDWINDOW), 0,
                                    DWORD(WS_EX_DLGMODALFRAME), context.dpi) != 0 {
-            SetWindowPos(hwnd, nil, 0, 0, initial.right - initial.left, initial.bottom - initial.top,
-                         UINT(SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE))
+            let desiredWidth = initial.right - initial.left, desiredHeight = initial.bottom - initial.top
+            if let area = Self.workArea(owner) {
+                let width = min(desiredWidth, area.right - area.left)
+                let height = min(desiredHeight, area.bottom - area.top)
+                SetWindowPos(hwnd, nil, area.left + (area.right - area.left - width) / 2,
+                             area.top + (area.bottom - area.top - height) / 2, width, height,
+                             UINT(SWP_NOZORDER | SWP_NOACTIVATE))
+            } else {
+                SetWindowPos(hwnd, nil, 0, 0, desiredWidth, desiredHeight,
+                             UINT(SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE))
+            }
         }
         let ownerWasEnabled = IsWindowEnabled(owner) != 0
         if IsWindow(owner) != 0 { EnableWindow(owner, 0) }
@@ -153,6 +162,10 @@ enum WindowsProviderDetailsDialog {
                                         DWORD(WS_EX_DLGMODALFRAME), context.dpi)
                 limits.pointee.ptMinTrackSize.x = frame.right - frame.left
                 limits.pointee.ptMinTrackSize.y = frame.bottom - frame.top
+                if let area = Self.workArea(hwnd) {
+                    limits.pointee.ptMinTrackSize.x = min(limits.pointee.ptMinTrackSize.x, area.right - area.left)
+                    limits.pointee.ptMinTrackSize.y = min(limits.pointee.ptMinTrackSize.y, area.bottom - area.top)
+                }
             }
             return 0
         case UINT(WM_COMMAND):
@@ -200,14 +213,34 @@ enum WindowsProviderDetailsDialog {
         var rect = RECT()
         guard GetClientRect(hwnd, &rect) != 0 else { return }
         let width = max(0, rect.right - rect.left), height = max(0, rect.bottom - rect.top)
-        MoveWindow(GetDlgItem(hwnd, Self.textID), px(12), px(12), max(1, width - px(24)), max(1, height - px(100)), 1)
-        for index in 0..<3 {
-            if let control = GetDlgItem(hwnd, Self.linkBaseID + Int32(index)) {
-                MoveWindow(control, px(12 + Int32(index) * 132), max(px(12), height - px(40)), px(124), px(28), 1)
-            }
+        let available = max(1, width - px(24))
+        var buttons: [(Int32, Int32)] = context.links.indices.map { (Self.linkBaseID + Int32($0), px(124)) }
+        buttons.append((Self.refreshID, px(180)))
+        buttons.append((Self.closeID, px(92)))
+        var positions: [(Int32, Int32, Int32, Int32)] = []
+        var x: Int32 = 0, row: Int32 = 0
+        for (id, desired) in buttons {
+            let buttonWidth = min(desired, available)
+            if x > 0, x + buttonWidth > available { x = 0; row += 1 }
+            positions.append((id, x, row, buttonWidth))
+            x += buttonWidth + px(8)
         }
-        MoveWindow(GetDlgItem(hwnd, Self.refreshID), px(12), max(px(12), height - px(76)), px(180), px(28), 1)
-        MoveWindow(GetDlgItem(hwnd, Self.closeID), max(px(12), width - px(104)), max(px(12), height - px(40)), px(92), px(28), 1)
+        let footer = (row + 1) * px(36) + px(12)
+        let top = max(px(12), height - footer)
+        MoveWindow(GetDlgItem(hwnd, Self.textID), px(12), px(12), available,
+                   max(1, top - px(24)), 1)
+        for (id, x, row, buttonWidth) in positions {
+            MoveWindow(GetDlgItem(hwnd, id), px(12) + x, top + row * px(36), buttonWidth, px(28), 1)
+        }
+    }
+
+    private static func workArea(_ hwnd: HWND) -> RECT? {
+        let monitor = MonitorFromWindow(hwnd, UINT(MONITOR_DEFAULTTONEAREST))
+        var info = MONITORINFO()
+        info.cbSize = DWORD(MemoryLayout<MONITORINFO>.size)
+        guard GetMonitorInfoW(monitor, &info) != 0,
+              info.rcWork.right > info.rcWork.left, info.rcWork.bottom > info.rcWork.top else { return nil }
+        return info.rcWork
     }
 
     private static func addControl(_ parent: HWND, _ klass: String, _ text: String,
