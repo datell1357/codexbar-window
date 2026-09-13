@@ -199,3 +199,11 @@ PATH·Run 명령·shortcut은 before와 같으면 이미 복원된 것으로 두
 OperationID는 선택적 새 작업 식별자다. 기존 작업의 재개/복구를 요청하는 인자가 아니며 같은 ID의 journal/바로가기 작업 파일/제거 디렉터리가 이미 있으면 거절한다. 생략하면 기존처럼 새 GUID를 만든다. 강제 종료 시 PLANNED로만 남아 있어도 실제 변경은 있을 수 있고, 예약만 하고 호출 전에 멈췄다면 해당 파일이 없을 수 있다. 실제 상태를 자동으로 추정해 성공 처리하지 않는다.
 
 외부 변경과 경로 검사 사이 race, journal/파일 변경의 완전한 원자성, 통합 복구 실행과 강제 종료 검증은 남아 있다. 이번 작업에서 관련 스크립트나 종료 시나리오를 실행하지 않았다.
+
+## 제거 기록으로 복구 실행
+
+Restore-CodexBarUninstall.ps1에 RegistrationID, uninstall 파일명의 UninstallID, 원래 ExpectedSignerThumbprint, AllowUnvalidatedBuild를 지정하면 연결된 제거 payload를 먼저 복구하고 전체 복원 결과일 때만 참조 복구를 호출한다. 기존 파일 충돌로 부분 복구되면 다음 단계로 넘어가지 않는다. 작업은 명시적 실행이며 앱을 자동 실행하지 않는다.
+
+schema 2 handoff의 버전과 child record를 대조하며 완료 결과가 있는데 해당 기록이 없으면 거절한다. PLANNED 상태에 실제 child 기록이 없으면 NO_CHILD_RECORDS_FOUND 등 실제 발견 범위만 기록한다. 이는 변경이 전혀 없었다는 증명이 아니다. 별도 uninstall-recovery journal에 현재 단계를 남기며 Apps 등록은 변경하지 않는다.
+
+도구별 operations.lock은 사용하지만 전체 복구를 포괄하는 잠금은 아직 없다. 외부 동시 변경/기록 누락 원인 판별/앱 등록 복구 통합/자동 정리/Windows 검증은 남아 있다. tools 14개와 앱·CLI·PATH resource를 합한 서명 대상은 17개다. 이번 작업에서 복구나 검증 명령을 실행하지 않았다.

@@ -2,7 +2,8 @@
 [CmdletBinding(SupportsShouldProcess = $true)]
 param(
     [Parameter(Mandatory = $true)][ValidatePattern('^[0-9a-f]{32}$')][string] $TransactionID,
-    [switch] $AllowUnvalidatedBuild
+    [switch] $AllowUnvalidatedBuild,
+    [switch] $PassThru
 )
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
@@ -105,7 +106,11 @@ try {
     $remaining = @($results | Where-Object { $_.state -notin @('RESTORED', 'ALREADY_PRESENT') })
     $record.state = if ($remaining.Count -gt 0) { 'PARTIAL_RECOVERY_UNVERIFIED' } else { 'RECEIPT_PAYLOAD_RESTORED_UNVERIFIED' }
     Write-CodexBarJournal $recoveryPath $record
-    Write-Output ($record.state + '. Removal copies were retained. No launch target or startup configuration was changed.')
+    if ($PassThru) {
+        [pscustomobject] @{ versionID = $receipt.versionID; transactionID = $TransactionID; state = $record.state }
+    } else {
+        Write-Output ($record.state + '. Removal copies were retained. No launch target or startup configuration was changed.')
+    }
 } catch {
     Write-Warning 'Recovery incomplete. Original files and recovery copies were retained; inspect both directories before retrying.'
     throw

@@ -1214,3 +1214,13 @@
 - launcher는 성공 응답의 ID가 사전 기록 ID와 같아야 수용한다. 예외에서 예상 밖 ID가 나와도 원래 ID를 덮지 않고 별도 표시한다. 사전 예약은 실행/완료 증거가 아님을 안내한다.
 
 남은 범위: journal 게시와 payload 변경의 원자성, 외부 경로 race, 비정상 종료 후 자동 상태 조정/통합 복구, 예약됐지만 실행되지 않은 작업의 판별 UI, 보존 파일 정리와 전체 Windows 검증. OperationID는 기존 작업 재개 옵션이 아니다.
+
+## IMPL-078 — 기록 기반 제거 복구 실행
+
+상태 CODE_WRITTEN_UNVERIFIED. PowerShell/파일 복구/registry/서명/빌드/테스트/검증 실행 미실시. guidelines/COMMITS.md 부재로 핵심 커밋 규칙을 적용한다.
+
+- Restore-CodexBarUninstall이 명시적 RegistrationID/UninstallID/signer로 schema 2 handoff와 연결된 제거/참조 기록을 읽고 버전을 대조하도록 작성했다.
+- 파일 복구에 PassThru 결과를 추가하고 전체 receipt payload 복원 결과에서만 참조 복구로 진행한다. 단계별 journal을 남기며 부분 복구/누락된 완료 기록은 중단한다.
+- 새 도구를 배포·서명 계약에 포함했다. tools 14개, 전체 first-party 대상 17개다.
+
+남은 범위: 전체 단계 통합 잠금, 기록 조회 후 동시 변경, PLANNED 기록 누락의 원인 판별, Apps 등록 복구 통합, 실패 후 UI 재진입·보존 파일 정리·Windows 검증. child별 잠금만 사용하며 자동 전체 rollback이나 런타임 정상 상태를 보장하지 않는다.
