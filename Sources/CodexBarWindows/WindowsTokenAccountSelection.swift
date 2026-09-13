@@ -21,6 +21,26 @@ public struct WindowsTokenAccountSelectionRequest: Sendable {
     public let expectedSelectedID: UUID?
 }
 
+/// Label editing uses the original value only for optimistic conflict detection.
+/// A redacted menu title is not a valid expectedLabel.
+public struct WindowsTokenAccountRenameRequest: Sendable {
+    public let providerID: ProviderInstanceID
+    public let accountID: UUID
+    public let expectedLabel: String
+    public let replacementLabel: String
+}
+
+public enum WindowsTokenAccountRenameResult: Sendable {
+    case saved
+    case unchanged
+    case invalidLabel
+    case staleAccount
+    case refreshInProgress
+    case unavailable
+    case shuttingDown
+    case failed
+}
+
 public enum WindowsTokenAccountSelectionLoadResult: Sendable {
     case loaded(WindowsTokenAccountSelectionSnapshot)
     case unavailable

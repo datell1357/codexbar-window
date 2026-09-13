@@ -1386,3 +1386,14 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/hidpi/wm-dpichanged 
 - PostMessage 실패 시 페이지 번호를 복구하고 사용자 안내를 작성했다. 일반 메뉴 열기에서는 이전 페이지 포커스 요청을 소비·초기화한다.
 
 남은 범위: 하위 메뉴 자체의 자동 펼침·현재 계정 포커스, 키보드/마우스 혼합 및 Windows 실행 검증, 계정 lifecycle·OAuth·동시 표시. 포커스 동작 검증 완료를 주장하지 않는다.
+
+## IMPL-095 — 계정 이름 전용 수정 backend
+
+상태 CODE_WRITTEN_UNVERIFIED. 컴파일/빌드/테스트/설정 쓰기 실행/계정/검증 미실시. guidelines/COMMITS.md 부재로 핵심 커밋 규칙을 적용한다.
+
+- UUID와 편집 시작 시 원래 label을 비교하는 rename 요청/결과 계약과 runtime 저장 경로를 작성했다. 순서 변경은 UUID로 처리하며 기존 이름이 바뀌었거나 삭제된 경우 stale 결과를 반환한다.
+- 빈 이름·제어 문자·UTF16 160단위 초과를 거절하고 양끝 공백을 정리한다. 계정 payload의 ID/token/시간/외부 ID/scope/조직/workspace 및 activeIndex는 그대로 복사한다.
+- Mac의 통합 credential 편집 함수와 달리 이번 전용 이름 수정은 API key 삭제나 source 변경을 수행하지 않는다. 인증 수정이 아닌 표시 이름 수정이라는 계약이며 이름만 바꾸는 경우 기존 자격증명과 선택을 보존한다.
+- 수집 중에는 저장하지 않으며 성공 후 현재 표시 설정으로 메뉴 이름을 다시 투영한다. 입력이나 예외 내용을 로그에 출력하지 않는다.
+
+남은 범위: 편집 UI와 원래 이름 snapshot 로드/결과 연결(현재 UI 미연결), process 간 config 동시성, 계정 추가·삭제·자격증명 수정, Windows 검증. 이름 수정 UI 완료를 주장하지 않는다.

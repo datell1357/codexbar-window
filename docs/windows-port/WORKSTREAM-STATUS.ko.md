@@ -1,5 +1,7 @@
 # Windows 전용 제품 작업 현황
 
+- IMPL-095: credential을 보존하는 계정 이름 수정 backend를 작성했다. UI 미연결, CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
 - IMPL-094: 계정 페이지 메뉴 강조와 keyboard return target 보존을 작성했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
 
 - IMPL-093: 128개 단위 Saved accounts 페이지 이동을 작성했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.

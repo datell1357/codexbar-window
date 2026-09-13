@@ -260,6 +260,42 @@ public actor WindowsUsageRuntime {
         } catch { return .failed }
     }
 
+    /// Rename only: no credential normalization, account activation or auth-source mutation.
+    public func renameTokenAccount(_ request: WindowsTokenAccountRenameRequest) -> WindowsTokenAccountRenameResult {
+        guard !self.shuttingDown else { return .shuttingDown }
+        guard self.refreshTask == nil else { return .refreshInProgress }
+        let label = request.replacementLabel.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !label.isEmpty, label.utf16.count <= 160,
+              !label.unicodeScalars.contains(where: { $0.value < 0x20 || $0.value == 0x7F }) else {
+            return .invalidLabel
+        }
+        do {
+            guard let provider = request.providerID.firstPartyProvider,
+                  TokenAccountSupportCatalog.support(for: provider) != nil,
+                  var config = try self.configStore.load(), config.enabledProviders().contains(request.providerID),
+                  var entry = config.providerConfig(for: request.providerID), let data = entry.tokenAccounts,
+                  Set(data.accounts.map(\.id)).count == data.accounts.count else { return .unavailable }
+            guard let index = data.accounts.firstIndex(where: { $0.id == request.accountID }),
+                  data.accounts[index].label == request.expectedLabel else { return .staleAccount }
+            let existing = data.accounts[index]
+            guard existing.label != label else { return .unchanged }
+            var accounts = data.accounts
+            accounts[index] = ProviderTokenAccount(
+                id: existing.id, label: label, token: existing.token, addedAt: existing.addedAt,
+                lastUsed: existing.lastUsed, externalIdentifier: existing.externalIdentifier,
+                usageScope: existing.usageScope, organizationID: existing.organizationID,
+                workspaceID: existing.workspaceID)
+            entry.tokenAccounts = ProviderTokenAccountData(version: data.version, accounts: accounts,
+                                                           activeIndex: data.activeIndex)
+            config.setProviderConfig(entry)
+            try self.configStore.save(config)
+            self.latestProviderConfigs[request.providerID] = entry
+            // Re-project menu labels without fetching credentials or changing usage ownership.
+            self.publishRenderEntries(settings: WindowsUsagePresentationSettings.load())
+            return .saved
+        } catch { return .failed }
+    }
+
     public func loadProviderQuotaWarningEditor(
         providerID: ProviderInstanceID) -> WindowsProviderQuotaWarningLoadResult
     {
