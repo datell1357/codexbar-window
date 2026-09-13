@@ -2633,3 +2633,11 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - 계정 저장 성공/같은 세션 재선택/설정 변경/실패를 구분하며 취소 후 늦게 도착한 결과는 요청 ID로 무시한다.
 - 남은 소요: 실제 Windows 전체 가져오기/보호 저장 검증, Chromium 및 Windsurf 자동 가져오기와 전체 계획 나머지.
 - CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·UI·브라우저·API 검증 미실행.
+
+## IMPL-226 — Augment 플랫폼 경계와 미확인 사용량
+
+- 앞선 이식에서 Status Probe Error 주석에 잘못 삽입된 endif를 실제 Session Store 끝으로 옮긴다. Windows가 공유 모델/오류/조회 본문을 포함하고 macOS 전용 파일 세션 저장만 제외하도록 작성한다. 이전 이식은 이 누락이 있는 미검증 코드였다.
+- Windows 크레딧 응답은 하나 이상의 유효한 비음수 수치를 요구한다. 한도와 사용/잔여량으로 비율을 계산할 수 없으면 primary를 nil로 유지하며 0%를 만들지 않는다.
+- 구독 조회 가용성을 snapshot에 보존하고 Windows 웹 결과에 구독 정보 누락/비율 미확인 진단을 전달한다. Windows 날짜 표시는 Foundation DateFormatter로 분기한다.
+- 남은 소요: 원시 크레딧 잔액 표시 확장, 실제 전체 가져오기 검증, Chromium/Windsurf 지원 및 전체 계획 나머지.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·UI·API 검증 미실행.

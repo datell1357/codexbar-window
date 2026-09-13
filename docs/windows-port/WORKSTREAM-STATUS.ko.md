@@ -1,5 +1,7 @@
 # Windows 전용 제품 작업 현황
 
+- IMPL-226: Augment Windows 조건부 경계를 수정하고 미확인 비율의 0% 표시를 제거하며 구독 조회 실패 안내를 연결했다. 이전 이식은 조건부 경계 누락을 포함한 미검증 상태였다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
 - IMPL-225: Augment Firefox 가져오기 트레이 시작/취소/후보 선택/이름 입력/저장 결과 UI를 연결했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
 
 - IMPL-224: Augment 가져오기 runtime의 후보 확인/5분 만료/설정 변경 감지/보호 계정 저장을 연결했다. UI 미연결. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.

@@ -188,9 +188,22 @@ struct AugmentStatusFetchStrategy: ProviderFetchStrategy {
             ? { msg in CodexBarLog.logger(LogCategories.provider(.augment)).verbose(msg) }
             : nil
         let snap = try await probe.fetch(cookieHeaderOverride: manual, logger: logger)
+        #if os(Windows)
+        let usage = snap.toUsageSnapshot()
+        var notes: [String] = []
+        if snap.subscriptionAvailable == false {
+            notes.append("Credits loaded, but subscription identity and billing details are unavailable.")
+        }
+        if usage.primary == nil {
+            notes.append("Credit amounts are available, but the usage percentage cannot be determined without a valid limit.")
+        }
+        return self.makeResult(usage: usage, sourceLabel: "web",
+            diagnostic: notes.isEmpty ? nil : notes.joined(separator: " "))
+        #else
         return self.makeResult(
             usage: snap.toUsageSnapshot(),
             sourceLabel: "web")
+        #endif
     }
 
     func shouldFallback(on _: Error, context _: ProviderFetchContext) -> Bool {

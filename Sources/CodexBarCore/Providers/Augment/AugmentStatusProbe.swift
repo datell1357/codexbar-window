@@ -186,6 +186,7 @@ public struct AugmentStatusSnapshot: Sendable {
     public let accountEmail: String?
     public let accountPlan: String?
     public let rawJSON: String?
+    public let subscriptionAvailable: Bool?
 
     public init(
         creditsRemaining: Double?,
@@ -194,7 +195,8 @@ public struct AugmentStatusSnapshot: Sendable {
         billingCycleEnd: Date?,
         accountEmail: String?,
         accountPlan: String?,
-        rawJSON: String?)
+        rawJSON: String?,
+        subscriptionAvailable: Bool? = nil)
     {
         self.creditsRemaining = creditsRemaining
         self.creditsUsed = creditsUsed
@@ -203,9 +205,23 @@ public struct AugmentStatusSnapshot: Sendable {
         self.accountEmail = accountEmail
         self.accountPlan = accountPlan
         self.rawJSON = rawJSON
+        self.subscriptionAvailable = subscriptionAvailable
     }
 
     public func toUsageSnapshot() -> UsageSnapshot {
+        #if os(Windows)
+        let primary: RateWindow?
+        if let limit = self.creditsLimit, limit.isFinite, limit > 0,
+           let amount = self.creditsUsed ?? self.creditsRemaining,
+           amount.isFinite, amount >= 0 {
+            let used = self.creditsUsed == nil ? limit - amount : amount
+            let percent = (used / limit) * 100
+            primary = percent.isFinite ? RateWindow(
+                usedPercent: max(0, min(100, percent)), windowMinutes: nil,
+                resetsAt: self.billingCycleEnd,
+                resetDescription: self.billingCycleEnd.map { "Resets \(Self.formatResetDate($0))" }) : nil
+        } else { primary = nil }
+        #else
         let percentUsed: Double = if let used = self.creditsUsed, let limit = self.creditsLimit, limit > 0 {
             (used / limit) * 100.0
         } else if let remaining = self.creditsRemaining, let limit = self.creditsLimit, limit > 0 {
@@ -219,6 +235,8 @@ public struct AugmentStatusSnapshot: Sendable {
             windowMinutes: nil,
             resetsAt: self.billingCycleEnd,
             resetDescription: self.billingCycleEnd.map { "Resets \(Self.formatResetDate($0))" })
+        
+        #endif
 
         let identity = ProviderIdentitySnapshot(
             providerID: .augment,
@@ -236,14 +254,19 @@ public struct AugmentStatusSnapshot: Sendable {
     }
 
     private static func formatResetDate(_ date: Date) -> String {
+        #if os(Windows)
+        let formatter = DateFormatter()
+        formatter.dateStyle = .medium
+        formatter.timeStyle = .short
+        return formatter.string(from: date)
+        #else
         let formatter = RelativeDateTimeFormatter()
         formatter.locale = Locale(identifier: "en_US")
         formatter.unitsStyle = .full
         return formatter.localizedString(for: date, relativeTo: Date())
+        #endif
     }
 }
-
-#endif
 
 // MARK: - Augment Status Probe Error
 
@@ -397,6 +420,8 @@ public actor AugmentSessionStore {
         }
     }
 }
+
+#endif
 
 // MARK: - Augment Status Probe
 
@@ -572,6 +597,12 @@ public struct AugmentStatusProbe: Sendable {
         let decoder = JSONDecoder()
         do {
             let response = try decoder.decode(AugmentCreditsResponse.self, from: data)
+            #if os(Windows)
+            let values = [response.credits, response.creditsUsed, response.creditsLimit].compactMap { $0 }
+            guard !values.isEmpty, values.allSatisfy({ $0.isFinite && $0 >= 0 }) else {
+                throw AugmentStatusProbeError.parseFailed("No valid credit amounts were returned.")
+            }
+            #endif
             return (response, rawJSON)
         } catch {
             #if os(Windows)
@@ -658,7 +689,8 @@ public struct AugmentStatusProbe: Sendable {
             billingCycleEnd: billingCycleEnd,
             accountEmail: subscription?.email,
             accountPlan: subscription?.planName,
-            rawJSON: combinedJSON)
+            rawJSON: combinedJSON,
+            subscriptionAvailable: subscription != nil)
     }
 
     /// Debug probe that returns raw API responses
