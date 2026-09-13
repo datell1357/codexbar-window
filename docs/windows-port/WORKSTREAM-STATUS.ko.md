@@ -1,5 +1,7 @@
 # Windows 전용 제품 작업 현황
 
+- IMPL-135: Core 비용 snapshot/activity를 Windows spend 입력으로 바꾸는 loader adapter를 작성했다. 설정/Main 연결은 남아 있다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
 - IMPL-134: spend scan lifecycle·옵션 재집계·stale/share 제한 controller를 작성했다. 실제 loader/UI 연결은 남아 있다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
 
 - IMPL-133: 원본 SpendDashboardModel 및 ShareStats payload/builder/formatting을 Windows 모델로 이식했다. 수집·UI 연결은 남아 있다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.

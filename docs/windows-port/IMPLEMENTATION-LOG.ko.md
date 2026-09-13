@@ -1792,3 +1792,13 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - 실패 시 이전 model은 stale로 유지하며 generic 실패 enum을 게시한다. refreshing/failed 상태에는 share payload를 제공하지 않는다. 중복 source ID는 성공 데이터로 받아들이지 않는다.
 
 남은 범위: 실제 비용 snapshot loader·account invalidation·Main/host 연결, native dashboard와 share renderer/export, 통화 데이터 availability·Windows 실행 검증 및 전체 기능 구현. 아직 실행 경로에서 인스턴스화되지 않는다.
+
+## IMPL-135 — Core 비용 snapshot loader adapter
+
+상태 CODE_WRITTEN_UNVERIFIED. 컴파일/빌드/테스트/비용 scan·인증·파일/검증 미실시. guidelines/COMMITS.md 부재로 핵심 커밋 규칙을 적용한다.
+
+- 캡처된 source별 provider/환경/home/cache/cookie 옵션을 받아 CostUsageFetcher.loadTokenSnapshot을 호출하는 controller loader adapter를 작성했다. source ID 중복/빈 값은 거절한다.
+- Codex는 명시적 home을 요구하고 scoped environment를 사용한다. 동일 시각/calendar/historyDays의 optional cached activity를 순차로 읽어 partial coverage 모델에 전달한다.
+- 취소를 각 scan/optional activity 이후 확인하며 required scan 실패는 controller의 실패 상태로 전달한다. 환경/cookie는 출력하지 않는다. provider 지원 여부는 Core의 계약을 따르며 가짜 결과를 만들지 않는다.
+
+남은 범위: config/managed/live/profile에서 Source를 만드는 resolver, 캐시 소유권 경로·provider cost 설정·OpenCodeX 입력, Main/host/dashboard/share 화면, per-source 부분 실패 표현, Windows 실행 검증. 실제 수집은 실행하지 않았다.
