@@ -731,6 +731,205 @@ public actor WindowsUsageRuntime {
         } catch { return .failed }
     }
 
+    public struct AugmentBrowserChoice: Sendable {
+        public let id: UUID
+        public let title: String
+    }
+    public enum AugmentBrowserImportResult: Sendable {
+        case choices(requestID: UUID, rows: [AugmentBrowserChoice], failedCount: Int, omittedCount: Int, privacy: Bool, expires: Date)
+        case unavailable(String)
+    }
+    private struct PendingAugmentBrowserImport {
+        let id: UUID
+        let expires: Date
+        let revision: Data
+        let selectedID: UUID?
+        let privacy: Bool
+        let candidates: [UUID: WindowsAugmentBrowserSessionImporter.ValidatedCandidate]
+    }
+    private var augmentBrowserExpiryTask: Task<Void, Never>?
+    private var augmentBrowserValidationTask: Task<WindowsAugmentBrowserSessionImporter.ValidatedCandidate, Error>?
+    private var augmentBrowserImportRequest: UUID?
+    private var augmentBrowserDiscoveryTask: Task<WindowsAugmentBrowserSessionImporter.Discovery, Error>?
+    private var pendingAugmentBrowserImport: PendingAugmentBrowserImport?
+
+    private func augmentImportRevision() throws -> (Data, UUID?)? {
+        guard let config = try self.configStore.load(), config.enabledProviders().contains(UsageProvider.augment.instanceID),
+              let entry = config.providerConfig(for: UsageProvider.augment.instanceID) else { return nil }
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        let revision = Data(SHA256.hash(data: try encoder.encode(entry)))
+        let accounts = entry.tokenAccounts
+        let selected = accounts.flatMap { $0.accounts.isEmpty ? nil : $0.accounts[$0.clampedActiveIndex()].id }
+        return (revision, selected)
+    }
+
+    public func discoverAugmentBrowserAccounts(requestID: UUID = UUID()) async -> AugmentBrowserImportResult {
+        guard !Task.isCancelled else { return .unavailable("The browser import was cancelled.") }
+        guard !self.shuttingDown, self.refreshTask == nil else { return .unavailable("Wait for the current refresh to finish.") }
+        self.cancelAugmentBrowserImport()
+        self.augmentBrowserImportRequest = requestID
+        self.pendingAugmentBrowserImport = nil
+        defer {
+            if self.pendingAugmentBrowserImport?.id != requestID {
+                self.cancelAugmentBrowserImport(requestID: requestID)
+            }
+        }
+        let privacy = WindowsUsagePresentationSettings.load().hidePersonalInfo
+        do {
+            guard let (revision, selected) = try self.augmentImportRevision() else { return .unavailable("Enable Augment before importing an account.") }
+            let deadline = Date().addingTimeInterval(60)
+            let importer = WindowsAugmentBrowserSessionImporter()
+            // Profile enumeration and SQLite reads must not occupy the usage runtime actor.
+            let discoveryTask = Task.detached(priority: .utility) {
+                try importer.discover(deadline: deadline)
+            }
+            self.augmentBrowserDiscoveryTask = discoveryTask
+            defer {
+                if self.augmentBrowserImportRequest == requestID { self.augmentBrowserDiscoveryTask = nil }
+            }
+            let discovery = try await withTaskCancellationHandler {
+                try await discoveryTask.value
+            } onCancel: {
+                discoveryTask.cancel()
+            }
+            try Task.checkCancellation()
+            guard !self.shuttingDown, self.augmentBrowserImportRequest == requestID else {
+                return .unavailable("The browser import was cancelled or replaced.")
+            }
+            var validated: [UUID: WindowsAugmentBrowserSessionImporter.ValidatedCandidate] = [:]
+            var rows: [AugmentBrowserChoice] = []
+            var failures = discovery.failedProfileCount
+            var attempted = 0
+            var seenSessions = Set<Data>()
+            for candidate in discovery.candidates.prefix(16) {
+                try Task.checkCancellation()
+                guard Date() < deadline else { break }
+                guard !self.shuttingDown, self.augmentBrowserImportRequest == requestID,
+                      try self.augmentImportRevision()?.0 == revision,
+                      WindowsUsagePresentationSettings.load().hidePersonalInfo == privacy else {
+                    return .unavailable("Augment accounts or privacy settings changed. Start the import again.")
+                }
+                attempted += 1
+                // Only collapse identical session headers. A user ID alone does not identify
+                // a team context, so different sessions for the same user remain selectable.
+                let fingerprint = Data(SHA256.hash(data: Data(candidate.cookieHeader.utf8)))
+                guard seenSessions.insert(fingerprint).inserted else { continue }
+                do {
+                    let validationTask = Task.detached(priority: .utility) {
+                        try await importer.validate(candidate, deadline: deadline)
+                    }
+                    self.augmentBrowserValidationTask = validationTask
+                    defer {
+                        if self.augmentBrowserImportRequest == requestID { self.augmentBrowserValidationTask = nil }
+                    }
+                    let result = try await withTaskCancellationHandler {
+                        try await validationTask.value
+                    } onCancel: {
+                        validationTask.cancel()
+                    }
+                    try Task.checkCancellation()
+                    guard !self.shuttingDown, self.augmentBrowserImportRequest == requestID else {
+                        return .unavailable("The browser import was cancelled or replaced.")
+                    }
+                    let id = UUID()
+                    validated[id] = result
+                    let label = privacy ? "Augment account \(rows.count + 1)" :
+                        result.accountEmail
+                    let safe = String(LogRedactor.redact(label).unicodeScalars.filter { $0.value >= 32 && $0.value != 127 }.map(String.init).joined().prefix(160))
+                    let source = privacy ? "Firefox session \(rows.count + 1)" :
+                        String(LogRedactor.redact(result.candidate.sourceLabel).unicodeScalars
+                            .filter { $0.value >= 32 && $0.value != 127 }.map(String.init).joined().prefix(120))
+                    rows.append(.init(id: id, title: safe + " — " + source))
+                } catch is CancellationError { throw CancellationError() }
+                catch let error as URLError where error.code == .timedOut {
+                    failures += 1
+                    break
+                }
+                catch { failures += 1 }
+            }
+            try Task.checkCancellation()
+            guard !self.shuttingDown, self.augmentBrowserImportRequest == requestID,
+                  try self.augmentImportRevision()?.0 == revision,
+                  WindowsUsagePresentationSettings.load().hidePersonalInfo == privacy else {
+                return .unavailable("Augment accounts or privacy settings changed. Start the import again.")
+            }
+            guard !rows.isEmpty else {
+                if Date() >= deadline {
+                    return .unavailable("Augment browser import reached its time limit. Check connectivity and retry.")
+                }
+                return .unavailable("No Firefox Augment session could be verified. Sign in to app.augmentcode.com in Firefox and retry.")
+            }
+            let expires = Date().addingTimeInterval(300)
+            self.pendingAugmentBrowserImport = .init(id: requestID, expires: expires,
+                revision: revision, selectedID: selected, privacy: privacy, candidates: validated)
+            self.augmentBrowserExpiryTask?.cancel()
+            self.augmentBrowserExpiryTask = Task { [weak self] in
+                do { try await Task.sleep(nanoseconds: 300_000_000_000) }
+                catch { return }
+                guard !Task.isCancelled else { return }
+                await self?.cancelAugmentBrowserImport(requestID: requestID)
+            }
+            return .choices(requestID: requestID, rows: rows, failedCount: failures,
+                            omittedCount: discovery.candidates.count - attempted, privacy: privacy, expires: expires)
+        } catch {
+            return .unavailable("Augment browser import did not complete. Retry after checking Firefox access.")
+        }
+    }
+
+    public func cancelAugmentBrowserImport(requestID: UUID? = nil) {
+        if let requestID, self.augmentBrowserImportRequest != requestID { return }
+        self.augmentBrowserExpiryTask?.cancel()
+        self.augmentBrowserExpiryTask = nil
+        self.augmentBrowserValidationTask?.cancel()
+        self.augmentBrowserValidationTask = nil
+        self.augmentBrowserDiscoveryTask?.cancel()
+        self.augmentBrowserDiscoveryTask = nil
+        self.augmentBrowserImportRequest = nil
+        self.pendingAugmentBrowserImport = nil
+    }
+
+    public func importAugmentBrowserAccount(requestID: UUID, candidateID: UUID, label: String) -> WindowsTokenAccountAddResult {
+        guard !self.shuttingDown else { return .shuttingDown }
+        guard self.refreshTask == nil else { return .refreshInProgress }
+        guard let pending = self.pendingAugmentBrowserImport, pending.id == requestID,
+              pending.expires > Date(), pending.privacy == WindowsUsagePresentationSettings.load().hidePersonalInfo,
+              let candidate = pending.candidates[candidateID] else { return .staleSelection }
+        do {
+            guard try self.augmentImportRevision()?.0 == pending.revision else { return .staleSelection }
+            let providerID = UsageProvider.augment.instanceID
+            let existingAccounts = try self.configStore.load()?.providerConfig(for: providerID)?.tokenAccounts?.accounts ?? []
+            // Email is not a stable account ID. Reuse only the exact same verified
+            // session credential, without assigning an external identifier or changing metadata.
+            if let existing = existingAccounts.first(where: {
+                $0.externalIdentifier == nil &&
+                    CookieHeaderNormalizer.normalize($0.token) == candidate.candidate.cookieHeader &&
+                    $0.usageScope == nil && $0.organizationID == nil && $0.workspaceID == nil
+            }) {
+                let selection = self.selectTokenAccount(providerID: providerID, accountID: existing.id,
+                                                        expectedSelectedID: pending.selectedID)
+                switch selection {
+                case .saved, .unchanged:
+                    self.cancelAugmentBrowserImport(requestID: requestID)
+                    return .alreadyAdded(existing.id)
+                case .staleSelection: return .staleSelection
+                case .refreshInProgress: return .refreshInProgress
+                case .unavailable: return .unavailable
+                case .shuttingDown: return .shuttingDown
+                case .failed: return .failed
+                }
+            }
+            let result = self.addTokenAccount(.init(providerID: UsageProvider.augment.instanceID, accountID: candidateID,
+                label: label, token: candidate.candidate.cookieHeader, usageScope: nil, organizationID: nil,
+                workspaceID: nil, expectedSelectedID: pending.selectedID))
+            switch result {
+            case .saved, .alreadyAdded: self.cancelAugmentBrowserImport()
+            default: break
+            }
+            return result
+        } catch { return .failed }
+    }
+
     public func addTokenAccount(_ request: WindowsTokenAccountAddRequest) -> WindowsTokenAccountAddResult {
         self.addTokenAccount(request, verifiedExternalIdentifier: nil)
     }
@@ -1947,6 +2146,7 @@ public actor WindowsUsageRuntime {
         guard !self.shuttingDown else { return }
         self.shuttingDown = true
         self.cancelCursorBrowserImport()
+        self.cancelAugmentBrowserImport()
         self.queuedSpendRefresh = false
         self.spendGeneration &+= 1
         self.spendSnapshot = nil

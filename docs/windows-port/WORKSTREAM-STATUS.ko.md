@@ -1,5 +1,7 @@
 # Windows 전용 제품 작업 현황
 
+- IMPL-224: Augment 가져오기 runtime의 후보 확인/5분 만료/설정 변경 감지/보호 계정 저장을 연결했다. UI 미연결. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
 - IMPL-223: Augment Firefox 프로필/partition별 후보 발견·API 확인 backend를 작성했다. UI/저장 미연결. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
 
 - IMPL-222: Auggie 명시 경로의 다른 PATH 설치 fallback을 차단하고 Windows CLI 실패를 보존한다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.

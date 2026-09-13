@@ -2615,3 +2615,12 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - 실제 브라우저/API 접근이나 계정 저장을 실행하지 않았다. 후보 선택/만료 ticket/보호 저장 UI는 아직 미연결이며 자동 가져오기 완료로 간주하지 않는다.
 - 남은 소요: Augment 가져오기 runtime/UI/보호 저장, Chromium 지원, Windsurf 자동 가져오기 및 전체 계획 나머지.
 - CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·브라우저·API 검증 미실행.
+
+## IMPL-224 — Augment 가져오기 runtime과 저장
+
+- Augment 전용 후보 DTO, 요청 상태, discovery/validation task, 만료 task와 취소 API를 WindowsUsageRuntime에 추가한다. SQLite 탐색을 utility task로 분리하고 상위 취소/종료를 전달한다.
+- 전체 60초/최대 16개 후보 확인을 적용한다. 동일 쿠키 헤더는 중복 확인하지 않으며 실패/미확인 후보 수를 반환한다. 표시 이메일/프로필은 redactor와 개인정보 표시 설정을 적용한다.
+- 선택 ticket은 5분이며 provider config 지문/선택 계정/개인정보 설정을 저장 전에 다시 확인한다. 동일 credential이고 별도 scope가 없는 저장 계정은 메타데이터를 덮지 않고 선택한다.
+- 이메일을 stable external ID로 저장하지 않는다. 새 계정은 기존 보호 계정 추가 API에 수동 쿠키로 전달한다. 실패한 탐색의 request 상태를 정리하고 종료 시 task와 후보를 철회한다.
+- 남은 소요: 트레이 시작/취소/후보 선택 UI 연결과 실제 동작 확인, Chromium/Windsurf 가져오기 및 전체 계획 나머지.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·브라우저·API·보호 저장 검증 미실행.
