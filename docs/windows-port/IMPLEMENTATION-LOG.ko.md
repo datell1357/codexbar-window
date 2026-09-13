@@ -2968,3 +2968,12 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - 이는 LOCK을 준수하는 닫힌 브라우저 DB를 대상으로 한다. 실행 중 브라우저 강제 종료나 온라인 snapshot은 구현하지 않았다.
 - 남은 소요: Chromium origin/key/value 변환, Windsurf session 검증/UI, 추가 compression 및 전체 계획 나머지.
 - CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·실제 LOCK/브라우저 파일 조회 미실행.
+
+## IMPL-265 — Chromium localStorage 문자열과 origin 해석
+
+- schema 1 VERSION을 확인하고 정확한 origin + NUL 경계 안에서 요청한 ASCII 키만 반환하는 decoder를 작성했다. partitioned storage key를 일반 origin에 합치지 않는다.
+- Latin-1/Windows little-endian UTF-16을 처리하고 잘못된 형식, 홀수 UTF-16 길이, 미완성 surrogate, 중복 해석 키를 거부한다. 삭제 mutation은 반환하지 않는다.
+- 문자열 4MiB, 반환 값 합계 1MiB, 요청 키 64개 제한과 취소 처리를 포함한다. 인증 문자열을 임의 치환하거나 정규화하지 않는다.
+- 원본 형식 근거: https://raw.githubusercontent.com/chromium/chromium/main/third_party/blink/renderer/modules/storage/cached_storage_area.cc 및 https://chromium.googlesource.com/chromium/src/+/4c9cdacbe6ebc7a1b5092c5e34fd1b932d4a0bdb/components/services/storage/dom_storage/local_storage_impl.cc . 현재 설치 브라우저의 schema 호환성을 검증한 것은 아니다.
+- 남은 소요: Windsurf profile/origin별 후보 구성과 API/UI 연결, 추가 압축 지원 및 전체 계획 나머지.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·브라우저 데이터 읽기 미실행.

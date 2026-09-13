@@ -1,5 +1,7 @@
 # Windows 전용 제품 작업 현황
 
+- IMPL-265: Chromium schema 1의 정확한 origin 경계와 Latin-1/UTF-16 문자열 decoder를 작성했다. Windsurf 후보 및 UI 연결은 남아 있다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
 - IMPL-264: 잠금 안에서 CURRENT/manifest/table/WAL을 읽고 최신 mutation 상태를 복원하도록 연결했다. Chromium 문자열/세션 변환은 남아 있다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
 
 - IMPL-263: LevelDB 파일을 한 Windows 핸들로 크기 제한/EOF/변경 검사를 포함해 읽는 모듈을 작성했다. DB 통합은 남아 있다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
