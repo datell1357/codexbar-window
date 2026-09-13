@@ -1286,3 +1286,13 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winus
 - 일반 메시지와 세션 전용 설명을 분리해 clipboard 오류에 세션 새로고침 안내가 붙지 않도록 수정했다.
 
 남은 범위: 스크롤/선택 가능한 full detail card, 계정 선택·그래프·개별 action 통합, 접근성/DPI/localization 및 Windows UI/ABI 검증. 텍스트 대화상자는 전체 상세 카드 완료를 의미하지 않는다.
+
+## IMPL-085 — 스크롤·선택 가능한 공급자 상세 창
+
+상태 CODE_WRITTEN_UNVERIFIED. 빌드/컴파일/테스트/Win32/UI/clipboard 검증 미실시. guidelines/COMMITS.md 부재로 핵심 커밋 규칙을 적용한다.
+
+- WindowsProviderDetailsDialog에 크기 조절 가능한 소유 창과 읽기 전용 multiline EDIT, 수직 스크롤, 텍스트 선택, Ctrl+A, Close/Escape 동작을 작성했다. 표준 EDIT의 선택 복사 동작을 사용하며 내용을 편집하거나 자동으로 clipboard에 쓰지 않는다.
+- popup 시점의 redacted 사본을 전달하며 12,000자 표시 잘림을 제거했다. 입력은 기존 공급자별 copy text 크기 제한을 따르고 줄바꿈을 CRLF로 통일한다.
+- 창 닫힘 시 owner 활성 상태 복원, WM_QUIT 재전달, 메시지 루프/컨트롤 생성 실패 처리, 기존 editor 중복 진입 차단을 연결했다.
+
+남은 범위: rich detail card/그래프/계정 선택과 개별 action 통합, DPI별 배치·최소 창 크기·접근성·지역화, 선택 복사/긴 텍스트/메시지 루프의 Windows ABI 및 런타임 검증. WIN-010 또는 전체 제품 완료를 의미하지 않는다.

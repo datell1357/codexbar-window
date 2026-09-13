@@ -794,13 +794,10 @@ public final class WindowsTrayHost: @unchecked Sendable {
                 if let usage = entry.usageCopyText { sections.append("Usage\r\n" + usage) }
                 if let error = entry.errorCopyText { sections.append("Fetch error\r\n" + error) }
                 let body = sections.joined(separator: "\r\n\r\n")
-                let bounded = body.count > 12_000
-                    ? String(body.prefix(12_000)) + "\r\n\r\nDisplay shortened. Use the provider copy menu for the available full text."
-                    : body
                 let command = Self.providerDetailsCommandBase + UINT_PTR(index)
                 if title.replacingOccurrences(of: "&", with: "&&").withCString(encodedAs: UTF16.self, {
                     AppendMenuW(detailsMenu, UINT(MF_STRING), command, $0)
-                }) != 0 { commands[command] = (title, bounded) }
+                }) != 0 { commands[command] = (title, body) }
             }
             let attached = !commands.isEmpty && "Provider &details".withCString(encodedAs: UTF16.self) {
                 AppendMenuW(menu, UINT(MF_STRING | MF_POPUP), UINT_PTR(UInt(bitPattern: detailsMenu)), $0) != 0
@@ -1308,6 +1305,20 @@ public final class WindowsTrayHost: @unchecked Sendable {
                          caption: caption)
     }
 
+    private func showProviderDetails(_ body: String, title: String) {
+        guard !self.remoteEditorOpen, !self.quitInvoked, let window = self.window,
+              case .idle = self.providerEditorPhase, case .idle = self.codexWebSettingsEditorPhase else { return }
+        self.remoteEditorOpen = true
+        let shown = WindowsProviderDetailsDialog.show(
+            owner: window, title: title,
+            text: "Redacted snapshot from the opened menu. Refresh usage to update.\r\n\r\n" + body)
+        self.remoteEditorOpen = false
+        if !self.quitInvoked {
+            PostMessageW(window, Self.wakeMessage, 0, 0)
+            if !shown { self.showMessage("Could not open provider details.", caption: "Provider details") }
+        }
+    }
+
     private func showMessage(_ body: String, caption: String) {
         guard !self.remoteEditorOpen, !self.quitInvoked, let window = self.window,
               case .idle = self.providerEditorPhase, case .idle = self.codexWebSettingsEditorPhase else { return }
@@ -1757,8 +1768,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
                 self.showMessage("Privacy settings changed. Reopen the menu to view current details.", caption: "Provider details")
                 return
             }
-            self.showMessage("Redacted snapshot from the opened menu. Refresh usage to update.\r\n\r\n" + details.body,
-                             caption: details.title)
+            self.showProviderDetails(details.body, title: details.title)
             return
         }
         if let text = self.popupCopyErrors[command], let owner = self.window {
