@@ -3080,3 +3080,11 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - 파일 내용/재귀 디렉터리는 읽지 않는다. 네이티브 파일 시스템 호출 자체의 응답 지연을 강제 중단하는 기능은 아니다.
 - 남은 소요: 추가 브라우저/압축 및 전체 계획 나머지.
 - CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·실제 파일/브라우저 실행 미실행.
+
+## IMPL-278 — Windows hook 실행 취소
+
+- W13 Hooks의 기존 실행기에서 취소 이후 다음 규칙을 계속 실행할 수 있는 경로를 수정했다.
+- Windows에서 환경/입력 준비 및 subprocess 실행 직전 취소를 확인한다. dispatch는 규칙별 실행 전과 완료 후 취소를 확인하고 CancellationError를 일반 실패로 삼아 다음 규칙으로 진행하지 않는다.
+- payload 생성/크기 제한 실패를 포함한 반환 경로에서 stdin 파이프 양쪽 핸들을 닫도록 Windows 전용 defer를 추가했다.
+- 남은 소요: Windows runtime 이벤트/설정 및 종료 작업 관리 연결, 전체 훅 시나리오와 나머지 계획. 이 변경만으로 Hooks 기능이 연결된 것은 아니다.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·외부 명령 실행 미실행.

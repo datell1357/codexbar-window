@@ -29,6 +29,7 @@ public enum HookRunner {
         baseEnvironment: [String: String] = ProcessInfo.processInfo.environment) async throws -> SubprocessResult
     {
         #if os(Windows)
+        try Task.checkCancellation()
         // Windows environment names are case-insensitive. Keep a narrow allowlist:
         // SystemRoot is needed by Windows child processes; never forward the entire environment.
         let windowsKeys: Set<String> = [
@@ -49,7 +50,16 @@ public enum HookRunner {
             environment[key] = value
         }
 
+        #if os(Windows)
+        try Task.checkCancellation()
+        #endif
         let stdin = Pipe()
+        #if os(Windows)
+        defer {
+            try? stdin.fileHandleForReading.close()
+            try? stdin.fileHandleForWriting.close()
+        }
+        #endif
         let payload = try event.jsonPayload()
         guard payload.count <= Self.maximumPayloadBytes else {
             throw HookRunnerError.payloadTooLarge
@@ -59,6 +69,9 @@ public enum HookRunner {
         stdin.fileHandleForWriting.write(payload)
         try? stdin.fileHandleForWriting.close()
 
+        #if os(Windows)
+        try Task.checkCancellation()
+        #endif
         return try await SubprocessRunner.run(
             binary: rule.executable,
             arguments: rule.arguments,
@@ -77,6 +90,9 @@ public enum HookRunner {
         rateLimiter: HookRateLimiter,
         baseEnvironment: [String: String] = ProcessInfo.processInfo.environment) async
     {
+        #if os(Windows)
+        guard !Task.isCancelled else { return }
+        #endif
         let rules = config.matchingRules(for: event)
         guard !rules.isEmpty else { return }
         // Quota events already dedupe upstream (threshold-crossing, depletion, and
@@ -88,8 +104,14 @@ public enum HookRunner {
             return
         }
         for rule in rules {
+            #if os(Windows)
+            guard !Task.isCancelled else { return }
+            #endif
             do {
                 _ = try await self.run(rule: rule, event: event, baseEnvironment: baseEnvironment)
+                #if os(Windows)
+                guard !Task.isCancelled else { return }
+                #endif
                 self.log.info(
                     "ran hook",
                     metadata: [
@@ -97,6 +119,9 @@ public enum HookRunner {
                         "provider": "\(event.provider)",
                     ])
             } catch {
+                #if os(Windows)
+                if Task.isCancelled || error is CancellationError { return }
+                #endif
                 // Redacted: never log hook stderr (it can echo the payload/env). Log
                 // only the event and a coarse failure reason.
                 self.log.warning(
