@@ -547,3 +547,21 @@
 2. 동기 ReadFile이 deadline 내 반환함을 보장하지 않으며 실제 Windows 지연/성능·표시 동작은 미검증이다. SQLite/WAL·소유권 및 전체 기능/배포 검증은 남아 있다.
 
 다음 구현: session metadata 구현에서 남은 증분 cache를 bounded 상태로 도입하고, 파일 변경·source 설정 변경 시 무효화 규칙을 연결한다.
+
+## IMPL-028 — bounded title cache와 source 무효화
+
+상태: CODE_WRITTEN_UNVERIFIED. 빌드·컴파일·테스트·lint·앱·실제 source/계정 조회·검증 스크립트를 실행하지 않았다. 계약: WIN-040/042.
+
+작성한 코드:
+
+- runtime 소유 WindowsSessionTitleCache를 추가했다. 메모리만 사용하며64 entries/120초 TTL/8192-byte key/64 UUID 결과 한도를 두고 오래된 저장 항목부터 제거한다. NSLock으로 entry 접근을 보호한다.
+- JSONL title reader는 provider/path/requested UUID 집합별로 완료된 names/seen/unresolved를 보관한다. 캐시 hit에도 파일을 열어 volume/file ID/size/creation/mtime과 pathname/retained handle identity를 비교하고 deadline을 확인한다. 오류/미완료 읽기는 캐시하지 않는다.
+- runtime 설정 세대 변경과 roots 변경 시 cache 인스턴스를 교체한다. 이전 scan은 이전 인스턴스만 캡처하므로 늦은 작업이 새 source cache를 채우지 않는다. CLI 기본 호출은 cache nil이며 SQLite 결과는 캐시 대상에서 제외한다.
+
+남은 범위:
+
+1. 변경 없는 JSONL의 재파싱 회피이며 append-only 증분 파서는 아니다. file metadata가 바뀌면 suffix를 다시 읽는다. 같은 file identity/size/time을 의도적으로 보존한 내용 변경은 content hash 없이 감지하지 못할 수 있다.
+2. TTL은 재사용 제한이며 background 메모리 청소 timer는 없다. 인스턴스 교체/용량 eviction으로 정리하고 process 종료 시 소멸한다. 실제 lock/actor/cancel 수명과 성능·메모리·Windows 동작은 미검증이다.
+3. SQLite snapshot/WAL·source 소유권, 신규 추론 제목 및 전체 Windows 기능·배포 검증은 남아 있다.
+
+다음 구현: session metadata의 캐시 사용 상태와 수동 새로고침 시 캐시 우회 경로를 연결한다. 기능 완료나 성능 개선을 측정 결과처럼 보고하지 않는다.

@@ -92,6 +92,8 @@ public actor WindowsAgentSessionsRuntime {
     public func settingsDidChange() async {
         guard self.running else { return }
         self.generation &+= 1
+        self.titleCache = WindowsSessionTitleCache()
+        self.titleCacheRoots = nil
         self.pageIndex = 0
         self.enabled = self.defaults.object(forKey: "agentSessionsEnabled") as? Bool ?? false
         self.focusTask?.cancel()
@@ -134,9 +136,14 @@ public actor WindowsAgentSessionsRuntime {
             self.publish()
             return
         }
+        if self.titleCacheRoots != metadataRoots {
+            self.titleCache = WindowsSessionTitleCache()
+            self.titleCacheRoots = metadataRoots
+        }
+        let titleCache = self.titleCache
         let task = Task.detached(priority: .utility) {
             await WindowsAgentSessionScanner.scanOutcome(
-                nativeDirectoryReadEnabled: nativeDirectoryReadEnabled, metadataRoots: metadataRoots)
+                nativeDirectoryReadEnabled: nativeDirectoryReadEnabled, metadataRoots: metadataRoots, titleCache: titleCache)
         }
         self.scanTask = task
         self.publish()
@@ -206,6 +213,8 @@ public actor WindowsAgentSessionsRuntime {
         self.terminated = true
         self.enabled = false
         self.generation &+= 1
+        self.titleCache = WindowsSessionTitleCache()
+        self.titleCacheRoots = nil
         self.queuedRefresh = false
         let deferred = self.deferredRefreshTask
         self.deferredRefreshTask = nil
@@ -226,6 +235,9 @@ public actor WindowsAgentSessionsRuntime {
         await periodic?.value
         await deferred?.value
     }
+
+    private var titleCache = WindowsSessionTitleCache()
+    private var titleCacheRoots: WindowsSessionMetadataRoots?
 
     private func metadataRoots() throws -> WindowsSessionMetadataRoots {
         guard self.defaults.object(forKey: "windowsSessionMetadataEnabled") as? Bool ?? false else { return .none }

@@ -20,7 +20,8 @@ public enum WindowsAgentSessionScanner {
         config: SessionScanConfig = SessionScanConfig(),
         now: Date = Date(),
         nativeDirectoryReadEnabled: Bool = false,
-        metadataRoots: WindowsSessionMetadataRoots = .none) async -> WindowsSessionScanOutcome
+        metadataRoots: WindowsSessionMetadataRoots = .none,
+        titleCache: WindowsSessionTitleCache? = nil) async -> WindowsSessionScanOutcome
     {
         guard !Task.isCancelled else { return .init(status: .cancelled, sessions: [], message: nil) }
         guard config.maxProcessCount > 0 else {
@@ -112,7 +113,7 @@ public enum WindowsAgentSessionScanner {
         }
         let correlated = WindowsSessionMetadataCorrelator.enrich(
             sessions: sessions, requestedIDs: requestedIDs, roots: metadataRoots, config: config, now: now,
-            newSessionIDs: partialMessage == nil ? newSessionIDs : [])
+            newSessionIDs: partialMessage == nil ? newSessionIDs : [], titleCache: titleCache)
         if let notice = correlated.message {
             partialMessage = [partialMessage, notice].compactMap { $0 }.joined(separator: " ")
         }

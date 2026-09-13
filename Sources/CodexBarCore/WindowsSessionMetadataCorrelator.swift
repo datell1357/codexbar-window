@@ -68,7 +68,7 @@ enum WindowsSessionMetadataCorrelator {
 
     static func enrich(
         sessions: [AgentSession], requestedIDs: [String: String], roots: WindowsSessionMetadataRoots,
-        config: SessionScanConfig, now: Date, newSessionIDs: Set<String> = []) -> Result
+        config: SessionScanConfig, now: Date, newSessionIDs: Set<String> = [], titleCache: WindowsSessionTitleCache? = nil) -> Result
     {
         guard !roots.isEmpty else { return Result(sessions: sessions, message: nil) }
         let duration = config.directoryScanBudget.isFinite ? max(0, min(config.directoryScanBudget, 1)) : 0
@@ -156,7 +156,7 @@ enum WindowsSessionMetadataCorrelator {
             let fileDeadline = min(claudeDeadline, started.addingTimeInterval(share))
             attemptedClaudeTitles += 1
             do {
-                let names = try self.stableTitleNames(match.path, ids: [match.id], deadline: fileDeadline, claude: true)
+                let names = try self.stableTitleNames(match.path, ids: [match.id], deadline: fileDeadline, claude: true, cache: titleCache)
                 guard let latest = self.fileInfo(match.path), latest == match.info else { throw TitleReadFailure.changed }
                 try self.checkTitleDeadline(fileDeadline)
                 if !names.unresolvedIDs.isEmpty { claudeTitleFailures.insert(.outsideWindow) }
@@ -184,7 +184,7 @@ enum WindowsSessionMetadataCorrelator {
         if let titlePath = roots.codexTitleIndex, !matchedHeaders.isEmpty {
             let ids = Set(matchedHeaders.values.map { $0.sessionID.lowercased() })
             do {
-                let names = try self.stableTitleNames(titlePath, ids: ids, deadline: codexDeadline)
+                let names = try self.stableTitleNames(titlePath, ids: ids, deadline: codexDeadline, cache: titleCache)
                 databaseIDs = ids.subtracting(names.seenIDs).subtracting(names.unresolvedIDs)
                 if !names.unresolvedIDs.isEmpty {
                     notices.append("Codex titles: \(TitleReadFailure.outsideWindow.message)")
@@ -494,15 +494,10 @@ enum WindowsSessionMetadataCorrelator {
         if Date() >= deadline { throw TitleReadFailure.deadline }
     }
 
-    private struct TitleNames {
-        let names: [String: String]
-        let seenIDs: Set<String>
-        let unresolvedIDs: Set<String>
-        subscript(_ id: String) -> String? { self.names[id] }
-    }
+    private typealias TitleNames = WindowsSessionTitleCache.Value
 
     private static func stableTitleNames(
-        _ path: String, ids: Set<String>, deadline: Date, claude: Bool = false) throws -> TitleNames {
+        _ path: String, ids: Set<String>, deadline: Date, claude: Bool = false, cache: WindowsSessionTitleCache? = nil) throws -> TitleNames {
         try self.checkTitleDeadline(deadline)
         guard let absolute = WindowsSessionLaunchHints.absolutePath(path),
               let separator = absolute.lastIndex(of: "\\"),
@@ -516,6 +511,14 @@ enum WindowsSessionMetadataCorrelator {
         defer { CloseHandle(handle) }
         let maximumBytes = 1024 * 1024
         guard let before = self.fileInfo(handle: handle) else { throw TitleReadFailure.unavailable }
+        let cacheKey = (claude ? "claude|" : "codex|") + absolute + "|" + ids.sorted().joined(separator: ",")
+        let fingerprint = [UInt64(before.volume), before.index, before.size, before.createdTicks, before.modifiedTicks]
+        if ids.count <= 64, let hit = cache?.get(cacheKey, fingerprint: fingerprint) {
+            guard let current = self.fileInfo(absolute), current == before,
+                  let retained = self.fileInfo(handle: handle), retained == before else { throw TitleReadFailure.changed }
+            try self.checkTitleDeadline(deadline)
+            return hit
+        }
         let startOffset = before.size > UInt64(maximumBytes) ? before.size - UInt64(maximumBytes) : 0
         if startOffset > 0 {
             guard let offset = Int64(exactly: startOffset) else { throw TitleReadFailure.unavailable }
@@ -568,7 +571,9 @@ enum WindowsSessionMetadataCorrelator {
         guard let after = self.fileInfo(handle: handle), let current = self.fileInfo(absolute)
         else { throw TitleReadFailure.unavailable }
         guard before == after, current == after else { throw TitleReadFailure.changed }
-        return TitleNames(names: names, seenIDs: seenIDs, unresolvedIDs: startOffset > 0 ? ids.subtracting(seenIDs) : [])
+        let value = TitleNames(names: names, seenIDs: seenIDs, unresolvedIDs: startOffset > 0 ? ids.subtracting(seenIDs) : [])
+        if ids.count <= 64 { cache?.put(cacheKey, fingerprint: fingerprint, value: value) }
+        return value
     }
 
     private enum DatabaseReadFailure: Error {
