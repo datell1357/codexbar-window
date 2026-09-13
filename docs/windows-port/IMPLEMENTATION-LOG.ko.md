@@ -2504,3 +2504,11 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - OS 파일 열기/잠금 및 JSON 해석 내부는 즉시 중단을 보장하지 않는다. 기존 크기 제한과 busy timeout을 유지한다.
 - 남은 소요: 실제 Windows 취소 응답성, 브라우저 로그인 및 전체 계획 나머지 항목.
 - CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·실제 SQLite/취소 검증 미실행.
+
+## IMPL-211 — Windsurf 세션 필드 모호성
+
+- Windows는 accountID/accountId/devin_account_id 등 같은 필드의 별칭이 여러 개 있으면 동일한 비어 있지 않은 문자열인지 확인한다. 서로 다른 값이나 다른 타입이 섞이면 거부한다.
+- key/value 형식에서 같은 키에 서로 다른 값을 반복하면 거부한다. JSON처럼 시작한 입력이 JSON/필드 해석에 실패하면 key/value 형식으로 재해석하지 않는다.
+- macOS 파서 선택 규칙은 유지한다. JSON 객체 안의 정확히 같은 키 반복은 Foundation JSONSerialization의 해석에 따르며 별도 중복 키 검출은 아직 구현하지 않았다.
+- 남은 소요: JSON 동일 키 중복 검출, 브라우저 로그인 및 전체 계획 나머지 항목.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 파서 실행·빌드·테스트·lint·실제 API 검증 미실행.

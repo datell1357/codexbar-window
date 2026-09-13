@@ -240,6 +240,12 @@ public enum WindsurfWebFetcher {
             return auth
         }
 
+        #if os(Windows)
+        // JSON-looking input must not be reinterpreted as a permissive key/value bundle after failure.
+        if trimmed.hasPrefix("{") || trimmed.hasPrefix("[") {
+            throw WindsurfWebFetcherError.invalidManualSession("invalid or ambiguous JSON session bundle")
+        }
+        #endif
         if let auth = self.parseKeyValueSessionInput(trimmed) {
             return auth
         }
@@ -271,7 +277,11 @@ public enum WindsurfWebFetcher {
             guard let delimiter, let index = segment.firstIndex(of: delimiter) else { continue }
             let key = String(segment[..<index]).trimmingCharacters(in: .whitespacesAndNewlines)
             let value = String(segment[segment.index(after: index)...]).trimmingCharacters(in: .whitespacesAndNewlines)
-            values[key] = value.trimmingCharacters(in: CharacterSet(charactersIn: "\"'"))
+            let normalized = value.trimmingCharacters(in: CharacterSet(charactersIn: "\"'"))
+            #if os(Windows)
+            if let previous = values[key], previous != normalized { return nil }
+            #endif
+            values[key] = normalized
         }
 
         guard !values.isEmpty else { return nil }
@@ -318,6 +328,18 @@ public enum WindsurfWebFetcher {
 
     private static func sessionAuth(from values: [String: Any]) -> WindsurfDevinSessionAuth? {
         func stringValue(for keys: [String]) -> String? {
+            #if os(Windows)
+            var resolved: String?
+            for key in keys {
+                guard let raw = values[key] else { continue }
+                guard let value = raw as? String else { return nil }
+                let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !trimmed.isEmpty else { return nil }
+                if let resolved, resolved != trimmed { return nil }
+                resolved = trimmed
+            }
+            return resolved
+            #else
             for key in keys {
                 if let value = values[key] as? String {
                     let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -327,6 +349,7 @@ public enum WindsurfWebFetcher {
                 }
             }
             return nil
+            #endif
         }
 
         guard let sessionToken = stringValue(for: ["devin_session_token", "devinSessionToken", "sessionToken"]),
