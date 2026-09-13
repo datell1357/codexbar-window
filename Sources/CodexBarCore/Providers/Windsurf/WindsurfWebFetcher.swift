@@ -146,8 +146,13 @@ public enum WindsurfWebFetcher {
         manualSessionInput: String? = nil,
         timeout: TimeInterval = 15,
         logger: ((String) -> Void)? = nil,
-        session transport: any ProviderHTTPTransport = ProviderHTTPClient.shared) async throws -> UsageSnapshot
+        session suppliedTransport: (any ProviderHTTPTransport)? = nil) async throws -> UsageSnapshot
     {
+        #if os(Windows)
+        let transport = suppliedTransport ?? WindowsManualAccountHTTPTransport.shared
+        #else
+        let transport = suppliedTransport ?? ProviderHTTPClient.shared
+        #endif
         try Task.checkCancellation()
         let log: (String) -> Void = { msg in logger?("[windsurf-web] \(msg)") }
 

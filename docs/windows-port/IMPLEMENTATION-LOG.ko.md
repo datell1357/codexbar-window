@@ -2692,3 +2692,12 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - Windows Zed 네트워크/파싱 실패는 원본 URL/서버 응답 문자열을 담는 오류 대신 고정 문구를 반환한다.
 - 남은 소요: 실제 HTTP/리디렉션·계정 전환 검증, Zed 자동 인증/Chromium/Windsurf 지원 및 전체 계획 나머지.
 - CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·네트워크 검증 미실행.
+
+## IMPL-233 — Cursor/Windsurf 수동 세션 전송 격리
+
+- CursorStatusProbe initializer의 기본 전송을 선택적으로 받아 Windows에서는 WindowsManualAccountHTTPTransport, 다른 플랫폼에서는 기존 shared client를 선택한다. 주입된 transport는 변경하지 않는다.
+- Cursor Firefox 후보 확인도 기본 shared transport를 강제로 전달하지 않아 같은 Windows 격리가 적용된다.
+- Windsurf fetchUsage의 기본 Windows 전송 역시 명시 세션 헤더만 사용하도록 격리하며 기존 session: 호출 라벨과 macOS 기본 동작을 유지한다.
+- 본 변경은 Cursor 별도 비용 이벤트 수집기의 전송까지 완료했다는 의미가 아니다. 비용 수집 및 다른 제공자 경로는 별도 소요로 남는다.
+- 남은 소요: 실제 전송/계정 전환 검증, Zed 자동 인증/Chromium/Windsurf 가져오기 및 전체 계획 나머지.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·네트워크 검증 미실행.

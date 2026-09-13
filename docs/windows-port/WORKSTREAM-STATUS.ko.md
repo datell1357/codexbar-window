@@ -1,5 +1,7 @@
 # Windows 전용 제품 작업 현황
 
+- IMPL-233: Cursor 사용량/후보 확인과 Windsurf 수동 세션 HTTP의 Windows 기본 전송을 격리 경로에 연결했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
 - IMPL-232: Zed/Augment Windows 수동 계정 HTTP의 ambient 쿠키·캐시·URL 자격증명을 분리했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
 
 - IMPL-231: Zed Windows 자격증명에 선택적 HTTPS 서버 origin을 묶고 사용자 서버 조회를 연결했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
