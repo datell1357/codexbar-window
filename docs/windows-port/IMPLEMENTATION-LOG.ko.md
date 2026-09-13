@@ -1256,3 +1256,13 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winus
 - 기존 clipboard 크기/필터/실패 처리와 privacy 설정 변경 guard를 재사용한다. 자동 clipboard 접근은 하지 않는다.
 
 남은 범위: plugin 오류, 개별 계정 동시 표시 오류 선택, config/account resolution 단계 오류, 상세 카드와 copy action 전체 계약, redaction 완전성 및 Windows ABI/UI 검증. WIN-010 완료를 의미하지 않는다.
+
+## IMPL-082 — 플러그인 오류 복사
+
+상태 CODE_WRITTEN_UNVERIFIED. Swift 컴파일/빌드/테스트/plugin 실행/UI/clipboard/검증 실행 미실시. guidelines/COMMITS.md 부재로 핵심 커밋 규칙을 적용한다.
+
+- plugin fetch 실패 및 등록되지 않은 설정상 plugin의 오류를 ProviderInstanceID.rawValue로 저장하고 현재 refresh의 copy action으로 전달하도록 작성했다. 취소는 오류 복사 대상으로 만들지 않는다.
+- 플러그인 이름과 인스턴스 ID를 함께 표시해 같은 이름의 항목을 구분한다. 제목에 LogRedactor/NUL 제거/길이 상한을 적용하고 기존 popup escape와 clipboard 필터를 사용한다.
+- WindowsTrayMenuEntry에 statusVisible을 추가해 오류 전용 plugin entry가 허위 상태 페이지/대시보드 메뉴를 만들지 않도록 분리했다. 기본 first-party 상태 항목은 기존 동작을 유지한다.
+
+남은 범위: 계정별 동시 오류 선택, plugin별 dashboard/status 선언 연결, 제목·오류 redaction 범위, 상세 카드/UI 계약 및 전체 Windows 검증. plugin 기능 전체 또는 WIN-010 완료를 의미하지 않는다.

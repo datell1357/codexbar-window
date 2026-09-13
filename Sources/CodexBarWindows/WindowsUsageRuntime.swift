@@ -672,7 +672,19 @@ public actor WindowsUsageRuntime {
             let zaiUsageScope: ZaiUsageScope? = (try? accountContext.resolvedAccounts(for: .zai).first)
                 .flatMap { $0.sanitizedUsageScope.flatMap(ZaiUsageScope.init(rawValue:)) }
             self.statusMenuEntries = config.enabledProviders().compactMap { instanceID in
-                guard let provider = instanceID.firstPartyProvider else { return nil }
+                guard let provider = instanceID.firstPartyProvider else {
+                    guard let errorText = self.providerCopyErrors[instanceID.rawValue] else { return nil }
+                    let name = UserProviderPluginRegistry.plugin(for: instanceID)?.manifest.name ?? "Missing plugin"
+                    let title = LogRedactor.redact("\(name) [\(instanceID.rawValue)]")
+                        .replacingOccurrences(of: "\0", with: "")
+                    return WindowsTrayMenuEntry(
+                        providerID: instanceID.rawValue,
+                        title: String(title.prefix(160)),
+                        statusURL: nil,
+                        statusVisible: false,
+                        dashboardVisible: false,
+                        errorCopyText: errorText)
+                }
                 let metadata = ProviderDescriptorRegistry.descriptor(for: provider).metadata
                 let account = (try? accountContext.resolvedAccounts(for: provider).first) ?? nil
                 if account == nil { self.dashboardContextCache.removeValue(forKey: instanceID) }
@@ -1592,7 +1604,9 @@ public actor WindowsUsageRuntime {
 
     private func fetchPluginRows(instanceID: ProviderInstanceID, config: CodexBarConfig, presentationSettings: WindowsUsagePresentationSettings) async -> [String] {
         guard let plugin = UserProviderPluginRegistry.plugin(for: instanceID) else {
-            return ["\(instanceID.rawValue): plugin not found"]
+            let message = "\(instanceID.rawValue): plugin not found"
+            self.providerCopyErrors[instanceID.rawValue] = WindowsClipboard.summary(rows: [message])
+            return [message]
         }
         let providerConfig = config.providerConfig(for: instanceID)
         let settings = providerConfig?.pluginSettings ?? [:]
@@ -1615,6 +1629,8 @@ public actor WindowsUsageRuntime {
         } catch is CancellationError {
             return []
         } catch {
+            self.providerCopyErrors[instanceID.rawValue] = WindowsClipboard.summary(
+                rows: [plugin.manifest.name, instanceID.rawValue, error.localizedDescription])
             return ["\(plugin.manifest.name): \(error.localizedDescription)"]
         }
     }

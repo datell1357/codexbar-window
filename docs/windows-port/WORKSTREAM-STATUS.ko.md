@@ -1,5 +1,7 @@
 # Windows 전용 제품 작업 현황
 
+IMPL-082: Plugin-instance error copy and independent status visibility written; account-specific detail actions and Windows validation remain pending.
+
 IMPL-081: Current-refresh provider error copy actions written; plugin/account-specific actions and Windows validation remain pending.
 
 IMPL-080: Redacted tray summary clipboard action written; detail-card actions and Windows validation remain pending.

@@ -797,9 +797,10 @@ public final class WindowsTrayHost: @unchecked Sendable {
             if attached { self.popupCopyErrors = commands } else { _ = DestroyMenu(errorMenu) }
         }
         if !rows.isEmpty { _ = AppendMenuW(menu, UINT(MF_SEPARATOR), 0, nil) }
-        if !menuEntries.isEmpty, let statusMenu = CreatePopupMenu() {
+        let statusEntries = menuEntries.filter(\.statusVisible)
+        if !statusEntries.isEmpty, let statusMenu = CreatePopupMenu() {
             var statusItemsAppended = true
-            for (index, entry) in menuEntries.enumerated() {
+            for (index, entry) in statusEntries.enumerated() {
                 let command = Self.statusCommandBase + UINT_PTR(index)
                 self.popupStatusCommands[command] = entry.statusURL
                 let flags = UINT(MF_STRING) | (entry.isEnabled ? 0 : UINT(MF_GRAYED))

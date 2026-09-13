@@ -10,6 +10,7 @@ public struct WindowsTrayMenuEntry: Sendable, Equatable {
     public let providerID: String
     public let title: String
     public let statusURL: String?
+    public let statusVisible: Bool
     public let dashboardURL: String?
     /// Whether this provider should appear in the dashboard submenu. This is
     /// independent from status availability because some providers expose a
@@ -27,6 +28,7 @@ public struct WindowsTrayMenuEntry: Sendable, Equatable {
         providerID: String,
         title: String,
         statusURL: String?,
+        statusVisible: Bool = true,
         dashboardURL: String? = nil,
         dashboardVisible: Bool = true,
         changelogURL: String? = nil,
@@ -37,6 +39,7 @@ public struct WindowsTrayMenuEntry: Sendable, Equatable {
         self.providerID = providerID
         self.title = title
         self.statusURL = statusURL
+        self.statusVisible = statusVisible
         self.dashboardURL = dashboardURL
         self.dashboardVisible = dashboardVisible
         self.changelogURL = changelogURL
