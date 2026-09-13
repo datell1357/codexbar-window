@@ -1204,3 +1204,13 @@
 - 실패 시 제한된 exception chain에서 형식이 맞는 ID만 수집해 오류창에 단계·관리 ID·파일/참조 복구 ID·복구 순서를 표시한다. 마지막 journal 저장이 실패해도 원래 오류를 유지하고 화면 ID 보관을 안내한다.
 
 남은 범위: 비정상 프로세스 종료 시 호출자 기록과 실제 child journal 사이 공백, ID 생성 후 journal 생성 실패 구분, 자동 recovery orchestrator·UI 접근성/localization·동시 변경·공간 회수·전체 Windows 검증. 기록은 복구 근거이며 변경의 원자성/완료 증명이 아니다.
+
+## IMPL-077 — 제거 하위 작업 ID 사전 기록
+
+상태 CODE_WRITTEN_UNVERIFIED. PowerShell/강제 종료/파일·registry/빌드/컴파일/테스트/검증 실행 미실시. guidelines/COMMITS.md 부재로 제공된 핵심 커밋 규칙을 따른다.
+
+- 제거 handoff를 schema 2로 바꾸고 참조/파일 제거 ID를 하위 호출 전에 PLANNED 상태로 저장한다. child 작업이 실제 변경 후 응답 전에 중단돼도 호출자 기록에서 고정된 경로를 찾을 수 있도록 작성했다.
+- 참조/제거 스크립트에 선택적 OperationID를 추가했다. ID 생략 시 새 GUID를 쓰며 기존 journal/shortcut/제거 폴더에 해당 ID가 있으면 재사용하지 않는다. 관리 잠금 안에서 충돌을 확인한다.
+- launcher는 성공 응답의 ID가 사전 기록 ID와 같아야 수용한다. 예외에서 예상 밖 ID가 나와도 원래 ID를 덮지 않고 별도 표시한다. 사전 예약은 실행/완료 증거가 아님을 안내한다.
+
+남은 범위: journal 게시와 payload 변경의 원자성, 외부 경로 race, 비정상 종료 후 자동 상태 조정/통합 복구, 예약됐지만 실행되지 않은 작업의 판별 UI, 보존 파일 정리와 전체 Windows 검증. OperationID는 기존 작업 재개 옵션이 아니다.

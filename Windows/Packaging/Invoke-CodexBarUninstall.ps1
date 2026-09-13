@@ -36,20 +36,24 @@ try {
         [Windows.Forms.MessageBoxDefaultButton]::Button2)
     if ($answer -ne [Windows.Forms.DialogResult]::Yes) { exit 0 }
     $handoffPath = Join-Path $bundle ('uninstall-' + [Guid]::NewGuid().ToString('N') + '.json')
-    $handoff = [ordered] @{ schemaVersion = 1; versionID = $VersionID; registrationID = $RegistrationID;
-        stage = 'DETACHING_REFERENCES'; referenceTransactionID = $null; removalTransactionID = $null;
-        referenceState = $null; removalState = $null; environmentNotification = $null }
+    $handoff = [ordered] @{ schemaVersion = 2; versionID = $VersionID; registrationID = $RegistrationID;
+        stage = 'DETACHING_REFERENCES'; referenceTransactionID = [Guid]::NewGuid().ToString('N');
+        removalTransactionID = [Guid]::NewGuid().ToString('N');
+        referenceState = 'PLANNED'; removalState = 'PLANNED'; environmentNotification = $null }
     Write-CodexBarJournal $handoffPath $handoff
-    $reference = & (Join-Path $bundle 'Set-CodexBarVersionReferences.ps1') -FromVersionID $VersionID -AllowUnvalidatedBuild -PassThru
-    if ($null -eq $reference -or $reference.transactionID -notmatch '^[0-9a-f]{32}$' -or
+    $reference = & (Join-Path $bundle 'Set-CodexBarVersionReferences.ps1') -FromVersionID $VersionID -AllowUnvalidatedBuild -PassThru -OperationID $handoff.referenceTransactionID
+    if ($null -eq $reference -or $reference.transactionID -cne $handoff.referenceTransactionID -or
         $reference.state -ne 'REFERENCES_UPDATED_RUNTIME_UNVERIFIED') { throw 'Reference update did not return a supported completion record.' }
     $handoff.referenceTransactionID = $reference.transactionID
     $handoff.referenceState = $reference.state
     $handoff.environmentNotification = $reference.environmentNotification
     $handoff.stage = 'RETIRING_FILES'
     Write-CodexBarJournal $handoffPath $handoff
-    $result = & (Join-Path $bundle 'Remove-CodexBarVersion.ps1') -VersionID $VersionID -AllowUnvalidatedBuild -PassThru
-    if ($null -ne $result -and $result.transactionID -match '^[0-9a-f]{32}$') {
+    $result = & (Join-Path $bundle 'Remove-CodexBarVersion.ps1') -VersionID $VersionID -AllowUnvalidatedBuild -PassThru -OperationID $handoff.removalTransactionID
+    if ($null -ne $result -and $result.transactionID -cne $handoff.removalTransactionID) {
+        throw 'Removal returned an unexpected operation ID; inspect the planned recovery locations.'
+    }
+    if ($null -ne $result -and $result.transactionID -ceq $handoff.removalTransactionID) {
         $handoff.removalTransactionID = $result.transactionID
         $handoff.removalState = $result.state
         Write-CodexBarJournal $handoffPath $handoff
@@ -85,8 +89,12 @@ try {
     if ($null -ne $handoff) {
         $referenceID = Read-FailureTransaction $failure 'CodexBarReferenceTransactionID'
         $removalID = Read-FailureTransaction $failure 'CodexBarRemovalTransactionID'
-        if ($null -ne $referenceID) { $handoff.referenceTransactionID = $referenceID }
-        if ($null -ne $removalID) { $handoff.removalTransactionID = $removalID }
+        if ($null -ne $referenceID -and $referenceID -cne $handoff.referenceTransactionID) {
+            $message += "`r`nUnexpected reference failure ID: " + $referenceID
+        }
+        if ($null -ne $removalID -and $removalID -cne $handoff.removalTransactionID) {
+            $message += "`r`nUnexpected removal failure ID: " + $removalID
+        }
         $message += "`r`n`r`nStopped during: " + $handoff.stage
         $message += "`r`nManagement ID: " + $RegistrationID
         if ($null -ne $handoff.removalTransactionID) {
@@ -97,7 +105,7 @@ try {
             $message += "`r`nReference recovery ID: " + $handoff.referenceTransactionID
             $message += "`r`nRestore references only after the original app and CLI are present. The original signer is required."
         }
-        $message += "`r`nNo automatic rollback was performed. Keep the recovery files."
+        $message += "`r`nOperation IDs were reserved before execution; a planned ID may have no files yet. No automatic rollback was performed. Keep existing recovery files."
         try {
             Write-CodexBarJournal $handoffPath $handoff
             $message += "`r`nRecovery record: " + $handoffPath

@@ -3,7 +3,8 @@
 param(
     [Parameter(Mandatory = $true)][ValidatePattern('^[0-9]+\.[0-9]+\.[0-9]+([+-][0-9A-Za-z.-]+)?-(x64|arm64)-[0-9a-fA-F]{40}$')][string] $VersionID,
     [switch] $AllowUnvalidatedBuild,
-    [switch] $PassThru
+    [switch] $PassThru,
+    [ValidatePattern('^[0-9a-f]{32}$')][string] $OperationID
 )
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
@@ -94,7 +95,11 @@ try {
         } finally { $process.Dispose() }
     }
     if (-not $PSCmdlet.ShouldProcess($VersionID, 'Retire unchanged installed files into a recoverable removal directory')) { return }
-    $transaction = [Guid]::NewGuid().ToString('N')
+    $candidateID = if ([string]::IsNullOrWhiteSpace($OperationID)) { [Guid]::NewGuid().ToString('N') } else { $OperationID }
+    if (Test-Path -LiteralPath (Join-Path $installRoot ('removed-' + $candidateID))) {
+        throw 'Removal operation ID is already in use; choose a new operation, not an existing recovery ID.'
+    }
+    $transaction = $candidateID
     $retired = Join-Path $installRoot ('removed-' + $transaction)
     $null = New-Item -ItemType Directory -Path $retired
     # Receipt and original directories stay in place. Unknown files are never enumerated for removal.

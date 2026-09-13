@@ -5,7 +5,8 @@ param(
     [ValidatePattern('^[0-9]+\.[0-9]+\.[0-9]+([+-][0-9A-Za-z.-]+)?-(x64|arm64)-[0-9a-fA-F]{40}$')][string] $ToVersionID,
     [ValidatePattern('^[0-9a-fA-F]{40}$')][string] $ExpectedSignerThumbprint,
     [switch] $AllowUnvalidatedBuild,
-    [switch] $PassThru
+    [switch] $PassThru,
+    [ValidatePattern('^[0-9a-f]{32}$')][string] $OperationID
 )
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
@@ -111,7 +112,13 @@ try {
         $null = [Runtime.InteropServices.Marshal]::FinalReleaseComObject($link); $link = $null
     }
     if (-not $PSCmdlet.ShouldProcess($FromVersionID, 'Migrate or detach known user launch references, preserving a recovery record')) { return }
-    $transaction = [Guid]::NewGuid().ToString('N')
+    $candidateID = if ([string]::IsNullOrWhiteSpace($OperationID)) { [Guid]::NewGuid().ToString('N') } else { $OperationID }
+    foreach ($reserved in @((Join-Path $root ('references-' + $candidateID + '.json')),
+            (Join-Path $programs ('CodexBar-' + $candidateID + '.references.previous.lnk')),
+            (Join-Path $programs ('CodexBar-' + $candidateID + '.references.lnk')))) {
+        if (Test-Path -LiteralPath $reserved) { throw 'Reference operation ID is already in use; choose a new operation, not an existing recovery ID.' }
+    }
+    $transaction = $candidateID
     $journalPath = Join-Path $root ('references-' + $transaction + '.json')
     $record = [ordered] @{ schemaVersion = 2; fromVersionID = $FromVersionID; toVersionID = $ToVersionID;
         state = 'PREPARED'; oldPath = $oldPath; newPath = $newPath; pathKind = [string] $pathKind;

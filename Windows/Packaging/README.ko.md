@@ -191,3 +191,11 @@ PATH·Run 명령·shortcut은 before와 같으면 이미 복원된 것으로 두
 도구가 도중에 예외를 내면 생성된 transaction ID를 Exception.Data로 전달한다. launcher는 최대 8단계 exception chain에서 32자리 ID만 받아 오류창에 표시한다. 파일이 이동했다면 제거 payload를 먼저 복구하고 원래 앱/CLI와 signer가 준비된 뒤 참조를 복원하도록 안내한다. 관리 ID는 앱 등록 복구에 사용한다. 자동 rollback을 실행하지 않는다.
 
 최종 오류 기록 저장까지 실패하면 원래 오류와 화면 ID를 유지하고 저장 실패 사실을 안내한다. ID가 생성됐다고 반드시 journal/backup이 생성된 것은 아니며 강제 종료 시 caller 기록보다 실제 child 파일 변경이 앞설 수 있다. 실제 두 폴더와 registry 상태가 우선이다. 이번 작업에서는 WinForms UI·PowerShell 예외 전달·journal 쓰기·설치/제거를 실행하지 않았다.
+
+## 실행 전 복구 ID 예약
+
+제거 launcher의 schema 2 handoff는 참조 변경과 파일 제거 ID를 PLANNED 상태로 먼저 기록한 뒤 각 도구의 OperationID 인자로 전달한다. 하위 작업이 변경 뒤 결과를 반환하기 전에 종료되더라도 caller 기록의 ID로 references-ID.json 또는 removed-ID 폴더를 찾을 수 있게 작성했다. 반환 ID가 다르면 완료 결과를 수용하지 않는다.
+
+OperationID는 선택적 새 작업 식별자다. 기존 작업의 재개/복구를 요청하는 인자가 아니며 같은 ID의 journal/바로가기 작업 파일/제거 디렉터리가 이미 있으면 거절한다. 생략하면 기존처럼 새 GUID를 만든다. 강제 종료 시 PLANNED로만 남아 있어도 실제 변경은 있을 수 있고, 예약만 하고 호출 전에 멈췄다면 해당 파일이 없을 수 있다. 실제 상태를 자동으로 추정해 성공 처리하지 않는다.
+
+외부 변경과 경로 검사 사이 race, journal/파일 변경의 완전한 원자성, 통합 복구 실행과 강제 종료 검증은 남아 있다. 이번 작업에서 관련 스크립트나 종료 시나리오를 실행하지 않았다.

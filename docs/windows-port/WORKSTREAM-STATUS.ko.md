@@ -1,5 +1,7 @@
 # Windows 전용 제품 작업 현황
 
+IMPL-077: Child operation IDs persisted before uninstall execution with collision and result checks; lifecycle recovery and Windows validation remain pending.
+
 IMPL-076: Uninstall phase records and recovery transaction IDs connected to failure dialogs; lifecycle orchestration and Windows validation remain pending.
 
 IMPL-075: Environment notification after reference PATH writes and separate outcome recording written; lifecycle recovery handoff and Windows validation remain pending.
