@@ -1812,3 +1812,13 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - partial 상태에서는 share payload를 제공하지 않아 일부 공급자가 빠진 통계를 전체 수집 결과처럼 공유하지 않는다. 전체 loader 실패에서 이전 데이터 stale 보존은 유지한다.
 
 남은 범위: source resolver·Main/host 연결, 실패 행과 재시도 UI, 사용자 선택에 따른 부분 공유 정책, 실제 수집·Windows 실행 검증 및 전체 계획 구현.
+
+## IMPL-137 — 설정 기반 native spend source resolver
+
+상태 CODE_WRITTEN_UNVERIFIED. 컴파일/빌드/테스트/계정·환경·파일 수집/검증 미실시. guidelines/COMMITS.md 부재로 핵심 커밋 규칙을 적용한다.
+
+- 전달된 config와 cost-enabled provider 집합의 교집합에서 source를 만든다. 기존 ProviderAccountContext의 선택 계정 환경 주입 및 cookie settings 규칙을 재사용하고 중복 provider/account UUID를 거절한다.
+- Codex live/managed/profile home을 전달된 reconciliation snapshot에서 선택하며 context 부재/unreadable managed store를 오류로 처리한다. 실제 계정 파일을 다시 읽지 않는다.
+- provider/account UUID/home의 길이 구분 digest로 opaque source ID와 개별 cache root를 만든다. 표시에는 공급자 이름만 사용하고 구독 이름은 미확정 nil로 둔다.
+
+남은 범위: cost enabled 설정 resolver·Main/controller lifecycle 연결, 여러 visible Codex source 동시 집계 및 ledger/cache ownership parity, OpenCodeX 입력·구독 정보·native dashboard/share UI, Windows 실행 검증. 현재는 공급자별 선택 계정의 native source 구성 단계다.

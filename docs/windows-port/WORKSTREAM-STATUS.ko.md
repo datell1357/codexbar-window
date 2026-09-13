@@ -1,5 +1,7 @@
 # Windows 전용 제품 작업 현황
 
+- IMPL-137: config/선택 계정/Codex source를 native spend loader 입력으로 변환하는 resolver를 작성했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
 - IMPL-136: 비용 수집의 source별 실패와 성공 model을 함께 게시하는 partial 상태를 작성했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
 
 - IMPL-135: Core 비용 snapshot/activity를 Windows spend 입력으로 바꾸는 loader adapter를 작성했다. 설정/Main 연결은 남아 있다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
