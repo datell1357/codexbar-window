@@ -132,9 +132,12 @@ struct AugmentCLIFetchStrategy: ProviderFetchStrategy {
         let env = ProcessInfo.processInfo.environment
         let loginPATH = LoginShellPathCache.shared.current
         #if os(Windows)
-        return WindowsCommandResolver.resolve(executable: "auggie",
-            override: CodexBarPlatformPaths.environmentValue("AUGGIE_CLI_PATH", environment: env),
-            environment: env) != nil
+        // Let fetch report an invalid explicit installation rather than silently skipping it.
+        if CodexBarPlatformPaths.environmentValue("AUGGIE_CLI_PATH", environment: env) != nil { return true }
+        var pathEnvironment = env
+        pathEnvironment["PATH"] = PathBuilder.effectivePATH(
+            purposes: [.tty, .nodeTooling], env: env, loginPATH: loginPATH)
+        return AuggieCLIProbe.windowsCommand(environment: pathEnvironment) != nil
         #else
         return BinaryLocator.resolveAuggieBinary(env: env, loginPATH: loginPATH) != nil
         #endif
@@ -149,6 +152,11 @@ struct AugmentCLIFetchStrategy: ProviderFetchStrategy {
     }
 
     func shouldFallback(on error: Error, context _: ProviderFetchContext) -> Bool {
+        #if os(Windows)
+        // Automatic web import is not implemented. Preserve the CLI error rather than
+        // replacing it with an unrelated missing-cookie error or swallowing cancellation.
+        return false
+        #else
         // Fallback to web if CLI fails (not authenticated, etc.)
         if let cliError = error as? AuggieCLIError {
             switch cliError {
@@ -157,6 +165,7 @@ struct AugmentCLIFetchStrategy: ProviderFetchStrategy {
             }
         }
         return true
+        #endif
     }
 }
 

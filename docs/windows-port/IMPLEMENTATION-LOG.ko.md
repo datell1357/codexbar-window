@@ -2597,3 +2597,12 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - CLI 배포 형태별 resolver 지원 및 실제 출력 호환성은 미확인이다. 로그인 실행/자동 브라우저 가져오기는 본 변경에 포함하지 않는다.
 - 남은 소요: Windows CLI 설치 형태·동작 검증, Augment/Windsurf 자동 로그인 및 전체 계획 나머지.
 - CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·CLI 실행·실제 계정 검증 미실행.
+
+## IMPL-222 — Auggie 설치 선택과 실패 보존
+
+- 공통 Windows resolver의 npm/cmd-shim 정형 템플릿 처리 코드가 존재하므로 별도 batch 실행기를 추가하지 않는다. 실제 npm 설치 호환성은 미검증이다.
+- Auggie의 명시 AUGGIE_CLI_PATH는 비어 있지 않은 절대 경로로 고정한다. 잘못된 경로를 PATH의 다른 설치로 대체하지 않는다. 가용성 검사에서는 명시 설정이 있으면 fetch에서 구체적인 설정 오류를 반환하게 한다.
+- 자동 탐색 가용성과 실행에 같은 effective PATH 및 Auggie 전용 해석 함수를 사용한다.
+- Windows CLI 실패 뒤 미구현 자동 웹 조회로 fallback하지 않아 원래 오류/취소를 보존한다. 수동 웹 계정은 기존 웹 전용 전략을 유지한다.
+- 남은 소요: 설치 형태별 실제 Windows 검증, Augment/Windsurf 자동 로그인 및 전체 계획 나머지.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·CLI 실행 검증 미실행.

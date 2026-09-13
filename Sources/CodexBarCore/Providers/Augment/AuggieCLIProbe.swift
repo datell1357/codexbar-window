@@ -17,6 +17,20 @@ public struct AuggieCLIProbe: Sendable {
     /// Timeout for the `auggie account status` command.
     private static let commandTimeout: TimeInterval = 15
 
+    #if os(Windows)
+    static func windowsCommand(environment: [String: String]) -> WindowsResolvedCommand? {
+        let override = CodexBarPlatformPaths.environmentValue("AUGGIE_CLI_PATH", environment: environment)
+        if let override {
+            let path = override.trimmingCharacters(in: .whitespacesAndNewlines)
+            // An explicit installation selects the CLI's credential context. Do not use
+            // another PATH installation if that selection is empty, relative or invalid.
+            guard !path.isEmpty, (path as NSString).isAbsolutePath else { return nil }
+            return WindowsCommandResolver.resolve(executable: path, override: path, environment: environment)
+        }
+        return WindowsCommandResolver.resolve(executable: "auggie", override: nil, environment: environment)
+    }
+    #endif
+
     private func runAuggieAccountStatus() async throws -> String {
         let env = ProcessInfo.processInfo.environment
         let loginPATH = LoginShellPathCache.shared.current
@@ -29,9 +43,9 @@ public struct AuggieCLIProbe: Sendable {
             loginPATH: loginPATH)
 
         #if os(Windows)
-        guard let command = WindowsCommandResolver.resolve(executable: "auggie",
-            override: CodexBarPlatformPaths.environmentValue("AUGGIE_CLI_PATH", environment: env),
-            environment: pathEnv) else { throw AuggieCLIError.noOutput }
+        guard let command = Self.windowsCommand(environment: pathEnv) else {
+            throw AuggieCLIError.parseError("Auggie could not be resolved. Check PATH or the absolute AUGGIE_CLI_PATH setting.")
+        }
         let result: SubprocessResult
         do {
             result = try await SubprocessRunner.run(binary: command.target.executable,
