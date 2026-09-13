@@ -2870,3 +2870,12 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - 메모리 record 해석만 수행하며 manifest/table/log 통합 및 실제 파일 읽기는 아직 연결하지 않았다.
 - 남은 소요: manifest/table 해석, 최신 상태와 삭제 복원, Chromium origin key 해석 및 Windsurf importer/UI와 전체 계획 나머지.
 - CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 파서 실행·빌드·테스트·lint·실제 브라우저 파일 조회 미실행.
+
+## IMPL-254 — LevelDB 내부 키 및 version 선택
+
+- IMPL-253에서 읽은 원본 db/dbformat.h의 user key + packed sequence/type 형식으로 table mutation을 해석한다. 삭제 payload와 지원하지 않는 type을 거부한다.
+- snapshot sequence 상한 안에서 key별 최신 mutation을 선택하며 삭제도 결과에 유지한다. 같은 key/sequence의 값 또는 삭제 여부가 다르면 실패한다.
+- 입력 100000 mutation과 누적 key/value 64MiB 예산, 56-bit sequence 검사 및 취소를 포함한다.
+- 이 모듈은 입력의 DB 완전성을 증명하지 않는다. 호출자는 manifest가 선택한 table/log 전체를 먼저 확보해야 하며 일부 파일 결과를 최신 인증 상태로 사용할 수 없다.
+- 남은 소요: manifest/table 해석과 일관된 snapshot, Chromium origin key 및 Windsurf importer/UI, Windows 검증 및 전체 계획 나머지.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 파서 실행·빌드·테스트·lint·실제 브라우저 파일 조회 미실행.
