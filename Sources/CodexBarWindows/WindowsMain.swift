@@ -85,6 +85,13 @@ private final class WindowsTrayApplication: @unchecked Sendable {
                 self.host.postShareStatsCopy(requestID: requestID, result: result)
             }
         },
+        onSpendHoursRequested: { [weak self] requestID, generation, day, currency in
+            guard let self else { return }
+            Task {
+                let result = await self.runtime.spendHourlyResult(day: day, currency: currency, generation: generation)
+                self.host.postShareStatsCopy(requestID: requestID, result: result)
+            }
+        },
         onSpendHistoryRequested: { [weak self] requestID in
             guard let self else { return }
             Task {

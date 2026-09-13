@@ -1,5 +1,7 @@
 # Windows 전용 제품 작업 현황
 
+- IMPL-155: 선택 날짜의 시간별 비용 상세와 generation 검사·UTC offset 표시·시간 탐색을 연결했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
 - IMPL-154: 비용 요약에 프로젝트/최근 세션 내역과 캡처된 개인정보 표시 상태 확인을 연결했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
 
 - IMPL-153: 원본 tokenActivity를 주/요일 히트맵과 상태별 범례·날짜 상세로 연결했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.

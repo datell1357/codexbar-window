@@ -98,6 +98,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
     private static let tokenActivityCommand = UINT_PTR(0x7039)
     private let onTokenActivityRequested: @Sendable (UUID) -> Void
     private static let spendHistoryCommand = UINT_PTR(0x7038)
+    private let onSpendHoursRequested: @Sendable (UUID, UInt64, Date, String) -> Void
     private let onSpendHistoryRequested: @Sendable (UUID) -> Void
     private static let shareStatsPreviewCommand = UINT_PTR(0x7037)
     private let onShareStatsPreviewRequested: @Sendable (UUID) -> Void
@@ -303,6 +304,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
         onPresentationSettingsChanged: @escaping PresentationSettingsChangedHandler = {},
         onOptionalUsageSettingsChanged: @escaping OptionalUsageSettingsChangedHandler = {},
         onTokenActivityRequested: @escaping @Sendable (UUID) -> Void = { _ in },
+        onSpendHoursRequested: @escaping @Sendable (UUID, UInt64, Date, String) -> Void = { _, _, _, _ in },
         onSpendHistoryRequested: @escaping @Sendable (UUID) -> Void = { _ in },
         onShareStatsPreviewRequested: @escaping @Sendable (UUID) -> Void = { _ in },
         onShareStatsImageCopyRequested: @escaping @Sendable (UUID) -> Void = { _ in },
@@ -347,6 +349,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
         self.onPresentationSettingsChanged = onPresentationSettingsChanged
         self.onOptionalUsageSettingsChanged = onOptionalUsageSettingsChanged
         self.onTokenActivityRequested = onTokenActivityRequested
+        self.onSpendHoursRequested = onSpendHoursRequested
         self.onSpendHistoryRequested = onSpendHistoryRequested
         self.onShareStatsPreviewRequested = onShareStatsPreviewRequested
         self.onShareStatsImageCopyRequested = onShareStatsImageCopyRequested
@@ -552,6 +555,13 @@ public final class WindowsTrayHost: @unchecked Sendable {
             if !self.quitInvoked {
                 PostMessageW(window, Self.wakeMessage, 0, 0)
                 switch result {
+                case let .inspectHours(day, currency, generation)?:
+                    let requestID = UUID()
+                    self.mailboxLock.lock()
+                    self.shareStatsCopyRequest = (requestID, request.privacy)
+                    self.shareStatsCopyMailbox = nil
+                    self.mailboxLock.unlock()
+                    self.onSpendHoursRequested(requestID, generation, day, currency)
                 case .refreshAll?: self.onRefresh()
                 case .closed?: break
                 case nil: self.showMessage("The activity chart could not be displayed.", caption: snapshot.title)

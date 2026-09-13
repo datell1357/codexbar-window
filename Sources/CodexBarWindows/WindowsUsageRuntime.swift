@@ -116,13 +116,33 @@ public actor WindowsUsageRuntime {
         return .costHistory(WindowsSpendHistorySnapshot.tokenActivity(snapshot, calendar: settings.bucketCalendar))
     }
 
+    public func spendHourlyResult(day: Date, currency: String, generation: UInt64) async -> ShareStatsCopyResult {
+        guard !self.shuttingDown, generation == self.spendGeneration, self.spendState == .available,
+              let snapshot = self.spendSnapshot, let controller = self.spendController,
+              let settings = self.collectedSpendSettings, WindowsSpendSettings.load() == settings,
+              let group = snapshot.model.groups.first(where: { $0.currencyCode == currency }),
+              day >= group.chartDomain.lowerBound, day < group.chartDomain.upperBound else {
+            return .unavailable("The cost history changed. Reopen the daily chart before requesting hourly details.")
+        }
+        let selected = await controller.snapshot(forDay: day, now: snapshot.loadedAt ?? Date())
+        guard !self.shuttingDown, generation == self.spendGeneration, WindowsSpendSettings.load() == settings else {
+            return .unavailable("The cost history changed while preparing hourly details.")
+        }
+        var history = WindowsSpendHistorySnapshot.hourly(selected, day: day)
+        history.generation = generation
+        history.preferredSeriesCode = currency
+        return .costHistory(history)
+    }
+
     public func spendHistoryResult() -> ShareStatsCopyResult {
         guard !self.shuttingDown, self.spendState == .available,
               let snapshot = self.spendSnapshot, !snapshot.model.groups.isEmpty,
               let settings = self.collectedSpendSettings, WindowsSpendSettings.load() == settings else {
             return .unavailable("Cost history is not ready. Complete a cost collection and try again.")
         }
-        return .costHistory(WindowsSpendHistorySnapshot.make(snapshot))
+        var history = WindowsSpendHistorySnapshot.make(snapshot)
+        history.generation = self.spendGeneration
+        return .costHistory(history)
     }
 
     public enum ShareStatsCopyResult: Sendable {

@@ -1992,3 +1992,13 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - runtime이 요약 텍스트와 생성 당시 privacy 값을 함께 전달하도록 변경했다. host는 현재 설정과 다르면 표시를 거절하며 상세 창에도 캡처 값을 전달해 창 생성 직전/표시 중 변경 검사에 사용한다. 계정 무효화 시 대기 중 요약 요청을 취소한다.
 
 남은 범위: 전체 프로젝트/세션 탐색·정렬·검색·선택 액션, 시간별 drilldown, 이미 열린 창의 계정 변경 처리, Windows 개인정보/UI 검증 및 전체 계획 구현. 이번 요약은 완전한 프로젝트/세션 탐색 UI를 대체하지 않는다.
+
+## IMPL-155 — 선택 날짜 시간별 비용 상세
+
+상태 CODE_WRITTEN_UNVERIFIED. 컴파일/빌드/테스트/시간대·DST·차트·UI·수집/검증 미실시. guidelines/COMMITS.md 부재로 핵심 커밋 규칙을 적용한다.
+
+- controller에 기존 옵션을 변경하지 않는 특정 날짜 snapshot projection을 추가했다. 보관된 scan과 수집 시각으로 원본 모델의 selectedDay/hourlyPoints를 계산하며 공유 설정은 유지한다.
+- 일별 차트의 선택 날짜에 Hourly details 버튼을 연결했다. runtime은 차트의 generation, 현재 설정, 요청 통화/날짜 범위를 확인하고 await 이후에도 변경 여부를 검사한다.
+- 시간별 chart series는 calendar의 실제 하루 경계를 따라 시간 구간을 만든다. 원본 시간 sample을 구간에 집계하고 nil/누락을 0으로 채우지 않는다. label에 UTC offset을 포함해 반복 시각을 구분하며 이전/다음 시간·통화 전환을 제공한다.
+
+남은 범위: DST/비정수 오프셋/시간 sample 분포/overflow/반복 키보드/원본 tooltip 시각 parity 검증, 세션·프로젝트 전체 탐색, 추가 공급자/source 이식 및 전체 계획 구현. 시간별 값의 분포나 실제 화면을 검증하지 않았다.

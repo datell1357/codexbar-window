@@ -4,7 +4,7 @@ import WinSDK
 
 /// Native daily cost history. Currency groups remain independent and missing days are not zero-filled.
 enum WindowsSpendHistoryDialog {
-    enum Result { case closed, refreshAll }
+    enum Result { case closed, refreshAll; case inspectHours(day: Date, currency: String, generation: UInt64) }
     private final class Context {
         let snapshot: WindowsSpendHistorySnapshot
         let privacy: Bool
@@ -14,7 +14,10 @@ enum WindowsSpendHistoryDialog {
         var dpi: UINT = 96
         var closed = false
         var failed = false
-        init(snapshot: WindowsSpendHistorySnapshot, privacy: Bool) { self.snapshot = snapshot; self.privacy = privacy }
+        init(snapshot: WindowsSpendHistorySnapshot, privacy: Bool) {
+            self.snapshot = snapshot; self.privacy = privacy
+            self.currencyIndex = snapshot.series.firstIndex { $0.code == snapshot.preferredSeriesCode } ?? 0
+        }
         var currency: WindowsSpendHistorySnapshot.Series { self.snapshot.series[self.currencyIndex] }
         func px(_ value: Int32) -> Int32 { MulDiv(value, Int32(self.dpi), 96) }
     }
@@ -106,7 +109,7 @@ enum WindowsSpendHistoryDialog {
         switch message {
         case UINT(WM_CREATE):
             let dpi = GetDpiForWindow(hwnd); context.dpi = dpi == 0 ? 96 : dpi
-            for (id, label) in [(Int32(2), "Close"), (Int32(3), "Previous currency"), (Int32(4), "Next currency"), (Int32(5), "Refresh && close"), (Int32(7), "&Previous day"), (Int32(8), "&Next day"), (Int32(9), "&All days")] {
+            for (id, label) in [(Int32(2), "Close"), (Int32(3), "Previous currency"), (Int32(4), "Next currency"), (Int32(5), "Refresh && close"), (Int32(7), context.snapshot.kind == .hourly ? "&Previous hour" : "&Previous day"), (Int32(8), context.snapshot.kind == .hourly ? "&Next hour" : "&Next day"), (Int32(9), "&Clear selection"), (Int32(10), "&Hourly details")] {
                 guard Self.control(hwnd, kind: "BUTTON", title: label, id: id,
                     style: DWORD(WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON)) != nil else { return -1 }
             }
@@ -138,6 +141,11 @@ enum WindowsSpendHistoryDialog {
             case 7: Self.selectDay(-1, hwnd: hwnd, context: context); return 0
             case 8: Self.selectDay(1, hwnd: hwnd, context: context); return 0
             case 9: context.selectedDay = nil
+            case 10:
+                guard context.snapshot.kind == .cost, let index = context.selectedDay,
+                      context.currency.days.indices.contains(index), let day = context.currency.days[index].date else { return 0 }
+                context.result = .inspectHours(day: day, currency: context.currency.code, generation: context.snapshot.generation)
+                DestroyWindow(hwnd); return 0
             default: return 0
             }
             Self.updateDetails(hwnd, context: context)
@@ -186,8 +194,10 @@ enum WindowsSpendHistoryDialog {
             MoveWindow(GetDlgItem(hwnd, 5), margin + half + gap, top, half, button, 1)
         }
         let navigationTop = max(margin, top - button - gap)
-        let navigationWidth = max(1, (rect.right - 2 * margin - 2 * gap) / 3)
-        for index in 0..<3 {
+        let navigationCount: Int32 = context.snapshot.kind == .cost ? 4 : 3
+        ShowWindow(GetDlgItem(hwnd, 10), context.snapshot.kind == .cost ? Int32(SW_SHOW) : Int32(SW_HIDE))
+        let navigationWidth = max(1, (rect.right - 2 * margin - (navigationCount - 1) * gap) / navigationCount)
+        for index in 0..<Int(navigationCount) {
             MoveWindow(GetDlgItem(hwnd, Int32(index + 7)), margin + Int32(index) * (navigationWidth + gap),
                        navigationTop, navigationWidth, button, 1)
         }
@@ -213,6 +223,7 @@ enum WindowsSpendHistoryDialog {
         text.withCString(encodedAs: UTF16.self) { SetWindowTextW(GetDlgItem(hwnd, 6), $0) }
         EnableWindow(GetDlgItem(hwnd, 7), !currency.days.isEmpty && context.selectedDay != 0 ? 1 : 0)
         EnableWindow(GetDlgItem(hwnd, 8), !currency.days.isEmpty && context.selectedDay != currency.days.count - 1 ? 1 : 0)
+        EnableWindow(GetDlgItem(hwnd, 10), context.snapshot.kind == .cost && context.selectedDay != nil ? 1 : 0)
         EnableWindow(GetDlgItem(hwnd, 9), context.selectedDay != nil ? 1 : 0)
         EnableWindow(GetDlgItem(hwnd, 3), context.currencyIndex > 0 ? 1 : 0)
         EnableWindow(GetDlgItem(hwnd, 4), context.currencyIndex + 1 < context.snapshot.series.count ? 1 : 0)
@@ -271,7 +282,7 @@ enum WindowsSpendHistoryDialog {
             text("[\(item.paletteIndex + 1)] " + item.caption,
                  RECT(left: x + context.px(18), top: y, right: x + columnWidth - 4, bottom: y + context.px(22)))
         }
-        text(currency.code + " · known daily costs", RECT(left: bounds.left, top: context.px(12), right: bounds.right, bottom: bounds.top))
+        text(currency.code + (context.snapshot.kind == .hourly ? " · known hourly costs" : " · known daily costs"), RECT(left: bounds.left, top: context.px(12), right: bounds.right, bottom: bounds.top))
         text(currency.maximumLabel, RECT(left: 0, top: bounds.top, right: bounds.left - 4, bottom: bounds.top + context.px(24)))
         text(currency.days.first?.label ?? "", RECT(left: bounds.left, top: bounds.bottom + 4, right: bounds.left + context.px(200), bottom: bounds.bottom + context.px(28)))
         text(currency.days.last?.label ?? "", RECT(left: max(bounds.left, bounds.right - context.px(200)), top: bounds.bottom + 4, right: bounds.right, bottom: bounds.bottom + context.px(28)))

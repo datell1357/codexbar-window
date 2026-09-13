@@ -89,13 +89,24 @@ actor WindowsSpendDashboardController {
     }
 
     func snapshot(now: Date = Date()) -> Snapshot {
+        self.makeSnapshot(options: self.options, now: now)
+    }
+
+    /// Project a day without changing the dashboard or sharing preferences.
+    func snapshot(forDay day: Date, now: Date) -> Snapshot {
+        var options = self.options
+        options.selectedDay = day
+        return self.makeSnapshot(options: options, now: now)
+    }
+
+    private func makeSnapshot(options: Options, now: Date) -> Snapshot {
         let model = WindowsSpendDashboardModel.build(inputs: self.scan?.inputs ?? [],
-            requestedDays: self.options.days, now: now,
-            calendar: CostUsageBucketTimeZone.calendar(identifier: self.options.bucketTimeZoneIdentifier),
-            preferredCurrencyCode: self.options.preferredCurrencyCode,
-            hiddenSourceIDs: self.options.hiddenSourceIDs,
-            hideNativeCodexWhenOpenCodexPresent: self.options.hideNativeCodexWhenOpenCodexPresent,
-            selectedDay: self.options.selectedDay)
+            requestedDays: options.days, now: now,
+            calendar: CostUsageBucketTimeZone.calendar(identifier: options.bucketTimeZoneIdentifier),
+            preferredCurrencyCode: options.preferredCurrencyCode,
+            hiddenSourceIDs: options.hiddenSourceIDs,
+            hideNativeCodexWhenOpenCodexPresent: options.hideNativeCodexWhenOpenCodexPresent,
+            selectedDay: options.selectedDay)
         // Failed/refreshing data remains visible with stale status but is not offered for sharing.
         let share = self.phase == .ready
             ? WindowsShareStatsBuilder.make(model: model, subscriptionNames: self.scan?.subscriptionNames ?? [:]) : nil

@@ -15,6 +15,7 @@ public struct WindowsSpendHistorySnapshot: Sendable {
     }
     public struct Day: Sendable {
         var activity: ActivityCell? = nil
+        var date: Date? = nil
         let label: String
         let segments: [Segment]
         let details: String
@@ -31,10 +32,57 @@ public struct WindowsSpendHistorySnapshot: Sendable {
         let maximumLabel: String
         let summary: String
     }
-    enum Kind: Sendable { case cost, tokens }
+    enum Kind: Sendable { case cost, tokens, hourly }
+    var generation: UInt64 = 0
+    var preferredSeriesCode: String? = nil
     var kind: Kind = .cost
     let series: [Series]
-    var title: String { self.kind == .cost ? "Cost history" : "Token activity" }
+    var title: String { switch self.kind { case .cost: "Cost history"; case .tokens: "Token activity"; case .hourly: "Hourly cost history" } }
+
+    static func hourly(_ snapshot: WindowsSpendDashboardController.Snapshot, day: Date) -> Self {
+        let daily = Self.make(snapshot)
+        let series = snapshot.model.groups.map { group -> Series in
+            var calendar = Calendar(identifier: .gregorian)
+            calendar.timeZone = group.timeZone
+            let indices = Dictionary(uniqueKeysWithValues: group.providers.enumerated().map { ($0.element.id, $0.offset) })
+            let start = calendar.startOfDay(for: day)
+            let end = calendar.date(byAdding: .day, value: 1, to: start) ?? start
+            let formatter = DateFormatter()
+            formatter.calendar = calendar; formatter.timeZone = calendar.timeZone
+            formatter.dateFormat = "HH:mm XXX"
+            var cursor = start
+            var slots: [Day] = []
+            while cursor < end, slots.count < 26 {
+                guard let next = calendar.date(byAdding: .hour, value: 1, to: cursor), next > cursor else { break }
+                let rows = group.hourlyPoints.filter { $0.hour >= cursor && $0.hour < min(next, end) && $0.cost.isFinite && $0.cost >= 0 }
+                    .sorted { $0.sourceID < $1.sourceID }
+                var segments: [Segment] = []
+                var subtotal = 0.0
+                var details = [WindowsShareStatsFormatting.dataThrough(cursor, calendar: calendar) + " · " + formatter.string(from: cursor)]
+                for row in rows {
+                    let old = subtotal
+                    subtotal += row.cost
+                    guard subtotal.isFinite else { segments.removeAll(); break }
+                    segments.append(.init(start: old, end: subtotal, paletteIndex: indices[row.sourceID] ?? 0))
+                    details.append(LogRedactor.redact(row.providerName).replacingOccurrences(of: "\0", with: "")
+                        + ": " + WindowsShareStatsFormatting.currency(row.cost, code: group.currencyCode))
+                }
+                if rows.isEmpty { details.append("No known hourly samples. This is not a confirmed zero.") }
+                else if subtotal.isFinite { details.append("Known subtotal: " + WindowsShareStatsFormatting.currency(subtotal, code: group.currencyCode)) }
+                else { details.append("The known hourly subtotal is unavailable because it overflowed.") }
+                slots.append(Day(date: cursor, label: formatter.string(from: cursor), segments: segments, details: details.joined(separator: "\r\n")))
+                cursor = next
+            }
+            let maximum = max(1, slots.flatMap(\.segments).map(\.end).max() ?? 0)
+            let summary = "Hourly costs · " + group.currencyCode + " · " + WindowsShareStatsFormatting.dataThrough(day, calendar: calendar)
+                + "\r\n" + group.timeZone.identifier + " · source hour samples are grouped into local hour intervals."
+                + "\r\nMissing samples are not zero; hourly totals may not explain the full daily total. UTC offsets distinguish repeated clock hours."
+                + (snapshot.sourceFailures.isEmpty ? "" : "\r\nPartial collection: \(snapshot.sourceFailures.count) failed source(s).")
+            return Series(legend: daily.series.first { $0.code == group.currencyCode }?.legend ?? [], code: group.currencyCode,
+                          days: slots, maximum: maximum, maximumLabel: WindowsShareStatsFormatting.currency(maximum, code: group.currencyCode), summary: summary)
+        }
+        return Self(kind: .hourly, series: series)
+    }
 
     static func tokenActivity(_ snapshot: WindowsSpendDashboardController.Snapshot, calendar: Calendar) -> Self {
         let points = snapshot.model.tokenActivity.sorted { $0.day < $1.day }
@@ -94,7 +142,7 @@ public struct WindowsSpendHistorySnapshot: Sendable {
                 if let maximum = rows.map(\.stackEnd).max() {
                     details.append("Known subtotal: " + WindowsShareStatsFormatting.currency(maximum, code: group.currencyCode))
                 }
-                return Day(label: label, segments: segments, details: details.joined(separator: "\r\n"))
+                return Day(date: date, label: label, segments: segments, details: details.joined(separator: "\r\n"))
             }
             let maximum = max(1, days.flatMap(\.segments).map(\.end).max() ?? 0)
             let total = group.totalCost.map { WindowsShareStatsFormatting.currency($0, code: group.currencyCode) } ?? "Unknown"
