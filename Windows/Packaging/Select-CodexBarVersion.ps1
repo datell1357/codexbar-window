@@ -73,6 +73,8 @@ try {
     $link.Save()
     $null = [Runtime.InteropServices.Marshal]::FinalReleaseComObject($link)
     $link = $null
+    $record['candidateHash'] = (Get-FileHash -LiteralPath $temporary -Algorithm SHA256).Hash
+    [IO.File]::WriteAllText($journal, ($record | ConvertTo-Json), [Text.UTF8Encoding]::new($false))
     if ($null -ne $previousHash) {
         if ((Get-FileHash -LiteralPath $shortcut -Algorithm SHA256).Hash -ne $previousHash) { throw 'Shortcut changed concurrently.' }
         [IO.File]::Replace($temporary, $shortcut, $backup)

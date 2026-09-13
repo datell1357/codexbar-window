@@ -1084,3 +1084,13 @@
 - 실패 시 link는 이미 변경됐을 수 있음을 안내하며 journal/backup/기존 version을 보존한다. 이전 VersionID 재선택 경로는 동일하다.
 
 남은 범위: interrupted journal recovery, 상위 경로/동시 변경, 전체 installed payload 재확인, PATH/startup migration, uninstall/OS 적합성과 Windows 검증.
+
+## IMPL-065 — 기록에 결합한 shortcut 복구
+
+상태 CODE_WRITTEN_UNVERIFIED. PowerShell/바로가기/파일/설치/빌드/컴파일/테스트/검증 실행 미실시.
+
+- 교체 전 candidateHash를 selection journal에 기록한다. Restore-CodexBarActivation은 관리 TransactionID 경로만 사용하고 현재/previous/candidate hash로 이미 복원됨·복구 가능·외부 변경을 구분한다.
+- 이전 backup을 복사해 replace하며 현재 link를 displaced backup으로 보존한다. 첫 선택의 rollback은 link를 보존 위치로 move한다. 기존 version/user data를 삭제하지 않는다.
+- operations.lock/ShouldProcess/별도 recovery 기록과 부분 실패 안내를 연결한다. old/incomplete journal은 추측해 복원하지 않는다.
+
+남은 범위: journal 원자적 쓰기, compare/replace race, managed uninstall/부분 설치 복구, 설정/프로세스/PATH/startup migration과 Windows 검증.

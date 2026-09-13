@@ -91,3 +91,10 @@ Select-CodexBarVersion.ps1은 VersionID, ExpectedSignerThumbprint, AllowUnvalida
 기존 링크가 관리 versions 아래 앱을 가리키고 arguments가 비어 있을 때만 교체한다. 같은 폴더의 임시 링크를 만들고 기존 링크 hash를 재확인한 뒤 File.Replace로 이전 링크 backup을 보존한다. 새 설치는 Move로 기존 파일 덮어쓰기를 거절한다. activation journal을 준비/선택 상태로 기록한다. 작업 중 실패하면 실제 링크가 이미 바뀌었을 수 있어 자동 성공이나 자동 rollback을 주장하지 않는다.
 
 이전 버전이 남아 있으면 같은 명령으로 그 VersionID를 다시 선택할 수 있다. 자동 recovery/backup 정리·설정 schema downgrade·프로세스 전환·PATH/startup migration·제거는 남아 있다. 모든 COM/바로가기/서명/파일 교체 동작은 현재 작업에서 실행하지 않았다.
+
+
+## 전환 복구
+
+선택 스크립트는 실제 link 교체 전에 candidateHash를 기록하도록 보완했다. Restore-CodexBarActivation.ps1은 TransactionID(activation 파일명의32자리 ID)를 받아 현재 link가 기록된 candidateHash와 일치할 때만 이전 backup을 복원한다. 현재 상태가 이미 previousHash와 같으면 변경하지 않는다. 초기 설치처럼 이전 link가 없었으면 현재 link를 별도 displaced backup으로 이동한다. 모든 version과 link backup을 보존한다.
+
+외부 변경·누락/변경된 backup·candidateHash 없는 옛 journal은 거절한다. 원래 journal 경로 필드는 예상 관리 경로와 대조하고 임의 경로에 쓰지 않는다. 복구도 operations.lock·WhatIf·별도 recovery journal을 사용한다. 작업 마지막 기록 전에 실패할 수 있으므로 실제 shortcut 상태가 우선이다. hash 확인과 replace/move는 atomic compare-and-swap이 아니며 journal 자체의 원자적 기록/복구, 상위 경로 race, 설정/프로세스/PATH/startup 복구와 Windows 실행 검증은 남아 있다.
