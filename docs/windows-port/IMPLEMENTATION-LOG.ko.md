@@ -2196,3 +2196,13 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - 일 시작 경계/기간/오늘 session, metered/list-price provenance, credential fingerprint를 기존 token snapshot 변환에 연결한다. 반환 뒤 취소를 확인한다. 쿠키가 없으면 notLoggedIn이며 기존 Cursor local CSV fallback 정책을 유지한다.
 
 남은 범위: Windows Cursor status/quota 전체 구현, 앱/브라우저/OAuth 로그인 경로, bucket calendar parity와 local CSV fallback 소유권, 실제 API/페이지네이션 검증 및 전체 계획 구현. 수동 쿠키 경로 연결을 자동 로그인 또는 전체 Cursor 완료로 집계하지 않는다.
+
+## IMPL-175 — Cursor 비용 집계 달력 일치
+
+상태 CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·HTTP/날짜/실행 검증 미실시. guidelines/COMMITS.md 부재로 핵심 규칙을 적용한다.
+
+- CostUsageFetcher가 가진 resolved scanner calendar를 remote Cursor 호출까지 전달한다. Windows 분기는 이 달력으로 N일 조회 시작을 계산하고 첫날 00:00으로 맞춘다.
+- 동일 달력을 CursorUsageEventsFetcher.fetchUsage의 일별 이벤트 집계와 tokenSnapshot의 오늘/이력 생성에 전달한다. 대시보드가 고정한 bucket timezone과 OS 현재 시간대가 달라도 같은 날짜 경계를 사용하도록 한다.
+- Bedrock 및 macOS Cursor의 기존 분기는 유지한다. 공통 remote API의 새 인수는 기본 .current를 제공한다.
+
+남은 범위: 실제 DST/자정 이벤트 경계와 Windows 시간대 데이터 검증, Cursor local CSV 계정/소유권과 status/login 전체 경로, 전체 stale/cache 처리 및 전체 계획 구현. 실제 API 또는 날짜 검증은 실행하지 않았다.

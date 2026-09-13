@@ -419,7 +419,9 @@ public struct CostUsageFetcher: Sendable {
                 environment: environment,
                 now: now,
                 historyDays: clampedHistoryDays,
-                cursorCookieHeaderOverride: cursorCookieHeaderOverride)
+                cursorCookieHeaderOverride: cursorCookieHeaderOverride,
+                cursorCalendar: Self.resolvedScannerOptions(overrideScannerOptions, provider: provider,
+                                                           codexHomePath: codexHomePath).calendar)
         } catch {
             if provider != .cursor {
                 throw error
@@ -1730,7 +1732,8 @@ extension CostUsageFetcher {
         environment: [String: String],
         now: Date,
         historyDays: Int,
-        cursorCookieHeaderOverride: String?) async throws -> CostUsageTokenSnapshot?
+        cursorCookieHeaderOverride: String?,
+        cursorCalendar: Calendar = .current) async throws -> CostUsageTokenSnapshot?
     {
         // Provider-specific by design: Bedrock uses AWS billing while Cursor uses its macOS dashboard session.
         let since = Calendar.current.date(byAdding: .day, value: -(historyDays - 1), to: now) ?? now
@@ -1752,12 +1755,14 @@ extension CostUsageFetcher {
             guard let cookie = CookieHeaderNormalizer.normalize(cursorCookieHeaderOverride) else {
                 throw CursorStatusProbeError.notLoggedIn
             }
+            let cursorSince = cursorCalendar.date(byAdding: .day, value: -(historyDays - 1), to: now) ?? now
             let report = try await CursorUsageEventsFetcher().fetchUsage(
-                cookieHeader: cookie, since: Self.cursorWindowStart(since), until: now)
+                cookieHeader: cookie, since: Self.cursorWindowStart(cursorSince, calendar: cursorCalendar),
+                until: now, calendar: cursorCalendar)
             try Task.checkCancellation()
             return Self.tokenSnapshot(
                 from: report.daily, now: now, historyDays: historyDays,
-                useCurrentLocalDayForSession: true, meteredCostUSD: report.meteredCostUSD,
+                useCurrentLocalDayForSession: true, calendar: cursorCalendar, meteredCostUSD: report.meteredCostUSD,
                 costProvenance: Self.cursorCostProvenance(meteredCostUSD: report.meteredCostUSD, daily: report.daily.data),
                 credentialScopeFingerprint: CookieHeaderCache.credentialFingerprint(cookie))
         }

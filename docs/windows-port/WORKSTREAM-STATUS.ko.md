@@ -1,5 +1,7 @@
 # Windows 전용 제품 작업 현황
 
+- IMPL-175: Windows Cursor 원격 비용 조회 범위/일별 집계/오늘 snapshot에 같은 bucket calendar를 전달한다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
 - IMPL-174: macOS에만 포함되던 Cursor usage-events 수집기를 Windows에 포함하고 명시적 cookie 비용 수집을 연결했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
 
 - IMPL-173: 비-Codex 비용 캐시 경로에 선택 계정/설정/환경/쿠키/시간대 소유권 지문을 연결했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
