@@ -788,3 +788,21 @@
 2. ENDSESSION_CLOSEAPP 재시작 등록·installer restart manager·launch-at-login/PATH 설치와 전체 WIN-052는 미완료다. 저장 중 종료 복구도 별도 Windows 검증이 필요하다.
 
 다음 구현: Windows 자동 시작 opt-in을 사용자별 설정과 실제 OS 등록 상태로 분리해 연결한다. 설치 방식에 따른 차이와 rollback을 명시한다.
+
+## IMPL-042 — 사용자별 Windows sign-in 등록
+
+상태: CODE_WRITTEN_UNVERIFIED. 빌드·컴파일·테스트·lint·앱·실제 registry/자동 시작 등록·검증 스크립트를 실행하지 않았다. 계약: WIN-052.
+
+작성한 코드:
+
+- unpackaged 앱용 HKCU Run/CodexBarWindows 등록 adapter를 추가했다. 현재 module executable의 quoted command만 사용하며260자 미만 경로와.exe를 요구한다. user 선택 없이 자동 등록하지 않는다.
+- REG_SZ 읽기를1024-byte 한도로 제한하고 문자열/종단을 확인한다. 기존 value가 현재 executable command와 다르면 conflict로 남기고 덮어쓰기/삭제하지 않는다. 동일 command의 등록/해제만 user menu action으로 수행한다. HKLM/StartupApproved/정책은 수정하지 않는다.
+- tray는 registry 기반 absent/registered/conflict/unavailable을 읽고 표시한다. registered가 실제 로그온 실행을 보장하지 않으므로 Windows 정책이 override할 수 있음을 표시한다. 변경 실패는 다음 메뉴에서 상태를 다시 읽도록 안내한다. 별도 defaults enabled flag를 성공으로 꾸미지 않는다.
+
+남은 범위:
+
+1. MSIX StartupTask 및 installer/uninstall/update 경로 이동은 미구현이다. 현재 구현은 unpackaged Run 방식이며 packaged 배포에서는 별도 경로가 필요하다.
+2. registry 읽기와 set/delete 사이 외부 변경 race는 원자적 compare-and-swap이 아니다. value 단위 API 성공을 사용하며 실패 뒤 임의 rollback으로 다른 값을 복원하지 않는다. 실제 registry/로그온·권한·정책·긴 경로 동작은 미검증이다.
+3. 파일 이동 시 이전 command가 conflict로 남는 복구 UI, 승인된 startup 정책 상태 표시 및 전체 Windows 기능/배포 검증은 남아 있다.
+
+다음 구현: packaged 환경에서는 Run 등록을 하지 않도록 package identity 구분과 안내를 연결한다.

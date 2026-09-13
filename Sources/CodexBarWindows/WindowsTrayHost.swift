@@ -23,6 +23,8 @@ public final class WindowsTrayHost: @unchecked Sendable {
     public typealias CodexWebSettingsSaveHandler = @Sendable (UInt64, WindowsCodexWebSettingsPatch) -> Void
     public typealias QuitHandler = @Sendable () -> Void
 
+    private static let startupRegistrationCommand = UINT_PTR(0x7546)
+    private var startupRegistrationMessage: String?
     private static let menuHotkeyCommand = UINT_PTR(0x7533)
     private static let menuHotkeyID: Int32 = 0x4342
     private static let shortcutChoiceBase = UINT_PTR(0x7900)
@@ -911,6 +913,22 @@ public final class WindowsTrayHost: @unchecked Sendable {
         let localMenuPosition = GetMenuItemCount(menu)
         self.appendAgentSessionsMenu(to: menu, snapshot: agentSessions)
         self.appendRemoteSessionsMenu(to: menu, snapshot: remoteSessions)
+        let startupState = WindowsStartupRegistration.state()
+        let startupTitle: String
+        switch startupState {
+        case .absent: startupTitle = "Register this app at Windows sign-in"
+        case .registered: startupTitle = "Registered at sign-in (Windows policy may override)"
+        case .conflict: startupTitle = "Startup entry belongs to a different command"
+        case .unavailable: startupTitle = "Startup registration unavailable for this executable"
+        }
+        startupTitle.withCString(encodedAs: UTF16.self) {
+            let disabled = startupState == .conflict || startupState == .unavailable
+            _ = AppendMenuW(menu, UINT(MF_STRING) | (startupState == .registered ? UINT(MF_CHECKED) : 0) |
+                            (disabled ? UINT(MF_GRAYED) : 0), Self.startupRegistrationCommand, $0)
+        }
+        if let message = self.startupRegistrationMessage {
+            message.withCString(encodedAs: UTF16.self) { _ = AppendMenuW(menu, UINT(MF_STRING | MF_GRAYED), 0, $0) }
+        }
         self.appendShortcutMenu(to: menu)
         self.appendSessionLabelMenu(to: menu)
         self.appendRefreshFrequencyMenu(to: menu)
@@ -1645,6 +1663,15 @@ public final class WindowsTrayHost: @unchecked Sendable {
             return
         }
         switch command {
+        case Self.startupRegistrationCommand:
+            do {
+                let state = WindowsStartupRegistration.state()
+                guard state == .registered || state == .absent else { throw WindowsStartupRegistration.Failure.conflict }
+                try WindowsStartupRegistration.setRegistered(state == .absent)
+                self.startupRegistrationMessage = nil
+            } catch {
+                self.startupRegistrationMessage = "Startup change failed; reopen this menu to read the current registration."
+            }
         case Self.applySavedShortcutCommand:
             if self.menuHotkeyRegistered, let saved = WindowsMenuShortcut.load(self.presentationDefaults) {
                 self.selectMenuShortcut(saved)
