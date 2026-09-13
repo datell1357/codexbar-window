@@ -27,10 +27,58 @@ public struct WindowsUsagePresentationSettings: Sendable {
 /// Owns the Windows tray's provider refresh lifecycle.  Win32 callbacks only
 /// enqueue work; all provider I/O stays on this actor and is serialized.
 public actor WindowsUsageRuntime {
+    private let hookDispatchQueue = WindowsHookDispatchQueue()
+    private var hookPreviousKeys = Set<HookQuotaLaneKey>()
+    private var hookOwnershipRevision: Data?
     private var hookRefreshAccounts: [WindowsHookObservationBatch.Account] = []
     private var hookUnresolvedAccountCount = 0
     private var pendingHookRefresh: (accounts: [WindowsHookObservationBatch.Account], config: HooksConfig,
                                      privacy: Bool, configRevision: Data, unresolved: Int)?
+
+    private func hookSubmissionIsCurrent(revision: Data, privacy: Bool) -> Bool {
+        guard !self.shuttingDown, WindowsUsagePresentationSettings.load().hidePersonalInfo == privacy else { return false }
+        do {
+            guard let current = try self.configStore.load() else { return false }
+            guard current.hooks?.enabled == true else { return false }
+            return try self.hookConfigRevision(current) == revision
+        } catch { return false }
+    }
+
+    private func dispatchPendingHooks() async -> String? {
+        guard let pending = self.pendingHookRefresh else { return nil }
+        self.pendingHookRefresh = nil
+        guard !Task.isCancelled, self.hookSubmissionIsCurrent(revision: pending.configRevision, privacy: pending.privacy) else {
+            return "Hooks: discarded changed or cancelled refresh"
+        }
+        do {
+            let owners = pending.accounts.map { [$0.providerInstanceID, $0.discriminator] }.sorted {
+                $0.lexicographicallyPrecedes($1)
+            }
+            let ownerData = try JSONEncoder().encode(owners)
+            let revision = Data(SHA256.hash(data: pending.configRevision + ownerData))
+            if self.hookOwnershipRevision != revision {
+                self.hookPreviousKeys.removeAll()
+                self.hookOwnershipRevision = revision
+            }
+            let batch = try WindowsHookObservationBatch.make(accounts: pending.accounts,
+                previousKeys: self.hookPreviousKeys, now: Date())
+            let result = try await self.hookDispatchQueue.observe(batch.observations, config: pending.config,
+                hidePersonalInfo: pending.privacy, contextRevision: revision, failures: batch.failures,
+                authorization: { [weak self] in
+                    guard let self else { return false }
+                    return await self.hookSubmissionIsCurrent(revision: pending.configRevision, privacy: pending.privacy)
+                })
+            guard !self.shuttingDown, !Task.isCancelled else { return nil }
+            self.hookPreviousKeys = batch.retainedKeys
+            if result.omitted > 0 || pending.unresolved > 0 {
+                return "Hooks: \(result.omitted) events omitted; \(pending.unresolved) account results lack stable ownership"
+            }
+            return nil
+        } catch {
+            self.hookPreviousKeys.removeAll()
+            return "Hooks: refresh observations could not be submitted"
+        }
+    }
 
     private func hookConfigRevision(_ config: CodexBarConfig) throws -> Data {
         let encoder = JSONEncoder()
@@ -2160,6 +2208,8 @@ public actor WindowsUsageRuntime {
                 self.pluginDiscoveryInitialized = true
             }
             let config = try self.configStore.loadOrCreateDefault()
+            await self.hookDispatchQueue.configure(config.hooks ?? HooksConfig(), hidePersonalInfo: presentationSettings.hidePersonalInfo)
+            guard !self.shuttingDown, !Task.isCancelled else { return }
             self.reconcileConfiguredAccounts(config)
             self.retryPendingAntigravityRemovals(config: config)
             let enabledIDs = Set(config.enabledProviders())
@@ -2370,6 +2420,8 @@ public actor WindowsUsageRuntime {
                         presentationSettings.hidePersonalInfo, revision, self.hookUnresolvedAccountCount)
                 }
             }
+            if let hookNotice = await self.dispatchPendingHooks() { entries.append(.row(hookNotice)) }
+            guard !self.shuttingDown, !Task.isCancelled else { return }
             self.renderEntries = entries
             self.scheduleResetBoundaryRefreshIfNeeded(
                 snapshots: self.currentSnapshots(from: entries),
@@ -2517,6 +2569,10 @@ public actor WindowsUsageRuntime {
         self.shuttingDown = true
         self.pendingHookRefresh = nil
         self.hookRefreshAccounts.removeAll()
+        self.hookPreviousKeys.removeAll()
+        // Cancel the refresh before draining hooks; authorization callbacks observe shuttingDown.
+        self.refreshTask?.cancel()
+        await self.hookDispatchQueue.shutdown()
         self.cancelCursorBrowserImport()
         self.cancelAugmentBrowserImport()
         self.cancelZedEditorImport()

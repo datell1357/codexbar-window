@@ -10,10 +10,12 @@ public actor WindowsHookDispatchQueue {
     private struct Pending: Sendable {
         let event: HookEvent
         let config: HooksConfig
+        let authorization: (@Sendable () async -> Bool)?
     }
     public enum ObservationFailure: Error { case oversized, duplicateProvider, inconsistentLane }
     private var detector = HookTransitionDetector()
     private var observationContext: Data?
+    private var authorization: (@Sendable () async -> Bool)?
     private var config = HooksConfig()
     private var privacy = true
     private var pending: [Pending] = []
@@ -42,9 +44,13 @@ public actor WindowsHookDispatchQueue {
     /// contextRevision is an opaque digest of provider/account ownership, never credential bytes.
     public func observe(
         _ observations: [HookProviderObservation], config: HooksConfig,
-        hidePersonalInfo: Bool, contextRevision: Data, now: Date = Date()) throws -> Submission
+        hidePersonalInfo: Bool, contextRevision: Data, now: Date = Date(),
+        failures: [HookEvent] = [], authorization: (@Sendable () async -> Bool)? = nil) throws -> Submission
     {
         try Task.checkCancellation()
+        guard failures.count <= 256, failures.allSatisfy({ $0.event == .refreshFailed }) else {
+            throw ObservationFailure.inconsistentLane
+        }
         guard observations.count <= 256, contextRevision.count <= 64 else { throw ObservationFailure.oversized }
         var providers = Set<String>()
         var laneCount = 0
@@ -64,6 +70,7 @@ public actor WindowsHookDispatchQueue {
             }
         }
         self.configure(config, hidePersonalInfo: hidePersonalInfo)
+        self.authorization = authorization
         if self.observationContext != contextRevision {
             self.observationContext = contextRevision
             self.detector = HookTransitionDetector()
@@ -78,6 +85,7 @@ public actor WindowsHookDispatchQueue {
         for observation in observations {
             events.append(contentsOf: self.detector.evaluate(observation: observation, config: config, now: now))
         }
+        events.append(contentsOf: failures.map { HookDispatch(event: $0) })
         return self.submit(events)
     }
 
@@ -109,7 +117,7 @@ public actor WindowsHookDispatchQueue {
                 resetAt: original.resetAt, status: original.status, timestamp: original.timestamp)
             guard !config.matchingRules(for: event).isEmpty else { continue }
             guard self.pending.count < Self.maximumPending else { omitted += 1; continue }
-            self.pending.append(Pending(event: event, config: config))
+            self.pending.append(Pending(event: event, config: config, authorization: self.authorization))
             accepted += 1
         }
         self.startNext()
@@ -134,7 +142,7 @@ public actor WindowsHookDispatchQueue {
         let limiter = self.limiter
         self.active = Task.detached(priority: .utility) { [weak self] in
             if !Task.isCancelled {
-                await HookRunner.dispatch(event: next.event, config: next.config, rateLimiter: limiter)
+                await HookRunner.dispatch(event: next.event, config: next.config, rateLimiter: limiter, authorization: next.authorization)
             }
             await self?.finished(id)
         }

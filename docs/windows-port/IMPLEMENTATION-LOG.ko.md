@@ -3141,3 +3141,12 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - 아직 대기열에 제출하거나 훅 명령을 실행하는 연결은 없다. plugin/미확정 외부 계정, fetch 진입 오류와 status probe 자료 수집도 남아 있다.
 - 남은 소요: 실제 batch 제출과 이전 key/소유권 digest 갱신, 훅 설정 변경/종료/누락 표시 연결 및 전체 계획 나머지.
 - CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·사용량/훅 실행 미실행.
+
+## IMPL-285 — 실제 hook batch 제출과 종료 연결
+
+- Windows refresh 완료 시 수집한 계정 관측을 batch로 만들고 훅 대기열에 제출한다. 성공/실패 이벤트를 한 actor 호출로 함께 제출하도록 확장했다.
+- 전체 config digest와 정렬한 계정 roster digest를 소유권 revision으로 사용하고 변경 시 이전 lane 기준을 초기화한다. 실행 전 설정/개인정보 상태를 재확인하는 콜백을 각 규칙에 적용했다.
+- 갱신 시작 시 현재 hook 설정을 동기화한다. 종료 시 refresh를 취소하고 hook 대기열의 실행 작업을 취소/대기한다.
+- 대기열 초과와 소유권 미확정 계정 수, batch 제출 실패를 트레이 상태 행으로 알린다. 성공 제출은 명령 실행 성공을 의미하지 않는다.
+- 남은 소요: plugin/외부 계정 소유권과 fetch 진입 실패/status probe, 전용 hook 설정 UI, 설정 변경 직후 실행 중 명령 취소 및 전체 계획 나머지. 실행 중인 명령은 시작 후 외부 설정 변경을 즉시 감지해 취소하지 못하며 후속 규칙 시작 전에는 재확인한다.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·실제 조회/훅 실행 미실행.

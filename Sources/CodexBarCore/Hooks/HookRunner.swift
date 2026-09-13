@@ -88,7 +88,8 @@ public enum HookRunner {
         event: HookEvent,
         config: HooksConfig,
         rateLimiter: HookRateLimiter,
-        baseEnvironment: [String: String] = ProcessInfo.processInfo.environment) async
+        baseEnvironment: [String: String] = ProcessInfo.processInfo.environment,
+        authorization: (@Sendable () async -> Bool)? = nil) async
     {
         #if os(Windows)
         guard !Task.isCancelled else { return }
@@ -104,6 +105,7 @@ public enum HookRunner {
             return
         }
         for rule in rules {
+            if let authorization, await !authorization() { return }
             #if os(Windows)
             guard !Task.isCancelled else { return }
             #endif
