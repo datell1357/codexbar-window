@@ -167,3 +167,11 @@ PATH의 관련 없는 원문 항목과 String/ExpandString 형식을 유지한�
 제거 확인창은 이제 known user references 해제를 안내하고 동의 후 이 helper를 먼저 호출한다. 현재 PowerShell PATH도 갱신하지만 이미 실행 중인 다른 프로세스의 환경은 바뀌지 않는다. 머신 PATH/간접 표현/다른 startup 항목과 살아 있는 프로세스는 제거 단계에서 계속 차단될 수 있다. 제거 실패 후 자동 참조 rollback 및 전체 환경 변경 broadcast는 미구현이다.
 
 필수 tools는 이 helper 포함 11개, first-party 서명 대상은 14개로 확대됐다. 앞선 대상 개수는 과거 기록이다. 자동 복구, 다중 쓰기의 원자성, 외부 동시 변경, 보존 backup 정리, 실제 Windows/COM/registry/서명/UI 동작은 미검증이며 이번 작업에서 실행하지 않았다.
+
+## 참조 전환 복구
+
+Restore-CodexBarVersionReferences.ps1은 references 파일명의 TransactionID, 원래 버전의 ExpectedSignerThumbprint, AllowUnvalidatedBuild를 받는다. schema 2 전환 기록만 받으며 원래 버전의 receipt와 앱/CLI hash·서명이 맞아야 한다. 제거된 payload의 복원은 Restore-CodexBarRemovedVersion으로 먼저 처리한다. reference 복구가 payload 파일을 복사하거나 앱을 실행하지는 않는다.
+
+PATH·Run 명령·shortcut은 before와 같으면 이미 복원된 것으로 두고 after와 같은 항목만 되돌린다. 값 자료형 변경·외부 수정·backup 누락/해시 불일치 시 쓰기 전 중단한다. 쓰기 직전에도 현재 값을 다시 비교하지만 비교와 쓰기가 단일 원자적 동작은 아니다. 바로가기 복구는 원래 backup을 유지하고 현재 링크를 별도 displaced 파일로 보존한다. PATH는 사용자 영구 값만 복원하며 다른 셸의 상속 환경을 되감지 않는다.
+
+전환 스크립트도 이제 changePath/changeRun과 교체 전 shortcutNewHash를 기록한다. schema 1 기록은 안전한 자동 복구 경계가 부족해 수용하지 않는다. 필수 tools는 12개, 전체 first-party 서명 대상은 15개다. 환경 변경 통지·자동 lifecycle 복구 안내/호출·기록 신뢰 및 동시 변경 대응·보존 파일 정리·Windows 실행 검증은 남아 있다. 이번 작업에서 스크립트나 복구를 실행하지 않았다.

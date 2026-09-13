@@ -1174,3 +1174,13 @@
 - 제거 launcher의 확인 문구와 실행 순서를 연결해 동의 후 known user references를 해제하고 기존 payload 제거를 호출한다. 사용자 정의/머신 참조 및 실행 프로세스는 기존 제거 gate가 차단한다. 새 helper도 배포/서명 대상에 포함했다.
 
 남은 범위: 참조 transaction 자동 rollback/재개, environment broadcast, 새 프로세스·외부 registry/shortcut/receipt 변경 race, 머신/간접 PATH/다른 startup 참조, 실패 시 이미 해제된 참조 복구, management/backup 정리와 Windows 검증. payload 제거 실패 시 참조만 먼저 해제될 수 있으며 자동 rollback을 주장하지 않는다.
+
+## IMPL-074 — 버전 참조 복구
+
+상태 CODE_WRITTEN_UNVERIFIED. PowerShell/파일·서명/registry/shortcut/빌드/컴파일/테스트/검증 실행 미실시. guidelines/COMMITS.md 부재로 제공된 핵심 커밋 규칙을 따른다.
+
+- Set-CodexBarVersionReferences의 기록을 schema 2로 바꾸고 changePath/changeRun 및 새 shortcut hash를 저장하도록 작성했다. 교체 전에 candidate hash를 게시하고 현재 shortcut도 다시 대조한다.
+- Restore-CodexBarVersionReferences는 TransactionID·signer·개발 opt-in을 받아 원래 버전 receipt와 앱/CLI hash·서명을 먼저 대조한다. payload가 제거됐으면 먼저 payload를 복원해야 한다.
+- 변경 대상의 현재 값/자료형이 기록된 before 또는 after와 맞는지 전체 사전 대조한다. 이미 before면 유지하며 after에 해당하는 항목만 복원한다. 현재 shortcut과 backup hash를 결합하고 기존 shortcut은 displaced 사본으로 보존한다. 별도 recovery journal을 작성한다.
+
+남은 범위: schema 1 자동 전환 복구, 환경 broadcast 및 프로세스 PATH 처리, journal 진위/동시 변경, 여러 쓰기 atomicity, 제거 실패 자동 복구 orchestrator·보존 파일 정리·전체 Windows 검증. 복구 중 실패해도 앞선 쓰기는 적용됐을 수 있다.

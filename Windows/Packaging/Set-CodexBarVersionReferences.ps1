@@ -110,9 +110,11 @@ try {
     if (-not $PSCmdlet.ShouldProcess($FromVersionID, 'Migrate or detach known user launch references, preserving a recovery record')) { return }
     $transaction = [Guid]::NewGuid().ToString('N')
     $journalPath = Join-Path $root ('references-' + $transaction + '.json')
-    $record = [ordered] @{ schemaVersion = 1; fromVersionID = $FromVersionID; toVersionID = $ToVersionID;
+    $record = [ordered] @{ schemaVersion = 2; fromVersionID = $FromVersionID; toVersionID = $ToVersionID;
         state = 'PREPARED'; oldPath = $oldPath; newPath = $newPath; pathKind = [string] $pathKind;
-        oldRun = $oldRun; newRun = $newRun; shortcutHash = $shortcutHash }
+        oldRun = $oldRun; newRun = $newRun; changeRun = $changeRun;
+        changePath = ($null -ne $oldPath -and $oldPath -cne $newPath);
+        shortcutHash = $shortcutHash; shortcutNewHash = $null }
     Write-CodexBarJournal $journalPath $record
     if ($null -ne $oldPath -and $oldPath -cne $newPath) {
         if ($environmentKey.GetValue('Path', $null, $options) -cne $oldPath -or $environmentKey.GetValueKind('Path') -ne $pathKind) { throw 'PATH changed concurrently.' }
@@ -136,6 +138,9 @@ try {
             $link.IconLocation = (Join-Path $to 'CodexBarWindows.exe') + ',0'
             $link.Save()
             $null = [Runtime.InteropServices.Marshal]::FinalReleaseComObject($link); $link = $null
+            $record.shortcutNewHash = (Get-FileHash -LiteralPath $temporary -Algorithm SHA256).Hash
+            Write-CodexBarJournal $journalPath $record
+            if ((Get-FileHash -LiteralPath $shortcut -Algorithm SHA256).Hash -ine $shortcutHash) { throw 'Shortcut changed during preparation.' }
             [IO.File]::Replace($temporary, $shortcut, $backup)
         }
     }
