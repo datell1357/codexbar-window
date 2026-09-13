@@ -140,8 +140,8 @@ extension CodexBarCLI {
 
     static func sessionsHelp(version: String) -> String {
         #if os(Windows)
-        let nativeOption = " [--native-cwd] [--infer-new-sessions] [--claude-titles] [--codex-session-root <path>] [--codex-title-index <path>] [--codex-title-database <path>] [--claude-project-root <path>]"
-        let focusDescription = "Focus activates an available Windows window. --native-cwd opts into experimental 64-bit directory reads."
+        let nativeOption = " [--diagnostics-json] [--native-cwd] [--infer-new-sessions] [--claude-titles] [--codex-session-root <path>] [--codex-title-index <path>] [--codex-title-database <path>] [--claude-project-root <path>]"
+        let focusDescription = "Focus activates an available Windows window. --native-cwd opts into experimental 64-bit directory reads. --diagnostics-json emits aggregate returned-row counts and status, without identities; use separately from --json/--json-v2. Partial scans exit 0; failed/cancelled scans exit 1; invalid options or paths exit 64."
         #else
         let nativeOption = ""
         let focusDescription = "Focus activates the owning terminal or desktop app on macOS."

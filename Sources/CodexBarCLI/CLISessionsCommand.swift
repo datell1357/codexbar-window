@@ -4,6 +4,26 @@ import Foundation
 
 extension CodexBarCLI {
     static func runSessions(_ values: ParsedValues) async {
+        #if os(Windows)
+        if values.flags.contains("diagnosticsJSON") {
+            guard Self.sessionsJSONProtocolVersion(from: values) == nil else {
+                Self.writeStderr("Use --diagnostics-json separately from --json or --json-v2.\n")
+                Self.platformExit(64)
+            }
+            let outcome = await Self.scanWindowsSessionsOutcome(values: values)
+            let status: String
+            let exitCode: Int32
+            switch outcome.status {
+            case .complete: status = "complete"; exitCode = 0
+            case .partial: status = "partial"; exitCode = 0
+            case .failed: status = "failed"; exitCode = 1
+            case .cancelled: status = "cancelled"; exitCode = 1
+            }
+            Self.printJSON(SessionDiagnosticsEnvelope(status: status, diagnostics: outcome.diagnostics),
+                           pretty: values.flags.contains("pretty"))
+            Self.platformExit(exitCode)
+        }
+        #endif
         let sessions = await Self.scanSessionsForCommand(values: values)
         if let jsonVersion = Self.sessionsJSONProtocolVersion(from: values) {
             Self.printJSON(
@@ -16,21 +36,7 @@ extension CodexBarCLI {
 
     private static func scanSessionsForCommand(values: ParsedValues) async -> [AgentSession] {
         #if os(Windows)
-        let roots: WindowsSessionMetadataRoots
-        do {
-            roots = try WindowsSessionMetadataRoots.load(
-                codexOverride: values.options["codexSessionRoot"]?.last,
-                claudeOverride: values.options["claudeProjectRoot"]?.last,
-                allowNewSessions: values.flags.contains("inferNewSessions"),
-                codexTitleIndexOverride: values.options["codexTitleIndex"]?.last,
-                readClaudeTitles: values.flags.contains("claudeTitles"),
-                codexTitleDatabaseOverride: values.options["codexTitleDatabase"]?.last)
-        } catch {
-            Self.writeStderr("Invalid Windows session metadata root. Use an absolute local drive path.\n")
-            Self.platformExit(64)
-        }
-        let outcome = await WindowsAgentSessionScanner.scanOutcome(
-            nativeDirectoryReadEnabled: values.flags.contains("nativeCwd"), metadataRoots: roots)
+        let outcome = await Self.scanWindowsSessionsOutcome(values: values)
         switch outcome.status {
         case .failed, .cancelled:
             Self.writeStderr((outcome.message ?? "Session scan cancelled.") + "\n")
@@ -45,6 +51,33 @@ extension CodexBarCLI {
         return await LocalAgentSessionScanner().scan()
         #endif
     }
+
+    #if os(Windows)
+    private struct SessionDiagnosticsEnvelope: Encodable {
+        let schemaVersion = 1
+        let scope = "returned_session_rows"
+        let status: String
+        let diagnostics: WindowsSessionDiagnostics?
+    }
+
+    private static func scanWindowsSessionsOutcome(values: ParsedValues) async -> WindowsSessionScanOutcome {
+        let roots: WindowsSessionMetadataRoots
+        do {
+            roots = try WindowsSessionMetadataRoots.load(
+                codexOverride: values.options["codexSessionRoot"]?.last,
+                claudeOverride: values.options["claudeProjectRoot"]?.last,
+                allowNewSessions: values.flags.contains("inferNewSessions"),
+                codexTitleIndexOverride: values.options["codexTitleIndex"]?.last,
+                readClaudeTitles: values.flags.contains("claudeTitles"),
+                codexTitleDatabaseOverride: values.options["codexTitleDatabase"]?.last)
+        } catch {
+            Self.writeStderr("Invalid Windows session metadata root. Use an absolute local drive path.\n")
+            Self.platformExit(64)
+        }
+        return await WindowsAgentSessionScanner.scanOutcome(
+            nativeDirectoryReadEnabled: values.flags.contains("nativeCwd"), metadataRoots: roots)
+    }
+    #endif
 
     static func sessionsJSONProtocolVersion(from values: ParsedValues) -> Int? {
         if values.flags.contains("jsonV2") {
@@ -135,6 +168,8 @@ struct SessionsOptions: CommanderParsable {
     #if os(Windows)
     @Flag(name: .long("native-cwd"), help: "Opt in to experimental native 64-bit process directory reads")
     var nativeCwd: Bool = false
+    @Flag(name: .long("diagnostics-json"), help: "Emit aggregate Windows scan diagnostics without session identities; separate from --json/--json-v2")
+    var diagnosticsJSON: Bool = false
     @Flag(name: .long("infer-new-sessions"), help: "Opt in to heuristic new-session metadata matching within explicit roots")
     var inferNewSessions: Bool = false
     @Flag(name: .long("claude-titles"), help: "Read custom-title metadata from explicitly matched Claude transcripts (experimental)")

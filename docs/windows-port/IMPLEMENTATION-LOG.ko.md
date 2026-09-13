@@ -599,3 +599,20 @@
 2. 모델 합계·직렬화·UI 표시·partial 처리와 Windows 실행은 미검증이다. 증분 parsing, SQLite ownership, 나머지 Windows 기능/배포 검증은 남아 있다.
 
 다음 구현: 구조화 진단을 CLI의 명시적 옵션으로 제공하되 기존 session JSON 소비자의 배열 계약을 유지한다.
+
+## IMPL-031 — CLI diagnostics JSON opt-in
+
+상태: CODE_WRITTEN_UNVERIFIED. 빌드·컴파일·테스트·lint·CLI 실행·실제 source 조회·검증 스크립트를 실행하지 않았다. 계약: WIN-040/042.
+
+작성한 코드:
+
+- Windows sessions에 --diagnostics-json 옵션을 추가했다. schemaVersion1, scope=returned_session_rows, complete/partial/failed/cancelled status와 optional provider 집계만 출력한다. session 목록/identity/path/title/raw error는 포함하지 않는다.
+- --json/--json-v2와 혼용하면 조회 전에 exit64로 거부한다. --pretty를 지원하고 기존 배열 출력/표/focus 명령의 경로는 유지한다. 공통 Windows outcome helper로 source 옵션 load와 실제 scan을 한 번만 수행하도록 구성했다.
+- complete/partial은 JSON status를 출력하고 exit0, failed/cancelled는 집계 없이 status를 출력하고 exit1로 처리한다. 잘못된 옵션/absolute path 설정은 기존 stderr+exit64이며 diagnostics envelope를 보장하지 않는다.
+
+남은 범위:
+
+1. Commander option binding, JSON 직렬화/exit code와 실제 Windows CLI는 미검증이다. partial 집계는 반환된 행이며 시스템 전체 발견률/성공률이 아니다.
+2. source별 attempt/error code metrics, 증분 parsing, SQLite ownership 및 전체 Windows 기능·배포 검증은 남아 있다.
+
+다음 구현: session 기능 작업 기록을 정리하고 전체 계획의 다음 미구현 Windows 플랫폼 계약으로 넘어간다. 기존 세션의 미검증/미구현 경계는 그대로 추적한다.
