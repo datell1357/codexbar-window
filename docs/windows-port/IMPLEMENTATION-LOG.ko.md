@@ -669,3 +669,20 @@
 2. 임의 shortcut capture, 다중 모니터 anchor·focus/scroll 복원과 전체 Windows 기능/배포 검증은 남아 있다.
 
 다음 구현: 전역 단축키로 열린 트레이 메뉴를 현재 포커스 창의 모니터 작업 영역에 맞춰 배치하는 경로를 추가한다.
+
+## IMPL-035 — keyboard popup의 foreground monitor 배치
+
+상태: CODE_WRITTEN_UNVERIFIED. 빌드·컴파일·테스트·lint·앱·실제 모니터/키 입력·검증 스크립트를 실행하지 않았다. 계약: WIN-011.
+
+작성한 코드:
+
+- hotkey로 popup을 열 때 hidden tray owner 활성화 전에 foreground window monitor의 작업 영역을 읽고 우하단 안쪽 anchor를 만든다. monitor 정보 실패는 primary work area, 그것도 실패하면 기존 cursor 좌표로 fallback한다.
+- keyboard anchor는 right/bottom alignment로 TrackPopupMenu에 전달한다. mouse 경로는 기존 cursor/정렬을 유지한다. 페이지 재열기는 keyboard anchor를 보존하며 가까운 monitor work area로 다시 clamp한다.
+- 좌표는 기존 Win32 화면 좌표 체계를 그대로 사용하고 DPI 배율을 중복 적용하지 않는다. menu 크기/overflow 배치는 native menu에 맡긴다.
+
+남은 범위:
+
+1. 실제 다중 모니터/음수 좌표/혼합 DPI/작업표시줄 위치·해상도 변경과 Win32 menu 배치는 미검증이다. monitor 정보가 모두 실패한 경우 fallback cursor가 화면 안인지 추가 확인하지 않는다.
+2. 키보드 focus/scroll 복원, 임의 shortcut capture·접근성 및 전체 Windows 기능/배포 검증은 남아 있다.
+
+다음 구현: keyboard popup 취소 시 원래 foreground window로 포커스를 돌리는 경로를 제한적으로 연결하되 다른 창으로 의도적으로 이동한 상태를 덮어쓰지 않는다.

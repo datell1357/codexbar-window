@@ -33,6 +33,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
     private var menuHotkeyFailureMessage: String?
     private static let cleanupHotkeyCommand = UINT_PTR(0x7544)
     private var popupIsOpen = false
+    private var keyboardPopupAnchor: POINT?
     private static let chooseTitleDatabaseCommand = UINT_PTR(0x7530)
     private static let clearTitleDatabaseCommand = UINT_PTR(0x7531)
     private static let disableTitleDatabaseCommand = UINT_PTR(0x7532)
@@ -607,10 +608,27 @@ public final class WindowsTrayHost: @unchecked Sendable {
         if !attached { _ = DestroyMenu(child) }
     }
 
-    private func popup(notifyMenuOpen: Bool = true) {
+    private func keyboardMenuPoint() -> POINT? {
+        // Capture the user's foreground monitor before activating the hidden tray owner window.
+        let foreground = GetForegroundWindow()
+        let monitor = MonitorFromWindow(foreground, UINT(MONITOR_DEFAULTTONEAREST))
+        var info = MONITORINFO()
+        info.cbSize = DWORD(MemoryLayout<MONITORINFO>.size)
+        var area = RECT()
+        if let monitor, GetMonitorInfoW(monitor, &info) != 0 { area = info.rcWork }
+        else if SystemParametersInfoW(UINT(SPI_GETWORKAREA), 0, &area, 0) == 0 { return nil }
+        guard area.right > area.left, area.bottom > area.top else { return nil }
+        var point = POINT()
+        point.x = max(area.left, area.right - 1 - min(12, (area.right - area.left) / 2))
+        point.y = max(area.top, area.bottom - 1 - min(12, (area.bottom - area.top) / 2))
+        return point
+    }
+
+    private func popup(notifyMenuOpen: Bool = true, keyboardInitiated: Bool = false, preserveAnchor: Bool = false) {
         guard !self.remoteEditorOpen, !self.popupIsOpen, !self.quitInvoked else { return }
         self.popupIsOpen = true
         defer { self.popupIsOpen = false }
+        if !preserveAnchor { self.keyboardPopupAnchor = keyboardInitiated ? self.keyboardMenuPoint() : nil }
         guard let hwnd = self.window, let menu = CreatePopupMenu() else { return }
         if notifyMenuOpen { self.onMenuOpen() }
         self.mailboxLock.lock()
@@ -812,8 +830,9 @@ public final class WindowsTrayHost: @unchecked Sendable {
         "Refresh".withCString(encodedAs: UTF16.self) { _ = AppendMenuW(menu, UINT(MF_STRING), Self.refreshCommand, $0) }
         "Quit".withCString(encodedAs: UTF16.self) { _ = AppendMenuW(menu, UINT(MF_STRING), Self.quitCommand, $0) }
         _ = SetForegroundWindow(hwnd)
-        var point = POINT()
-        guard GetCursorPos(&point) != 0 else {
+        var point = self.keyboardPopupAnchor ?? POINT()
+        let havePoint = self.keyboardPopupAnchor != nil || GetCursorPos(&point) != 0
+        guard havePoint else {
             _ = DestroyMenu(menu)
             self.popupPageCommands.removeAll(keepingCapacity: true)
         self.popupRemoteCommands.removeAll(keepingCapacity: true)
@@ -827,7 +846,20 @@ public final class WindowsTrayHost: @unchecked Sendable {
             self.popupProviderQuotaWarningNames.removeAll(keepingCapacity: true)
             return
         }
-        let command = TrackPopupMenu(menu, UINT(TPM_RIGHTBUTTON | TPM_RETURNCMD), point.x, point.y, 0, hwnd, nil)
+        var flags = UINT(TPM_RIGHTBUTTON | TPM_RETURNCMD)
+        if self.keyboardPopupAnchor != nil {
+            // Re-clamp a retained page anchor if the display configuration changed between menus.
+            let monitor = MonitorFromPoint(point, UINT(MONITOR_DEFAULTTONEAREST))
+            var info = MONITORINFO()
+            info.cbSize = DWORD(MemoryLayout<MONITORINFO>.size)
+            if let monitor, GetMonitorInfoW(monitor, &info) != 0,
+               info.rcWork.right > info.rcWork.left, info.rcWork.bottom > info.rcWork.top {
+                point.x = min(max(point.x, info.rcWork.left), info.rcWork.right - 1)
+                point.y = min(max(point.y, info.rcWork.top), info.rcWork.bottom - 1)
+            }
+            flags |= UINT(TPM_RIGHTALIGN | TPM_BOTTOMALIGN)
+        }
+        let command = TrackPopupMenu(menu, flags, point.x, point.y, 0, hwnd, nil)
         _ = DestroyMenu(menu)
         if command != 0 { self.dispatchCommand(UINT_PTR(command)) }
         self.popupPageCommands.removeAll(keepingCapacity: true)
@@ -1812,14 +1844,14 @@ public final class WindowsTrayHost: @unchecked Sendable {
             guard host.menuHotkeyRegistered, !host.quitInvoked, !host.remoteEditorOpen,
                   case .idle = host.providerEditorPhase, case .idle = host.codexWebSettingsEditorPhase else { return 0 }
             if host.popupIsOpen { _ = EndMenu() }
-            else { host.popup() }
+            else { host.popup(keyboardInitiated: true) }
             return 0
         }
         if message == Self.pagePopupMessage {
             guard !host.quitInvoked, !host.remoteEditorOpen,
                   case .idle = host.providerEditorPhase, case .idle = host.codexWebSettingsEditorPhase
             else { return 0 }
-            host.popup(notifyMenuOpen: false)
+            host.popup(notifyMenuOpen: false, preserveAnchor: true)
             return 0
         }
         if message == Self.wakeMessage {
