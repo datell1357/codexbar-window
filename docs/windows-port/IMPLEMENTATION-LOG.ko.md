@@ -1502,3 +1502,13 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - 지원하지 않는 공급자에 scope/조직/workspace 값이 전달되면 거절한다. credential 유효성이나 조직 존재 여부를 원격 확인하지 않는다.
 
 남은 범위: provider별 credential parsing/OAuth·scope 선택 control 개선·API region 안내·저장 실패 재편집, Windows UI와 실제 계정 검증, 전체 계정 관리 구현.
+
+## IMPL-106 — z.ai personal/team 선택 control
+
+상태 CODE_WRITTEN_UNVERIFIED. 컴파일/빌드/테스트/UI/실계정/검증 미실시. guidelines/COMMITS.md 부재로 핵심 커밋 규칙을 적용한다.
+
+- z.ai scope 자유 입력을 Personal/Team 라디오 선택으로 바꾸고 기본 personal을 명시한다. 선택 변경은 입력 상태만 바꾸며 저장·수집을 실행하지 않는다.
+- personal에서는 조직/project 입력을 비활성화하고 저장 payload에서 제외한다. 입력칸 자체 내용은 보존해 team으로 돌아갈 때 다시 편집할 수 있다. team에서는 두 필드가 필요하다는 안내를 표시하며 기존 shared rules를 유지한다.
+- DPI 배치·system font 갱신에 새 control을 포함한다. 다른 공급자 입력 계약은 유지한다.
+
+남은 범위: 키보드 라디오 그룹/스크린리더/높은 배율·작은 화면 실행 검증, region 안내·credential parsing/OAuth·계정 수정 및 전체 Windows 기능 구현.

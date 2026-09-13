@@ -12,6 +12,7 @@ enum WindowsAccountAddDialog {
         let support: TokenAccountSupport
         let provider: UsageProvider
         init(support: TokenAccountSupport, provider: UsageProvider) { self.support = support; self.provider = provider }
+        var teamScope = false
         var result: Result = .cancelled
         var closed = false
         var dpi: UINT = 96
@@ -78,9 +79,11 @@ enum WindowsAccountAddDialog {
         }
         let label = read(101, limit: 160), token = read(103, limit: 65_536)
         func optional(_ id: Int32) -> String? { let text = read(id, limit: 512); return text.isEmpty ? nil : text }
-        let scope = context.support.showsTeamModeControls ? optional(105)?.lowercased() : nil
-        let organization = context.support.showsOrganizationField || context.support.showsTeamModeControls ? optional(107) : nil
-        let workspace = context.support.showsTeamModeControls ? optional(109) : nil
+        let scope = context.provider == .zai ? (context.teamScope ? "team" : "personal") :
+            (context.support.showsTeamModeControls ? optional(105)?.lowercased() : nil)
+        let useTeamFields = context.provider != .zai || context.teamScope
+        let organization = useTeamFields && (context.support.showsOrganizationField || context.support.showsTeamModeControls) ? optional(107) : nil
+        let workspace = useTeamFields && context.support.showsTeamModeControls ? optional(109) : nil
         if let field = WindowsAccountInputRules.invalidField(label: label, token: token, scope: scope,
                                                              organization: organization, workspace: workspace) {
             let message: String
@@ -133,6 +136,15 @@ enum WindowsAccountAddDialog {
                 (108, "Organization ID (optional)", 107, context.support.showsOrganizationField || context.support.showsTeamModeControls),
                 (110, context.provider == .zai ? "Project ID (required for team)" : "Workspace ID (optional)", 109, context.support.showsTeamModeControls)]
             for (labelID, title, editID, visible) in rows where visible {
+                if editID == 105, context.provider == .zai {
+                    guard Self.control(hwnd, "STATIC", "Usage scope", labelID, 0, 0, 0, 1, 1) != nil,
+                          Self.control(hwnd, "BUTTON", "&Personal", 105,
+                            DWORD(WS_TABSTOP | WS_GROUP | BS_AUTORADIOBUTTON), 0, 0, 1, 1) != nil,
+                          Self.control(hwnd, "BUTTON", "&Team", 111,
+                            DWORD(WS_TABSTOP | BS_AUTORADIOBUTTON), 0, 0, 1, 1) != nil else { return -1 }
+                    SendMessageW(GetDlgItem(hwnd, 105), UINT(BM_SETCHECK), WPARAM(BST_CHECKED), 0)
+                    continue
+                }
                 guard Self.control(hwnd, "STATIC", title, labelID, 0, 0, 0, 1, 1) != nil,
                       let edit = Self.control(hwnd, "EDIT", "", editID,
                           DWORD(WS_TABSTOP | WS_BORDER | ES_AUTOHSCROLL) | (editID == 103 ? DWORD(ES_PASSWORD) : 0),
@@ -145,6 +157,7 @@ enum WindowsAccountAddDialog {
                   Self.control(hwnd, "BUTTON", "Add account", 1, DWORD(WS_TABSTOP | BS_DEFPUSHBUTTON), 0, 0, 1, 1) != nil,
                   Self.control(hwnd, "BUTTON", "Cancel", 2, DWORD(WS_TABSTOP | BS_PUSHBUTTON), 0, 0, 1, 1) != nil else { return -1 }
             Self.updateFont(hwnd, context: context)
+            Self.updateScope(hwnd, context: context)
             Self.layout(hwnd, context: context)
             return 0
         case UINT(WM_SIZE): Self.layout(hwnd, context: context); return 0
@@ -167,6 +180,11 @@ enum WindowsAccountAddDialog {
             switch Int32(wParam & 0xffff) {
             case 1: Self.save(hwnd, context: context)
             case 2: DestroyWindow(hwnd)
+            case 105, 111:
+                if context.provider == .zai {
+                    context.teamScope = Int32(wParam & 0xffff) == 111
+                    Self.updateScope(hwnd, context: context)
+                }
             default: break
             }
             return 0
@@ -178,6 +196,17 @@ enum WindowsAccountAddDialog {
         default: return DefWindowProcW(hwnd, message, wParam, lParam)
         }
     }
+    private static func updateScope(_ hwnd: HWND, context: Context) {
+        guard context.provider == .zai else { return }
+        for id in [Int32(107), 108, 109, 110] { EnableWindow(GetDlgItem(hwnd, id), context.teamScope ? 1 : 0) }
+        SendMessageW(GetDlgItem(hwnd, 105), UINT(BM_SETCHECK), WPARAM(context.teamScope ? BST_UNCHECKED : BST_CHECKED), 0)
+        SendMessageW(GetDlgItem(hwnd, 111), UINT(BM_SETCHECK), WPARAM(context.teamScope ? BST_CHECKED : BST_UNCHECKED), 0)
+        let guidance = context.teamScope
+            ? "Adds and selects this account. Team usage requires both Organization ID and Project ID."
+            : "Adds and selects this account. Personal usage does not use organization or project fields."
+        guidance.withCString(encodedAs: UTF16.self) { SetWindowTextW(GetDlgItem(hwnd, 102), $0) }
+    }
+
     private static func updateFont(_ hwnd: HWND, context: Context) {
         var metrics = NONCLIENTMETRICSW()
         metrics.cbSize = UINT(MemoryLayout<NONCLIENTMETRICSW>.size)
@@ -186,7 +215,7 @@ enum WindowsAccountAddDialog {
               let font = CreateFontIndirectW(&metrics.lfMessageFont) else { return }
         let previous = context.font
         context.font = font
-        for id in [Int32(100), 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 1, 2] {
+        for id in [Int32(100), 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 1, 2] {
             if let control = GetDlgItem(hwnd, id) {
                 SendMessageW(control, UINT(WM_SETFONT), WPARAM(Int(bitPattern: font)), 1)
             }
@@ -203,7 +232,11 @@ enum WindowsAccountAddDialog {
         for (labelID, editID) in [(Int32(100), Int32(101)), (104, 103), (106, 105), (108, 107), (110, 109)] {
             guard let edit = GetDlgItem(hwnd, editID) else { continue }
             MoveWindow(GetDlgItem(hwnd, labelID), px(16), px(y), width, px(22), 1)
-            MoveWindow(edit, px(16), px(y + 24), width, px(26), 1)
+            if editID == 105, context.provider == .zai {
+                let half = max(1, width / 2)
+                MoveWindow(edit, px(16), px(y + 24), half, px(26), 1)
+                MoveWindow(GetDlgItem(hwnd, 111), px(16) + half, px(y + 24), half, px(26), 1)
+            } else { MoveWindow(edit, px(16), px(y + 24), width, px(26), 1) }
             y += 60
         }
         MoveWindow(GetDlgItem(hwnd, 102), px(16), px(y), width, px(60), 1)
