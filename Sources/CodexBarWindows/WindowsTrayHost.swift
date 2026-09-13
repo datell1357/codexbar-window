@@ -95,6 +95,10 @@ public final class WindowsTrayHost: @unchecked Sendable {
     private static let agentSessionsRefreshCommand = UINT_PTR(0x7501)
     private static let agentSessionCommandBase = UINT_PTR(0x7600)
     private static let wakeMessage = UINT(WM_APP) + 1
+    private static let spendCollectionCommand = UINT_PTR(0x7030)
+    private static let spendLedgerCommand = UINT_PTR(0x7031)
+    private static let spendPeriodCommandBase = UINT_PTR(0x7040)
+    private static let spendPeriods = [7, 14, 30, 90, 180, 365]
     private static let refreshCommand = UINT_PTR(0x7001)
     private static let quitCommand = UINT_PTR(0x7002)
     private static let usageBarsShowUsedCommand = UINT_PTR(0x7003)
@@ -182,6 +186,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
     private let onMenuOpen: @Sendable () -> Void
     private let onPresentationSettingsChanged: PresentationSettingsChangedHandler
     private let onOptionalUsageSettingsChanged: OptionalUsageSettingsChangedHandler
+    private let onSpendSettingsChanged: @Sendable () -> Void
     private let onRefreshSettingsChanged: RefreshSettingsChangedHandler
     private let onSessionQuotaNotificationSettingsChanged: SessionQuotaNotificationSettingsChangedHandler
     private let onQuotaWarningSettingsChanged: QuotaWarningSettingsChangedHandler
@@ -272,6 +277,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
         onRemoteSessionPage: @escaping @Sendable (WindowsSessionPageRequest) -> Void = { _ in },
         onPresentationSettingsChanged: @escaping PresentationSettingsChangedHandler = {},
         onOptionalUsageSettingsChanged: @escaping OptionalUsageSettingsChangedHandler = {},
+        onSpendSettingsChanged: @escaping @Sendable () -> Void = {},
         onRefreshSettingsChanged: @escaping RefreshSettingsChangedHandler = {},
         onSessionQuotaNotificationSettingsChanged: @escaping SessionQuotaNotificationSettingsChangedHandler = {},
         onQuotaWarningSettingsChanged: @escaping QuotaWarningSettingsChangedHandler = {},
@@ -306,6 +312,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
         self.onMenuOpen = onMenuOpen
         self.onPresentationSettingsChanged = onPresentationSettingsChanged
         self.onOptionalUsageSettingsChanged = onOptionalUsageSettingsChanged
+        self.onSpendSettingsChanged = onSpendSettingsChanged
         self.onRefreshSettingsChanged = onRefreshSettingsChanged
         self.onSessionQuotaNotificationSettingsChanged = onSessionQuotaNotificationSettingsChanged
         self.onQuotaWarningSettingsChanged = onQuotaWarningSettingsChanged
@@ -1610,6 +1617,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
         }
         self.appendShortcutMenu(to: menu)
         self.appendSessionLabelMenu(to: menu)
+        self.appendSpendSettingsMenu(to: menu)
         self.appendRefreshFrequencyMenu(to: menu)
         self.appendLowPowerModeMenu(to: menu)
         _ = AppendMenuW(menu, UINT(MF_SEPARATOR), 0, nil)
@@ -2266,6 +2274,46 @@ public final class WindowsTrayHost: @unchecked Sendable {
         }
     }
 
+    private func appendSpendSettingsMenu(to menu: HMENU) {
+        guard let submenu = CreatePopupMenu() else { return }
+        let settings = WindowsSpendSettings.load()
+        var items: [(UINT_PTR, String, Bool)] = [
+            (Self.spendCollectionCommand, "Collect supported provider costs", settings.collectionEnabled),
+            (Self.spendLedgerCommand, "Keep Codex local cost ledger", settings.codexLocalLedgerEnabled)
+        ]
+        items += Self.spendPeriods.enumerated().map { index, days in
+            (Self.spendPeriodCommandBase + UINT_PTR(index), "Show last \(days) days", settings.historyDays == days)
+        }
+        for (command, label, selected) in items {
+            let flags = UINT(MF_STRING) | (selected ? UINT(MF_CHECKED) : 0)
+            let appended = label.withCString(encodedAs: UTF16.self) { AppendMenuW(submenu, flags, command, $0) }
+            guard appended != 0 else { _ = DestroyMenu(submenu); return }
+        }
+        let appended = "Cost collection".withCString(encodedAs: UTF16.self) {
+            AppendMenuW(menu, UINT(MF_STRING | MF_POPUP), UINT_PTR(UInt(bitPattern: submenu)), $0)
+        }
+        if appended == 0 { _ = DestroyMenu(submenu) }
+    }
+
+    private func changeSpendSetting(command: UINT_PTR) {
+        var settings = WindowsSpendSettings.load()
+        if command == Self.spendCollectionCommand {
+            settings.collectionEnabled.toggle()
+        } else if command == Self.spendLedgerCommand {
+            settings.codexLocalLedgerEnabled.toggle()
+        } else {
+            guard command >= Self.spendPeriodCommandBase,
+                  command < Self.spendPeriodCommandBase + UINT_PTR(Self.spendPeriods.count) else { return }
+            settings.historyDays = Self.spendPeriods[Int(command - Self.spendPeriodCommandBase)]
+        }
+        do {
+            try settings.save()
+            self.onSpendSettingsChanged()
+        } catch {
+            self.showMessage("Cost collection settings could not be saved.", caption: "Cost collection")
+        }
+    }
+
     private func appendRefreshFrequencyMenu(to menu: HMENU) {
         guard let submenu = CreatePopupMenu() else { return }
         let settings = WindowsRefreshSettings.load(userDefaults: self.presentationDefaults)
@@ -2654,6 +2702,10 @@ public final class WindowsTrayHost: @unchecked Sendable {
             self.presentationDefaults.set(!enabled, forKey: "agentSessionsEnabled")
             self.onAgentSessionsSettingsChanged()
         case Self.agentSessionsRefreshCommand: self.onAgentSessionsRefresh()
+        case Self.spendCollectionCommand, Self.spendLedgerCommand:
+            self.changeSpendSetting(command: command)
+        case Self.spendPeriodCommandBase..<(Self.spendPeriodCommandBase + UINT_PTR(Self.spendPeriods.count)):
+            self.changeSpendSetting(command: command)
         case Self.refreshCommand: self.onRefresh()
         case Self.quitCommand: self.invokeQuit()
         case Self.usageBarsShowUsedCommand: self.togglePresentationSetting(forKey: "usageBarsShowUsed")

@@ -1862,3 +1862,13 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - runtime 소유 snapshot 조회 API를 작성했다. 새 refresh/계정 변경은 이전 snapshot을 즉시 제거하고 generation으로 이전 결과를 거절한다. 스캔 중 외부 비용 설정이 바뀌면 결과를 폐기한다. shutdown은 controller를 중지한다.
 
 남은 범위: native 비용 설정/대시보드/공유 UI, 표시 옵션만 변경하는 재집계 연결, refresh마다 controller 재생성에 따른 stale/캐시 최적화, 외부 계정 파일 변경 실시간 감지, 여러 Codex source/OpenCodeX parity 및 Windows 검증. 실제 앱이나 비용 수집은 실행하지 않았다.
+
+## IMPL-142 — 비용 설정 트레이 메뉴
+
+상태 CODE_WRITTEN_UNVERIFIED. 컴파일/빌드/테스트/앱·UI·설정 실행/검증 미실시. guidelines/COMMITS.md 부재로 핵심 커밋 규칙을 적용한다.
+
+- Cost collection 하위 메뉴에 지원 공급자 비용 수집, Codex local ledger, 7/14/30/90/180/365일 표시 기간 선택을 추가했다. 현재 설정에 체크를 표시하고 저장 실패 시 일반 오류만 안내한다.
+- host 설정 변경 콜백을 Main에서 runtime으로 연결했다. runtime은 기존 snapshot을 지우고 수집 controller를 중지한다. 사용량 refresh 중 변경이면 후속 refresh 플래그를 남겨 기존 coalescing으로 요청이 사라지지 않도록 작성했다.
+- shutdown은 비용 설정 재갱신 플래그를 지운다. 비용 수집과 ledger 기본값 off는 유지한다.
+
+남은 범위: 비용 대시보드/차트/공유 화면, 통화/시간대/source 세부 설정, 기간 변경 시 보관 scan 재집계 최적화, provider/account/OpenCodeX 완전 집계 및 Windows 검증. 기간 메뉴는 표시 기간을 선택하며 scan 정책은 기존 365일이다.

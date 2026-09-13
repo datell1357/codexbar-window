@@ -81,6 +81,7 @@ public actor WindowsUsageRuntime {
     private var startupConnectivityRetryTask: Task<Void, Never>?
     private var startupConnectivityRetryActive = false
     private var startupConnectivityRetryNeeded = false
+    private var queuedSpendRefresh = false
     private var queuedOptionalRefresh = false
     private var queuedPredictiveSettingsRefresh = false
     private var queuedCodexWebSettingsRefresh = false
@@ -1074,6 +1075,20 @@ public actor WindowsUsageRuntime {
     /// Refreshes enabled providers once. A second request while a
     /// refresh is in flight is intentionally coalesced instead of overlapping
     /// credential and warm-session work.
+    public func spendSettingsDidChange() async {
+        guard !self.shuttingDown else { return }
+        self.spendGeneration &+= 1
+        self.spendSnapshot = nil
+        self.spendState = .idle
+        let refreshing = self.refreshTask != nil
+        if refreshing { self.queuedSpendRefresh = true }
+        let controller = self.spendController
+        self.spendController = nil
+        if let controller { await controller.stop() }
+        guard !self.shuttingDown else { return }
+        if !refreshing { await self.refresh() }
+    }
+
     public func refresh() async {
         guard !self.shuttingDown, self.refreshTask == nil else { return }
         repeat {
@@ -1087,15 +1102,18 @@ public actor WindowsUsageRuntime {
             let optionalRefreshNeeded = self.queuedOptionalRefresh &&
                 WindowsUsagePresentationSettings.load().showOptionalCreditsAndExtraUsage
             let predictiveSettingsRefreshNeeded = self.queuedPredictiveSettingsRefresh
+            let spendRefreshNeeded = self.queuedSpendRefresh
             let codexWebSettingsRefreshNeeded = self.queuedCodexWebSettingsRefresh
             guard !self.shuttingDown,
-                  optionalRefreshNeeded || predictiveSettingsRefreshNeeded || codexWebSettingsRefreshNeeded
+                  optionalRefreshNeeded || predictiveSettingsRefreshNeeded || codexWebSettingsRefreshNeeded || spendRefreshNeeded
             else {
+                self.queuedSpendRefresh = false
                 self.queuedOptionalRefresh = false
                 self.queuedPredictiveSettingsRefresh = false
                 self.queuedCodexWebSettingsRefresh = false
                 break
             }
+            self.queuedSpendRefresh = false
             self.queuedOptionalRefresh = false
             self.queuedPredictiveSettingsRefresh = false
             self.queuedCodexWebSettingsRefresh = false
@@ -1437,6 +1455,7 @@ public actor WindowsUsageRuntime {
     public func shutdown() async {
         guard !self.shuttingDown else { return }
         self.shuttingDown = true
+        self.queuedSpendRefresh = false
         self.spendGeneration &+= 1
         self.spendSnapshot = nil
         self.spendState = .stopped

@@ -1,5 +1,7 @@
 # Windows 전용 제품 작업 현황
 
+- IMPL-142: 트레이 비용 수집/로컬 Codex ledger/표시 기간 메뉴와 설정 변경 재수집을 연결했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
 - IMPL-141: runtime refresh에 opt-in 비용 수집·snapshot 보관·계정 변경 무효화·shutdown 취소를 연결했다. UI 연결은 남아 있다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
 
 - IMPL-140: 비용 수집 loader/옵션 동시 교체·이전 데이터 무효화·시간대 단독 변경 거절을 작성했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
