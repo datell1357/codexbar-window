@@ -12,7 +12,12 @@ public enum WindsurfUsageDataSource: String, CaseIterable, Identifiable, Sendabl
     public var displayName: String {
         switch self {
         case .auto: "Auto"
-        case .web: "Web API (IndexedDB)"
+        case .web:
+            #if os(Windows)
+            "Web API (manual session)"
+            #else
+            "Web API (IndexedDB)"
+            #endif
         case .cli: "Local (SQLite cache)"
         }
     }

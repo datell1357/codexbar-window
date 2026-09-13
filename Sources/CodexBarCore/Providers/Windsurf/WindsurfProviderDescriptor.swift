@@ -2,6 +2,21 @@ import Foundation
 
 public enum WindsurfProviderDescriptor {
     public static let descriptor: ProviderDescriptor = Self.makeDescriptor()
+    private static var credentials: ProviderCredentialAdapter? {
+        #if os(Windows)
+        ProviderCredentialAdapter(tokenAccountSupport: TokenAccountSupport(
+            title: "Devin session bundle",
+            subtitle: "Store a Windsurf session bundle with sessionToken, auth1Token, accountID and primaryOrgID.",
+            placeholder: "JSON session bundle",
+            injection: .cookieHeader,
+            requiresManualCookieSource: true,
+            cookieName: nil,
+            selectedAccountRequiresManualCookieSource: true,
+            cookieHeaderNormalizer: { $0.trimmingCharacters(in: .whitespacesAndNewlines) }))
+        #else
+        nil
+        #endif
+    }
 
     static func makeDescriptor() -> ProviderDescriptor {
         ProviderDescriptor(
@@ -11,6 +26,7 @@ public enum WindsurfProviderDescriptor {
                     cookieSource: settings.cookieSource,
                     manualCookieHeader: settings.manualCookieHeader)
             }),
+            credentials: Self.credentials,
             metadata: ProviderMetadata(
                 id: .windsurf,
                 displayName: "Windsurf",
@@ -51,7 +67,17 @@ public enum WindsurfProviderDescriptor {
                 })),
             cli: ProviderCLIConfig(
                 name: "windsurf",
-                versionDetector: nil))
+                versionDetector: nil,
+                browserSupportExemption: { source, _, settings in
+                    #if os(Windows)
+                    // Auto can use the local editor cache; manual web uses no browser importer.
+                    if source != .web { return true }
+                    return settings?.windsurf?.cookieSource == .manual &&
+                        !(settings?.windsurf?.manualCookieHeader?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true)
+                    #else
+                    return false
+                    #endif
+                }))
     }
 }
 

@@ -2456,3 +2456,11 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - Windows 오류에서 사용자 경로와 payload decode 원문을 노출하지 않는다. 선택된 수동 웹 계정은 로컬 편집기 캐시 소유권을 입증할 수 없어 로컬 strategy를 사용하지 않는다.
 - 남은 소요: Windows 설치/프로필별 경로 실증, 로컬 cache freshness/소유권 UX, 브라우저 로그인 및 전체 계획 나머지 항목.
 - CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·실제 로컬 캐시/앱 검증 미실행.
+
+## IMPL-205 — Windsurf 저장 계정/CLI 연결
+
+- Windows Windsurf descriptor에 token account credential adapter를 추가해 기존 Add saved account/선택/이름/credential 변경 UI를 사용한다. 네 필드의 Devin session JSON을 입력하도록 안내하고 JSON 내용을 Cookie prefix 정규화로 바꾸지 않는다.
+- 저장 계정은 manual source를 요구한다. CLI auto는 로컬 캐시를 사용할 수 있고 manual web은 browser importer가 필요하지 않으므로 플랫폼 browser 지원 검사 예외를 연결한다.
+- Windows 설정의 Web API 표시는 수동 세션임을 명시한다. macOS credential adapter와 표시 기본값은 유지한다.
+- 남은 소요: 저장 계정별 설정 투영/회귀 검증, 브라우저 localStorage/앱 로그인, 캐시 최신성 및 전체 계획 나머지 항목.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·실제 계정 저장/CLI/UI 검증 미실행.
