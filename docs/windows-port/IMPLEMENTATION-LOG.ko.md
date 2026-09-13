@@ -825,3 +825,22 @@
 2. 기존 unpackaged Run 값의 migration/uninstall, StartupApproved 상태와 전체 Windows 기능·배포 검증은 남아 있다.
 
 다음 구현: Windows 자동 시작의 OS 설정 화면 진입을 연결해 정책/사용자 차단 상태를 확인할 수 있는 복구 경로를 제공한다. MSIX StartupTask 구현은 별도 필수 범위다.
+
+## IMPL-044 — Windows 시작 앱 설정 이동
+
+상태: CODE_WRITTEN_UNVERIFIED. 빌드·컴파일·테스트·lint·앱·실제 Settings/registry 접근·검증 스크립트를 실행하지 않았다. 계약: WIN-052.
+
+작성한 코드:
+
+- 트레이에 등록 상태와 독립된 Open Windows startup apps settings 명령을 추가했다. packaged/unknown/conflict에서도 OS 설정 이동을 선택할 수 있다.
+- 사용자 선택 시 고정 ms-settings:startupapps만 ShellExecuteW에 전달한다. provider URL의 HTTP(S) 제한은 유지하고 외부 문자열을 OS scheme으로 전달하지 않는다.
+- shell 반환값이 실패이면 즉시 기존 안내 dialog로 Windows Settings > Apps > Startup 수동 경로를 알려준다. 창/종료 상태를 확인하고 등록 값을 수정하지 않는다. shell 요청 수락을 실제 페이지 표시 또는 시작 활성화 성공으로 기록하지 않는다.
+
+근거: https://learn.microsoft.com/en-us/windows/apps/develop/launch/launch-settings 의 Startup apps URI.
+
+남은 범위:
+
+1. Settings 페이지가 정책/Windows 버전에 따라 사용 불가하거나 앱 항목이 없을 수 있다. 이 이동은 MSIX StartupTask 구현이나 이전 executable 경로 충돌 복구를 대체하지 않는다.
+2. 실제 shell 실패/성공·dialog·설정 페이지·접근성·지역화와 전체 Windows 빌드/배포 검증은 미실시다.
+
+다음 구현: startup 상태별 상세 설명과 복구 안내를 연결한다. MSIX 등록과 경로 이동 복구는 별도 미완료로 유지한다.

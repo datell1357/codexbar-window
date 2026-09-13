@@ -24,6 +24,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
     public typealias QuitHandler = @Sendable () -> Void
 
     private static let startupRegistrationCommand = UINT_PTR(0x7546)
+    private static let startupSettingsCommand = UINT_PTR(0x7547)
     private var startupRegistrationMessage: String?
     private static let menuHotkeyCommand = UINT_PTR(0x7533)
     private static let menuHotkeyID: Int32 = 0x4342
@@ -930,6 +931,9 @@ public final class WindowsTrayHost: @unchecked Sendable {
         if let message = self.startupRegistrationMessage {
             message.withCString(encodedAs: UTF16.self) { _ = AppendMenuW(menu, UINT(MF_STRING | MF_GRAYED), 0, $0) }
         }
+        "Open Windows startup apps settings…".withCString(encodedAs: UTF16.self) {
+            _ = AppendMenuW(menu, UINT(MF_STRING), Self.startupSettingsCommand, $0)
+        }
         self.appendShortcutMenu(to: menu)
         self.appendSessionLabelMenu(to: menu)
         self.appendRefreshFrequencyMenu(to: menu)
@@ -1664,6 +1668,8 @@ public final class WindowsTrayHost: @unchecked Sendable {
             return
         }
         switch command {
+        case Self.startupSettingsCommand:
+            self.openStartupSettings()
         case Self.startupRegistrationCommand:
             do {
                 let state = WindowsStartupRegistration.state()
@@ -1938,6 +1944,23 @@ public final class WindowsTrayHost: @unchecked Sendable {
         guard let hwnd = self.window else { return }
         let body = Array(message.utf16) + [0]; let title = Array("CodexBar".utf16) + [0]
         _ = body.withUnsafeBufferPointer { text in title.withUnsafeBufferPointer { caption in MessageBoxW(hwnd, text.baseAddress, caption.baseAddress, UINT(MB_OK | MB_ICONWARNING)) } }
+    }
+
+    private func openStartupSettings() {
+        guard let hwnd = self.window, !self.quitInvoked else { return }
+        // Fixed OS destination only; provider URLs retain their HTTP(S) restriction.
+        let target = Array("ms-settings:startupapps".utf16) + [0]
+        let result = target.withUnsafeBufferPointer { text in
+            ShellExecuteW(hwnd, nil, text.baseAddress, nil, nil, Int32(SW_SHOWNORMAL))
+        }
+        guard Int(bitPattern: result) > 32 else {
+            self.showProviderEditorNotice(
+                "Windows startup apps settings could not be opened. " +
+                "Open Windows Settings > Apps > Startup manually. " +
+                "CodexBar has not changed your startup registration.")
+            return
+        }
+        // Shell acceptance does not establish page visibility or startup policy state.
     }
 
     private func openStatusPage(_ rawURL: String) {
