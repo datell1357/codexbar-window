@@ -2104,3 +2104,13 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - 저장 대화상자 이후의 기존 exporter 유효성 확인은 유지한다. 이미 닫힌 context에 대한 반복 종료도 무시한다.
 
 남은 범위: Windows common dialog의 실제 owner/timer 동작, 종료/취소 메시지 전수 처리, 수집부터 표시까지 소유권 ticket와 원자적 게시, 외부 auth 감지, live ledger/cache 및 전체 계획 구현. 실제 저장 대화상자는 열지 않았다.
+
+## IMPL-166 — 누락된 모델별 집계 확장 이식
+
+상태 CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·컴파일·실행 검증 미실시. guidelines/COMMITS.md 부재로 핵심 규칙을 적용한다.
+
+- WindowsSpendDashboardModel은 modelSummary 및 부분 이력 판정 함수를 호출했으나 해당 구현이 원본 SpendDashboardModel+ModelBreakdown.swift에만 남아 있었다. Windows 모델 대상에 확장이 없어 이전 구현을 실행 가능한 것으로 볼 수 없는 소스 연결 누락을 발견했다.
+- 원본 확장 전체를 WindowsSpendDashboardModel+ModelBreakdown.swift로 이식했다. Windows 조건부 컴파일과 확장 대상 이름만 바꾸고 provider/model별 집계, 토큰 유형, 비용/토큰 overflow 및 invalid 처리, 정렬/rank, completeness 판정 정책을 보존했다.
+- Codex 부분 모델 이력 보존, 가격 없는 named model 보존, Codex/Cursor ledger의 unpriceable cost 구분, zero/missing 및 모델 합계 coverage 규칙을 포함한다. 원본 파일은 유지한다.
+
+남은 범위: 컴파일 및 모델 집계 실제 검증, JSON 내보내기 등 전체 대시보드 기능, ownership/cache 처리와 전체 계획 구현. 이번 확장 추가만으로 다른 누락이 없거나 빌드가 성공한다고 주장하지 않는다.
