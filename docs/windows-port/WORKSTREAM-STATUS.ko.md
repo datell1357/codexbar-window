@@ -1,5 +1,7 @@
 # Windows 전용 제품 작업 현황
 
+- IMPL-161: 비용 요약에서 모델/프로젝트 전체 행 펼치기·접기를 연결했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
 - IMPL-160: 비용 요약/차트 상세에 원본의 비용 산정 방식·계량 금액·coverage·토큰 유형을 연결했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
 
 - IMPL-159: Windows Codex 지문 조회를 bounded throwing read로 연결해 파일 부재와 읽기 실패를 구분했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.

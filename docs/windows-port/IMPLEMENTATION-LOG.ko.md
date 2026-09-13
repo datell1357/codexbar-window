@@ -2054,3 +2054,13 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - 수집/가격/통화 변환 로직은 기존 모델을 사용한다. 새로운 파일 수집이나 실계정 접근은 수행하지 않았다.
 
 남은 범위: 프로젝트/세션 전체 탐색, 비교 및 전체 대시보드 UX, live ledger ownership/cache lifecycle, Windows 실행 검증과 전체 계획 구현. 화면 동작 또는 기능 parity 완료를 주장하지 않는다.
+
+## IMPL-161 — 비용 모델·프로젝트 전체 행 펼치기
+
+상태 CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·실행·검증 미실시. guidelines/COMMITS.md 부재로 핵심 규칙을 적용한다.
+
+- 원본 프로젝트 패널의 8행 접기/전체 펼치기에 맞춰 Windows 비용 요약도 모델·프로젝트 8행 기본 표시와 전체 펼치기를 제공한다. 기존 100행 고정 생략을 제거하며 수집된 모델의 전체 행을 표시한다.
+- 동일 runtime snapshot과 privacy 값으로 접은/펼친 텍스트를 만든다. native read-only dialog의 Show all rows/Show less 버튼, keyboard mnemonic, DPI font/layout, 상단 스크롤 이동을 연결한다. 전체 행이 없는 경우 버튼을 만들지 않는다.
+- 기존 provider details 호출은 optional expandedText 기본값 nil을 유지한다. privacy 변경 차단/모달 생명주기는 기존 경로를 따른다. 최근 세션 12개는 원본 모델 범위를 유지한다.
+
+남은 범위: 대용량 목록 virtualization/search/sort, 전체 dashboard UX/비교, 계정 외부 변경에 따른 열린 창 무효화, live ledger ownership/cache lifecycle, Windows 검증과 전체 계획 구현. 수집 원본 밖의 프로젝트/세션을 복원하거나 실제 화면 검증을 수행하지 않았다.

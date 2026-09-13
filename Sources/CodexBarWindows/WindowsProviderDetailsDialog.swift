@@ -8,6 +8,7 @@ enum WindowsProviderDetailsDialog {
     private static let textID: Int32 = 101
     private static let closeID: Int32 = 2
     private static let refreshID: Int32 = 3
+    private static let expandID: Int32 = 4
     private static let linkBaseID: Int32 = 201
 
     struct Link {
@@ -26,6 +27,8 @@ enum WindowsProviderDetailsDialog {
     private final class Context {
         let hidePersonalInfo: Bool
         let text: String
+        let expandedText: String?
+        var expanded = false
         let links: [Link]
         var result: Result = .closed
         var closed = false
@@ -33,16 +36,19 @@ enum WindowsProviderDetailsDialog {
         var font: HFONT?
         deinit { if let font { DeleteObject(font) } }
         func pixels(_ value: Int32) -> Int32 { MulDiv(value, Int32(self.dpi), 96) }
-        init(text: String, links: [Link], hidePersonalInfo: Bool) {
+        init(text: String, links: [Link], hidePersonalInfo: Bool, expandedText: String?) {
+            self.expandedText = expandedText
             self.text = text; self.links = Array(links.prefix(3)); self.hidePersonalInfo = hidePersonalInfo
         }
     }
 
-    static func show(owner: HWND, title: String, text: String, links: [Link], hidePersonalInfo: Bool) -> Result? {
+    static func show(owner: HWND, title: String, text: String, links: [Link], hidePersonalInfo: Bool, expandedText: String? = nil) -> Result? {
         guard hidePersonalInfo == WindowsUsagePresentationSettings.load().hidePersonalInfo else { return .privacyChanged }
         let normalized = text.replacingOccurrences(of: "\r\n", with: "\n")
             .replacingOccurrences(of: "\r", with: "\n").replacingOccurrences(of: "\n", with: "\r\n")
-        let context = Context(text: normalized, links: links, hidePersonalInfo: hidePersonalInfo)
+        let expanded = expandedText?.replacingOccurrences(of: "\r\n", with: "\n")
+            .replacingOccurrences(of: "\r", with: "\n").replacingOccurrences(of: "\n", with: "\r\n")
+        let context = Context(text: normalized, links: links, hidePersonalInfo: hidePersonalInfo, expandedText: expanded)
         let instance = GetModuleHandleW(nil)
         var klass = WNDCLASSEXW()
         klass.cbSize = UINT(MemoryLayout<WNDCLASSEXW>.size)
@@ -138,6 +144,10 @@ enum WindowsProviderDetailsDialog {
                                   DWORD(WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON)) != nil else {
                 return -1
             }
+            if context.expandedText != nil {
+                guard Self.addControl(hwnd, "BUTTON", "Show &all rows", Self.expandID,
+                                      DWORD(WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON)) != nil else { return -1 }
+            }
             for (index, link) in context.links.enumerated() {
                 guard Self.addControl(hwnd, "BUTTON", link.title, Self.linkBaseID + Int32(index),
                                       DWORD(WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON)) != nil else {
@@ -184,6 +194,16 @@ enum WindowsProviderDetailsDialog {
             guard !Self.closeForPrivacyIfNeeded(hwnd, context: context) else { return 0 }
             let command = Int32(wParam & 0xffff)
             if command == Self.closeID { DestroyWindow(hwnd); return 0 }
+            if command == Self.expandID, let expandedText = context.expandedText {
+                context.expanded.toggle()
+                let body = Array((context.expanded ? expandedText : context.text).utf16) + [0]
+                body.withUnsafeBufferPointer { _ = SetWindowTextW(GetDlgItem(hwnd, Self.textID), $0.baseAddress) }
+                let caption = Array((context.expanded ? "Show &less" : "Show &all rows").utf16) + [0]
+                caption.withUnsafeBufferPointer { _ = SetWindowTextW(GetDlgItem(hwnd, Self.expandID), $0.baseAddress) }
+                SendMessageW(GetDlgItem(hwnd, Self.textID), UINT(EM_SETSEL), 0, 0)
+                SendMessageW(GetDlgItem(hwnd, Self.textID), UINT(EM_SCROLLCARET), 0, 0)
+                return 0
+            }
             if command == Self.refreshID {
                 context.result = .refreshAll
                 DestroyWindow(hwnd)
@@ -222,7 +242,7 @@ enum WindowsProviderDetailsDialog {
               let font = CreateFontIndirectW(&metrics.lfMessageFont) else { return }
         let previous = context.font
         context.font = font
-        for id in [Self.textID, Self.closeID, Self.refreshID, Self.linkBaseID,
+        for id in [Self.textID, Self.closeID, Self.refreshID, Self.expandID, Self.linkBaseID,
                    Self.linkBaseID + 1, Self.linkBaseID + 2] {
             if let control = GetDlgItem(hwnd, id) {
                 SendMessageW(control, UINT(WM_SETFONT), WPARAM(Int(bitPattern: font)), 1)
@@ -238,6 +258,7 @@ enum WindowsProviderDetailsDialog {
         let width = max(0, rect.right - rect.left), height = max(0, rect.bottom - rect.top)
         let available = max(1, width - px(24))
         var buttons: [(Int32, Int32)] = context.links.indices.map { (Self.linkBaseID + Int32($0), px(124)) }
+        if context.expandedText != nil { buttons.append((Self.expandID, px(140))) }
         buttons.append((Self.refreshID, px(180)))
         buttons.append((Self.closeID, px(92)))
         var positions: [(Int32, Int32, Int32, Int32)] = []

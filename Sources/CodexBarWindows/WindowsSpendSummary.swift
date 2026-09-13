@@ -4,7 +4,7 @@ import CodexBarCore
 
 /// Text projection for the native read-only summary; currency groups stay separate.
 enum WindowsSpendSummary {
-    static func text(snapshot: WindowsSpendDashboardController.Snapshot, hidePersonalInfo: Bool) -> String {
+    static func text(snapshot: WindowsSpendDashboardController.Snapshot, hidePersonalInfo: Bool, expanded: Bool = false) -> String {
         let model = snapshot.model
         var rows = ["Cost summary · last \(model.requestedDays) days",
                     "Costs are estimates unless reported as metered by the source.",
@@ -43,20 +43,20 @@ enum WindowsSpendSummary {
                     + " · " + tokens(provider.totalTokens) + " tokens · \(provider.coveredDayCount) covered days")
             }
             rows.append("Models")
-            for model in group.models.prefix(100) {
+            for model in group.models.prefix(expanded ? group.models.count : 8) {
                 rows.append("  " + safe(model.providerName) + " / " + safe(model.modelName) + " · "
                     + cost(model.totalCost, currency: group.currencyCode) + " · " + tokens(model.totalTokens) + " tokens")
                 rows.append("    " + tokenMixDetails(model.tokenMix))
             }
-            if group.models.count > 100 { rows.append("  \(group.models.count - 100) additional models are not shown in this summary.") }
+            if !expanded, group.models.count > 8 { rows.append("  \(group.models.count - 8) more models. Choose Show all rows to expand.") }
             rows.append("Projects")
             if group.projects.isEmpty { rows.append("  No project breakdown is available for this period.") }
-            for (index, project) in group.projects.prefix(100).enumerated() {
+            for (index, project) in group.projects.prefix(expanded ? group.projects.count : 8).enumerated() {
                 let name = hidePersonalInfo ? "Project \(index + 1)" : safe(project.projectName)
                 rows.append("  " + name + " · " + safe(project.providerName) + " · "
                     + cost(project.totalCost, currency: group.currencyCode) + " · " + tokens(project.totalTokens) + " tokens")
             }
-            if group.projects.count > 100 { rows.append("  \(group.projects.count - 100) additional projects are not shown in this summary.") }
+            if !expanded, group.projects.count > 8 { rows.append("  \(group.projects.count - 8) more projects. Choose Show all rows to expand.") }
             rows.append("Recent sessions (available model window)")
             if group.sessions.isEmpty { rows.append("  No session breakdown is available for this period.") }
             let formatter = DateFormatter()
