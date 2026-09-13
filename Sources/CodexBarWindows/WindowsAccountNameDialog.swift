@@ -6,13 +6,17 @@ import WinSDK
 /// Inputs begin empty. Credential mode never receives the previously stored secret.
 enum WindowsAccountNameDialog {
     enum Result { case cancelled, failed, saved(String) }
+    private static let privacyTimer = UINT_PTR(1)
     private static let className = "CodexBar.AccountNameDialog"
     private enum Mode { case name, importedAccount, credential }
     private final class Context {
+        let expectedPrivacy: Bool?
+        var privacyMatches: Bool { self.expectedPrivacy.map { $0 == WindowsUsagePresentationSettings.load().hidePersonalInfo } ?? true }
         let mode: Mode
         let support: TokenAccountSupport?
         let providerName: String?
-        init(mode: Mode, provider: UsageProvider?) {
+        init(mode: Mode, provider: UsageProvider?, expectedPrivacy: Bool?) {
+            self.expectedPrivacy = expectedPrivacy
             self.mode = mode
             self.support = provider.flatMap { TokenAccountSupportCatalog.support(for: $0) }
             self.providerName = provider.map { ProviderDescriptorRegistry.descriptor(for: $0).metadata.displayName }
@@ -33,15 +37,18 @@ enum WindowsAccountNameDialog {
     }
     static func show(owner: HWND) -> Result { Self.show(owner: owner, mode: .name) }
 
-    static func showImportedAccount(owner: HWND) -> Result { Self.show(owner: owner, mode: .importedAccount) }
+    static func showImportedAccount(owner: HWND, expectedPrivacy: Bool) -> Result {
+        Self.show(owner: owner, mode: .importedAccount, expectedPrivacy: expectedPrivacy)
+    }
 
     /// The returned string contains a secret; pass only to the credential save API.
     static func showCredentialReplacement(owner: HWND, provider: UsageProvider) -> Result {
         Self.show(owner: owner, mode: .credential, provider: provider)
     }
 
-    private static func show(owner: HWND, mode: Mode, provider: UsageProvider? = nil) -> Result {
-        let context = Context(mode: mode, provider: provider)
+    private static func show(owner: HWND, mode: Mode, provider: UsageProvider? = nil, expectedPrivacy: Bool? = nil) -> Result {
+        let context = Context(mode: mode, provider: provider, expectedPrivacy: expectedPrivacy)
+        guard context.privacyMatches else { return .cancelled }
         let instance = GetModuleHandleW(nil)
         var klass = WNDCLASSEXW()
         klass.cbSize = UINT(MemoryLayout<WNDCLASSEXW>.size)
@@ -91,6 +98,7 @@ enum WindowsAccountNameDialog {
         return context.result
     }
     private static func save(_ hwnd: HWND, context: Context) {
+        guard context.privacyMatches else { DestroyWindow(hwnd); return }
         var buffer = [WCHAR](repeating: 0, count: context.mode != .credential ? 162 : 65_538)
         let count = GetWindowTextW(GetDlgItem(hwnd, 101), &buffer, Int32(buffer.count))
         let label = String(decoding: buffer.prefix(Int(max(0, count))), as: UTF16.self)
@@ -127,6 +135,7 @@ enum WindowsAccountNameDialog {
         let context = Unmanaged<Context>.fromOpaque(UnsafeRawPointer(bitPattern: UInt(pointer))!).takeUnretainedValue()
         switch message {
         case UINT(WM_CREATE):
+            if context.expectedPrivacy != nil, SetTimer(hwnd, Self.privacyTimer, 250, nil) == 0 { return -1 }
             let dpi = GetDpiForWindow(hwnd)
             context.dpi = dpi == 0 ? 96 : dpi
             guard Self.control(hwnd, "STATIC", context.mode != .credential ? "&New account name" : "&New " + (context.support?.title ?? "credential").replacingOccurrences(of: "&", with: "&&"), 100, 0, 16, 14, 400, 22) != nil,
@@ -139,6 +148,9 @@ enum WindowsAccountNameDialog {
             SendMessageW(edit, UINT(EM_SETLIMITTEXT), context.mode != .credential ? 160 : 65_536, 0)
             Self.updateFont(hwnd, context: context)
             Self.layout(hwnd, context: context)
+            return 0
+        case UINT(WM_TIMER):
+            if wParam == Self.privacyTimer, !context.privacyMatches { DestroyWindow(hwnd) }
             return 0
         case UINT(WM_SIZE): Self.layout(hwnd, context: context); return 0
         case UINT(WM_DPICHANGED):
@@ -165,6 +177,7 @@ enum WindowsAccountNameDialog {
             return 0
         case UINT(WM_CLOSE): DestroyWindow(hwnd); return 0
         case UINT(WM_NCDESTROY):
+            KillTimer(hwnd, Self.privacyTimer)
             context.closed = true
             SetWindowLongPtrW(hwnd, Int32(GWLP_USERDATA), 0)
             return DefWindowProcW(hwnd, message, wParam, lParam)

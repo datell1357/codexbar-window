@@ -2320,3 +2320,11 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - 취소는 cooperative이며 transport 및 동기 브라우저 I/O가 응답할 때까지 drain될 수 있다. 엄격한 벽시계 60초 반환 보장이나 실측 결과가 아니다.
 - 남은 소요: privacy 변경 중 열린 후보 메뉴 처리, Chrome/Edge/WebView2, 계정/팀 모델 및 전체 계획의 나머지 항목.
 - CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·실행·실제 API 검증 미실행.
+
+## IMPL-188 — Cursor 가져오기 화면 privacy 수명
+
+- 후보 popup이 열려 있는 동안 250ms Win32 timer로 개인정보 표시 설정을 확인하고 달라지면 EndMenu로 선택을 취소한다. timer 등록 실패 시 후보를 표시하지 않는다.
+- 가져온 계정 이름 대화상자에도 privacy snapshot을 전달하고 열기 전, timer, 저장 시점에 확인한다. 설정이 바뀌면 저장 없이 닫는다.
+- 기존 이름 변경/credential 교체 호출의 동작은 optional privacy 기본값을 유지한다.
+- 남은 소요: Windows 메뉴 modal loop의 timer 전달 및 DPI/키보드 동작 검증, 즉시 변경 이벤트 연동, Chrome/Edge/WebView2 및 나머지 계획. timer 간격 내의 즉각적인 화면 제거는 보장하지 않는다.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·실행/UI 검증 미실행.

@@ -1,5 +1,7 @@
 # Windows 전용 제품 작업 현황
 
+- IMPL-188: Cursor 후보 메뉴와 가져오기 이름 입력 대화상자의 privacy 변경 감지/닫기/저장 차단을 작성했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
 - IMPL-187: Cursor 후보 HTTP 검증에 전체 가져오기 deadline을 연결하고 초과 시 이전 확인 후보를 유지하도록 작성했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
 
 - IMPL-186: Cursor 가져오기 취소 메뉴 및 UI task/HTTP 후보 검증 취소를 연결했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.

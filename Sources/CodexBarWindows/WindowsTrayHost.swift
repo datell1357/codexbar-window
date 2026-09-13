@@ -36,6 +36,8 @@ public final class WindowsTrayHost: @unchecked Sendable {
     private static let cliPathRemoveCommand = UINT_PTR(0x754C)
     private let cliPathOperation = WindowsCLIPathOperation()
     private var cliPathOperationRunning = false // Protected by mailboxLock.
+    private var cursorImportMenuPrivacy: Bool? // UI thread only.
+    private static let cursorImportPrivacyTimer = UINT_PTR(0x754B)
     private static let cliSetupTimer = UINT_PTR(0x754A)
     private var cliSetupDialogOpen = false
     private var cliSetupRunning = false // Protected by mailboxLock.
@@ -566,13 +568,23 @@ public final class WindowsTrayHost: @unchecked Sendable {
                 self.mailboxLock.lock(); self.cursorImportRequest = nil; self.mailboxLock.unlock()
                 return
             }
+            self.cursorImportMenuPrivacy = privacy
+            guard SetTimer(window, Self.cursorImportPrivacyTimer, 250, nil) != 0 else {
+                self.cursorImportMenuPrivacy = nil
+                self.onCursorBrowserImportCancel(ticket)
+                self.mailboxLock.lock(); self.cursorImportRequest = nil; self.mailboxLock.unlock()
+                self.showMessage("The account selector could not be opened. Import again.", caption: "Import Cursor account")
+                return
+            }
             self.remoteEditorOpen = true
             let candidate = WindowsCursorBrowserAccountMenu.choose(owner: window, rows: rows,
                 failedCount: failed, omittedCount: omitted)
+            KillTimer(window, Self.cursorImportPrivacyTimer)
+            self.cursorImportMenuPrivacy = nil
             let input: WindowsAccountNameDialog.Result
             if candidate != nil, !self.quitInvoked,
                privacy == WindowsUsagePresentationSettings.load().hidePersonalInfo {
-                input = WindowsAccountNameDialog.showImportedAccount(owner: window)
+                input = WindowsAccountNameDialog.showImportedAccount(owner: window, expectedPrivacy: privacy)
             } else { input = .cancelled }
             self.remoteEditorOpen = false
             PostMessageW(window, Self.wakeMessage, 0, 0)
@@ -3535,6 +3547,13 @@ public final class WindowsTrayHost: @unchecked Sendable {
                   case .idle = host.providerEditorPhase, case .idle = host.codexWebSettingsEditorPhase
             else { return 0 }
             host.popup(notifyMenuOpen: false, preserveAnchor: true)
+            return 0
+        }
+        if message == UINT(WM_TIMER), wParam == WPARAM(Self.cursorImportPrivacyTimer) {
+            if let privacy = host.cursorImportMenuPrivacy,
+               privacy != WindowsUsagePresentationSettings.load().hidePersonalInfo {
+                EndMenu()
+            }
             return 0
         }
         if message == UINT(WM_TIMER), wParam == WPARAM(Self.cliSetupTimer) {
