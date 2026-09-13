@@ -29,21 +29,7 @@ struct WindowsSpendSnapshotLoader {
             }
         }
     }
-    enum Failure: Error { case invalidSources, missingCodexHome, codexOwnerChanged, cursorOwnerUnconfirmed }
-
-    private static func verifyCursorOwner(_ source: Source) async throws {
-        guard source.provider == .cursor, let expected = source.expectedCursorAccountID else { return }
-        guard !expected.isEmpty, let cookie = CookieHeaderNormalizer.normalize(source.cursorCookieHeader) else {
-            throw Failure.cursorOwnerUnconfirmed
-        }
-        try Task.checkCancellation()
-        let snapshot = try await CursorStatusProbe(browserDetection: BrowserDetection()).fetch(
-            cookieHeaderOverride: cookie, allowCachedSessions: false, allowAppAuthFallback: false)
-        try Task.checkCancellation()
-        guard snapshot.accountID?.trimmingCharacters(in: .whitespacesAndNewlines) == expected else {
-            throw Failure.cursorOwnerUnconfirmed
-        }
-    }
+    enum Failure: Error { case invalidSources, missingCodexHome, codexOwnerChanged }
 
     static func make(sources: [Source], settings: WindowsSpendSettings, forceRefresh: Bool = false,
                      allowPricingRefresh: Bool = true,
@@ -97,16 +83,15 @@ struct WindowsSpendSnapshotLoader {
                         // A rotated auth file cannot write into the previously captured owner's cache scope.
                         cacheRoot = cacheRoot?.appendingPathComponent(capturedFingerprint ?? "missing-auth", isDirectory: true)
                     } else { capturedFingerprint = nil }
-                    try await Self.verifyCursorOwner(source)
                     let fetcher = CostUsageFetcher(cacheRoot: cacheRoot, calendar: calendar)
                     let snapshot = try await fetcher.loadTokenSnapshot(provider: source.provider,
                         environment: environment, now: now, forceRefresh: forceRefresh,
                         allowVertexClaudeFallback: source.allowVertexClaudeFallback,
                         codexHomePath: source.codexHomePath, historyDays: historyDays,
                         cursorCookieHeaderOverride: source.cursorCookieHeader,
+                        cursorExpectedAccountID: source.expectedCursorAccountID,
                         allowPricingRefresh: allowPricingRefresh, refreshPricingInBackground: false,
                         includePiSessions: source.includePiSessions)
-                    try await Self.verifyCursorOwner(source)
                     try Task.checkCancellation()
                     let activity: CostUsageTokenActivityCache?
                     if source.provider == .codex {

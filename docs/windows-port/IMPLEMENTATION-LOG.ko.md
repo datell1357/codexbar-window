@@ -2360,3 +2360,11 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - 추가 identity 요청 2회가 발생한다. ID가 없는 기존 수동 계정 동작은 유지한다.
 - 제한: 비용 이벤트 자체에 ID가 포함된 증명은 아니며 사후 확인 전에 Core 캐시 쓰기가 발생할 수 있다. 사후 확인 실패 시 새 결과를 대시보드 입력에 넣지 않는다. CLI 비용 경로, 캐시 commit 시점의 소유권 및 기존 stale 결과 정책은 별도 작업이 남는다.
 - CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·실제 API/비용 수집 검증 미실행.
+
+## IMPL-193 — Core Cursor 비용 snapshot 생성 경계
+
+- CostUsageFetcher의 public/static 비용 snapshot 경로에 optional cursorExpectedAccountID를 추가하고 재시도/remote 호출까지 전달한다.
+- Windows Cursor 원격 비용 요청 전후에 동일 쿠키의 계정 ID를 확인하고 성공한 뒤에만 remote snapshot을 생성한다. 명시적 쿠키 실패의 CSV fallback 차단을 유지한다.
+- Windows loader의 이전 전후 확인 helper를 공통 Core 경로로 옮겨 중복 네트워크 요청을 피한다. 추가 확인 요청 수는 기존 두 번을 유지한다.
+- 남은 소요: CLI cost/dashboard/serve가 선택 ID를 전달하는 연결, 원격 이벤트 자체의 계정 증명 및 기존 stale 데이터 정책. 계정 조회와 비용 조회 간 서버 상태 변경을 원자적으로 막는 보장은 아니다.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·실제 API/캐시 검증 미실행.

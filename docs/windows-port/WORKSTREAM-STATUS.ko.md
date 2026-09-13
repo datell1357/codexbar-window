@@ -1,5 +1,7 @@
 # Windows 전용 제품 작업 현황
 
+- IMPL-193: Cursor 비용 계정 확인을 Core remote snapshot 생성 이전으로 이동하고 Windows loader 중복 요청을 제거했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
 - IMPL-192: Windows 비용 소스에 Cursor 계정 ID를 전달하고 수집 전후 확인 후 대시보드 입력으로 넘기도록 작성했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
 
 - IMPL-191: CLI usage/diagnose/guard/hooks watch에 선택 계정 외부 ID 전달을 연결했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.

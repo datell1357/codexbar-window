@@ -204,6 +204,7 @@ public struct CostUsageFetcher: Sendable {
         codexHomePath: String? = nil,
         historyDays: Int = 30,
         cursorCookieHeaderOverride: String? = nil,
+        cursorExpectedAccountID: String? = nil,
         allowPricingRefresh: Bool = true,
         refreshPricingInBackground: Bool = true,
         includePiSessions: Bool = true) async throws -> CostUsageTokenSnapshot
@@ -217,6 +218,7 @@ public struct CostUsageFetcher: Sendable {
             codexHomePath: codexHomePath,
             historyDays: historyDays,
             cursorCookieHeaderOverride: cursorCookieHeaderOverride,
+                cursorExpectedAccountID: cursorExpectedAccountID,
             allowPricingRefresh: allowPricingRefresh,
             refreshPricingInBackground: refreshPricingInBackground,
             includePiSessions: includePiSessions,
@@ -233,6 +235,7 @@ public struct CostUsageFetcher: Sendable {
         codexHomePath: String? = nil,
         historyDays: Int = 30,
         cursorCookieHeaderOverride: String? = nil,
+        cursorExpectedAccountID: String? = nil,
         allowPricingRefresh: Bool = true,
         refreshPricingInBackground: Bool = true,
         includePiSessions: Bool = true,
@@ -252,6 +255,7 @@ public struct CostUsageFetcher: Sendable {
             codexHomePath: codexHomePath,
             historyDays: historyDays,
             cursorCookieHeaderOverride: cursorCookieHeaderOverride,
+                cursorExpectedAccountID: cursorExpectedAccountID,
             allowPricingRefresh: allowPricingRefresh,
             refreshPricingInBackground: refreshPricingInBackground,
             includePiSessions: includePiSessions,
@@ -394,6 +398,7 @@ public struct CostUsageFetcher: Sendable {
         codexHomePath: String? = nil,
         historyDays: Int = 30,
         cursorCookieHeaderOverride: String? = nil,
+        cursorExpectedAccountID: String? = nil,
         allowPricingRefresh: Bool = true,
         refreshPricingInBackground: Bool = true,
         includePiSessions: Bool = true,
@@ -420,6 +425,7 @@ public struct CostUsageFetcher: Sendable {
                 now: now,
                 historyDays: clampedHistoryDays,
                 cursorCookieHeaderOverride: cursorCookieHeaderOverride,
+                cursorExpectedAccountID: cursorExpectedAccountID,
                 cursorCalendar: Self.resolvedScannerOptions(overrideScannerOptions, provider: provider,
                                                            codexHomePath: codexHomePath).calendar)
         } catch {
@@ -550,6 +556,7 @@ public struct CostUsageFetcher: Sendable {
                 codexHomePath: codexHomePath,
                 historyDays: historyDays,
                 cursorCookieHeaderOverride: cursorCookieHeaderOverride,
+                cursorExpectedAccountID: cursorExpectedAccountID,
                 allowPricingRefresh: allowPricingRefresh,
                 refreshPricingInBackground: false,
                 includePiSessions: includePiSessions,
@@ -1739,6 +1746,7 @@ extension CostUsageFetcher {
         now: Date,
         historyDays: Int,
         cursorCookieHeaderOverride: String?,
+        cursorExpectedAccountID: String? = nil,
         cursorCalendar: Calendar = .current) async throws -> CostUsageTokenSnapshot?
     {
         // Provider-specific by design: Bedrock uses AWS billing while Cursor uses its macOS dashboard session.
@@ -1761,10 +1769,22 @@ extension CostUsageFetcher {
             guard let cookie = CookieHeaderNormalizer.normalize(cursorCookieHeaderOverride) else {
                 throw CursorStatusProbeError.notLoggedIn
             }
+            func verifyOwner() async throws {
+                guard let expected = cursorExpectedAccountID else { return }
+                let identity = try await CursorStatusProbe(browserDetection: BrowserDetection()).fetch(
+                    cookieHeaderOverride: cookie, allowCachedSessions: false, allowAppAuthFallback: false)
+                try Task.checkCancellation()
+                guard !expected.isEmpty,
+                      identity.accountID?.trimmingCharacters(in: .whitespacesAndNewlines) == expected else {
+                    throw CursorStatusProbeError.parseFailed("Cursor cost account could not be confirmed. Import the intended account again.")
+                }
+            }
+            try await verifyOwner()
             let cursorSince = cursorCalendar.date(byAdding: .day, value: -(historyDays - 1), to: now) ?? now
             let report = try await CursorUsageEventsFetcher().fetchUsage(
                 cookieHeader: cookie, since: Self.cursorWindowStart(cursorSince, calendar: cursorCalendar),
                 until: now, calendar: cursorCalendar)
+            try await verifyOwner()
             try Task.checkCancellation()
             return Self.tokenSnapshot(
                 from: report.daily, now: now, historyDays: historyDays,
