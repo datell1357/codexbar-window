@@ -144,17 +144,37 @@ enum WindowsSessionMetadataCorrelator {
         // its own bounded lane, so a large Claude transcript cannot consume Codex title time.
         let titleLaneDuration = min(duration, 0.25) / 2
         let claudeDeadline = Date().addingTimeInterval(titleLaneDuration)
-        for match in matchedClaude {
+        var attemptedClaudeTitles = 0
+        var timedOutClaudeTitles = 0
+        for (position, match) in matchedClaude.enumerated() {
+            let started = Date()
+            guard !Task.isCancelled, started < claudeDeadline else { break }
+            let remainingFiles = matchedClaude.count - position
+            // Share the remaining lane among remaining files, with at most 50 ms for one file.
+            // Reader checks are cooperative; an OS read can still return after its deadline.
+            let share = min(0.05, claudeDeadline.timeIntervalSince(started) / Double(remainingFiles))
+            let fileDeadline = min(claudeDeadline, started.addingTimeInterval(share))
+            attemptedClaudeTitles += 1
             do {
-                let names = try self.stableTitleNames(match.path, ids: [match.id], deadline: claudeDeadline, claude: true)
+                let names = try self.stableTitleNames(match.path, ids: [match.id], deadline: fileDeadline, claude: true)
                 guard let latest = self.fileInfo(match.path), latest == match.info else { throw TitleReadFailure.changed }
+                try self.checkTitleDeadline(fileDeadline)
                 if !names.unresolvedIDs.isEmpty { claudeTitleFailures.insert(.outsideWindow) }
                 output[match.index].sessionName = names[match.id]
                 output[match.index].metadataTitleSource = output[match.index].sessionName == nil ? nil : "claude_custom_title"
             } catch {
-                claudeTitleFailures.insert((error as? TitleReadFailure) ?? .unavailable)
+                if let failure = error as? TitleReadFailure, case .deadline = failure {
+                    timedOutClaudeTitles += 1
+                } else { claudeTitleFailures.insert((error as? TitleReadFailure) ?? .unavailable) }
                 if Task.isCancelled || Date() >= claudeDeadline { break }
             }
+        }
+        if timedOutClaudeTitles > 0 {
+            notices.append("Claude titles: \(timedOutClaudeTitles) file reads exceeded their allotted time; project labels are retained.")
+        }
+        let skippedClaudeTitles = matchedClaude.count - attemptedClaudeTitles
+        if skippedClaudeTitles > 0, !Task.isCancelled {
+            notices.append("Claude titles: \(skippedClaudeTitles) files were not attempted because the provider time budget ended.")
         }
         let codexDeadline = Date().addingTimeInterval(titleLaneDuration)
         for failure in TitleReadFailure.allCases where claudeTitleFailures.contains(failure) {

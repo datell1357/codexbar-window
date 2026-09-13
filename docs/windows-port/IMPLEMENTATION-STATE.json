@@ -26,8 +26,8 @@
   "static_qa_status": "NOT_RUN_DURING_IMPLEMENTATION",
   "windows_runtime_status": "NOT_VALIDATED",
   "completion_claim": false,
-  "latest_completed_slice": "IMPL-026 code written: base-first correlation, separate optional provider title deadlines, corrected Codex index fallback assignment scope; unverified",
-  "next": "Bound individual Claude title reads and report skipped title work; provider fairness, caches and Windows validation remain pending.",
+  "latest_completed_slice": "IMPL-027 code written: per-file Claude title deadlines and separate timeout/unattempted counts; unverified",
+  "next": "Introduce bounded session title cache with file/source invalidation; fairness, SQLite ownership and Windows validation remain pending.",
   "inventory": {
     "baseline_entries": 2844,
     "provider_ids": 69,
@@ -49,7 +49,7 @@
     "widget_provider_choices": 17
   },
   "automation_action_this_revision": "Created active thread heartbeat codexbar-windows-30 at 30-minute intervals",
-  "publication_action_this_revision": "Commit and push IMPL-026; actual commit and push output are publication evidence",
+  "publication_action_this_revision": "Commit and push IMPL-027; actual commit and push output are publication evidence",
   "historical_state_before_2026_09_12": {
     "phase": "IMPLEMENTING",
     "repository": "/Users/yeoreum/Documents/codexbar-window/fork",
@@ -404,6 +404,15 @@
     },
     {
       "id": "IMPL-026",
+      "contracts": [
+        "WIN-040",
+        "WIN-042"
+      ],
+      "status": "CODE_WRITTEN_UNVERIFIED",
+      "validation": "NOT_RUN_BY_USER_INSTRUCTION"
+    },
+    {
+      "id": "IMPL-027",
       "contracts": [
         "WIN-040",
         "WIN-042"

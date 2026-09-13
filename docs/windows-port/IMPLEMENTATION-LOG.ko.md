@@ -530,3 +530,20 @@
 2. 같은 provider 내 여러 파일의 공정성/증분 cache 및 SQLite snapshot/소유권은 미완료다. Windows 빌드·실행·배포 검증도 남아 있다.
 
 다음 구현: 제목 읽기에서 개별 Claude 파일이 provider 예산을 모두 소비하지 않도록 파일별 상한과 건너뛴 작업 안내를 연결한다.
+
+## IMPL-027 — Claude 파일별 title 예산과 미시도 안내
+
+상태: CODE_WRITTEN_UNVERIFIED. 빌드·컴파일·테스트·lint·앱·실제 파일/계정 조회·검증 스크립트를 실행하지 않았다. 계약: WIN-040/042.
+
+작성한 코드:
+
+- Claude title lane의 남은 시간을 남은 파일 수로 나누어 개별 deadline을 배정하며 파일당 최대50ms로 제한한다. 파일 시작 전에 provider deadline/cancel을 확인하고 마지막 pathname 비교 뒤에도 파일 deadline을 확인한다.
+- 파일별 시간 초과 횟수와 provider 예산 종료로 아예 시도하지 못한 파일 수를 구분해 안내한다. 기타 title 실패는 기존 원인별 중복 제거를 유지한다. 제목 실패/미시도는 기본 session 행·focus identity를 바꾸지 않는다.
+- 전체 scan이 취소되면 미시도 예산 안내를 추가하지 않고 caller의 기존 취소 처리를 따른다. Codex 독립 title 예산과 기본 매칭 순서는 유지한다.
+
+남은 범위:
+
+1. 시간 분배는 시도 기회를 나누는 정책이며 모든 파일의 성공을 보장하지 않는다. 다수 파일이면 개별 시간이 짧아져 제목이 생략될 수 있다. 고정 순서·반복 실패의 장기 공정성과 증분 cache는 미완료다.
+2. 동기 ReadFile이 deadline 내 반환함을 보장하지 않으며 실제 Windows 지연/성능·표시 동작은 미검증이다. SQLite/WAL·소유권 및 전체 기능/배포 검증은 남아 있다.
+
+다음 구현: session metadata 구현에서 남은 증분 cache를 bounded 상태로 도입하고, 파일 변경·source 설정 변경 시 무효화 규칙을 연결한다.
