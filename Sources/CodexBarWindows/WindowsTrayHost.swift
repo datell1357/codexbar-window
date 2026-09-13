@@ -24,11 +24,14 @@ public final class WindowsTrayHost: @unchecked Sendable {
     public typealias QuitHandler = @Sendable () -> Void
 
     private static let startupRegistrationCommand = UINT_PTR(0x7546)
+    private static let cliPathAddCommand = UINT_PTR(0x754B)
+    private static let cliPathRemoveCommand = UINT_PTR(0x754C)
+    private var cliPathOperationRunning = false // Protected by mailboxLock.
     private static let cliSetupTimer = UINT_PTR(0x754A)
     private var cliSetupDialogOpen = false
     private var cliSetupRunning = false // Protected by mailboxLock.
     private var cliSetupCancelled = false
-    private var cliSetupResult: (text: String, hidePaths: Bool)?
+    private var cliSetupResult: (text: String, hidePaths: Bool, mutation: Bool)?
     private static let cliSetupCommand = UINT_PTR(0x7549)
     private static let startupDetailsCommand = UINT_PTR(0x7548)
     private static let startupSettingsCommand = UINT_PTR(0x7547)
@@ -954,12 +957,16 @@ public final class WindowsTrayHost: @unchecked Sendable {
             _ = AppendMenuW(menu, UINT(MF_STRING), Self.startupSettingsCommand, $0)
         }
         self.mailboxLock.lock()
-        let cliTitle = self.cliSetupRunning
+        let cliTitle = self.cliPathOperationRunning ? "CLI PATH update running…" : self.cliSetupRunning
             ? (self.cliSetupCancelled ? "CLI discovery cancellation pending…" : "Cancel CLI discovery…")
             : (self.cliSetupResult != nil ? "Show CLI discovery result…" : "Command-line setup…")
         self.mailboxLock.unlock()
         cliTitle.withCString(encodedAs: UTF16.self) {
             _ = AppendMenuW(menu, UINT(MF_STRING), Self.cliSetupCommand, $0)
+        }
+        for (title, command) in [("Add this CLI folder to user PATH…", Self.cliPathAddCommand),
+                                 ("Remove this CLI folder from user PATH…", Self.cliPathRemoveCommand)] {
+            title.withCString(encodedAs: UTF16.self) { _ = AppendMenuW(menu, UINT(MF_STRING), command, $0) }
         }
         self.appendShortcutMenu(to: menu)
         self.appendSessionLabelMenu(to: menu)
@@ -1697,6 +1704,8 @@ public final class WindowsTrayHost: @unchecked Sendable {
             return
         }
         switch command {
+        case Self.cliPathAddCommand: self.beginCLIPathOperation(.add)
+        case Self.cliPathRemoveCommand: self.beginCLIPathOperation(.remove)
         case Self.cliSetupCommand:
             self.showCLISetup()
         case Self.startupDetailsCommand:
@@ -1979,10 +1988,52 @@ public final class WindowsTrayHost: @unchecked Sendable {
         _ = body.withUnsafeBufferPointer { text in title.withUnsafeBufferPointer { caption in MessageBoxW(hwnd, text.baseAddress, caption.baseAddress, UINT(MB_OK | MB_ICONWARNING)) } }
     }
 
+    private func beginCLIPathOperation(_ action: WindowsCLIPathOperation.Action) {
+        guard let hwnd = self.window, !self.quitInvoked else { return }
+        self.mailboxLock.lock()
+        let busy = self.cliSetupRunning || self.cliPathOperationRunning
+        self.mailboxLock.unlock()
+        guard !busy else { self.showProviderEditorNotice("A CLI operation is already running."); return }
+        let message = action == .add
+            ? "Add this app's CLI folder to your user PATH? Existing entries keep their priority."
+            : "Remove all literal entries for this app's folder from your user PATH? Files will remain installed."
+        let body = Array((message + "\nSign out and sign in again after the change.").utf16) + [0]
+        let title = Array("CodexBar user PATH".utf16) + [0]
+        let choice = body.withUnsafeBufferPointer { text in
+            title.withUnsafeBufferPointer { caption in
+                MessageBoxW(hwnd, text.baseAddress, caption.baseAddress,
+                            UINT(MB_YESNO | MB_ICONQUESTION | MB_DEFBUTTON2))
+            }
+        }
+        guard choice == IDYES, !self.quitInvoked else { return }
+        self.mailboxLock.lock()
+        guard !self.cliSetupRunning, !self.cliPathOperationRunning else { self.mailboxLock.unlock(); return }
+        self.cliPathOperationRunning = true
+        self.cliSetupResult = nil
+        self.mailboxLock.unlock()
+        _ = SetTimer(hwnd, Self.cliSetupTimer, 250, nil)
+        Thread.detachNewThread { [weak self] in
+            guard let self else { return }
+            let text = WindowsCLIPathOperation.run(action)
+            self.mailboxLock.lock()
+            self.cliPathOperationRunning = false
+            if !self.quitInvoked, let window = self.window {
+                self.cliSetupResult = (text, true, true)
+                PostMessageW(window, Self.wakeMessage, 0, 0)
+            }
+            self.mailboxLock.unlock()
+        }
+    }
+
     private func showCLISetup() {
         guard self.window != nil, !self.quitInvoked else { return }
         let hidePaths = self.presentationDefaults.object(forKey: "hidePersonalInfo") as? Bool ?? false
         self.mailboxLock.lock()
+        if self.cliPathOperationRunning {
+            self.mailboxLock.unlock()
+            self.showProviderEditorNotice("PATH update is running. Wait for its result before another CLI operation.")
+            return
+        }
         if self.cliSetupRunning {
             self.cliSetupCancelled = true
             self.mailboxLock.unlock()
@@ -2011,7 +2062,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
             self.mailboxLock.lock()
             self.cliSetupRunning = false
             if !self.cliSetupCancelled, !self.quitInvoked {
-                self.cliSetupResult = (text, hidePaths)
+                self.cliSetupResult = (text, hidePaths, false)
                 // Post while holding the lifetime lock used by window teardown.
                 if let hwnd = self.window { PostMessageW(hwnd, Self.wakeMessage, 0, 0) }
             }
@@ -2025,7 +2076,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
               let hwnd = self.window else { return }
         self.mailboxLock.lock()
         let result = self.cliSetupResult
-        let running = self.cliSetupRunning
+        let running = self.cliSetupRunning || self.cliPathOperationRunning
         if IsWindowEnabled(hwnd) != 0 { self.cliSetupResult = nil }
         self.mailboxLock.unlock()
         guard IsWindowEnabled(hwnd) != 0 else { return }
@@ -2033,7 +2084,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
         guard let result else { return }
         let hidePaths = self.presentationDefaults.object(forKey: "hidePersonalInfo") as? Bool ?? false
         // Never surface previously collected paths after privacy has been enabled.
-        guard hidePaths == result.hidePaths else { self.showCLISetup(); return }
+        guard result.mutation || hidePaths == result.hidePaths else { self.showCLISetup(); return }
         self.cliSetupDialogOpen = true
         defer { self.cliSetupDialogOpen = false }
         let body = Array(result.text.utf16) + [0]

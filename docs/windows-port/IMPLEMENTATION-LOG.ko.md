@@ -925,3 +925,16 @@
 남은 범위: 앱 UI에서 설치 작업 연결, 배포물 동봉/서명, MSIX alias, 환경 변경 broadcast 및 전체 Windows 검증은 남아 있다. 재조회/쓰기는 atomic CAS가 아니며 기존 외부 writer race는 보장하지 않는다.
 
 다음 구현: Windows host에서 명시적인 설치 작업 실행 및 결과 처리를 연결한다.
+
+## IMPL-051 — 트레이 PATH 작업과 배포 리소스
+
+상태: CODE_WRITTEN_UNVERIFIED. manifest 평가/빌드/컴파일/PowerShell/registry/테스트/앱 실행 및 검증 미실시. 계약 WIN-052.
+
+- WindowsOperations SwiftPM target의 resource로 기존 단일 PATH script를 묶고 Windows host에 연결했다. script 복사본이나 외부 dependency는 추가하지 않았다.
+- 트레이 Add/Remove 명령은 No 기본 확인 후 worker에서 실행한다. CLI discovery/다른 PATH mutation과 동시 실행을 막고 결과는 기존 modal-safe mailbox로 전달한다. privacy 변경 시 mutation을 재실행하지 않는다.
+- system directory의 PowerShell을 명시적으로 선택하고 NoProfile/NonInteractive/File의 분리된 argument를 사용한다. execution policy를 우회하지 않는다. package identity 없음이 확인될 때만 helper를 시작한다.
+- stdout/stderr를 수집하지 않고 exit 상태로 고정 안내를 표시한다. 30초 대기 뒤 종료 요청하며 변경 여부 불명 안내를 제공한다. 실패 시 rollback하지 않는다.
+
+남은 범위: quit와 child process 소유권/drain 연결, 구조화된 상세 오류, script/배포 서명, 실제 SwiftPM resource 위치, MSIX alias, 환경 broadcast와 Windows 전체 검증이 남아 있다. 현재 parent 종료가 child 완료를 기다리지 않으며 timeout terminate 성공은 미확인이다.
+
+다음 구현: PATH helper의 lifecycle 소유권과 종료 처리를 연결한다.

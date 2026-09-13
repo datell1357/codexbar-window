@@ -276,9 +276,15 @@ let package = Package(
         #endif
 
         #if os(Windows)
+        targets.append(.target(
+            name: "WindowsOperations",
+            path: "Windows/PackagingAndOperations",
+            exclude: ["CLI-SETUP.ko.md"],
+            resources: [.copy("Set-CodexBarUserPath.ps1")]))
         targets.append(.executableTarget(
             name: "CodexBarWindows",
             dependencies: [
+                "WindowsOperations",
                 "CodexBarCore",
                 "AdaptiveRefreshCore",
                 .product(name: "Crypto", package: "swift-crypto"),
