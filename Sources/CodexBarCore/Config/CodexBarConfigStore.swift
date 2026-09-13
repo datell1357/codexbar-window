@@ -6,6 +6,8 @@ public enum CodexBarConfigStoreError: LocalizedError {
     case encodeFailed(String)
     case protectedTokenUnavailable
     case protectedTokenUnsupported
+    case protectedTokenMalformed
+    case protectedTokenWriteFailed
 
     public var errorDescription: String? {
         switch self {
@@ -16,9 +18,13 @@ public enum CodexBarConfigStoreError: LocalizedError {
         case let .encodeFailed(details):
             "Failed to encode CodexBar config: \(details)"
         case .protectedTokenUnavailable:
-            "Could not protect or restore Windows account credentials. Keep the original configuration and use the Windows user profile that saved it."
+            "Could not restore Windows-protected credentials. Keep the original configuration and use the Windows user profile that saved it; if it is damaged, restore a compatible backup."
         case .protectedTokenUnsupported:
-            "This configuration contains Windows-protected account credentials and cannot be opened on this platform."
+            "This configuration contains Windows-protected credentials and cannot be opened on this platform."
+        case .protectedTokenMalformed:
+            "The Windows-protected configuration has an invalid or unsupported format. Keep the file unchanged and restore a compatible backup or use the version that saved it."
+        case .protectedTokenWriteFailed:
+            "Windows could not protect the configuration credentials. The existing configuration was not replaced. Check the current Windows user profile and retry."
         }
     }
 }
@@ -41,7 +47,18 @@ public struct CodexBarConfigStore: @unchecked Sendable {
         let data: Data
         #if os(Windows)
         do { data = try WindowsProtectedTokenConfig.decode(storedData) }
-        catch { throw CodexBarConfigStoreError.protectedTokenUnavailable }
+        catch WindowsTokenAccountProtection.Failure.protectionUnavailable {
+            throw CodexBarConfigStoreError.protectedTokenUnavailable
+        } catch WindowsProtectedTokenConfig.Failure.invalidFormat {
+            throw CodexBarConfigStoreError.protectedTokenMalformed
+        } catch WindowsTokenAccountProtection.Failure.invalidProtectedData {
+            throw CodexBarConfigStoreError.protectedTokenMalformed
+        } catch WindowsTokenAccountProtection.Failure.invalidInput {
+            throw CodexBarConfigStoreError.protectedTokenMalformed
+        } catch {
+            // JSON parser diagnostics can include credential-bearing input fragments.
+            throw CodexBarConfigStoreError.decodeFailed("Invalid configuration JSON or credential payload.")
+        }
         #else
         if let root = try? JSONSerialization.jsonObject(with: storedData) as? [String: Any],
            root["windowsTokenProtectionVersion"] != nil {
@@ -88,7 +105,7 @@ public struct CodexBarConfigStore: @unchecked Sendable {
         #if os(Windows)
         // Finish every encryption before creating directories or replacing the original file.
         do { storedData = try WindowsProtectedTokenConfig.encode(data) }
-        catch { throw CodexBarConfigStoreError.protectedTokenUnavailable }
+        catch { throw CodexBarConfigStoreError.protectedTokenWriteFailed }
         #else
         let candidateRoot = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
         if candidateRoot?["windowsTokenProtectionVersion"] != nil {

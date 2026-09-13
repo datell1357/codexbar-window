@@ -1462,3 +1462,13 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - 복원 bundle은 허용된 필드명과 string/plugin string-map/null 타입만 허용한다. 암호화 실패는 기존 파일 교체 이전에 반환하며 원문 fallback은 없다.
 
 제한: 실제 이전·암복호화는 실행하지 않았다. provider별 extension 내부 비밀 값, 직접 파일 쓰기·export 및 구버전 downgrade, 512KiB bundle 상한 안내·복구 UI·메모리 정리, Windows 검증은 남아 있다. 전체 비밀 저장 완성을 주장하지 않는다.
+
+## IMPL-102 — 보호 설정 오류 종류와 복구 안내
+
+상태 CODE_WRITTEN_UNVERIFIED. 컴파일/빌드/테스트/설정/DPAPI/검증 미실시. guidelines/COMMITS.md 부재로 핵심 커밋 규칙을 적용한다.
+
+- 현재 provider config extension 정의를 읽었으며 추가 token 필드는 발견하지 않았다. CLI config 명령도 공통 store.save를 사용하는 것을 소스에서 확인했다. 이는 모든 직렬화 경로의 전수 검증이 아니다.
+- 보호 설정의 잘못된/미지원 형식, DPAPI 복원 실패, 저장 이전 보호 실패를 구분하는 오류를 작성했다. 형식 오류를 사용자 프로필 문제로만 안내하지 않으며 원본 보존·호환 백업·작성 버전 사용을 안내한다.
+- 저장 시 보호 변환 실패는 파일 교체 전 발생하므로 해당 경로에 한해 기존 설정 미교체를 명시한다. 일반 파일 쓰기/권한 적용 실패에는 이 결과를 사용하지 않는다. JSON 파서 세부 내용은 credential 입력이 섞일 수 있어 정해진 일반 오류로 변환한다.
+
+남은 범위: 복구 전용 UI/백업 선택·프로필 이동·구버전 정책, 실제 오류 분류와 Windows 검증, 전체 계정 및 provider 기능 구현. 자동 복원·파일 삭제·실제 이전을 실행하지 않았다.

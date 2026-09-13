@@ -1,5 +1,7 @@
 # Windows 전용 제품 작업 현황
 
+- IMPL-102: 보호 설정 형식/복원/저장 실패 안내를 분리했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
 - IMPL-101: 공급자 apiKey/secretKey/cookieHeader/pluginSecrets 보호 bundle과 config v2를 작성했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
 
 - IMPL-100: config token 보호 읽기·쓰기와 다음 저장 시 legacy 변환을 작성했다. 실제 이전 미실행, CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
