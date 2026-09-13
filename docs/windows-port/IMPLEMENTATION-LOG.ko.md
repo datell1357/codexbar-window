@@ -1452,3 +1452,13 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - 비Windows 공통 저장소는 보호 marker를 가진 파일 읽기와 해당 기존 파일 덮어쓰기를 거절한다. 암호화/복원 예외에는 원문 데이터나 OS 상세를 포함하지 않는다.
 
 제한: 실제 기존 파일 이전은 실행하지 않았다. tokenAccounts의 token만 보호하며 provider apiKey/cookieHeader/secretKey/pluginSecrets, 직접 JSONEncoder/파일 쓰기 경로, 구버전 바이너리 호환성·downgrade 및 백업 평문은 별도 대응이 필요하다. 기존 atomic write 이후 권한 적용 실패와 process 간 충돌도 남아 있다. 전체 credential 보관 또는 배포 준비 완료를 주장하지 않는다.
+
+## IMPL-101 — 공급자 비밀 필드 보호 형식 v2
+
+상태 CODE_WRITTEN_UNVERIFIED. 컴파일/빌드/테스트/설정 읽기·쓰기/DPAPI/검증 미실시. guidelines/COMMITS.md 부재로 핵심 커밋 규칙을 적용한다.
+
+- apiKey/secretKey/cookieHeader/pluginSecrets를 공급자별 DPAPI bundle에 넣고 원래 JSON 필드를 제거하도록 작성했다. token 계정과 별도 purpose entropy를 사용해 서로 바꾸어 넣을 수 없도록 분리한다.
+- root 보호 형식 v2를 작성하고 legacy 평문 및 v1 token 보호 파일의 읽기를 유지한다. 다음 저장에서 v2로 변환하며 v2에 평문 비밀 필드나 보호·평문 중복이 있으면 거절한다.
+- 복원 bundle은 허용된 필드명과 string/plugin string-map/null 타입만 허용한다. 암호화 실패는 기존 파일 교체 이전에 반환하며 원문 fallback은 없다.
+
+제한: 실제 이전·암복호화는 실행하지 않았다. provider별 extension 내부 비밀 값, 직접 파일 쓰기·export 및 구버전 downgrade, 512KiB bundle 상한 안내·복구 UI·메모리 정리, Windows 검증은 남아 있다. 전체 비밀 저장 완성을 주장하지 않는다.

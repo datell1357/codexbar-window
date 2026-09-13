@@ -36,13 +36,20 @@ public enum WindowsTokenAccountProtection {
         return payload.token
     }
 
+    static func providerFields(_ data: Data, providerID: ProviderInstanceID, protect: Bool) throws -> Data {
+        // A separate purpose prevents a provider bundle from being substituted for an account token.
+        let scopeID = UUID(uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0))
+        return try Self.transform(data, providerID: providerID, accountID: scopeID,
+                                  protect: protect, purpose: "ProviderSecrets.v1")
+    }
+
     private static func transform(_ input: Data, providerID: ProviderInstanceID, accountID: UUID,
-                                  protect: Bool) throws -> Data {
+                                  protect: Bool, purpose: String = "TokenAccount.v1") throws -> Data {
         guard !input.isEmpty, input.count <= Self.maximumEnvelopeBytes,
               !providerID.rawValue.isEmpty, providerID.rawValue.utf8.count <= 512,
               !providerID.rawValue.contains("\0") else { throw Failure.invalidInput }
         // Domain separation only: entropy is not a secret and must be reproduced exactly.
-        let entropy = Data(("CodexBar.Windows.TokenAccount.v1\0" + providerID.rawValue + "\0" +
+        let entropy = Data(("CodexBar.Windows." + purpose + "\0" + providerID.rawValue + "\0" +
                             accountID.uuidString.lowercased()).utf8)
         return try input.withUnsafeBytes { inputBytes in
             try entropy.withUnsafeBytes { entropyBytes in
