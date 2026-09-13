@@ -1483,3 +1483,12 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - 기존 이름 창 구조의 DPI/system font/작업 영역/WM_QUIT/owner 복원 처리를 사용했다. 토큰이나 draft를 로그·결과 안내에 출력하지 않고 자동 clipboard 읽기나 로그인 probe도 추가하지 않았다.
 
 남은 범위: credential 종류별 안내·OAuth 전용 플로우·입력 실패 시 draft 보존 UX, 매우 작은 화면 스크롤/접근성/지역화, credential 변경·계정 제거·동시 표시, Windows ABI/DPAPI/실제 계정 검증. 메모리 token 복사 완전 삭제를 보장하지 않으며 전체 계정 관리 완료가 아니다.
+
+## IMPL-104 — 계정 입력 조건 공유와 필드별 안내
+
+상태 CODE_WRITTEN_UNVERIFIED. 컴파일/빌드/테스트/UI/계정/검증 미실시. guidelines/COMMITS.md 부재로 핵심 커밋 규칙을 적용한다.
+
+- 추가 UI와 backend의 이름/토큰/scope/조직/workspace 입력 조건을 WindowsAccountInputRules로 공유한다. UI가 놓치던 optional 필드 제어 문자 및 길이 조건을 저장 요청 전에 안내한다.
+- 잘못된 필드에 포커스를 옮기고 창과 입력을 유지한다. 오류에 실제 필드 값이나 토큰을 출력하지 않는다. 이는 형식 확인이며 인증 성공 확인은 아니다.
+
+남은 범위: backend 저장 실패 시 draft 재편집, provider별 scope 의미·credential 종류 확인, 접근성/작은 화면·Windows 검증 및 전체 계정 관리 구현.

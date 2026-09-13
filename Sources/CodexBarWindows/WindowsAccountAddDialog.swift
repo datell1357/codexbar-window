@@ -77,16 +77,25 @@ enum WindowsAccountAddDialog {
         }
         let label = read(101, limit: 160), token = read(103, limit: 65_536)
         func optional(_ id: Int32) -> String? { let text = read(id, limit: 512); return text.isEmpty ? nil : text }
-        guard label.utf16.count <= 160, !token.isEmpty, token.utf8.count <= 65_536, !token.contains("\0") else {
-            "Enter a credential and a name up to 160 characters. Credential size must not exceed 64 KiB.".withCString(encodedAs: UTF16.self) {
-                SetWindowTextW(GetDlgItem(hwnd, 102), $0)
+        let scope = context.support.showsTeamModeControls ? optional(105) : nil
+        let organization = context.support.showsOrganizationField || context.support.showsTeamModeControls ? optional(107) : nil
+        let workspace = context.support.showsTeamModeControls ? optional(109) : nil
+        if let field = WindowsAccountInputRules.invalidField(label: label, token: token, scope: scope,
+                                                             organization: organization, workspace: workspace) {
+            let message: String
+            let controlID: Int32
+            switch field {
+            case .label: message = "The account name is too long or contains control characters."; controlID = 101
+            case .token: message = "Enter a credential of at most 64 KiB without null characters."; controlID = 103
+            case .scope: message = "The usage scope is too long or contains control characters."; controlID = 105
+            case .organization: message = "The organization ID is too long or contains control characters."; controlID = 107
+            case .workspace: message = "The workspace ID is too long or contains control characters."; controlID = 109
             }
-            SetFocus(GetDlgItem(hwnd, 103)); return
+            message.withCString(encodedAs: UTF16.self) { SetWindowTextW(GetDlgItem(hwnd, 102), $0) }
+            SetFocus(GetDlgItem(hwnd, controlID))
+            return
         }
-        context.result = .saved(.init(label: label, token: token,
-            scope: context.support.showsTeamModeControls ? optional(105) : nil,
-            organization: context.support.showsOrganizationField || context.support.showsTeamModeControls ? optional(107) : nil,
-            workspace: context.support.showsTeamModeControls ? optional(109) : nil))
+        context.result = .saved(.init(label: label, token: token, scope: scope, organization: organization, workspace: workspace))
         DestroyWindow(hwnd)
     }
     private static let windowProc: WNDPROC = { hwnd, message, wParam, lParam in

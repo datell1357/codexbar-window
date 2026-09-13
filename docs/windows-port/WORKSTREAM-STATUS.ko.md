@@ -1,5 +1,7 @@
 # Windows 전용 제품 작업 현황
 
+- IMPL-104: 계정 추가 입력 조건 공유·필드별 안내를 작성했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
 - IMPL-103: 수동 계정 추가 입력 UI와 보호 저장·refresh를 연결했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
 
 - IMPL-102: 보호 설정 형식/복원/저장 실패 안내를 분리했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.

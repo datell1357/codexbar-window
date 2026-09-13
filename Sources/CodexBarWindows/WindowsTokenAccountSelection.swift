@@ -53,6 +53,21 @@ public struct WindowsTokenAccountAddRequest: Sendable {
     public let expectedSelectedID: UUID?
 }
 
+enum WindowsAccountInputRules {
+    enum Field { case label, token, scope, organization, workspace }
+    static func invalidField(label: String, token: String, scope: String?, organization: String?, workspace: String?) -> Field? {
+        func safe(_ text: String, limit: Int) -> Bool {
+            text.utf16.count <= limit && !text.unicodeScalars.contains { $0.value < 0x20 || $0.value == 0x7F }
+        }
+        if !safe(label, limit: 160) { return .label }
+        if token.isEmpty || token.utf8.count > 65_536 || token.contains("\0") { return .token }
+        for (field, value) in [(Field.scope, scope), (.organization, organization), (.workspace, workspace)] {
+            if let value, !safe(value, limit: 512) { return field }
+        }
+        return nil
+    }
+}
+
 public enum WindowsTokenAccountAddResult: Sendable {
     case saved(UUID)
     case alreadyAdded(UUID)

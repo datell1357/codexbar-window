@@ -273,11 +273,8 @@ public actor WindowsUsageRuntime {
             return text
         }
         let scope = field(request.usageScope), organization = field(request.organizationID), workspace = field(request.workspaceID)
-        func safeText(_ text: String, limit: Int) -> Bool {
-            text.utf16.count <= limit && !text.unicodeScalars.contains { $0.value < 0x20 || $0.value == 0x7F }
-        }
-        guard !token.isEmpty, token.utf8.count <= 65_536, !token.contains("\0"),
-              safeText(label, limit: 160), [scope, organization, workspace].compactMap({ $0 }).allSatisfy({ safeText($0, limit: 512) })
+        guard WindowsAccountInputRules.invalidField(label: label, token: token, scope: scope,
+                                                    organization: organization, workspace: workspace) == nil
         else { return .invalidInput }
         do {
             guard let provider = request.providerID.firstPartyProvider,
