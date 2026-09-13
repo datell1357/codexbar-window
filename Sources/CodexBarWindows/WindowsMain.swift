@@ -90,6 +90,17 @@ private final class WindowsTrayApplication: @unchecked Sendable {
             guard let self else { return }
             Task { await self.runtime.quotaWarningSettingsDidChange(settings) }
         },
+        onTokenAccountSelect: { [weak self] request in
+            guard let self else { return }
+            Task {
+                let result = await self.runtime.selectTokenAccount(providerID: request.providerID,
+                    accountID: request.accountID, expectedSelectedID: request.expectedSelectedID)
+                if case .saved = result {
+                    Task { await self.runtime.refresh() }
+                }
+                self.host.postTokenAccountSelection(requestID: request.id, result: result)
+            }
+        },
         onProviderQuotaWarningLoad: { [weak self] requestID, providerID in
             guard let self else { return }
             Task {

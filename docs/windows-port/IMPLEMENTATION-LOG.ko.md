@@ -1357,3 +1357,13 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/hidpi/wm-dpichanged 
 - 저장 시 계정 목록·토큰을 보존하고 activeIndex와 catalog가 요구하는 manual cookie source만 갱신한다. 성공 후 이전 표시·복사·dashboard 캐시를 철회하고 caller가 refresh를 요청하는 계약이다. 예외 내용에 credential이 포함될 가능성을 피하도록 외부에는 일반 failed 결과만 반환한다.
 
 남은 범위: UI/콜백 연결 및 성공 후 refresh, process 간 설정 동시 쓰기, account 추가·삭제·수정, Codex visible OAuth account 선택 및 계정별 동시 표시, 실제 provider side-effect 계약·Windows 검증. 이번 backend는 아직 UI에서 호출되지 않으며 다중 계정 기능 완료가 아니다.
+
+## IMPL-092 — 저장된 토큰 계정 트레이 선택 연결
+
+상태 CODE_WRITTEN_UNVERIFIED. 빌드/컴파일/테스트/UI/설정 실행/계정 수집/검증 미실시. guidelines/COMMITS.md 부재로 핵심 커밋 규칙을 적용한다.
+
+- refresh의 provider config snapshot에서 credential 없는 선택 목록을 menu entry로 전달하고 Saved accounts > provider > account 메뉴를 작성했다. 저장된 선택은 체크 표시, manual source 전환을 요구하는 공급자는 제목에 표시한다. 전체 popup 최대 128개 선택 command, 메뉴 생성 실패 시 command 미등록, 종료 시 사본 제거를 적용했다.
+- privacy 변경 시 재열기를 요구하고 요청 UUID를 mailbox 결과와 대응시킨다. 하나의 저장 요청만 허용하며 성공·동일 선택·진행 중 수집·stale·미지원·실패를 별도로 안내한다.
+- WindowsMain에서 runtime 저장과 성공 후 refresh를 연결했다. 이전 계정 표시 철회 시 No providers 메시지 대신 계정 변경 후 갱신 중 안내를 표시한다. 결과 안내는 요청 사실만 알리고 수집 성공을 주장하지 않는다.
+
+남은 범위: 128개 초과 목록 페이지, 신규 계정 추가·삭제·수정, Codex visible OAuth 계정 전환, 동시 계정 표시·자동 소스 전환 의미, 저장 프로세스 간 동시성, 전체 Windows UI·수집·privacy 검증. 원본 다중 계정 기능 전체 완료가 아니다.

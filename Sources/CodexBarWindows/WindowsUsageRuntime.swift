@@ -253,7 +253,7 @@ public actor WindowsUsageRuntime {
             // Withdraw the previous owner's presentation until the next refresh publishes.
             self.presentations.removeValue(forKey: providerID)
             self.providerCopyErrors.removeValue(forKey: providerID.rawValue)
-            self.renderEntries.removeAll()
+            self.renderEntries = [.row("Account selection changed. Refreshing usage…")]
             self.statusMenuEntries.removeAll()
             self.publishRenderEntries(settings: WindowsUsagePresentationSettings.load())
             return .saved
@@ -863,6 +863,21 @@ public actor WindowsUsageRuntime {
         let copyEntries = self.statusMenuEntries.map { entry in
             var updated = entry
             updated.usageCopyText = copyRows[entry.providerID]
+            if let provider = UsageProvider(rawValue: entry.providerID),
+               let support = TokenAccountSupportCatalog.support(for: provider),
+               let data = self.latestProviderConfigs[provider.instanceID]?.tokenAccounts,
+               !data.accounts.isEmpty, Set(data.accounts.map(\.id)).count == data.accounts.count {
+                let accounts = data.accounts.enumerated().map { index, account in
+                    let fallback = "Account \(index + 1)"
+                    let title = settings.hidePersonalInfo ? fallback :
+                        String(LogRedactor.redact(account.label).replacingOccurrences(of: "\0", with: "").prefix(160))
+                    return WindowsTokenAccountSelectionSnapshot.Account(id: account.id,
+                                                                          title: title.isEmpty ? fallback : title)
+                }
+                updated.tokenAccountSelection = .init(providerID: provider.instanceID, accounts: accounts,
+                    selectedID: data.accounts[data.clampedActiveIndex()].id,
+                    requiresManualSource: support.requiresManualCookieSource)
+            }
             return updated
         }
         self.combinedPublisher(publishedRows, copyEntries)

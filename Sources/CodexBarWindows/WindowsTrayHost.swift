@@ -144,6 +144,12 @@ public final class WindowsTrayHost: @unchecked Sendable {
     private var popupRemoteDetails: [UINT_PTR: String] = [:]
     private var popupSessionDetails: String?
     private var popupAgentSessionCommands: [UINT_PTR: WindowsSessionFocusRequest] = [:]
+    private let onTokenAccountSelect: @Sendable (WindowsTokenAccountSelectionRequest) -> Void
+    private var popupTokenAccountCommands: [UINT_PTR: WindowsTokenAccountSelectionRequest] = [:]
+    // Pending request and result are protected by mailboxLock.
+    private var tokenAccountPendingID: UUID?
+    private var tokenAccountResult: WindowsTokenAccountSelectionSaveResult?
+
     private let onRefresh: RefreshHandler
     private let onPowerChanged: PowerChangedHandler
     private let onMenuOpen: @Sendable () -> Void
@@ -242,6 +248,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
         onRefreshSettingsChanged: @escaping RefreshSettingsChangedHandler = {},
         onSessionQuotaNotificationSettingsChanged: @escaping SessionQuotaNotificationSettingsChangedHandler = {},
         onQuotaWarningSettingsChanged: @escaping QuotaWarningSettingsChangedHandler = {},
+        onTokenAccountSelect: @escaping @Sendable (WindowsTokenAccountSelectionRequest) -> Void = { _ in },
         onProviderQuotaWarningLoad: @escaping ProviderQuotaWarningLoadHandler = { _, _ in },
         onProviderQuotaWarningSave: @escaping ProviderQuotaWarningSaveHandler = { _, _, _ in },
         onCodexWebSettingsLoad: @escaping CodexWebSettingsLoadHandler = { _ in },
@@ -265,6 +272,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
         self.onRefreshSettingsChanged = onRefreshSettingsChanged
         self.onSessionQuotaNotificationSettingsChanged = onSessionQuotaNotificationSettingsChanged
         self.onQuotaWarningSettingsChanged = onQuotaWarningSettingsChanged
+        self.onTokenAccountSelect = onTokenAccountSelect
         self.onProviderQuotaWarningLoad = onProviderQuotaWarningLoad
         self.onProviderQuotaWarningSave = onProviderQuotaWarningSave
         self.onCodexWebSettingsLoad = onCodexWebSettingsLoad
@@ -462,6 +470,37 @@ public final class WindowsTrayHost: @unchecked Sendable {
         let hwnd = self.window
         self.mailboxLock.unlock()
         if let hwnd { PostMessageW(hwnd, Self.wakeMessage, 0, 0) }
+    }
+
+    public func postTokenAccountSelection(requestID: UUID, result: WindowsTokenAccountSelectionSaveResult) {
+        self.mailboxLock.lock()
+        guard !self.quitInvoked, self.tokenAccountPendingID == requestID,
+              self.tokenAccountResult == nil else { self.mailboxLock.unlock(); return }
+        self.tokenAccountResult = result
+        let hwnd = self.window
+        self.mailboxLock.unlock()
+        if let hwnd { PostMessageW(hwnd, Self.wakeMessage, 0, 0) }
+    }
+
+    private func drainTokenAccountSelection() {
+        guard !self.quitInvoked, !self.remoteEditorOpen,
+              case .idle = self.providerEditorPhase, case .idle = self.codexWebSettingsEditorPhase else { return }
+        self.mailboxLock.lock()
+        let result = self.tokenAccountResult
+        if result != nil { self.tokenAccountResult = nil; self.tokenAccountPendingID = nil }
+        self.mailboxLock.unlock()
+        guard let result else { return }
+        let message: String
+        switch result {
+        case .saved: message = "Account selection saved. Usage refresh was requested."
+        case .unchanged: message = "This account is already selected."
+        case .refreshInProgress: message = "Usage is refreshing. Reopen Saved accounts after it finishes and select again."
+        case .staleSelection: message = "The saved account selection changed. Refresh usage and reopen Saved accounts."
+        case .unavailable: message = "This saved account is no longer available. Refresh usage and reopen Saved accounts."
+        case .shuttingDown: return
+        case .failed: message = "Could not save the account selection. Check access to the CodexBar configuration and try again."
+        }
+        self.showMessage(message, caption: "Saved accounts")
     }
 
     public func postProviderQuotaWarningLoad(
@@ -735,12 +774,14 @@ public final class WindowsTrayHost: @unchecked Sendable {
         self.popupCopySummary = nil
         self.popupCopyErrors.removeAll(keepingCapacity: true)
         self.popupProviderDetails.removeAll(keepingCapacity: true)
+        self.popupTokenAccountCommands.removeAll(keepingCapacity: true)
         var continuingPage = false
         defer {
             self.popupIsOpen = false
             self.popupCopySummary = nil
             self.popupCopyErrors.removeAll(keepingCapacity: true)
         self.popupProviderDetails.removeAll(keepingCapacity: true)
+        self.popupTokenAccountCommands.removeAll(keepingCapacity: true)
             self.mailboxLock.lock()
             let cliReady = self.cliSetupResult != nil
             self.mailboxLock.unlock()
@@ -784,6 +825,33 @@ public final class WindowsTrayHost: @unchecked Sendable {
             "Copy &redacted summary".withCString(encodedAs: UTF16.self) {
                 _ = AppendMenuW(menu, UINT(MF_STRING), Self.copySummaryCommand, $0)
             }
+        }
+        if let accountsMenu = CreatePopupMenu() {
+            var commands: [UINT_PTR: WindowsTokenAccountSelectionRequest] = [:]
+            for entry in menuEntries {
+                guard let selection = entry.tokenAccountSelection, let providerMenu = CreatePopupMenu() else { continue }
+                var providerCommands: [UINT_PTR: WindowsTokenAccountSelectionRequest] = [:]
+                for account in selection.accounts where commands.count + providerCommands.count < 128 {
+                    let command = UINT_PTR(0x7E00 + commands.count + providerCommands.count)
+                    let request = WindowsTokenAccountSelectionRequest(id: UUID(), providerID: selection.providerID,
+                        accountID: account.id, expectedSelectedID: selection.selectedID)
+                    let flags = UINT(MF_STRING) | (selection.selectedID == account.id ? UINT(MF_CHECKED) : 0)
+                    let title = account.title.replacingOccurrences(of: "&", with: "&&")
+                    if title.withCString(encodedAs: UTF16.self, { AppendMenuW(providerMenu, flags, command, $0) }) != 0 {
+                        providerCommands[command] = request
+                    }
+                }
+                let suffix = selection.requiresManualSource ? " (manual source)" : ""
+                let title = (entry.title + suffix).replacingOccurrences(of: "&", with: "&&")
+                let attached = !providerCommands.isEmpty && title.withCString(encodedAs: UTF16.self) {
+                    AppendMenuW(accountsMenu, UINT(MF_STRING | MF_POPUP), UINT_PTR(UInt(bitPattern: providerMenu)), $0) != 0
+                }
+                if attached { commands.merge(providerCommands) { _, new in new } } else { DestroyMenu(providerMenu) }
+            }
+            let attached = !commands.isEmpty && "Saved &accounts".withCString(encodedAs: UTF16.self) {
+                AppendMenuW(menu, UINT(MF_STRING | MF_POPUP), UINT_PTR(UInt(bitPattern: accountsMenu)), $0) != 0
+            }
+            if attached { self.popupTokenAccountCommands = commands } else { DestroyMenu(accountsMenu) }
         }
         let detailEntries = menuEntries.filter { $0.usageCopyText != nil || $0.errorCopyText != nil }
         if !detailEntries.isEmpty, let detailsMenu = CreatePopupMenu() {
@@ -1788,6 +1856,21 @@ public final class WindowsTrayHost: @unchecked Sendable {
     }
 
     private func dispatchCommand(_ command: UINT_PTR) {
+        if let request = self.popupTokenAccountCommands[command] {
+            guard !self.quitInvoked, !self.remoteEditorOpen,
+                  case .idle = self.providerEditorPhase, case .idle = self.codexWebSettingsEditorPhase else { return }
+            guard self.popupCopyPrivacy == WindowsUsagePresentationSettings.load().hidePersonalInfo else {
+                self.showMessage("Privacy settings changed. Reopen the menu before selecting an account.", caption: "Saved accounts")
+                return
+            }
+            self.mailboxLock.lock()
+            let busy = self.tokenAccountPendingID != nil
+            if !busy { self.tokenAccountPendingID = request.id }
+            self.mailboxLock.unlock()
+            if busy { self.showMessage("An account selection is already being saved. Please wait.", caption: "Saved accounts") }
+            else { self.onTokenAccountSelect(request) }
+            return
+        }
         if let details = self.popupProviderDetails[command] {
             guard self.popupCopyPrivacy == WindowsUsagePresentationSettings.load().hidePersonalInfo else {
                 self.showMessage("Privacy settings changed. Reopen the menu to view current details.", caption: "Provider details")
@@ -2356,6 +2439,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
         if message == Self.wakeMessage {
             host.drainCLISetup()
             if host.remoteEditorOpen { return 0 }
+            host.drainTokenAccountSelection()
             host.drainProviderQuotaWarningEditor()
             host.drainCodexWebSettingsEditor()
             host.drainSessionQuotaNotifications()

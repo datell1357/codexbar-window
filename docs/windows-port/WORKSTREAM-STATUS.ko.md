@@ -1,5 +1,7 @@
 # Windows 전용 제품 작업 현황
 
+- IMPL-092: Saved accounts 트레이 선택과 저장 결과·refresh 연결을 작성했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
 - IMPL-091: 토큰 계정 선택 projection과 UUID 기반 저장 backend를 작성했다. UI 미연결, CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
 
 - IMPL-090: 상세 창 작업 영역 배치와 액션 버튼 줄바꿈을 작성했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
