@@ -2,11 +2,14 @@
 import Foundation
 import WinSDK
 
-/// Input begins empty so a redacted label can never be saved as the original name.
+/// Inputs begin empty. Credential mode never receives the previously stored secret.
 enum WindowsAccountNameDialog {
     enum Result { case cancelled, failed, saved(String) }
     private static let className = "CodexBar.AccountNameDialog"
+    private enum Mode { case name, credential }
     private final class Context {
+        let mode: Mode
+        init(mode: Mode) { self.mode = mode }
         var result: Result = .cancelled
         var closed = false
         var dpi: UINT = 96
@@ -14,8 +17,15 @@ enum WindowsAccountNameDialog {
         deinit { if let font { DeleteObject(font) } }
         func pixels(_ value: Int32) -> Int32 { MulDiv(value, Int32(self.dpi), 96) }
     }
-    static func show(owner: HWND) -> Result {
-        let context = Context()
+    static func show(owner: HWND) -> Result { Self.show(owner: owner, mode: .name) }
+
+    /// The returned string contains a secret; pass only to the credential save API.
+    static func showCredentialReplacement(owner: HWND) -> Result {
+        Self.show(owner: owner, mode: .credential)
+    }
+
+    private static func show(owner: HWND, mode: Mode) -> Result {
+        let context = Context(mode: mode)
         let instance = GetModuleHandleW(nil)
         var klass = WNDCLASSEXW()
         klass.cbSize = UINT(MemoryLayout<WNDCLASSEXW>.size)
@@ -28,7 +38,7 @@ enum WindowsAccountNameDialog {
             return RegisterClassExW(&klass)
         }
         guard registered != 0 || GetLastError() == ERROR_CLASS_ALREADY_EXISTS else { return .failed }
-        let caption = Array("Rename saved account".utf16) + [0]
+        let caption = Array((mode == .name ? "Rename saved account" : "Replace account credential").utf16) + [0]
         let hwnd = name.withUnsafeBufferPointer { n in
             caption.withUnsafeBufferPointer { c in
                 CreateWindowExW(DWORD(WS_EX_DLGMODALFRAME), n.baseAddress, c.baseAddress,
@@ -65,13 +75,23 @@ enum WindowsAccountNameDialog {
         return context.result
     }
     private static func save(_ hwnd: HWND, context: Context) {
-        var buffer = [WCHAR](repeating: 0, count: 162)
+        var buffer = [WCHAR](repeating: 0, count: context.mode == .name ? 162 : 65_538)
         let count = GetWindowTextW(GetDlgItem(hwnd, 101), &buffer, Int32(buffer.count))
         let label = String(decoding: buffer.prefix(Int(max(0, count))), as: UTF16.self)
             .trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !label.isEmpty, label.utf16.count <= 160,
-              !label.unicodeScalars.contains(where: { $0.value < 0x20 || $0.value == 0x7F }) else {
-            "Enter a nonempty name of at most 160 characters, without control characters.".withCString(encodedAs: UTF16.self) {
+        let valid: Bool
+        let guidance: String
+        switch context.mode {
+        case .name:
+            valid = !label.isEmpty && label.utf16.count <= 160 &&
+                !label.unicodeScalars.contains { $0.value < 0x20 || $0.value == 0x7F }
+            guidance = "Enter a nonempty name of at most 160 characters, without control characters."
+        case .credential:
+            valid = !label.isEmpty && label.utf8.count <= 65_536 && !label.contains("\0")
+            guidance = "Enter a nonempty replacement credential of at most 65536 UTF-8 bytes."
+        }
+        guard valid else {
+            guidance.withCString(encodedAs: UTF16.self) {
                 SetWindowTextW(GetDlgItem(hwnd, 102), $0)
             }
             SetFocus(GetDlgItem(hwnd, 101)); return
@@ -93,14 +113,16 @@ enum WindowsAccountNameDialog {
         case UINT(WM_CREATE):
             let dpi = GetDpiForWindow(hwnd)
             context.dpi = dpi == 0 ? 96 : dpi
-            guard Self.control(hwnd, "STATIC", "&New account name", 100, 0, 16, 14, 400, 22) != nil,
-                  let edit = Self.control(hwnd, "EDIT", "", 101, DWORD(WS_TABSTOP | WS_BORDER | ES_AUTOHSCROLL),
+            guard Self.control(hwnd, "STATIC", context.mode == .name ? "&New account name" : "&New credential", 100, 0, 16, 14, 400, 22) != nil,
+                  let edit = Self.control(hwnd, "EDIT", "", 101, DWORD(WS_TABSTOP | WS_BORDER | ES_AUTOHSCROLL) | (context.mode == .credential ? DWORD(ES_PASSWORD) : 0),
                                           16, 40, 410, 26),
-                  Self.control(hwnd, "STATIC", "Only the name changes; credentials and selection stay the same.",
+                  Self.control(hwnd, "STATIC", context.mode == .name
+                               ? "Only the name changes; credentials and selection stay the same."
+                               : "Enter the complete replacement token or cookie header. The old credential is not shown. Saving does not verify authentication.",
                                102, 0, 16, 76, 410, 40) != nil,
                   Self.control(hwnd, "BUTTON", "Save", 1, DWORD(WS_TABSTOP | BS_DEFPUSHBUTTON), 246, 126, 80, 28) != nil,
                   Self.control(hwnd, "BUTTON", "Cancel", 2, DWORD(WS_TABSTOP | BS_PUSHBUTTON), 336, 126, 90, 28) != nil else { return -1 }
-            SendMessageW(edit, UINT(EM_SETLIMITTEXT), 160, 0)
+            SendMessageW(edit, UINT(EM_SETLIMITTEXT), context.mode == .name ? 160 : 65_536, 0)
             Self.updateFont(hwnd, context: context)
             Self.layout(hwnd, context: context)
             return 0

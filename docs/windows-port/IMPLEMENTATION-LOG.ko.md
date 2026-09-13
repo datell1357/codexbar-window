@@ -1562,3 +1562,13 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - 현재 선택 계정 교체에만 공급자 manual source/API key 규칙과 기존 session/history/mailbox 상태 철회를 적용한다. 비선택 계정 교체는 활성 계정을 바꾸지 않는다. 저장은 Windows 보호 config 경로를 사용한다.
 
 남은 범위: native 교체 UI/host/Main 연결, provider별 credential 구조 안내·정규화, scope/org 편집, 프로세스 간 동시 저장 및 원자 쓰기 후 권한 오류 처리, Windows 실행 검증. 이 batch는 사용자에게 노출되는 기능 완료가 아니다.
+
+## IMPL-112 — 네이티브 credential 교체 입력
+
+상태 CODE_WRITTEN_UNVERIFIED. 컴파일/빌드/테스트/UI/credential/검증 미실시. guidelines/COMMITS.md 부재로 핵심 커밋 규칙을 적용한다.
+
+- 이름 변경 대화상자의 window/message loop/DPI/font/keyboard 경로를 공유하는 credential 교체 모드를 추가했다. 입력은 항상 빈 값으로 시작하고 ES_PASSWORD로 가린다.
+- credential 모드는 전체 토큰 또는 cookie header 교체 안내와 인증 검증을 의미하지 않는 저장 안내를 표시한다. 비어 있는 값·NUL·65536 UTF-8 bytes 초과를 거절하며 잘못된 입력은 창을 유지한다.
+- 이름 변경의 입력 제한은 유지한다. UI는 기존 credential을 받지 않으며 결과 문자열은 저장 호출에만 전달해야 한다.
+
+남은 범위: tray 메뉴 및 ticket begin/cancel/save의 host/Main 연결, 공급자별 문구, 작은 작업 영역과 접근성, 문자열 메모리 zeroization, Windows 실행 검증. 아직 사용자 메뉴에서 호출되지 않는다.

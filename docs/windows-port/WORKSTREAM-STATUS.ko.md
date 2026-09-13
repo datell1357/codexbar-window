@@ -1,5 +1,7 @@
 # Windows 전용 제품 작업 현황
 
+- IMPL-112: 기존 native 입력 대화상자에 masked credential 교체 모드를 작성했다. host/Main 연결은 남아 있다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
 - IMPL-111: 기존 계정 credential 교체 backend와 만료·stale 편집 티켓을 작성했다. UI 연결은 남아 있다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
 
 - IMPL-110: Codex reconciliation의 선택 source·runtime identity 변경 시 상태 철회를 연결했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
