@@ -1762,3 +1762,13 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - 파일 크기 사전 조회에 의존하지 않아 읽는 중 커져도 누적 한도를 넘기지 않도록 작성했다. 실제 파일은 읽지 않았다.
 
 남은 범위: Windows FileHandle 오류·short read 검증, reparse/비정규 파일과 프로세스 간 경합, config 등 다른 파일 읽기 한도 및 전체 계획 검증.
+
+## IMPL-132 — Windows config bounded read 및 쓰기 한도
+
+상태 CODE_WRITTEN_UNVERIFIED. 컴파일/빌드/테스트/설정·파일 접근/검증 미실시. guidelines/COMMITS.md 부재로 핵심 커밋 규칙을 적용한다.
+
+- Windows config load를 32 MiB bounded reader에 연결한다. 명시적 파일 부재만 nil이며 권한·읽기 오류는 loadOrCreateDefault로부터 전파된다.
+- 암호화/base64 확장 후 결과도 32 MiB 이하인지 확인하여 다음 load에서 읽을 수 없는 파일로 교체하지 않도록 작성했다. 실패는 기존 protected write 실패로 전달한다.
+- 복호화 이후 model decoding 오류도 원본 값을 포함할 수 있는 localizedDescription 대신 generic 오류로 전달한다. 다른 플랫폼 load/save 계약은 유지한다.
+
+남은 범위: Windows 실제 오류 mapping·동시 생성/교체·한도 경계 검증, config recovery UX 및 전체 계획 구현.

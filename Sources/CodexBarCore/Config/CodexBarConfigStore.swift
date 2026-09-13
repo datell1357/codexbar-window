@@ -42,8 +42,19 @@ public struct CodexBarConfigStore: @unchecked Sendable {
     }
 
     public func load() throws -> CodexBarConfig? {
+        #if os(Windows)
+        let storedData: Data
+        do {
+            guard let loaded = try WindowsBoundedFileReader.readIfPresent(at: self.fileURL, maximumBytes: 32 * 1024 * 1024)
+            else { return nil }
+            storedData = loaded
+        } catch WindowsBoundedFileReader.Failure.tooLarge {
+            throw CodexBarConfigStoreError.decodeFailed("The Windows configuration exceeds the 32 MiB size limit.")
+        }
+        #else
         guard self.fileManager.fileExists(atPath: self.fileURL.path) else { return nil }
         let storedData = try Data(contentsOf: self.fileURL)
+        #endif
         let data: Data
         #if os(Windows)
         do { data = try WindowsProtectedTokenConfig.decode(storedData) }
@@ -71,7 +82,12 @@ public struct CodexBarConfigStore: @unchecked Sendable {
             let decoded = try decoder.decode(CodexBarConfig.self, from: data)
             return decoded.normalized()
         } catch {
+            #if os(Windows)
+            // Model decoding can also include decrypted values in error descriptions.
+            throw CodexBarConfigStoreError.decodeFailed("Invalid Windows configuration fields.")
+            #else
             throw CodexBarConfigStoreError.decodeFailed(error.localizedDescription)
+            #endif
         }
     }
 
@@ -104,8 +120,11 @@ public struct CodexBarConfigStore: @unchecked Sendable {
         let storedData: Data
         #if os(Windows)
         // Finish every encryption before creating directories or replacing the original file.
-        do { storedData = try WindowsProtectedTokenConfig.encode(data) }
-        catch { throw CodexBarConfigStoreError.protectedTokenWriteFailed }
+        do {
+            storedData = try WindowsProtectedTokenConfig.encode(data)
+            // Encryption/base64 expansion must not publish a file the reader cannot reopen.
+            guard storedData.count <= 32 * 1024 * 1024 else { throw CodexBarConfigStoreError.protectedTokenWriteFailed }
+        } catch { throw CodexBarConfigStoreError.protectedTokenWriteFailed }
         #else
         let candidateRoot = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
         if candidateRoot?["windowsTokenProtectionVersion"] != nil {
