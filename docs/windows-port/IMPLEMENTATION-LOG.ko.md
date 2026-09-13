@@ -2734,3 +2734,11 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - 저장은 기존 addTokenAccount 보호 저장 경로를 사용한다. exact bundle 및 scope가 같은 계정만 재사용하고 서버별 user ID를 전역 externalIdentifier로 오인하지 않는다.
 - 남은 소요: 네이티브 가져오기 메뉴/확인/취소 UI, custom server 편집기 설정 탐색, 실제 Windows 동작 검증 및 전체 계획 나머지.
 - CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·저장소·Credential Manager·API 검증 미실행.
+
+## IMPL-238 — Zed 편집기 가져오기 네이티브 UI
+
+- Zed가 표시되는 트레이 계정 추가 메뉴에 편집기 가져오기와 진행 중 취소를 연결했다. 기본 production 서버 credential을 명시적 클릭으로 읽는다.
+- Main은 독립 task holder에서 runtime discovery를 호출하고 request ID로 UI mailbox 결과를 제한한다. 계정 이름 확인 후 저장/취소를 runtime에 전달한다.
+- 기존 계정 이름 dialog에 선택적 계정 제목을 추가했다. Zed 확인 제목은 runtime 개인정보 모드를 따르며 기존 dialog의 만료/개인정보 변경 감시를 사용한다. secret bundle은 UI에 전달하지 않는다.
+- 남은 소요: custom server 설정 탐색/선택, 실제 Windows UI·인증·저장 검증 및 전체 계획 나머지.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·UI·Credential Manager·API 검증 미실행.

@@ -12,6 +12,7 @@ struct CodexBarWindowsMain {
 private final class WindowsTrayApplication: @unchecked Sendable {
     private let cursorBrowserImports = WindowsCursorBrowserImportTask()
     private let augmentBrowserImports = WindowsCursorBrowserImportTask()
+    private let zedEditorImports = WindowsCursorBrowserImportTask()
     private let runtime: WindowsUsageRuntime
     private let sessions: WindowsAgentSessionsRuntime
     private let remoteSessions: WindowsRemoteSessionsRuntime
@@ -144,6 +145,28 @@ private final class WindowsTrayApplication: @unchecked Sendable {
             guard let self else { return }
             self.augmentBrowserImports.cancel(id: ticket)
             Task { await self.runtime.cancelAugmentBrowserImport(requestID: ticket) }
+        },
+        onZedEditorImportRequested: { [weak self] requestID in
+            guard let self else { return }
+            self.zedEditorImports.start(id: requestID) { [weak self] in
+                guard let self else { return }
+                let result = await self.runtime.discoverZedEditorAccount(requestID: requestID)
+                guard !Task.isCancelled else { return }
+                self.host.postZedEditorImport(requestID: requestID, result: result)
+            }
+        },
+        onZedEditorImportSave: { [weak self] hostID, ticket, label in
+            guard let self else { return }
+            Task {
+                let result = await self.runtime.importZedEditorAccount(requestID: ticket, label: label)
+                await self.runtime.cancelZedEditorImport(requestID: ticket)
+                self.host.postZedEditorImportSave(requestID: hostID, result: result)
+            }
+        },
+        onZedEditorImportCancel: { [weak self] ticket in
+            guard let self else { return }
+            self.zedEditorImports.cancel(id: ticket)
+            Task { await self.runtime.cancelZedEditorImport(requestID: ticket) }
         },
         onSpendJSONRequested: { [weak self] requestID, copy in
             guard let self else { return }

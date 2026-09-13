@@ -20,7 +20,9 @@ enum WindowsAccountNameDialog {
         let support: TokenAccountSupport?
         let provider: UsageProvider?
         let providerName: String?
-        init(mode: Mode, provider: UsageProvider?, expectedPrivacy: Bool?, expires: Date?) {
+        let accountTitle: String?
+        init(mode: Mode, provider: UsageProvider?, expectedPrivacy: Bool?, expires: Date?, accountTitle: String?) {
+            self.accountTitle = accountTitle
             self.provider = provider
             self.expires = expires
             self.expectedPrivacy = expectedPrivacy
@@ -29,7 +31,7 @@ enum WindowsAccountNameDialog {
             self.providerName = provider.map { ProviderDescriptorRegistry.descriptor(for: $0).metadata.displayName }
         }
         var guidance: String {
-            if self.mode == .importedAccount { return "Choose a name for the imported \(self.providerName ?? "Cursor") account. Saving protects the session and selects this account." }
+            if self.mode == .importedAccount { return (self.accountTitle.map { $0 + "\r\n" } ?? "") + "Choose a name for the imported \(self.providerName ?? "Cursor") account. Saving protects the session and selects this account." }
             guard self.mode == .credential else { return "Only the name changes; credentials and selection stay the same." }
             let description = self.support.map { $0.subtitle + "\r\nInput: " + $0.placeholder }
                 ?? "Enter the complete replacement token or cookie header."
@@ -44,8 +46,8 @@ enum WindowsAccountNameDialog {
     }
     static func show(owner: HWND) -> Result { Self.show(owner: owner, mode: .name) }
 
-    static func showImportedAccount(owner: HWND, expectedPrivacy: Bool, expires: Date, provider: UsageProvider = .cursor) -> Result {
-        Self.show(owner: owner, mode: .importedAccount, provider: provider, expectedPrivacy: expectedPrivacy, expires: expires)
+    static func showImportedAccount(owner: HWND, expectedPrivacy: Bool, expires: Date, provider: UsageProvider = .cursor, accountTitle: String? = nil) -> Result {
+        Self.show(owner: owner, mode: .importedAccount, provider: provider, expectedPrivacy: expectedPrivacy, expires: expires, accountTitle: accountTitle)
     }
 
     /// The returned string contains a secret; pass only to the credential save API.
@@ -53,8 +55,8 @@ enum WindowsAccountNameDialog {
         Self.show(owner: owner, mode: .credential, provider: provider)
     }
 
-    private static func show(owner: HWND, mode: Mode, provider: UsageProvider? = nil, expectedPrivacy: Bool? = nil, expires: Date? = nil) -> Result {
-        let context = Context(mode: mode, provider: provider, expectedPrivacy: expectedPrivacy, expires: expires)
+    private static func show(owner: HWND, mode: Mode, provider: UsageProvider? = nil, expectedPrivacy: Bool? = nil, expires: Date? = nil, accountTitle: String? = nil) -> Result {
+        let context = Context(mode: mode, provider: provider, expectedPrivacy: expectedPrivacy, expires: expires, accountTitle: accountTitle)
         guard context.inputContextIsValid else { return .cancelled }
         let instance = GetModuleHandleW(nil)
         var klass = WNDCLASSEXW()
