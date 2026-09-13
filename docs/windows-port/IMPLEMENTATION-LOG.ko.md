@@ -2879,3 +2879,11 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - 이 모듈은 입력의 DB 완전성을 증명하지 않는다. 호출자는 manifest가 선택한 table/log 전체를 먼저 확보해야 하며 일부 파일 결과를 최신 인증 상태로 사용할 수 없다.
 - 남은 소요: manifest/table 해석과 일관된 snapshot, Chromium origin key 및 Windsurf importer/UI, Windows 검증 및 전체 계획 나머지.
 - CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 파서 실행·빌드·테스트·lint·실제 브라우저 파일 조회 미실행.
+
+## IMPL-255 — LevelDB manifest VersionEdit 파서
+
+- 원본 https://github.com/google/leveldb/blob/main/db/version_edit.cc를 읽고 comparator/log/previous log/next file/last sequence/compact pointer/deleted file/new file 태그를 구현했다. 원본은 가변 main 참조이다.
+- table level/번호/크기/최소·최대 내부 키와 파일 삭제를 보존한다. unknown tag, 중복 singleton/new file, level 범위, varint overflow/잘림, sequence와 내부 키를 검사한다.
+- 4MiB record/100000 field 상한과 취소 확인을 포함한다. 실제 파일을 열거나 manifest 상태를 아직 replay하지 않는다.
+- 남은 소요: live table 목록 replay, SSTable/footer/index/compression 처리, 일관된 snapshot 및 Chromium/Windsurf 연결과 전체 계획 나머지.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 파서 실행·빌드·테스트·lint·실제 브라우저 파일 조회 미실행.
