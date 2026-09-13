@@ -17,6 +17,7 @@ struct WindowsMenuShortcut: Equatable, RawRepresentable, CaseIterable {
     }
     static let controlAltC = Self(modifier: .controlAlt, key: 0x43)!
     init?(rawValue: String) {
+        guard rawValue.utf8.count <= 128 else { return nil }
         let legacy: [String: (Modifier, UINT)] = [
             "controlAltC": (.controlAlt, 0x43), "controlShiftC": (.controlShift, 0x43),
             "controlAltB": (.controlAlt, 0x42), "controlShiftB": (.controlShift, 0x42),
@@ -36,8 +37,11 @@ struct WindowsMenuShortcut: Equatable, RawRepresentable, CaseIterable {
                 .compactMap { Self(modifier: modifier, key: $0) }
         }
     }
-    static func load(_ defaults: UserDefaults) -> Self {
-        Self(rawValue: defaults.string(forKey: "windowsMenuShortcut") ?? "") ?? .controlAltC
+    /// Absence is a first-run default; an existing malformed value is not a request for that key.
+    static func load(_ defaults: UserDefaults) -> Self? {
+        guard let object = defaults.object(forKey: "windowsMenuShortcut") else { return .controlAltC }
+        guard let raw = object as? String else { return nil }
+        return Self(rawValue: raw)
     }
 }
 #endif

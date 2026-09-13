@@ -524,7 +524,12 @@ public final class WindowsTrayHost: @unchecked Sendable {
         if self.menuHotkeyRegistered { return true }
         self.cleanupInactiveHotkeys(window)
         guard self.ownedHotkeyIDs.isEmpty else { return false }
-        let shortcut = WindowsMenuShortcut.load(self.presentationDefaults)
+        guard let shortcut = WindowsMenuShortcut.load(self.presentationDefaults) else {
+            self.menuHotkeyFailed = true
+            self.menuHotkeyFailureMessage = "Saved shortcut is invalid. Choose a combination, then enable it."
+            self.presentationDefaults.set(false, forKey: "windowsMenuHotkeyEnabled")
+            return false
+        }
         let success = RegisterHotKey(window, self.activeHotkeyID, shortcut.modifiers, shortcut.key) != 0
         if success { self.ownedHotkeyIDs.insert(self.activeHotkeyID) }
         self.menuHotkeyRegistered = success
@@ -577,6 +582,9 @@ public final class WindowsTrayHost: @unchecked Sendable {
             self.cleanupInactiveHotkeys(window)
             guard self.ownedHotkeyIDs.isEmpty else { return }
         }
+        if !self.menuHotkeyRegistered, WindowsMenuShortcut.load(self.presentationDefaults) == nil {
+            self.presentationDefaults.set(false, forKey: "windowsMenuHotkeyEnabled")
+        }
         self.presentationDefaults.set(shortcut.rawValue, forKey: "windowsMenuShortcut")
         self.menuHotkeyFailureMessage = nil
         self.menuHotkeyFailed = false
@@ -585,8 +593,18 @@ public final class WindowsTrayHost: @unchecked Sendable {
     private func appendShortcutMenu(to menu: HMENU) {
         guard let child = CreatePopupMenu() else { return }
         let selected = WindowsMenuShortcut.load(self.presentationDefaults)
+        let enableFlags = UINT(MF_STRING) | (self.menuHotkeyRegistered ? UINT(MF_CHECKED) : 0) |
+            (selected == nil && !self.menuHotkeyRegistered ? UINT(MF_GRAYED) : 0)
         var succeeded = "Enable menu shortcut".withCString(encodedAs: UTF16.self) {
-            AppendMenuW(child, UINT(MF_STRING) | (self.menuHotkeyRegistered ? UINT(MF_CHECKED) : 0), Self.menuHotkeyCommand, $0) != 0
+            AppendMenuW(child, enableFlags, Self.menuHotkeyCommand, $0) != 0
+        }
+        if selected == nil {
+            let explanation = self.menuHotkeyRegistered ?
+                "Saved shortcut is invalid; the current registration is unchanged. Choose a combination." :
+                "Saved shortcut is invalid. Choose a combination below, then enable it."
+            succeeded = succeeded && explanation.withCString(encodedAs: UTF16.self) {
+                AppendMenuW(child, UINT(MF_STRING | MF_GRAYED), 0, $0) != 0
+            }
         }
         if self.menuHotkeyFailed {
             succeeded = succeeded && (self.menuHotkeyFailureMessage ?? "Shortcut operation failed; retry from this menu").withCString(encodedAs: UTF16.self) {
