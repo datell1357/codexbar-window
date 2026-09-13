@@ -1982,3 +1982,13 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - Open token activity heatmap 메뉴를 runtime 설정/수집 상태 검사에 연결했다. 미수집 소스는 count에 없을 수 있음을 안내하고 부분 실패 상태도 표시한다.
 
 남은 범위: 원본 heatmap 강도/레이아웃 세부 parity, DST/연도/밀집 셀/색상 접근성/키보드 실제 검증, 시간별 비용 상세·프로젝트/세션 탐색 및 전체 계획 구현. 실제 화면이나 수집은 실행하지 않았다.
+
+## IMPL-154 — 프로젝트 및 최근 세션 비용 요약
+
+상태 CODE_WRITTEN_UNVERIFIED. 컴파일/빌드/테스트/UI·프로젝트/세션 수집/검증 미실시. guidelines/COMMITS.md 부재로 핵심 커밋 규칙을 적용한다.
+
+- currency group의 프로젝트별 비용/토큰과 최근 session 비용/토큰/모델/활동 시각을 기존 비용 요약에 연결했다. 프로젝트 100개 제한 초과는 생략 수를 표시하며 sessions는 원본 모델의 최근 12개 범위를 따른다. 불완전 breakdown이 전체 합계와 일치하지 않을 수 있음을 안내한다.
+- 개인정보 숨김 상태에서는 프로젝트 이름을 번호로 바꾼다. 파일 경로와 session ID는 출력하지 않으며 문자열 redaction/control 문자 제거를 유지한다.
+- runtime이 요약 텍스트와 생성 당시 privacy 값을 함께 전달하도록 변경했다. host는 현재 설정과 다르면 표시를 거절하며 상세 창에도 캡처 값을 전달해 창 생성 직전/표시 중 변경 검사에 사용한다. 계정 무효화 시 대기 중 요약 요청을 취소한다.
+
+남은 범위: 전체 프로젝트/세션 탐색·정렬·검색·선택 액션, 시간별 drilldown, 이미 열린 창의 계정 변경 처리, Windows 개인정보/UI 검증 및 전체 계획 구현. 이번 요약은 완전한 프로젝트/세션 탐색 UI를 대체하지 않는다.

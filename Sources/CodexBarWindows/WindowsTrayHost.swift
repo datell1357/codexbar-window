@@ -117,7 +117,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
     private static let spendSummaryCommand = UINT_PTR(0x7032)
     private let onSpendSummaryRequested: @Sendable (UUID) -> Void
     private var spendSummaryRequest: UUID? // Protected by mailboxLock.
-    private var spendSummaryMailbox: String? // Protected by mailboxLock.
+    private var spendSummaryMailbox: WindowsUsageRuntime.SpendSummaryResult? // Protected by mailboxLock.
     private static let spendCollectionCommand = UINT_PTR(0x7030)
     private static let spendLedgerCommand = UINT_PTR(0x7031)
     private static let spendPeriodCommandBase = UINT_PTR(0x7040)
@@ -593,10 +593,10 @@ public final class WindowsTrayHost: @unchecked Sendable {
         self.mailboxLock.unlock()
     }
 
-    public func postSpendSummary(requestID: UUID, text: String) {
+    public func postSpendSummary(requestID: UUID, result: WindowsUsageRuntime.SpendSummaryResult) {
         self.mailboxLock.lock()
         guard !self.quitInvoked, self.spendSummaryRequest == requestID else { self.mailboxLock.unlock(); return }
-        self.spendSummaryMailbox = text
+        self.spendSummaryMailbox = result
         let window = self.window
         self.mailboxLock.unlock()
         if let window { PostMessageW(window, Self.wakeMessage, 0, 0) }
@@ -610,7 +610,13 @@ public final class WindowsTrayHost: @unchecked Sendable {
         self.spendSummaryMailbox = nil
         if text != nil { self.spendSummaryRequest = nil }
         self.mailboxLock.unlock()
-        if let text { self.showProviderDetails(text, title: "Cost summary", links: []) }
+        if let result = text {
+            guard result.hidePersonalInfo == WindowsUsagePresentationSettings.load().hidePersonalInfo else {
+                self.showMessage("Privacy settings changed. Reopen the cost summary.", caption: "Cost summary")
+                return
+            }
+            self.showProviderDetails(result.text, title: "Cost summary", links: [], expectedPrivacy: result.hidePersonalInfo)
+        }
     }
 
     public func postRows(_ rows: [String]) {
@@ -663,6 +669,8 @@ public final class WindowsTrayHost: @unchecked Sendable {
         self.cancelPendingShareStatsCopy()
         self.mailboxLock.lock()
         defer { self.mailboxLock.unlock() }
+        self.spendSummaryRequest = nil
+        self.spendSummaryMailbox = nil
         self.mailboxSessionQuotaNotifications.removeAll { $0.providerID == providerID }
         self.mailboxQuotaWarningNotifications.removeAll { $0.providerID == providerID }
         self.mailboxPredictivePaceWarningNotifications.removeAll { $0.providerID == providerID }
@@ -2065,11 +2073,11 @@ public final class WindowsTrayHost: @unchecked Sendable {
                          caption: caption)
     }
 
-    private func showProviderDetails(_ body: String, title: String, links: [WindowsProviderDetailsDialog.Link]) {
+    private func showProviderDetails(_ body: String, title: String, links: [WindowsProviderDetailsDialog.Link], expectedPrivacy: Bool? = nil) {
         guard !self.remoteEditorOpen, !self.quitInvoked, let window = self.window,
               case .idle = self.providerEditorPhase, case .idle = self.codexWebSettingsEditorPhase else { return }
         self.remoteEditorOpen = true
-        let privacy = WindowsUsagePresentationSettings.load().hidePersonalInfo
+        let privacy = expectedPrivacy ?? WindowsUsagePresentationSettings.load().hidePersonalInfo
         let result = WindowsProviderDetailsDialog.show(
             owner: window, title: title,
             text: "Redacted snapshot from the opened menu. Refresh all closes this window and requests usage and session updates. Reopen details after the update.\r\n\r\n" + body,

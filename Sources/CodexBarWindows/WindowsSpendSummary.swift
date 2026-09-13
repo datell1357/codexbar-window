@@ -4,7 +4,7 @@ import CodexBarCore
 
 /// Text projection for the native read-only summary; currency groups stay separate.
 enum WindowsSpendSummary {
-    static func text(snapshot: WindowsSpendDashboardController.Snapshot) -> String {
+    static func text(snapshot: WindowsSpendDashboardController.Snapshot, hidePersonalInfo: Bool) -> String {
         let model = snapshot.model
         var rows = ["Cost summary · last \(model.requestedDays) days",
                     "Costs are estimates unless reported as metered by the source.",
@@ -41,6 +41,27 @@ enum WindowsSpendSummary {
                     + cost(model.totalCost, currency: group.currencyCode) + " · " + tokens(model.totalTokens) + " tokens")
             }
             if group.models.count > 100 { rows.append("  \(group.models.count - 100) additional models are not shown in this summary.") }
+            rows.append("Projects")
+            if group.projects.isEmpty { rows.append("  No project breakdown is available for this period.") }
+            for (index, project) in group.projects.prefix(100).enumerated() {
+                let name = hidePersonalInfo ? "Project \(index + 1)" : safe(project.projectName)
+                rows.append("  " + name + " · " + safe(project.providerName) + " · "
+                    + cost(project.totalCost, currency: group.currencyCode) + " · " + tokens(project.totalTokens) + " tokens")
+            }
+            if group.projects.count > 100 { rows.append("  \(group.projects.count - 100) additional projects are not shown in this summary.") }
+            rows.append("Recent sessions (available model window)")
+            if group.sessions.isEmpty { rows.append("  No session breakdown is available for this period.") }
+            let formatter = DateFormatter()
+            formatter.dateStyle = .medium
+            formatter.timeStyle = .short
+            formatter.timeZone = group.timeZone
+            for (index, session) in group.sessions.enumerated() {
+                rows.append("  Session \(index + 1) · " + safe(session.displayName) + " · "
+                    + cost(session.totalCost, currency: group.currencyCode) + " · " + tokens(session.totalTokens) + " tokens")
+                rows.append("    Last activity: " + formatter.string(from: session.lastActivity)
+                    + (session.modelName.map { " · " + safe($0) } ?? ""))
+            }
+            rows.append("Project and session breakdowns can be incomplete and need not sum to the period total.")
         }
         rows.append("")
         rows.append("Unknown values mean missing coverage, not zero usage. Refresh all and reopen to update this snapshot.")

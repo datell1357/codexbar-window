@@ -170,7 +170,17 @@ public actor WindowsUsageRuntime {
         return .ready(redacted)
     }
 
-    public func spendSummaryText() -> String {
+    public struct SpendSummaryResult: Sendable {
+        public let text: String
+        public let hidePersonalInfo: Bool
+    }
+
+    public func spendSummaryResult() -> SpendSummaryResult {
+        let privacy = WindowsUsagePresentationSettings.load().hidePersonalInfo
+        return SpendSummaryResult(text: self.spendSummaryText(hidePersonalInfo: privacy), hidePersonalInfo: privacy)
+    }
+
+    private func spendSummaryText(hidePersonalInfo: Bool) -> String {
         switch self.spendState {
         case .idle: return "Cost data is not ready. Refresh all to collect enabled sources."
         case .disabled: return "Cost collection is disabled or no enabled provider supports costs. Use Cost collection to change preferences."
@@ -180,7 +190,7 @@ public actor WindowsUsageRuntime {
         case .available: break
         }
         guard let snapshot = self.spendSnapshot else { return "Cost data is unavailable." }
-        return WindowsSpendSummary.text(snapshot: snapshot)
+        return WindowsSpendSummary.text(snapshot: snapshot, hidePersonalInfo: hidePersonalInfo)
     }
 
     private let configStore: CodexBarConfigStore
