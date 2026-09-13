@@ -62,7 +62,35 @@ public actor WindowsUsageRuntime {
             }
             let batch = try WindowsHookObservationBatch.make(accounts: pending.accounts,
                 previousKeys: self.hookPreviousKeys, now: Date())
-            let result = try await self.hookDispatchQueue.observe(batch.observations, config: pending.config,
+            var observations = Dictionary(uniqueKeysWithValues: batch.observations.map { ($0.provider, $0) })
+            let statusEnabled = (UserDefaults(suiteName: WindowsRefreshSettings.suiteName) ?? .standard)
+                .object(forKey: "statusChecksEnabled") as? Bool ?? true
+            if statusEnabled, let current = try self.configStore.load() {
+                var sources: [String: URL] = [:]
+                for id in current.enabledProviders() {
+                    guard let provider = id.firstPartyProvider,
+                          pending.config.events.contains(where: { rule in
+                              rule.enabled && (rule.provider == nil || rule.provider == id.rawValue) &&
+                                  (rule.event == .providerUnavailable || rule.event == .providerRecovered)
+                          }), let raw = ProviderDescriptorRegistry.descriptor(for: provider).metadata.statusPageURL,
+                          let url = URL(string: raw) else { continue }
+                    sources[id.rawValue] = url
+                }
+                let statuses = try await WindowsProviderStatusProbe.collect(sources, deadline: Date().addingTimeInterval(30))
+                guard !Task.isCancelled, self.hookSubmissionIsCurrent(revision: pending.configRevision, privacy: pending.privacy) else {
+                    return "Hooks: discarded changed or cancelled status refresh"
+                }
+                let stillEnabled = (UserDefaults(suiteName: WindowsRefreshSettings.suiteName) ?? .standard)
+                    .object(forKey: "statusChecksEnabled") as? Bool ?? true
+                if stillEnabled {
+                    for (provider, status) in statuses {
+                        let previous = observations[provider]
+                        observations[provider] = HookProviderObservation(provider: provider, lanes: previous?.lanes ?? [],
+                            status: status, unavailableLaneKeys: previous?.unavailableLaneKeys ?? [])
+                    }
+                }
+            }
+            let result = try await self.hookDispatchQueue.observe(observations.keys.sorted().compactMap { observations[$0] }, config: pending.config,
                 hidePersonalInfo: pending.privacy, contextRevision: revision, failures: batch.failures,
                 authorization: { [weak self] in
                     guard let self else { return false }
@@ -83,7 +111,11 @@ public actor WindowsUsageRuntime {
     private func hookConfigRevision(_ config: CodexBarConfig) throws -> Data {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys]
-        return Data(SHA256.hash(data: try encoder.encode(config)))
+        var data = try encoder.encode(config)
+        let statusEnabled = (UserDefaults(suiteName: WindowsRefreshSettings.suiteName) ?? .standard)
+            .object(forKey: "statusChecksEnabled") as? Bool ?? true
+        data.append(statusEnabled ? 1 : 0)
+        return Data(SHA256.hash(data: data))
     }
 
     public typealias RowPublisher = @Sendable ([String]) -> Void

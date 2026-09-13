@@ -3167,3 +3167,12 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - 알 수 없는 indicator는 unknown으로 유지한다. 조회 실패를 서비스 장애로 바꾸지 않으며 원문 응답을 오류에 담지 않는다. 취소는 상위로 전달한다.
 - 남은 소요: runtime 상태 관측 연결, incident.io/component/Workspace 상태 피드 및 전체 계획 나머지. 현재 Windows 상태 페이지는 링크만 있고 이 모듈은 아직 자동 호출되지 않는다.
 - CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·실제 HTTP/훅 실행 미실행.
+
+## IMPL-288 — 상태 조회와 장애/복구 훅 연결
+
+- 활성 first-party 공급자 중 장애/복구 훅 규칙과 statusPageURL이 있는 경우 classic 상태 조회를 실행하도록 코드 연결했다. statusChecksEnabled 기본 true를 원본 설정과 맞추고 꺼진 경우 조회하지 않는다.
+- 최대 4개 동시 요청과 30초 제출 예산을 적용한다. 시작한 HTTP 요청의 timeout/취소 drain 때문에 전체 반환은 더 늦을 수 있다. 실패/미조회는 unknown으로 남긴다.
+- 상태 결과와 기존 계정 lane을 같은 provider observation으로 합쳐 상태 관측이 사용량 기준을 지우지 않도록 했다. 조회 후 설정/개인정보/취소를 재확인한다.
+- 상태 확인 설정을 config revision에 포함해 변경 시 기준 초기화 및 실행 authorization 재확인을 적용한다.
+- 남은 소요: incident.io/components/Workspace 피드, plugin/외부 계정 소유권, 설정 UI 및 전체 계획 나머지.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·실제 HTTP/훅 실행 미실행.

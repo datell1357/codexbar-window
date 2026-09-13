@@ -30,6 +30,34 @@ public enum WindowsProviderStatusProbe {
         return try self.decode(response.data)
     }
 
+    /// At most four requests in flight; failed or unattempted sources remain unknown.
+    public static func collect(_ sources: [String: URL], deadline: Date) async throws -> [String: HookProviderStatus] {
+        guard sources.count <= 256 else { throw Failure.oversized }
+        try Task.checkCancellation()
+        let entries = sources.sorted { $0.key < $1.key }
+        var result = Dictionary(uniqueKeysWithValues: entries.map { ($0.key, HookProviderStatus.unknown) })
+        await withTaskGroup(of: (String, HookProviderStatus).self) { group in
+            var next = 0
+            func enqueue(_ index: Int) {
+                let entry = entries[index]
+                group.addTask {
+                    guard !Task.isCancelled, Date() < deadline else { return (entry.key, .unknown) }
+                    let status = (try? await Self.fetch(baseURL: entry.value)) ?? .unknown
+                    guard !Task.isCancelled, Date() < deadline else { return (entry.key, .unknown) }
+                    return (entry.key, status)
+                }
+            }
+            while next < min(4, entries.count) { enqueue(next); next += 1 }
+            while let (key, status) = await group.next() {
+                result[key] = status
+                if Task.isCancelled || Date() >= deadline { group.cancelAll() }
+                else if next < entries.count { enqueue(next); next += 1 }
+            }
+        }
+        try Task.checkCancellation()
+        return result
+    }
+
     public static func decode(_ data: Data) throws -> HookProviderStatus {
         try Task.checkCancellation()
         guard data.count <= 1024 * 1024 else { throw Failure.oversized }
