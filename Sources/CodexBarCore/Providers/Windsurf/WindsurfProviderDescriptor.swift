@@ -156,7 +156,17 @@ struct WindsurfLocalFetchStrategy: ProviderFetchStrategy {
 
     func fetch(_ context: ProviderFetchContext) async throws -> ProviderFetchResult {
         let probe = WindsurfStatusProbe()
+        #if os(Windows)
+        let task = Task.detached(priority: .utility) { try probe.fetch() }
+        let planInfo = try await withTaskCancellationHandler {
+            try await task.value
+        } onCancel: {
+            task.cancel()
+        }
+        try Task.checkCancellation()
+        #else
         let planInfo = try probe.fetch()
+        #endif
         #if os(Windows)
         let now = Date()
         if let end = planInfo.endTimestamp,

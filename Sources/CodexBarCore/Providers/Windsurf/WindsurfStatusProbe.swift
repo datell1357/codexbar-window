@@ -105,6 +105,8 @@ public struct WindsurfStatusProbe: Sendable {
 
         #if os(Windows)
         _ = sqlite3_limit(db, SQLITE_LIMIT_LENGTH, 4 * 1024 * 1024)
+        sqlite3_progress_handler(db, 1000, { _ in Task.isCancelled ? 1 : 0 }, nil)
+        defer { sqlite3_progress_handler(db, 0, nil, nil) }
         #endif
         guard sqlite3_busy_timeout(db, 250) == SQLITE_OK else {
             throw WindsurfStatusProbeError.sqliteFailed(Self.sqliteMessage(db))
@@ -112,6 +114,8 @@ public struct WindsurfStatusProbe: Sendable {
 
         var stmt: OpaquePointer?
         guard sqlite3_prepare_v2(db, Self.query, -1, &stmt, nil) == SQLITE_OK else {
+            if let stmt { sqlite3_finalize(stmt) }
+            try Task.checkCancellation()
             let message = Self.sqliteMessage(db)
             throw WindsurfStatusProbeError.sqliteFailed(message)
         }
@@ -136,7 +140,11 @@ public struct WindsurfStatusProbe: Sendable {
         }
 
         do {
-            return try JSONDecoder().decode(WindsurfCachedPlanInfo.self, from: jsonData)
+            let result = try JSONDecoder().decode(WindsurfCachedPlanInfo.self, from: jsonData)
+            try Task.checkCancellation()
+            return result
+        } catch is CancellationError {
+            throw CancellationError()
         } catch {
             #if os(Windows)
             throw WindsurfStatusProbeError.parseFailed("Invalid cached plan payload")

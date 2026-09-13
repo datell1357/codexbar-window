@@ -2496,3 +2496,11 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - 형식 확인은 네트워크 없는 순수 파싱이다. 다른 제공자 및 이름 변경 동작은 유지한다.
 - 남은 소요: 실제 Windows 대화상자 안내 레이아웃, 브라우저 로그인 및 전체 계획 나머지 항목.
 - CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·실제 UI/API 검증 미실행.
+
+## IMPL-210 — Windsurf 로컬 조회 취소
+
+- Windows local strategy는 동기 SQLite 작업을 utility detached task에서 수행하고 부모 취소를 전달한다. 결과 게시 전에도 취소를 확인한다.
+- 소유 SQLite 연결에 progress handler를 등록하고 종료 전에 해제한다. prepare 실패 시 statement를 정리하고 취소를 우선 전달한다. JSON 해석 후 취소를 parse 오류로 감싸지 않는다.
+- OS 파일 열기/잠금 및 JSON 해석 내부는 즉시 중단을 보장하지 않는다. 기존 크기 제한과 busy timeout을 유지한다.
+- 남은 소요: 실제 Windows 취소 응답성, 브라우저 로그인 및 전체 계획 나머지 항목.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·실제 SQLite/취소 검증 미실행.
