@@ -2277,3 +2277,13 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - validate는 기존 수동 쿠키 probe를 호출하고 비어 있지 않은 API accountID를 요구한다. expectedAccountID가 주어지면 일치해야 한다. 후보 검증이 자동 선택/저장을 뜻하지 않는다.
 
 남은 범위: 후보 목록/계정 선택 UI, 사용자 선택 후 계정 저장 및 상태 반환, Firefox 실행·프로필·API 검증, Chrome/Edge/WebView2 로그인, 전체 계획 구현. 브라우저나 쿠키 파일을 실제로 읽지 않았다.
+
+## IMPL-183 — Cursor 후보 선택 runtime
+
+상태 CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·브라우저/API/계정 저장/실행 검증 미실시. guidelines/COMMITS.md 부재로 핵심 규칙을 적용한다.
+
+- runtime에 Firefox 후보 검증 및 opaque UUID 선택 목록 반환 경로를 작성했다. 쿠키는 pending state에만 보관하고 UI DTO에는 개인정보 설정을 적용한 이름과 ID만 담는다.
+- 최대 16개 후보를 순차 검증하며 60초 경계를 후보 사이에서 확인한다(진행 중 HTTP 요청은 자체 timeout 적용). 읽기/검증 실패와 미시도 수를 분리한다.
+- 선택 ticket은 5분 유효하고 provider config SHA256 revision/선택 계정/개인정보 상태를 캡처한다. commit에서 재확인하고 기존 addTokenAccount의 DPAPI config 저장 및 계정 무효화 경로를 사용한다. 재조회/취소/새 요청은 pending state를 교체한다.
+
+남은 범위: 실제 트레이 후보 선택 UI/취소/진행 표시 연결, 동기 브라우저 읽기를 actor 밖으로 이동, 만료 후보 즉시 메모리 정리, API 오류 상세 분류와 Windows 실행 검증, 전체 계획 구현. 이번 단계에서 UI로 import를 실행할 수 있다고 주장하지 않는다.

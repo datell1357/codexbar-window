@@ -526,6 +526,109 @@ public actor WindowsUsageRuntime {
 
     /// Add to the existing config account schema. Persistence uses the configured store;
     /// no claim of Credential Manager migration is made by this API.
+    public struct CursorBrowserChoice: Sendable {
+        public let id: UUID
+        public let title: String
+    }
+    public enum CursorBrowserImportResult: Sendable {
+        case choices(requestID: UUID, rows: [CursorBrowserChoice], failedCount: Int, omittedCount: Int, privacy: Bool)
+        case unavailable(String)
+    }
+    private struct PendingCursorBrowserImport {
+        let id: UUID
+        let expires: Date
+        let revision: Data
+        let selectedID: UUID?
+        let privacy: Bool
+        let candidates: [UUID: WindowsCursorBrowserSessionImporter.ValidatedCandidate]
+    }
+    private var cursorBrowserImportRequest: UUID?
+    private var pendingCursorBrowserImport: PendingCursorBrowserImport?
+
+    private func cursorImportRevision() throws -> (Data, UUID?)? {
+        guard let config = try self.configStore.load(), config.enabledProviders().contains(UsageProvider.cursor.instanceID),
+              let entry = config.providerConfig(for: UsageProvider.cursor.instanceID) else { return nil }
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        let revision = Data(SHA256.hash(data: try encoder.encode(entry)))
+        let accounts = entry.tokenAccounts
+        let selected = accounts.flatMap { $0.accounts.isEmpty ? nil : $0.accounts[$0.clampedActiveIndex()].id }
+        return (revision, selected)
+    }
+
+    public func discoverCursorBrowserAccounts() async -> CursorBrowserImportResult {
+        guard !self.shuttingDown, self.refreshTask == nil else { return .unavailable("Wait for the current refresh to finish.") }
+        let requestID = UUID()
+        self.cursorBrowserImportRequest = requestID
+        self.pendingCursorBrowserImport = nil
+        let privacy = WindowsUsagePresentationSettings.load().hidePersonalInfo
+        do {
+            guard let (revision, selected) = try self.cursorImportRevision() else { return .unavailable("Enable Cursor before importing an account.") }
+            let deadline = Date().addingTimeInterval(60)
+            let importer = WindowsCursorBrowserSessionImporter()
+            let discovery = try importer.discover(deadline: deadline)
+            var validated: [UUID: WindowsCursorBrowserSessionImporter.ValidatedCandidate] = [:]
+            var rows: [CursorBrowserChoice] = []
+            var failures = discovery.failedProfileCount
+            var attempted = 0
+            for candidate in discovery.candidates.prefix(16) {
+                try Task.checkCancellation()
+                guard Date() < deadline else { break }
+                attempted += 1
+                do {
+                    let result = try await importer.validate(candidate)
+                    try Task.checkCancellation()
+                    guard !self.shuttingDown, self.cursorBrowserImportRequest == requestID else {
+                        return .unavailable("The browser import was cancelled or replaced.")
+                    }
+                    let id = UUID()
+                    validated[id] = result
+                    let label = privacy ? "Cursor account \(rows.count + 1)" :
+                        (result.snapshot.accountEmail ?? result.snapshot.accountName ?? "Cursor account \(rows.count + 1)")
+                    let safe = String(LogRedactor.redact(label).unicodeScalars.filter { $0.value >= 32 && $0.value != 127 }.map(String.init).joined().prefix(160))
+                    rows.append(.init(id: id, title: safe))
+                } catch is CancellationError { throw CancellationError() }
+                catch { failures += 1 }
+            }
+            guard !self.shuttingDown, self.cursorBrowserImportRequest == requestID,
+                  try self.cursorImportRevision()?.0 == revision,
+                  WindowsUsagePresentationSettings.load().hidePersonalInfo == privacy else {
+                return .unavailable("Cursor accounts or privacy settings changed. Start the import again.")
+            }
+            guard !rows.isEmpty else { return .unavailable("No Firefox Cursor session could be verified. Sign in to cursor.com in Firefox and retry.") }
+            self.pendingCursorBrowserImport = .init(id: requestID, expires: Date().addingTimeInterval(300),
+                revision: revision, selectedID: selected, privacy: privacy, candidates: validated)
+            return .choices(requestID: requestID, rows: rows, failedCount: failures,
+                            omittedCount: discovery.candidates.count - attempted, privacy: privacy)
+        } catch {
+            return .unavailable("Cursor browser import did not complete. Retry after checking Firefox access.")
+        }
+    }
+
+    public func cancelCursorBrowserImport() {
+        self.cursorBrowserImportRequest = nil
+        self.pendingCursorBrowserImport = nil
+    }
+
+    public func importCursorBrowserAccount(requestID: UUID, candidateID: UUID, label: String) -> WindowsTokenAccountAddResult {
+        guard !self.shuttingDown else { return .shuttingDown }
+        guard self.refreshTask == nil else { return .refreshInProgress }
+        guard let pending = self.pendingCursorBrowserImport, pending.id == requestID,
+              pending.expires > Date(), pending.privacy == WindowsUsagePresentationSettings.load().hidePersonalInfo,
+              let candidate = pending.candidates[candidateID] else { return .staleSelection }
+        do {
+            guard try self.cursorImportRevision()?.0 == pending.revision else { return .staleSelection }
+            let result = self.addTokenAccount(.init(providerID: UsageProvider.cursor.instanceID, accountID: candidateID,
+                label: label, token: candidate.candidate.cookieHeader, usageScope: nil, organizationID: nil,
+                workspaceID: nil, expectedSelectedID: pending.selectedID))
+            switch result {
+            case .saved, .alreadyAdded: self.cancelCursorBrowserImport()
+            default: break
+            }
+            return result
+        } catch { return .failed }
+    }
+
     public func addTokenAccount(_ request: WindowsTokenAccountAddRequest) -> WindowsTokenAccountAddResult {
         guard !self.shuttingDown else { return .shuttingDown }
         guard self.refreshTask == nil else { return .refreshInProgress }
