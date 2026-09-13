@@ -1932,3 +1932,13 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - Save Share Stats PNG 메뉴를 runtime의 ready/settings 검사를 거쳐 기존 UUID 공유 mailbox로 연결했다. native GetSaveFileNameW와 .png 확장자/덮어쓰기 확인 후 atomic write를 사용하며 개인정보 표시 상태를 저장 전후 확인한다. Windows OS Comdlg32 linker library를 추가했으며 외부 dependency는 추가하지 않았다.
 
 남은 범위: PNG 디코딩·픽셀/텍스트/Unicode/DPI 검증, 원본 카드 세부 시각 parity, 이미지 preview·이미지 클립보드 복사, 대화상자 중 계정 변경/종료 처리, 전체 비용 차트 및 전체 계획 구현. 미검증 encoder/WinSDK 호출이므로 생성 가능한 이미지나 배포 품질을 보장하지 않는다.
+
+## IMPL-149 — Share Stats 이미지 클립보드
+
+상태 CODE_WRITTEN_UNVERIFIED. 컴파일/빌드/테스트/렌더링·클립보드·붙여넣기/검증 미실시. guidelines/COMMITS.md 부재로 핵심 커밋 규칙을 적용한다.
+
+- renderer가 동일 raster에서 PNG와 CF_DIB용 40-byte BITMAPINFOHEADER/bottom-up 32-bit BGRX를 함께 반환하도록 작성했다. 저장 경로는 PNG만 사용한다.
+- Copy Share Stats image 메뉴를 runtime ready/설정 확인 및 UUID/개인정보 상태 확인 mailbox에 연결했다. 기존 계정/설정 변경 대기 요청 취소를 재사용한다.
+- clipboard helper는 registered PNG와 CF_DIB 메모리를 모두 준비한 다음 클립보드를 열고 교체한다. 전달한 핸들은 Windows에 소유권을 넘기며 전달하지 못한 메모리는 해제한다. PNG만 복사된 부분 실패와 전체 실패를 구분해 안내한다.
+
+남은 범위: DIB 방향·색상·PNG 디코딩·Office/그림판/브라우저 붙여넣기 검증, 이미지 미리보기/원본 디자인 상세 parity, 전체 비용 차트와 나머지 계획 구현. 실제 클립보드는 읽거나 쓰지 않았다.

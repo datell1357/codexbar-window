@@ -95,6 +95,8 @@ public final class WindowsTrayHost: @unchecked Sendable {
     private static let agentSessionsRefreshCommand = UINT_PTR(0x7501)
     private static let agentSessionCommandBase = UINT_PTR(0x7600)
     private static let wakeMessage = UINT(WM_APP) + 1
+    private static let shareStatsImageCopyCommand = UINT_PTR(0x7036)
+    private let onShareStatsImageCopyRequested: @Sendable (UUID) -> Void
     private static let shareStatsImageCommand = UINT_PTR(0x7035)
     private let onShareStatsImageRequested: @Sendable (UUID) -> Void
     private static let spendSourcesCommand = UINT_PTR(0x7034)
@@ -294,6 +296,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
         onRemoteSessionPage: @escaping @Sendable (WindowsSessionPageRequest) -> Void = { _ in },
         onPresentationSettingsChanged: @escaping PresentationSettingsChangedHandler = {},
         onOptionalUsageSettingsChanged: @escaping OptionalUsageSettingsChangedHandler = {},
+        onShareStatsImageCopyRequested: @escaping @Sendable (UUID) -> Void = { _ in },
         onShareStatsImageRequested: @escaping @Sendable (UUID) -> Void = { _ in },
         onSpendSourcesRequested: @escaping @Sendable (UUID) -> Void = { _ in },
         onSpendSourcesSave: @escaping @Sendable (UUID, UInt64, WindowsSpendSourceMutation) -> Void = { _, _, _ in },
@@ -334,6 +337,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
         self.onMenuOpen = onMenuOpen
         self.onPresentationSettingsChanged = onPresentationSettingsChanged
         self.onOptionalUsageSettingsChanged = onOptionalUsageSettingsChanged
+        self.onShareStatsImageCopyRequested = onShareStatsImageCopyRequested
         self.onShareStatsImageRequested = onShareStatsImageRequested
         self.onSpendSourcesRequested = onSpendSourcesRequested
         self.onSpendSourcesSave = onSpendSourcesSave
@@ -529,6 +533,10 @@ public final class WindowsTrayHost: @unchecked Sendable {
         }
         switch result {
         case let .unavailable(message): self.showMessage(message, caption: "Share Stats")
+        case let .clipboardImage(png, dib):
+            if let error = WindowsClipboard.writeImage(png: png, dib: dib, owner: window) {
+                self.showMessage(error, caption: "Share Stats")
+            }
         case let .image(data, filename):
             self.remoteEditorOpen = true
             let error = WindowsShareStatsExporter.savePNG(data, filename: filename, owner: window,
@@ -2420,6 +2428,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
             (Self.spendSummaryCommand, "Open cost summary…", false),
             (Self.shareStatsCopyCommand, "Copy Share Stats", false),
             (Self.shareStatsImageCommand, "Save Share Stats PNG…", false),
+            (Self.shareStatsImageCopyCommand, "Copy Share Stats image", false),
             (Self.spendSourcesCommand, "Choose included cost sources…", false),
             (Self.spendCollectionCommand, "Collect supported provider costs", settings.collectionEnabled),
             (Self.spendLedgerCommand, "Keep Codex local cost ledger", settings.codexLocalLedgerEnabled)
@@ -2877,14 +2886,15 @@ public final class WindowsTrayHost: @unchecked Sendable {
             self.spendSourcesMailbox = nil
             self.mailboxLock.unlock()
             self.onSpendSourcesRequested(requestID)
-        case Self.shareStatsCopyCommand, Self.shareStatsImageCommand:
+        case Self.shareStatsCopyCommand, Self.shareStatsImageCommand, Self.shareStatsImageCopyCommand:
             let requestID = UUID()
             let privacy = WindowsUsagePresentationSettings.load().hidePersonalInfo
             self.mailboxLock.lock()
             self.shareStatsCopyRequest = (requestID, privacy)
             self.shareStatsCopyMailbox = nil
             self.mailboxLock.unlock()
-            if command == Self.shareStatsImageCommand { self.onShareStatsImageRequested(requestID) }
+            if command == Self.shareStatsImageCopyCommand { self.onShareStatsImageCopyRequested(requestID) }
+            else if command == Self.shareStatsImageCommand { self.onShareStatsImageRequested(requestID) }
             else { self.onShareStatsCopyRequested(requestID) }
         case Self.spendSummaryCommand:
             let requestID = UUID()

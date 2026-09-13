@@ -4,7 +4,12 @@ import WinSDK
 
 /// Draws only the sanitized sharing payload; no account paths or session content enter the card.
 enum WindowsShareStatsRenderer {
-    static func pngData(payload: WindowsShareStatsPayload, calendar: Calendar) -> Data? {
+    struct RenderedImage: Sendable {
+        let png: Data
+        let dib: Data
+    }
+
+    static func render(payload: WindowsShareStatsPayload, calendar: Calendar) -> RenderedImage? {
         let width = 1200, height = 630
         guard payload.hasShareableData, let dc = CreateCompatibleDC(nil) else { return nil }
         defer { DeleteDC(dc) }
@@ -95,7 +100,20 @@ enum WindowsShareStatsRenderer {
         for index in stride(from: 0, to: width * height * 4, by: 4) {
             rgb.append(contentsOf: [bgra[index + 2], bgra[index + 1], bgra[index]])
         }
-        return WindowsPNGEncoder.encode(width: width, height: height, rgb: rgb)
+        guard let png = WindowsPNGEncoder.encode(width: width, height: height, rgb: rgb) else { return nil }
+        // CF_DIB is a BITMAPINFOHEADER followed by bottom-up, DWORD-aligned BGRX rows.
+        // These 32-bit rows need no extra padding. BI_RGB does not use the fourth byte as alpha.
+        var dib = Data(capacity: 40 + width * height * 4)
+        let header: [UInt32] = [40, UInt32(width), UInt32(height), (32 << 16) | 1, 0,
+                                UInt32(width * height * 4), 0, 0, 0, 0]
+        for value in header {
+            dib.append(contentsOf: [UInt8(truncatingIfNeeded: value), UInt8(truncatingIfNeeded: value >> 8),
+                                    UInt8(truncatingIfNeeded: value >> 16), UInt8(truncatingIfNeeded: value >> 24)])
+        }
+        for row in stride(from: height - 1, through: 0, by: -1) {
+            dib.append(Data(bytes: bgra.advanced(by: row * width * 4), count: width * 4))
+        }
+        return RenderedImage(png: png, dib: dib)
     }
 }
 #endif

@@ -1,5 +1,7 @@
 # Windows 전용 제품 작업 현황
 
+- IMPL-149: Share Stats 이미지 복사 메뉴와 PNG/CF_DIB 이중 클립보드 전달을 작성했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
 - IMPL-148: GDI 1200×630 공유 카드/PNG encoder/Windows PNG 저장 메뉴를 작성했다. 이미지 실행·검증 미실시. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
 
 - IMPL-147: 비용 집계 소스 전체/개별 포함 선택 메뉴와 generation 확인 저장·재집계를 연결했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
