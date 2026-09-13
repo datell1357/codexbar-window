@@ -12,7 +12,24 @@ public enum AugmentProviderDescriptor {
         placeholder: "Cookie: …",
         injection: .cookieHeader,
         requiresManualCookieSource: true,
-        cookieName: nil))
+        cookieName: nil,
+        selectedAccountRequiresManualCookieSource: Self.requiresSelectedManualSource))
+
+    private static var requiresSelectedManualSource: Bool {
+        #if os(Windows)
+        true
+        #else
+        false
+        #endif
+    }
+
+    private static var sourceModes: Set<ProviderSourceMode> {
+        #if os(Windows)
+        [.auto, .cli, .web]
+        #else
+        [.auto, .cli]
+        #endif
+    }
 
     static func makeDescriptor() -> ProviderDescriptor {
         #if os(macOS)
@@ -75,8 +92,13 @@ public enum AugmentProviderDescriptor {
                 supportsTokenCost: false,
                 noDataMessage: { "Augment cost summary is not supported." }),
             fetchPlan: ProviderFetchPlan(
-                sourceModes: [.auto, .cli],
-                pipeline: ProviderFetchPipeline(resolveStrategies: { _ in
+                sourceModes: Self.sourceModes,
+                pipeline: ProviderFetchPipeline(resolveStrategies: { context in
+                    #if os(Windows)
+                    if context.settings?.augment?.cookieSource == .manual {
+                        return [AugmentStatusFetchStrategy()]
+                    }
+                    #endif
                     var strategies: [any ProviderFetchStrategy] = []
                     // Try CLI first (no browser prompts!)
                     strategies.append(AugmentCLIFetchStrategy())
@@ -86,7 +108,15 @@ public enum AugmentProviderDescriptor {
                 })),
             cli: ProviderCLIConfig(
                 name: "augment",
-                versionDetector: nil))
+                versionDetector: nil,
+                browserSupportExemption: { source, _, settings in
+                    #if os(Windows)
+                    return source == .cli || (settings?.augment?.cookieSource == .manual &&
+                        CookieHeaderNormalizer.normalize(settings?.augment?.manualCookieHeader) != nil)
+                    #else
+                    return false
+                    #endif
+                }))
     }
 }
 
@@ -95,6 +125,9 @@ struct AugmentCLIFetchStrategy: ProviderFetchStrategy {
     let kind: ProviderFetchKind = .cli
 
     func isAvailable(_ context: ProviderFetchContext) async -> Bool {
+        #if os(Windows)
+        guard context.sourceMode != .web, context.settings?.augment?.cookieSource != .manual else { return false }
+        #endif
         // Check if auggie CLI is installed
         let env = ProcessInfo.processInfo.environment
         let loginPATH = LoginShellPathCache.shared.current
@@ -126,6 +159,9 @@ struct AugmentStatusFetchStrategy: ProviderFetchStrategy {
     let kind: ProviderFetchKind = .web
 
     func isAvailable(_ context: ProviderFetchContext) async -> Bool {
+        #if os(Windows)
+        guard context.sourceMode != .cli else { return false }
+        #endif
         guard context.settings?.augment?.cookieSource != .off else { return false }
         return true
     }

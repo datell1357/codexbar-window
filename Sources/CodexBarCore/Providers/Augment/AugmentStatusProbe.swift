@@ -1,5 +1,10 @@
 import Foundation
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
+#if os(macOS)
 import SweetCookieKit
+#endif
 
 #if os(macOS)
 
@@ -116,6 +121,9 @@ public enum AugmentCookieImporter {
     }
 }
 
+#endif
+
+#if os(macOS) || os(Windows)
 // MARK: - Augment API Models
 
 public struct AugmentCreditsResponse: Codable, Sendable {
@@ -235,6 +243,8 @@ public struct AugmentStatusSnapshot: Sendable {
     }
 }
 
+#endif
+
 // MARK: - Augment Status Probe Error
 
 public enum AugmentStatusProbeError: LocalizedError, Sendable {
@@ -253,13 +263,18 @@ public enum AugmentStatusProbeError: LocalizedError, Sendable {
         case let .parseFailed(msg):
             "Could not parse Augment usage: \(msg)"
         case .noSessionCookie:
+            #if os(Windows)
+            "No manual Augment session is configured. Add the Cookie header from your signed-in Augment account and refresh."
+            #else
             "No Augment session found. Please log in to app.augmentcode.com in \(augmentCookieImportOrder.loginHint)."
+            #endif
         case .sessionExpired:
             "Augment session expired. Please log in again."
         }
     }
 }
 
+#if os(macOS)
 // MARK: - Augment Session Store
 
 public actor AugmentSessionStore {
@@ -410,6 +425,7 @@ public struct AugmentStatusProbe: Sendable {
             return try await self.fetchWithCookieHeader(override)
         }
 
+        #if os(macOS)
         if let cached = CookieHeaderCache.load(provider: .augment),
            !cached.cookieHeader.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         {
@@ -469,10 +485,18 @@ public struct AugmentStatusProbe: Sendable {
             }
         }
 
+        #endif
         throw AugmentStatusProbeError.noSessionCookie
     }
 
     private func fetchWithCookieHeader(_ cookieHeader: String) async throws -> AugmentStatusSnapshot {
+        try Task.checkCancellation()
+        #if os(Windows)
+        guard !cookieHeader.isEmpty, cookieHeader.utf8.count <= 65536,
+              cookieHeader.utf8.allSatisfy({ $0 >= 0x20 && $0 < 0x7F }) else {
+            throw AugmentStatusProbeError.noSessionCookie
+        }
+        #endif
         // Fetch credits (required)
         let (creditsResponse, creditsJSON) = try await self.fetchCredits(cookieHeader: cookieHeader)
 
@@ -487,6 +511,7 @@ public struct AugmentStatusProbe: Sendable {
             }
         }()
 
+        try Task.checkCancellation()
         return self.parseResponse(
             credits: creditsResponse,
             subscription: subscriptionResult.0,
@@ -502,6 +527,12 @@ public struct AugmentStatusProbe: Sendable {
         request.setValue(cookieHeader, forHTTPHeaderField: "Cookie")
 
         let (data, response) = try await ProviderHTTPClient.shared.data(for: request)
+        try Task.checkCancellation()
+        #if os(Windows)
+        guard data.count <= 4 * 1024 * 1024 else {
+            throw AugmentStatusProbeError.parseFailed("Response exceeds the supported size.")
+        }
+        #endif
 
         guard let httpResponse = response as? HTTPURLResponse else {
             throw AugmentStatusProbeError.networkError("Invalid response")
@@ -513,22 +544,38 @@ public struct AugmentStatusProbe: Sendable {
         }
 
         if httpResponse.statusCode == 403 {
+            #if os(Windows)
+            let responseBody = "Request failed"
+            #else
             let responseBody = String(data: data, encoding: .utf8) ?? ""
+            #endif
             throw AugmentStatusProbeError.networkError("HTTP \(httpResponse.statusCode): \(responseBody)")
         }
 
         guard httpResponse.statusCode == 200 else {
+            #if os(Windows)
+            let responseBody = "Request failed"
+            #else
             let responseBody = String(data: data, encoding: .utf8) ?? ""
+            #endif
             throw AugmentStatusProbeError.networkError("HTTP \(httpResponse.statusCode): \(responseBody)")
         }
 
+        #if os(Windows)
+        let rawJSON = "Response body omitted on Windows."
+        #else
         let rawJSON = String(data: data, encoding: .utf8) ?? ""
+        #endif
         let decoder = JSONDecoder()
         do {
             let response = try decoder.decode(AugmentCreditsResponse.self, from: data)
             return (response, rawJSON)
         } catch {
+            #if os(Windows)
+            throw AugmentStatusProbeError.parseFailed("Invalid credits response.")
+            #else
             throw AugmentStatusProbeError.parseFailed("Credits response: \(error.localizedDescription)")
+            #endif
         }
     }
 
@@ -540,6 +587,12 @@ public struct AugmentStatusProbe: Sendable {
         request.setValue(cookieHeader, forHTTPHeaderField: "Cookie")
 
         let (data, response) = try await ProviderHTTPClient.shared.data(for: request)
+        try Task.checkCancellation()
+        #if os(Windows)
+        guard data.count <= 4 * 1024 * 1024 else {
+            throw AugmentStatusProbeError.parseFailed("Response exceeds the supported size.")
+        }
+        #endif
 
         guard let httpResponse = response as? HTTPURLResponse else {
             throw AugmentStatusProbeError.networkError("Invalid response")
@@ -558,13 +611,21 @@ public struct AugmentStatusProbe: Sendable {
             throw AugmentStatusProbeError.networkError("HTTP \(httpResponse.statusCode)")
         }
 
+        #if os(Windows)
+        let rawJSON = "Response body omitted on Windows."
+        #else
         let rawJSON = String(data: data, encoding: .utf8) ?? ""
+        #endif
         let decoder = JSONDecoder()
         do {
             let response = try decoder.decode(AugmentSubscriptionResponse.self, from: data)
             return (response, rawJSON)
         } catch {
+            #if os(Windows)
+            throw AugmentStatusProbeError.parseFailed("Invalid subscription response.")
+            #else
             throw AugmentStatusProbeError.parseFailed("Subscription response: \(error.localizedDescription)")
+            #endif
         }
     }
 

@@ -2579,3 +2579,12 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - 필터 입력은 256자로 제한하고 기존 DPI/font/layout과 개인정보/snapshot 취소 처리를 사용한다. 목록 갱신 실패 시 창을 종료한다.
 - 남은 소요: 대규모 목록 성능/접근성 검증, Windsurf 자동 가져오기 및 전체 계획 나머지. 본 변경만으로 대규모 데이터 성능을 주장하지 않는다.
 - CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·UI·성능 검증 미실행.
+
+## IMPL-220 — Augment 수동 웹 조회 Windows 포함
+
+- macOS 한정 본문에서 Augment API 응답/스냅샷 변환/수동 쿠키 크레딧·구독 HTTP 경로를 Windows에도 포함한다. 브라우저 importer와 기존 파일 세션 저장은 macOS 한정으로 유지한다.
+- Windows sourceModes에 web을 추가하고 수동 저장 계정 선택은 웹 경로만 사용하도록 연결한다. CLI/웹 명시 모드 분리와 수동 웹 CLI 지원 예외를 작성했다. 기존 Auggie CLI 본문은 macOS 전용으로 Windows CLI는 아직 미구현이다.
+- Windows는 빈 쿠키/64KiB 초과/제어문자 입력을 거부하고 응답 수신 후 4MiB 크기를 제한한다. 응답 본문을 오류나 rawJSON에 보관하지 않는다. 수신 후와 optional subscription 완료 후 취소를 확인한다.
+- 크레딧 필수/구독 선택의 원본 순서를 유지한다. Windows 자동 브라우저/앱 로그인과 보호 세션 저장은 본 변경에 포함하지 않았으며 없는 수동 세션은 명시적으로 실패한다.
+- 남은 소요: Augment Windows CLI/브라우저 로그인·계정 소유권, Windsurf 자동 가져오기 및 전체 계획 나머지.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·API·실제 계정 검증 미실행.
