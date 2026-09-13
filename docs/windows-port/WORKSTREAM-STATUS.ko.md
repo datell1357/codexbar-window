@@ -1,5 +1,7 @@
 # Windows 전용 제품 작업 현황
 
+- IMPL-182: Firefox 프로필별 Cursor 세션 후보 수집 및 API 계정 ID 확인 backend를 작성했다. UI/저장 미연결. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
 - IMPL-181: Cursor 로그아웃 시 암호화된 빈 세션으로 먼저 교체해 삭제 실패 후 재실행 복원을 막는 경로를 작성했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
 
 - IMPL-180: Cursor Windows 세션 저장 실패 시 이전 메모리 상태 복원, clear 실패 반환 및 인코딩 누락 처리를 작성했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.

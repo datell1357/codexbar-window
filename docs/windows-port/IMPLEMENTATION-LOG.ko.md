@@ -2267,3 +2267,13 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - 보호 교체가 실패해도 파일 제거 또는 확인된 부재로 로그아웃을 마칠 수 있다. 교체/제거가 모두 실패하면 기존 generic 실패를 반환하고 메모리는 비워 둔다.
 
 남은 범위: 동시 프로세스의 세션 재기록 조정, 쓰기/삭제 모두 거절되는 환경의 사용자 복구 안내, UI 연결과 실제 DPAPI/ACL/crash/restart 검증, 전체 계획 구현. 실제 파일을 쓰거나 지우지 않았다.
+
+## IMPL-182 — Cursor Firefox 세션 후보 백엔드
+
+상태 CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·브라우저/SQLite/쿠키/API/실행 검증 미실시. guidelines/COMMITS.md 부재로 핵심 규칙을 적용한다.
+
+- Windows의 기존 Firefox 프로필 cookie reader를 사용하는 명시적 discover backend를 작성했다. 프로필 간 쿠키를 합치지 않고 cursor.com 및 루트 경로의 유효 쿠키만 후보로 만든다. session cookie 또는 chunk 이름 존재와 64 KiB header 한도를 확인한다.
+- 프로필 읽기 실패 수를 결과로 전달하고 취소/기한 초과는 전파한다. 동기 SQLite 읽기 도중 강제 취소는 불가하며 호출 전후 deadline을 확인한다. raw 오류/쿠키는 로그에 기록하지 않는다.
+- validate는 기존 수동 쿠키 probe를 호출하고 비어 있지 않은 API accountID를 요구한다. expectedAccountID가 주어지면 일치해야 한다. 후보 검증이 자동 선택/저장을 뜻하지 않는다.
+
+남은 범위: 후보 목록/계정 선택 UI, 사용자 선택 후 계정 저장 및 상태 반환, Firefox 실행·프로필·API 검증, Chrome/Edge/WebView2 로그인, 전체 계획 구현. 브라우저나 쿠키 파일을 실제로 읽지 않았다.
