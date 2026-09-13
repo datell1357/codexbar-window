@@ -107,6 +107,15 @@ public actor WindowsUsageRuntime {
         return .saved
     }
 
+    public func tokenActivityResult() -> ShareStatsCopyResult {
+        guard !self.shuttingDown, self.spendState == .available,
+              let snapshot = self.spendSnapshot, !snapshot.model.tokenActivity.isEmpty,
+              let settings = self.collectedSpendSettings, WindowsSpendSettings.load() == settings else {
+            return .unavailable("Token activity is not ready. Complete a cost collection and try again.")
+        }
+        return .costHistory(WindowsSpendHistorySnapshot.tokenActivity(snapshot, calendar: settings.bucketCalendar))
+    }
+
     public func spendHistoryResult() -> ShareStatsCopyResult {
         guard !self.shuttingDown, self.spendState == .available,
               let snapshot = self.spendSnapshot, !snapshot.model.groups.isEmpty,

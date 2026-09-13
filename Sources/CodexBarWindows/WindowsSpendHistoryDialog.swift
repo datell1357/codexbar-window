@@ -15,13 +15,13 @@ enum WindowsSpendHistoryDialog {
         var closed = false
         var failed = false
         init(snapshot: WindowsSpendHistorySnapshot, privacy: Bool) { self.snapshot = snapshot; self.privacy = privacy }
-        var currency: WindowsSpendHistorySnapshot.Currency { self.snapshot.currencies[self.currencyIndex] }
+        var currency: WindowsSpendHistorySnapshot.Series { self.snapshot.series[self.currencyIndex] }
         func px(_ value: Int32) -> Int32 { MulDiv(value, Int32(self.dpi), 96) }
     }
     private static let className = "CodexBar.SpendHistoryDialog"
 
     static func show(owner: HWND, snapshot: WindowsSpendHistorySnapshot, hidePersonalInfo: Bool) -> Result? {
-        guard !snapshot.currencies.isEmpty,
+        guard !snapshot.series.isEmpty,
               hidePersonalInfo == WindowsUsagePresentationSettings.load().hidePersonalInfo else { return nil }
         let context = Context(snapshot: snapshot, privacy: hidePersonalInfo)
         var klass = WNDCLASSEXW()
@@ -32,7 +32,7 @@ enum WindowsSpendHistoryDialog {
         let name = Array(Self.className.utf16) + [UInt16(0)]
         let registered = name.withUnsafeBufferPointer { klass.lpszClassName = $0.baseAddress; return RegisterClassExW(&klass) }
         guard registered != 0 || GetLastError() == ERROR_CLASS_ALREADY_EXISTS else { return nil }
-        let title = Array("Cost history — captured snapshot".utf16) + [UInt16(0)]
+        let title = Array((snapshot.title + " — captured snapshot").utf16) + [UInt16(0)]
         let hwnd = name.withUnsafeBufferPointer { n in
             title.withUnsafeBufferPointer { t in
                 CreateWindowExW(DWORD(WS_EX_DLGMODALFRAME), n.baseAddress, t.baseAddress,
@@ -133,7 +133,7 @@ enum WindowsSpendHistoryDialog {
             switch Int32(wParam & 0xffff) {
             case 2: DestroyWindow(hwnd); return 0
             case 3: context.currencyIndex = max(0, context.currencyIndex - 1); context.selectedDay = nil
-            case 4: context.currencyIndex = min(context.snapshot.currencies.count - 1, context.currencyIndex + 1); context.selectedDay = nil
+            case 4: context.currencyIndex = min(context.snapshot.series.count - 1, context.currencyIndex + 1); context.selectedDay = nil
             case 5: context.result = .refreshAll; DestroyWindow(hwnd); return 0
             case 7: Self.selectDay(-1, hwnd: hwnd, context: context); return 0
             case 8: Self.selectDay(1, hwnd: hwnd, context: context); return 0
@@ -145,6 +145,15 @@ enum WindowsSpendHistoryDialog {
         case UINT(WM_LBUTTONUP):
             let x = Int32(Int16(bitPattern: UInt16(truncatingIfNeeded: lParam)))
             let y = Int32(Int16(bitPattern: UInt16(truncatingIfNeeded: lParam >> 16)))
+            if context.snapshot.kind == .tokens {
+                let grid = Self.activityGrid(hwnd, context: context)
+                if x >= grid.left, y >= grid.top, x < grid.left + grid.cell * Int32(grid.columns), y < grid.top + grid.cell * 7 {
+                    let row = Int((y - grid.top) / grid.cell), column = Int((x - grid.left) / grid.cell)
+                    context.selectedDay = context.currency.days.firstIndex { $0.activity?.row == row && $0.activity?.column == column }
+                    Self.updateDetails(hwnd, context: context)
+                }
+                return 0
+            }
             let bounds = Self.plotBounds(hwnd, context: context)
             if x >= bounds.left, x < bounds.right, y >= bounds.top, y < bounds.bottom, !context.currency.days.isEmpty {
                 let fraction = Double(x - bounds.left) / Double(max(1, bounds.right - bounds.left))
@@ -166,9 +175,15 @@ enum WindowsSpendHistoryDialog {
         let available = max(4, rect.right - 2 * margin - 3 * gap)
         let width = available / 4
         let top = max(margin, rect.bottom - margin - button)
+        for id: Int32 in [3, 4] { ShowWindow(GetDlgItem(hwnd, id), context.snapshot.kind == .tokens ? Int32(SW_HIDE) : Int32(SW_SHOW)) }
         for index in 0..<4 {
             MoveWindow(GetDlgItem(hwnd, Int32(index + 2)), margin + Int32(index) * (width + gap),
                        top, width, button, 1)
+        }
+        if context.snapshot.kind == .tokens {
+            let half = max(1, (rect.right - 2 * margin - gap) / 2)
+            MoveWindow(GetDlgItem(hwnd, 2), margin, top, half, button, 1)
+            MoveWindow(GetDlgItem(hwnd, 5), margin + half + gap, top, half, button, 1)
         }
         let navigationTop = max(margin, top - button - gap)
         let navigationWidth = max(1, (rect.right - 2 * margin - 2 * gap) / 3)
@@ -200,7 +215,7 @@ enum WindowsSpendHistoryDialog {
         EnableWindow(GetDlgItem(hwnd, 8), !currency.days.isEmpty && context.selectedDay != currency.days.count - 1 ? 1 : 0)
         EnableWindow(GetDlgItem(hwnd, 9), context.selectedDay != nil ? 1 : 0)
         EnableWindow(GetDlgItem(hwnd, 3), context.currencyIndex > 0 ? 1 : 0)
-        EnableWindow(GetDlgItem(hwnd, 4), context.currencyIndex + 1 < context.snapshot.currencies.count ? 1 : 0)
+        EnableWindow(GetDlgItem(hwnd, 4), context.currencyIndex + 1 < context.snapshot.series.count ? 1 : 0)
         InvalidateRect(hwnd, nil, 1)
     }
 
@@ -215,6 +230,7 @@ enum WindowsSpendHistoryDialog {
         guard let dc = BeginPaint(hwnd, &paint) else { return }
         defer { EndPaint(hwnd, &paint) }
         FillRect(dc, &paint.rcPaint, GetSysColorBrush(COLOR_WINDOW))
+        if context.snapshot.kind == .tokens { Self.paintActivity(hwnd, dc: dc, context: context); return }
         let bounds = Self.plotBounds(hwnd, context: context)
         let currency = context.currency
         guard !currency.days.isEmpty else { return }
@@ -259,6 +275,52 @@ enum WindowsSpendHistoryDialog {
         text(currency.maximumLabel, RECT(left: 0, top: bounds.top, right: bounds.left - 4, bottom: bounds.top + context.px(24)))
         text(currency.days.first?.label ?? "", RECT(left: bounds.left, top: bounds.bottom + 4, right: bounds.left + context.px(200), bottom: bounds.bottom + context.px(28)))
         text(currency.days.last?.label ?? "", RECT(left: max(bounds.left, bounds.right - context.px(200)), top: bounds.bottom + 4, right: bounds.right, bottom: bounds.bottom + context.px(28)))
+    }
+
+    private static func activityGrid(_ hwnd: HWND, context: Context) -> (left: Int32, top: Int32, cell: Int32, columns: Int) {
+        let bounds = Self.plotBounds(hwnd, context: context)
+        let columns = max(1, (context.currency.days.compactMap { $0.activity?.column }.max() ?? 0) + 1)
+        let cell = max(1, min((bounds.right - bounds.left) / Int32(columns), (bounds.bottom - bounds.top) / 7))
+        return (bounds.left, bounds.top, cell, columns)
+    }
+
+    private static func paintActivity(_ hwnd: HWND, dc: HDC, context: Context) {
+        let grid = Self.activityGrid(hwnd, context: context)
+        let bounds = Self.plotBounds(hwnd, context: context)
+        let colors: [COLORREF] = [0x00F0F0F0, 0x00B0B0B0, 0x00E3F2E8, 0x00B8DEA9, 0x0086BF70, 0x004A973D, 0x00245C18]
+        SetBkMode(dc, Int32(TRANSPARENT)); SetTextColor(dc, GetSysColor(COLOR_WINDOWTEXT))
+        func text(_ value: String, rect: RECT) {
+            var rect = rect
+            var units = Array(value.utf16) + [UInt16(0)]
+            units.withUnsafeMutableBufferPointer { _ = DrawTextW(dc, $0.baseAddress, -1, &rect, UINT(DT_SINGLELINE | DT_END_ELLIPSIS | DT_NOPREFIX)) }
+        }
+        for (index, day) in context.currency.days.enumerated() {
+            guard let cell = day.activity, colors.indices.contains(cell.level) else { continue }
+            let x = grid.left + Int32(cell.column) * grid.cell, y = grid.top + Int32(cell.row) * grid.cell
+            var rect = RECT(left: x, top: y, right: x + max(1, grid.cell - 1), bottom: y + max(1, grid.cell - 1))
+            guard let brush = CreateSolidBrush(colors[cell.level]) else { context.failed = true; continue }
+            FillRect(dc, &rect, brush); DeleteObject(brush)
+            if cell.level == 0 { FrameRect(dc, &rect, GetSysColorBrush(COLOR_GRAYTEXT)) }
+            if context.selectedDay == index { FrameRect(dc, &rect, GetSysColorBrush(COLOR_HIGHLIGHT)) }
+        }
+        text("Tracked token activity", rect: RECT(left: bounds.left, top: context.px(12), right: bounds.right, bottom: context.px(36)))
+        let captions = ["Unscanned", "Unknown", "Zero", "Low", "Medium", "High", "Highest"]
+        let column = max(1, (bounds.right - bounds.left) / 4)
+        for index in colors.indices {
+            let x = bounds.left + Int32(index % 4) * column, y = context.px(42 + Int32(index / 4) * 24)
+            if let brush = CreateSolidBrush(colors[index]) {
+                var swatch = RECT(left: x, top: y + 2, right: x + context.px(12), bottom: y + context.px(14))
+                FillRect(dc, &swatch, brush); DeleteObject(brush)
+            }
+            text(captions[index], rect: RECT(left: x + context.px(18), top: y, right: x + column - 4, bottom: y + context.px(22)))
+        }
+        for (row, label) in ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].enumerated() {
+            let y = grid.top + Int32(row) * grid.cell
+            text(label, rect: RECT(left: 0, top: y, right: grid.left - 4, bottom: y + grid.cell))
+        }
+        let bottom = grid.top + grid.cell * 7 + 4
+        text(context.currency.days.first?.label ?? "", rect: RECT(left: bounds.left, top: bottom, right: bounds.left + context.px(200), bottom: bottom + context.px(24)))
+        text(context.currency.days.last?.label ?? "", rect: RECT(left: max(bounds.left, bounds.right - context.px(200)), top: bottom, right: bounds.right, bottom: bottom + context.px(24)))
     }
 
     private static func control(_ parent: HWND, kind: String, title: String, id: Int32, style: DWORD) -> HWND? {

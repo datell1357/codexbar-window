@@ -95,6 +95,8 @@ public final class WindowsTrayHost: @unchecked Sendable {
     private static let agentSessionsRefreshCommand = UINT_PTR(0x7501)
     private static let agentSessionCommandBase = UINT_PTR(0x7600)
     private static let wakeMessage = UINT(WM_APP) + 1
+    private static let tokenActivityCommand = UINT_PTR(0x7039)
+    private let onTokenActivityRequested: @Sendable (UUID) -> Void
     private static let spendHistoryCommand = UINT_PTR(0x7038)
     private let onSpendHistoryRequested: @Sendable (UUID) -> Void
     private static let shareStatsPreviewCommand = UINT_PTR(0x7037)
@@ -300,6 +302,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
         onRemoteSessionPage: @escaping @Sendable (WindowsSessionPageRequest) -> Void = { _ in },
         onPresentationSettingsChanged: @escaping PresentationSettingsChangedHandler = {},
         onOptionalUsageSettingsChanged: @escaping OptionalUsageSettingsChangedHandler = {},
+        onTokenActivityRequested: @escaping @Sendable (UUID) -> Void = { _ in },
         onSpendHistoryRequested: @escaping @Sendable (UUID) -> Void = { _ in },
         onShareStatsPreviewRequested: @escaping @Sendable (UUID) -> Void = { _ in },
         onShareStatsImageCopyRequested: @escaping @Sendable (UUID) -> Void = { _ in },
@@ -343,6 +346,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
         self.onMenuOpen = onMenuOpen
         self.onPresentationSettingsChanged = onPresentationSettingsChanged
         self.onOptionalUsageSettingsChanged = onOptionalUsageSettingsChanged
+        self.onTokenActivityRequested = onTokenActivityRequested
         self.onSpendHistoryRequested = onSpendHistoryRequested
         self.onShareStatsPreviewRequested = onShareStatsPreviewRequested
         self.onShareStatsImageCopyRequested = onShareStatsImageCopyRequested
@@ -550,7 +554,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
                 switch result {
                 case .refreshAll?: self.onRefresh()
                 case .closed?: break
-                case nil: self.showMessage("The cost history chart could not be displayed.", caption: "Cost history")
+                case nil: self.showMessage("The activity chart could not be displayed.", caption: snapshot.title)
                 }
             }
         case let .preview(png, dib, filename, text):
@@ -2456,6 +2460,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
         var items: [(UINT_PTR, String, Bool)] = [
             (Self.spendSummaryCommand, "Open cost summary…", false),
             (Self.spendHistoryCommand, "Open cost history chart…", false),
+            (Self.tokenActivityCommand, "Open token activity heatmap…", false),
             (Self.shareStatsCopyCommand, "Copy Share Stats", false),
             (Self.shareStatsImageCommand, "Save Share Stats PNG…", false),
             (Self.shareStatsImageCopyCommand, "Copy Share Stats image", false),
@@ -2917,14 +2922,15 @@ public final class WindowsTrayHost: @unchecked Sendable {
             self.spendSourcesMailbox = nil
             self.mailboxLock.unlock()
             self.onSpendSourcesRequested(requestID)
-        case Self.shareStatsCopyCommand, Self.shareStatsImageCommand, Self.shareStatsImageCopyCommand, Self.shareStatsPreviewCommand, Self.spendHistoryCommand:
+        case Self.shareStatsCopyCommand, Self.shareStatsImageCommand, Self.shareStatsImageCopyCommand, Self.shareStatsPreviewCommand, Self.spendHistoryCommand, Self.tokenActivityCommand:
             let requestID = UUID()
             let privacy = WindowsUsagePresentationSettings.load().hidePersonalInfo
             self.mailboxLock.lock()
             self.shareStatsCopyRequest = (requestID, privacy)
             self.shareStatsCopyMailbox = nil
             self.mailboxLock.unlock()
-            if command == Self.spendHistoryCommand { self.onSpendHistoryRequested(requestID) }
+            if command == Self.tokenActivityCommand { self.onTokenActivityRequested(requestID) }
+            else if command == Self.spendHistoryCommand { self.onSpendHistoryRequested(requestID) }
             else if command == Self.shareStatsPreviewCommand { self.onShareStatsPreviewRequested(requestID) }
             else if command == Self.shareStatsImageCopyCommand { self.onShareStatsImageCopyRequested(requestID) }
             else if command == Self.shareStatsImageCommand { self.onShareStatsImageRequested(requestID) }

@@ -1972,3 +1972,13 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - 선택 날짜는 강조 테두리와 공급자별 비용 텍스트를 함께 갱신한다. 날짜 탐색 행 및 범례에 맞춰 plot 영역을 조정했다.
 
 남은 범위: DPI font/작은 화면/스크린리더/키보드 실제 검증, 시간별 drilldown·토큰 heatmap·프로젝트/세션 탐색·원본 chart 디자인 parity 및 전체 계획 구현. 동작이나 접근성 완료를 주장하지 않는다.
+
+## IMPL-153 — 토큰 활동 히트맵
+
+상태 CODE_WRITTEN_UNVERIFIED. 컴파일/빌드/테스트/히트맵·키보드·UI·수집/검증 미실시. guidelines/COMMITS.md 부재로 핵심 커밋 규칙을 적용한다.
+
+- 원본 model.tokenActivity의 isScanned/optional totalTokens를 주/요일 셀로 변환했다. bucket calendar와 월요일 시작 정렬을 사용하고 미수집/알 수 없음/확인된 0/양수 4단계를 구분한다. 양수 색상은 최대 알려진 날짜 대비 로그 스케일이며 정확한 정수는 상세 텍스트에 표시한다.
+- 기존 native history dialog의 공통 modal/날짜 선택/개인정보 변경 처리를 재사용하고 chart series를 비용/토큰 종류로 구분했다. 토큰 화면에서는 통화 전환 버튼을 숨기며 행은 월~일, 열은 주 단위로 표시한다.
+- Open token activity heatmap 메뉴를 runtime 설정/수집 상태 검사에 연결했다. 미수집 소스는 count에 없을 수 있음을 안내하고 부분 실패 상태도 표시한다.
+
+남은 범위: 원본 heatmap 강도/레이아웃 세부 parity, DST/연도/밀집 셀/색상 접근성/키보드 실제 검증, 시간별 비용 상세·프로젝트/세션 탐색 및 전체 계획 구현. 실제 화면이나 수집은 실행하지 않았다.
