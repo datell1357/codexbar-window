@@ -1001,7 +1001,7 @@ public actor WindowsUsageRuntime {
             return .ready(requestID: requestID, title: privacy ? "Zed editor account" : "Zed user " + account.userID,
                 privacy: privacy, expires: expires)
         } catch {
-            return .unavailable("The Zed editor account could not be verified. Check the editor sign-in and server, then retry.")
+            return .unavailable(WindowsZedImportFailurePresentation.message(for: error))
         }
     }
 

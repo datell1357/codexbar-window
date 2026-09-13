@@ -135,6 +135,19 @@ public enum ZedStatusProbeError: LocalizedError, Sendable, Equatable {
     case parseFailed(String)
 
     public var errorDescription: String? {
+        #if os(Windows)
+        return switch self {
+        case .notSupported: "This Zed credential source is not available on Windows. Use the editor import or a saved account."
+        case .notSignedIn: "No Zed credential was found for this server. Sign in using the Zed editor and retry."
+        case .keychainUnavailable: "The Zed credential could not be read. Check Windows Credential Manager access and editor sign-in."
+        case .invalidServerURL: "The Zed server address is invalid. Enter an HTTPS origin without a path, query or login information."
+        case .untrustedServerConfiguration: "This Zed server and credential address combination is not supported. Check both editor settings."
+        case .networkError: "The Zed API could not be reached. Check connectivity and the configured server, then retry."
+        case let .httpError(status): "The Zed API returned HTTP \(status). Retry later or check the server configuration."
+        case .unauthorized: "The Zed credential expired or the returned account did not match. Sign in again and import the account again."
+        case .parseFailed: "The Zed API returned an unsupported account response. Retry after checking editor and server compatibility."
+        }
+        #else
         switch self {
         case .notSupported:
             "Zed is only supported on macOS."
@@ -155,6 +168,7 @@ public enum ZedStatusProbeError: LocalizedError, Sendable, Equatable {
         case let .parseFailed(message):
             "Could not parse Zed account response: \(message)"
         }
+        #endif
     }
 }
 

@@ -2827,3 +2827,11 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - custom data dir의 따옴표 문자를 거부하고 선택적 server_url/credentials_url의 JSON null은 기존 optional 모델과 같이 미지정으로 처리한다.
 - 남은 소요: Windows 실제 오류/인증 검증, 편집기 디렉터리 자동 발견 및 전체 계획 나머지.
 - CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 파서·빌드·테스트·lint·설정 조회·인증 검증 미실행.
+
+## IMPL-249 — Windows Zed 인증 실패 안내
+
+- ZedStatusProbeError의 Windows 문구를 분리했다. macOS 전용 지원/Keychain 권한 안내 대신 Windows credential source, 서버 조합, 재로그인, 통신 실패와 응답 호환성 안내를 사용한다.
+- Windows invalid URL/network/parse 오류에 원본 문자열을 포함하지 않는다. HTTP 상태는 숫자만 표시한다. 다른 플랫폼 기존 문구는 유지한다.
+- WindowsZedImportFailurePresentation은 알려진 오류만 고정 문구로 매핑하며 취소/timeout을 구분한다. runtime 가져오기 catch에 연결했다.
+- 남은 소요: Windows 실제 오류/인증 검증, 편집기 디렉터리 자동 발견 및 전체 계획 나머지.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·UI·인증 검증 미실행.
