@@ -974,3 +974,15 @@
 남은 범위: 정확한 DLL closure/resource 입력 자동 생성, PE architecture 일치, source/output 동시 변경과 상위 reparse, 서명·MSIX·installer/update 및 Windows 실행 검증이 남아 있다. 현재 조립 스크립트는 배포 완료가 아니다.
 
 다음 구현: 의존성/리소스 목록 생성과 서명 인계 작업을 연결한다.
+
+## IMPL-055 — 배포 입력 목록 생성과 PE machine 경계
+
+상태: CODE_WRITTEN_UNVERIFIED. PowerShell/PE 파일 조회/패키징/빌드/컴파일/테스트/검증 미실시.
+
+- 빌드 app/CLI와 명시적으로 선택한 runtime DLL, resource root, license tree를 기존 조립 입력 schema로 생성하는 New-CodexBarDistributionManifest.ps1을 작성했다.
+- PE signature/machine을 제한된 header 범위로 읽고 x64/ARM64 불일치를 거절한다. binary 실행·서명 검증은 하지 않는다. duplicate destination과 tree depth/entry/file 한도에서 중단한다.
+- resource root 이름을 보존하며 link를 거절하고 stable destination 정렬 및 CreateNew 출력을 사용한다. source 절대 경로가 있는 입력은 게시용이 아님을 문서화했다.
+
+남은 범위: import/delay-load closure, 서명/라이선스 목록 완전성, 상위 reparse/동시 변경, empty-directory 의무와 Windows 실행·패키징 검증은 남아 있다. dependencyClosure는 NOT_VERIFIED다.
+
+다음 구현: PE import 의존성 closure 계산을 연결한다.
