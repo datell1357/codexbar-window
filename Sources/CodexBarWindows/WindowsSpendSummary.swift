@@ -12,6 +12,12 @@ enum WindowsSpendSummary {
         if let loadedAt = snapshot.loadedAt {
             rows.append("Collected: " + loadedAt.formatted(date: .abbreviated, time: .shortened))
         }
+        switch snapshot.openCodexObservation {
+        case .disabled: break
+        case .available: rows.append("OpenCodeX usage logs are included using subscription routing.")
+        case .confirmedEmpty: rows.append("OpenCodeX has no publishable subscription usage in the captured log.")
+        case .unavailable: rows.append("Partial collection: OpenCodeX logs could not be read. Sharing is unavailable.")
+        }
         if snapshot.stale { rows.append("Stale data: a new collection has not completed.") }
         if !snapshot.sourceFailures.isEmpty {
             rows.append("Partial collection: \(snapshot.sourceFailures.count) source(s) failed. Totals exclude those sources.")

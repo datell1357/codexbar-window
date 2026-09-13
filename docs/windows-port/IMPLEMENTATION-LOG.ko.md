@@ -2012,3 +2012,14 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - 경로 부재 ERROR_FILE_NOT_FOUND/PATH_NOT_FOUND만 nil로 반환하고 다른 접근/조회 오류는 전파한다. 파일 시스템 파일만 허용하며 디렉터리/크기 변환 실패를 거절한다. POSIX 경로 및 prefix digest/cursor 계약은 유지한다.
 
 남은 범위: Windows OpenCodeX opt-in 설정/원본 subscription fan-out 병합/runtime 연결, 파일 rotation/공유 잠금/캐시·SQLite portability 검증 및 전체 계획 구현. 아직 OpenCodeX 소스가 앱 수집 흐름에 연결된 상태는 아니다.
+
+## IMPL-157 — OpenCodeX 비용 소스 앱 연결
+
+상태 CODE_WRITTEN_UNVERIFIED. 컴파일/빌드/테스트/로그·SQLite·가격표·UI·수집/검증 미실시. guidelines/COMMITS.md 부재로 핵심 커밋 규칙을 적용한다.
+
+- WindowsOpenCodexSpendSource에 원본 SpendDashboardSource+OpenCodex의 subscription fan-out/선호 병합 대상/별도 Codex 행 규칙을 이식했다. 별도 opencodex-cache 경로를 사용하며 기본 소스 scan 시각/calendar/historyDays로 병합한다.
+- OpenCodeX opt-in 설정과 native Codex 중복 비용 숨김 메뉴를 연결했다. 기본 소스가 없어도 OpenCodeX 활성화 시 수집하고, 원본 환경 변수/홈 경로 규칙을 사용한다. 설정과 root source 숨김/병합 topology 변경은 재수집을 요구한다.
+- enabled/available/confirmedEmpty/unavailable 관찰 상태를 controller snapshot으로 전달했다. OpenCodeX unavailable은 partial phase로 만들고 공유를 금지하며 요약/이력/히트맵에도 안내한다. scan capture 시각을 loader에서 유지한다.
+- source 포함 메뉴는 OpenCodeX 전체 로그 root 항목을 제공해 숨긴 로그를 다시 포함할 수 있게 했다. root 숨김은 원본처럼 OpenCodeX 전체 supplement 수집을 중지한다.
+
+남은 범위: 여러 Codex visible source/계정 귀속 완전 parity, 원본 token activity cache와 supplement 결합 세부 의미, 로그 rotation/SQLite/권한/부분 실패/가격표 Windows 검증 및 전체 계획 구현. 실제 수집이나 이미지·공유는 실행하지 않았다.

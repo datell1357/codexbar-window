@@ -77,6 +77,7 @@ public struct WindowsSpendHistorySnapshot: Sendable {
             let summary = "Hourly costs · " + group.currencyCode + " · " + WindowsShareStatsFormatting.dataThrough(day, calendar: calendar)
                 + "\r\n" + group.timeZone.identifier + " · source hour samples are grouped into local hour intervals."
                 + "\r\nMissing samples are not zero; hourly totals may not explain the full daily total. UTC offsets distinguish repeated clock hours."
+                + (snapshot.openCodexObservation == .unavailable ? "\r\nOpenCodeX logs are unavailable; this collection is partial." : "")
                 + (snapshot.sourceFailures.isEmpty ? "" : "\r\nPartial collection: \(snapshot.sourceFailures.count) failed source(s).")
             return Series(legend: daily.series.first { $0.code == group.currencyCode }?.legend ?? [], code: group.currencyCode,
                           days: slots, maximum: maximum, maximumLabel: WindowsShareStatsFormatting.currency(maximum, code: group.currencyCode), summary: summary)
@@ -110,6 +111,7 @@ public struct WindowsSpendHistorySnapshot: Sendable {
         summary += "\r\nRows run Monday to Sunday; columns are weeks. Unscanned, unknown and confirmed zero have distinct cells."
         summary += "\r\nGreen intensity is logarithmic relative to the largest known day. Select a day for its exact tracked count."
         summary += "\r\nTracked counts include scanned sources; sources without coverage may be absent."
+        if snapshot.openCodexObservation == .unavailable { summary += "\r\nOpenCodeX logs are unavailable; this collection is partial." }
         if !snapshot.sourceFailures.isEmpty { summary += "\r\nPartial collection: \(snapshot.sourceFailures.count) failed source(s) are excluded." }
         return Self(kind: .tokens, series: [Series(legend: [], code: "Tokens", days: days, maximum: Double(maximum),
                                                    maximumLabel: maximum.formatted(), summary: summary)])
@@ -153,6 +155,7 @@ public struct WindowsSpendHistorySnapshot: Sendable {
                            "Select a day with the chart or Previous/Next day buttons. All days clears the selection. Use currency buttons to switch groups.",
                            "Legend colors may group multiple sources; the selected-day text lists exact contributions."]
             summary.append(contentsOf: legend.map { "Color group \($0.paletteIndex + 1): " + $0.caption })
+            if snapshot.openCodexObservation == .unavailable { summary.append("OpenCodeX logs are unavailable; this collection is partial.") }
             if !snapshot.sourceFailures.isEmpty { summary.append("Partial collection: \(snapshot.sourceFailures.count) source(s) failed.") }
             if snapshot.stale { summary.append("Stale collection.") }
             return Series(legend: legend, code: group.currencyCode, days: days, maximum: maximum,

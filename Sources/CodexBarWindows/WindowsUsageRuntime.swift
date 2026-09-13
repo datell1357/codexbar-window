@@ -72,12 +72,17 @@ public actor WindowsUsageRuntime {
               WindowsSpendSettings.load() == settings else {
             return .unavailable("Complete a cost collection before choosing sources.")
         }
-        let sources = snapshot.model.availableSources
+        var sources = snapshot.model.availableSources
+        if settings.openCodexUsageLogsEnabled || settings.hiddenSourceIDs.contains(WindowsSpendDashboardModel.openCodexSourceID) {
+            if !sources.contains(where: { $0.id == WindowsSpendDashboardModel.openCodexSourceID }) {
+                sources.append(.init(id: WindowsSpendDashboardModel.openCodexSourceID, displayName: "OpenCodeX logs (all subscriptions)"))
+            }
+        }
         guard !sources.isEmpty, sources.count <= 4096, Set(sources.map(\.id)).count == sources.count else {
             return .unavailable("No selectable cost sources are available.")
         }
         let entries = sources.enumerated().map { index, source in
-            let title = String(LogRedactor.redact(source.displayName).unicodeScalars
+            let title = String(LogRedactor.redact(source.id == WindowsSpendDashboardModel.openCodexSourceID ? "OpenCodeX logs (all subscriptions)" : source.displayName).unicodeScalars
                 .filter { $0.value >= 0x20 && $0.value != 0x7F }.map(String.init).joined().prefix(160))
             return WindowsSpendSourceSelection.Entry(id: source.id,
                 title: "\(index + 1). " + (title.isEmpty ? "Source" : title),
@@ -1542,7 +1547,7 @@ public actor WindowsUsageRuntime {
         if let previous = self.spendController { await previous.stop() }
         self.spendController = nil
         guard !self.shuttingDown, generation == self.spendGeneration, !Task.isCancelled else { return }
-        guard !settings.enabledProviders(config: config).isEmpty else {
+        guard !settings.enabledProviders(config: config).isEmpty || settings.openCodexUsageLogsEnabled else {
             self.spendState = .disabled
             return
         }
@@ -1555,7 +1560,9 @@ public actor WindowsUsageRuntime {
                     .appendingPathComponent("spend-cache", isDirectory: true),
                 codexContext: codexContext)
             let controller = WindowsSpendDashboardController(
-                loader: WindowsSpendSnapshotLoader.make(sources: sources, settings: settings),
+                loader: WindowsSpendSnapshotLoader.make(sources: sources, settings: settings,
+                    openCodexCacheRoot: self.configStore.fileURL.deletingLastPathComponent()
+                        .appendingPathComponent("opencodex-cache", isDirectory: true)),
                 options: settings.dashboardOptions, publisher: { _ in })
             self.spendController = controller
             self.spendState = .collecting

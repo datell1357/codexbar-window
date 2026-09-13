@@ -13,6 +13,8 @@ actor WindowsSpendDashboardController {
         let inputs: [WindowsSpendDashboardModel.ProviderInput]
         let subscriptionNames: [String: WindowsShareStatsSubscriptionName]
         var sourceFailures: [SourceFailure] = []
+        var openCodexObservation: WindowsOpenCodexSpendSource.Observation = .disabled
+        var capturedAt: Date = Date()
     }
     struct Options: Sendable {
         var days = 30
@@ -33,6 +35,7 @@ actor WindowsSpendDashboardController {
         let loadedAt: Date?
         let stale: Bool
         let failure: Failure?
+        let openCodexObservation: WindowsOpenCodexSpendSource.Observation
         let sourceFailures: [SourceFailure]
     }
     typealias Loader = @Sendable (_ historyDays: Int) async throws -> Scan
@@ -112,7 +115,7 @@ actor WindowsSpendDashboardController {
             ? WindowsShareStatsBuilder.make(model: model, subscriptionNames: self.scan?.subscriptionNames ?? [:]) : nil
         return Snapshot(generation: self.generation, phase: self.phase, model: model, sharePayload: share,
             loadedAt: self.loadedAt, stale: self.scan != nil && (self.phase == .refreshing || self.phase == .failed),
-            failure: self.failure, sourceFailures: self.scan?.sourceFailures ?? [])
+            failure: self.failure, openCodexObservation: self.scan?.openCodexObservation ?? .disabled, sourceFailures: self.scan?.sourceFailures ?? [])
     }
 
     func refresh() async {
@@ -175,8 +178,8 @@ actor WindowsSpendDashboardController {
                 return
             }
             self.scan = scan
-            self.loadedAt = Date()
-            self.phase = scan.sourceFailures.isEmpty ? .ready : .partial
+            self.loadedAt = scan.capturedAt
+            self.phase = scan.sourceFailures.isEmpty && scan.openCodexObservation != .unavailable ? .ready : .partial
             self.failure = nil
         } catch {
             guard !self.stopped, self.generation == generation else { return }

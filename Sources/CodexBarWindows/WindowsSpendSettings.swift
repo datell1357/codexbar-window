@@ -4,6 +4,7 @@ import CodexBarCore
 
 /// Windows-owned spend preferences. Merely loading settings never starts collection.
 struct WindowsSpendSettings: Sendable, Equatable {
+    var openCodexUsageLogsEnabled = false
     var collectionEnabled = false
     var codexLocalLedgerEnabled = false
     var historyDays = 30
@@ -15,6 +16,7 @@ struct WindowsSpendSettings: Sendable, Equatable {
     static func load(userDefaults: UserDefaults? = nil) -> Self {
         guard let defaults = userDefaults ?? UserDefaults(suiteName: WindowsRefreshSettings.suiteName) else { return Self() }
         var value = Self()
+        value.openCodexUsageLogsEnabled = defaults.object(forKey: "openCodexUsageLogsEnabled") as? Bool ?? false
         value.collectionEnabled = defaults.object(forKey: "tokenCostUsageEnabled") as? Bool ?? false
         value.codexLocalLedgerEnabled = defaults.object(forKey: "codexLocalSessionCostLedgerEnabled") as? Bool ?? false
         value.historyDays = max(1, min(WindowsSpendHistoryPolicy.scanDays,
@@ -36,6 +38,7 @@ struct WindowsSpendSettings: Sendable, Equatable {
             ? self.bucketTimeZoneIdentifier : CostUsageBucketTimeZone.pinIdentifier()
         // Persist the bucket boundary before enabling future collection.
         defaults.set(zone, forKey: "tokenCostUsageBucketTimeZone")
+        defaults.set(self.openCodexUsageLogsEnabled, forKey: "openCodexUsageLogsEnabled")
         defaults.set(self.collectionEnabled, forKey: "tokenCostUsageEnabled")
         defaults.set(self.codexLocalLedgerEnabled, forKey: "codexLocalSessionCostLedgerEnabled")
         defaults.set(max(1, min(WindowsSpendHistoryPolicy.scanDays, self.historyDays)), forKey: "costUsageHistoryDays")
@@ -55,7 +58,10 @@ struct WindowsSpendSettings: Sendable, Equatable {
 
     /// Projection preferences do not change which logs were scanned or their day boundaries.
     func usesSameCollection(as other: Self) -> Bool {
-        self.collectionEnabled == other.collectionEnabled &&
+        self.openCodexUsageLogsEnabled == other.openCodexUsageLogsEnabled &&
+            self.hideNativeCodexWhenOpenCodexPresent == other.hideNativeCodexWhenOpenCodexPresent &&
+            self.hiddenSourceIDs.contains(WindowsSpendDashboardModel.openCodexSourceID) == other.hiddenSourceIDs.contains(WindowsSpendDashboardModel.openCodexSourceID) &&
+            self.collectionEnabled == other.collectionEnabled &&
             self.codexLocalLedgerEnabled == other.codexLocalLedgerEnabled &&
             self.bucketCalendar.timeZone.identifier == other.bucketCalendar.timeZone.identifier
     }

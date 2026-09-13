@@ -20,9 +20,19 @@ struct WindowsSpendSnapshotLoader {
     enum Failure: Error { case invalidSources, missingCodexHome }
 
     static func make(sources: [Source], settings: WindowsSpendSettings, forceRefresh: Bool = false,
-                     allowPricingRefresh: Bool = true) -> WindowsSpendDashboardController.Loader {
-        self.make(sources: sources, forceRefresh: forceRefresh, allowPricingRefresh: allowPricingRefresh,
-                  calendar: settings.bucketCalendar)
+                     allowPricingRefresh: Bool = true,
+                     environment: [String: String] = ProcessInfo.processInfo.environment,
+                     openCodexCacheRoot: URL? = nil) -> WindowsSpendDashboardController.Loader {
+        let native = self.make(sources: sources, forceRefresh: forceRefresh, allowPricingRefresh: allowPricingRefresh,
+                               calendar: settings.bucketCalendar)
+        return { days in
+            let scan = try await native(days)
+            let merged = try WindowsOpenCodexSpendSource.merge(inputs: scan.inputs, settings: settings,
+                environment: environment, cacheRoot: openCodexCacheRoot ?? OpenCodexUsageLog.cacheRoot(),
+                now: scan.capturedAt, historyDays: max(1, min(WindowsSpendHistoryPolicy.scanDays, days)))
+            return .init(inputs: merged.inputs, subscriptionNames: scan.subscriptionNames,
+                         sourceFailures: scan.sourceFailures, openCodexObservation: merged.observation, capturedAt: scan.capturedAt)
+        }
     }
 
     static func make(sources: [Source], forceRefresh: Bool = false,
@@ -74,7 +84,7 @@ struct WindowsSpendSnapshotLoader {
                     failures.append(.init(sourceID: source.id, provider: source.provider))
                 }
             }
-            return .init(inputs: inputs, subscriptionNames: names, sourceFailures: failures)
+            return .init(inputs: inputs, subscriptionNames: names, sourceFailures: failures, capturedAt: now)
         }
     }
 }

@@ -95,6 +95,8 @@ public final class WindowsTrayHost: @unchecked Sendable {
     private static let agentSessionsRefreshCommand = UINT_PTR(0x7501)
     private static let agentSessionCommandBase = UINT_PTR(0x7600)
     private static let wakeMessage = UINT(WM_APP) + 1
+    private static let openCodexLogsCommand = UINT_PTR(0x703A)
+    private static let hideNativeCodexCostsCommand = UINT_PTR(0x703B)
     private static let tokenActivityCommand = UINT_PTR(0x7039)
     private let onTokenActivityRequested: @Sendable (UUID) -> Void
     private static let spendHistoryCommand = UINT_PTR(0x7038)
@@ -2484,6 +2486,8 @@ public final class WindowsTrayHost: @unchecked Sendable {
             (Self.shareStatsImageCopyCommand, "Copy Share Stats image", false),
             (Self.shareStatsPreviewCommand, "Preview Share Stats…", false),
             (Self.spendSourcesCommand, "Choose included cost sources…", false),
+            (Self.openCodexLogsCommand, "Include OpenCodeX usage logs", settings.openCodexUsageLogsEnabled),
+            (Self.hideNativeCodexCostsCommand, "Hide native Codex costs when OpenCodeX is present", settings.hideNativeCodexWhenOpenCodexPresent),
             (Self.spendCollectionCommand, "Collect supported provider costs", settings.collectionEnabled),
             (Self.spendLedgerCommand, "Keep Codex local cost ledger", settings.codexLocalLedgerEnabled)
         ]
@@ -2525,7 +2529,11 @@ public final class WindowsTrayHost: @unchecked Sendable {
     private func changeSpendSetting(command: UINT_PTR) {
         self.cancelPendingShareStatsCopy()
         var settings = WindowsSpendSettings.load()
-        if command == Self.spendCollectionCommand {
+        if command == Self.openCodexLogsCommand {
+            settings.openCodexUsageLogsEnabled.toggle()
+        } else if command == Self.hideNativeCodexCostsCommand {
+            settings.hideNativeCodexWhenOpenCodexPresent.toggle()
+        } else if command == Self.spendCollectionCommand {
             settings.collectionEnabled.toggle()
         } else if command == Self.spendLedgerCommand {
             settings.codexLocalLedgerEnabled.toggle()
@@ -2962,7 +2970,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
             self.onSpendSummaryRequested(requestID)
         case Self.spendCurrencyCommandBase..<(Self.spendCurrencyCommandBase + UINT_PTR(Self.spendCurrencies.count)):
             self.changeSpendSetting(command: command)
-        case Self.spendCollectionCommand, Self.spendLedgerCommand:
+        case Self.spendCollectionCommand, Self.spendLedgerCommand, Self.openCodexLogsCommand, Self.hideNativeCodexCostsCommand:
             self.changeSpendSetting(command: command)
         case Self.spendPeriodCommandBase..<(Self.spendPeriodCommandBase + UINT_PTR(Self.spendPeriods.count)):
             self.changeSpendSetting(command: command)
