@@ -1852,3 +1852,13 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - refresh task가 시작 당시 loader를 캡처하고 실행 전에도 generation/취소를 확인하도록 작성했다. 이미 진행 중인 이전 수집의 결과는 generation으로 거절한다.
 
 남은 범위: Main/설정 UI에서 같은 calendar의 loader/옵션 생성 및 교체 연결, 실제 native dashboard/share 화면, 취소된 수집의 캐시 쓰기 종료 보장·Windows 검증 및 전체 계획 구현. 아직 controller는 앱 실행 경로에 연결되지 않았다.
+
+## IMPL-141 — Windows runtime 비용 수집 연결
+
+상태 CODE_WRITTEN_UNVERIFIED. 컴파일/빌드/테스트/설정·로그 수집/검증 미실시. guidelines/COMMITS.md 부재로 핵심 커밋 규칙을 적용한다.
+
+- 기존 provider 사용량 refresh 게시 후 같은 config/Codex reconciliation capture로 비용 source를 만들고 controller를 생성·수집하도록 연결했다. 비용 설정이 off이거나 지원 provider가 없으면 disabled 상태로 끝내며 수집하지 않는다.
+- 활성 수집 전 설정의 bucket timezone을 저장하고 provider/account별 spend-cache 하위 경로를 사용한다. 비용 실패는 별도 상태로 보관해 사용량 표시를 덮어쓰지 않는다. source별 partial 오류는 controller snapshot을 유지한다.
+- runtime 소유 snapshot 조회 API를 작성했다. 새 refresh/계정 변경은 이전 snapshot을 즉시 제거하고 generation으로 이전 결과를 거절한다. 스캔 중 외부 비용 설정이 바뀌면 결과를 폐기한다. shutdown은 controller를 중지한다.
+
+남은 범위: native 비용 설정/대시보드/공유 UI, 표시 옵션만 변경하는 재집계 연결, refresh마다 controller 재생성에 따른 stale/캐시 최적화, 외부 계정 파일 변경 실시간 감지, 여러 Codex source/OpenCodeX parity 및 Windows 검증. 실제 앱이나 비용 수집은 실행하지 않았다.

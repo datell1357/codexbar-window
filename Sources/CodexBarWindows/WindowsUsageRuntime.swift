@@ -54,6 +54,17 @@ public actor WindowsUsageRuntime {
     }
     public typealias RefreshSignalProvider = @Sendable () -> RefreshSignals
 
+    enum SpendCollectionState: Sendable { case idle, disabled, collecting, available, failed, stopped }
+    private var spendController: WindowsSpendDashboardController?
+    private var spendSnapshot: WindowsSpendDashboardController.Snapshot?
+    private var spendState: SpendCollectionState = .idle
+    private var spendGeneration: UInt64 = 0
+
+    /// The native dashboard reads this actor-owned value, never a previous controller's data.
+    func currentSpendSnapshot() -> (SpendCollectionState, WindowsSpendDashboardController.Snapshot?) {
+        (self.spendState, self.spendSnapshot)
+    }
+
     private let configStore: CodexBarConfigStore
     private let browserDetection: BrowserDetection
     private let fetcher: UsageFetcher
@@ -416,6 +427,9 @@ public actor WindowsUsageRuntime {
     }
 
     private func invalidateSelectedAccountState(_ providerID: ProviderInstanceID) {
+        self.spendGeneration &+= 1
+        self.spendSnapshot = nil
+        self.spendState = .idle
         // Delivery adapters run synchronously, preserving order with earlier runtime notifications.
         self.accountInvalidationPublisher(providerID)
         self.dashboardContextCache.removeValue(forKey: providerID)
@@ -1091,6 +1105,9 @@ public actor WindowsUsageRuntime {
     }
 
     private func performRefresh() async {
+        self.spendGeneration &+= 1
+        self.spendSnapshot = nil
+        self.spendState = .idle
         let refreshQuotaWarningGeneration = self.quotaWarningGeneration
         let refreshPredictivePaceWarningGeneration = self.predictivePaceWarningGeneration
         let presentationSettings = WindowsUsagePresentationSettings.load()
@@ -1307,6 +1324,7 @@ public actor WindowsUsageRuntime {
                 snapshots: self.currentSnapshots(from: entries),
                 now: Date())
             self.publishRenderEntries(settings: WindowsUsagePresentationSettings.load())
+            await self.collectSpend(config: config, codexContext: codexAccountContext)
         } catch is CancellationError {
             return
         } catch {
@@ -1321,6 +1339,51 @@ public actor WindowsUsageRuntime {
             self.renderEntries = [.row(message)]
             self.scheduleResetBoundaryRefreshIfNeeded(snapshots: [:], now: Date())
             self.publishRenderEntries(settings: WindowsUsagePresentationSettings.load())
+        }
+    }
+
+    private func collectSpend(config: CodexBarConfig, codexContext: CodexAccountContextSnapshot?) async {
+        guard !self.shuttingDown, !Task.isCancelled else { return }
+        let generation = self.spendGeneration
+        let settings = WindowsSpendSettings.load()
+        if let previous = self.spendController { await previous.stop() }
+        self.spendController = nil
+        guard !self.shuttingDown, generation == self.spendGeneration, !Task.isCancelled else { return }
+        guard !settings.enabledProviders(config: config).isEmpty else {
+            self.spendState = .disabled
+            return
+        }
+        do {
+            // Pin the calendar before a first enabled scan. Loading preferences alone never writes.
+            try settings.save()
+            let sources = try WindowsSpendSourceResolver.resolve(config: config, settings: settings,
+                environment: ProcessInfo.processInfo.environment,
+                cacheRoot: self.configStore.fileURL.deletingLastPathComponent()
+                    .appendingPathComponent("spend-cache", isDirectory: true),
+                codexContext: codexContext)
+            let controller = WindowsSpendDashboardController(
+                loader: WindowsSpendSnapshotLoader.make(sources: sources, settings: settings),
+                options: settings.dashboardOptions, publisher: { _ in })
+            self.spendController = controller
+            self.spendState = .collecting
+            await controller.refresh()
+            guard !self.shuttingDown, generation == self.spendGeneration, !Task.isCancelled else { return }
+            // External preference changes while scanning must not publish the old configuration.
+            guard WindowsSpendSettings.load() == settings else {
+                await controller.stop()
+                self.spendController = nil
+                self.spendState = .idle
+                return
+            }
+            let snapshot = await controller.snapshot()
+            guard !self.shuttingDown, generation == self.spendGeneration, !Task.isCancelled else { return }
+            self.spendSnapshot = snapshot
+            self.spendState = snapshot.phase == .failed ? .failed : .available
+        } catch {
+            guard !self.shuttingDown, generation == self.spendGeneration else { return }
+            // Do not expose credential, path, or configuration decoder diagnostics to the dashboard.
+            self.spendSnapshot = nil
+            self.spendState = .failed
         }
     }
 
@@ -1374,6 +1437,11 @@ public actor WindowsUsageRuntime {
     public func shutdown() async {
         guard !self.shuttingDown else { return }
         self.shuttingDown = true
+        self.spendGeneration &+= 1
+        self.spendSnapshot = nil
+        self.spendState = .stopped
+        if let controller = self.spendController { await controller.stop() }
+        self.spendController = nil
         self.scheduleGeneration &+= 1
         self.queuedOptionalRefresh = false
         self.queuedPredictiveSettingsRefresh = false
