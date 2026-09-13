@@ -1512,3 +1512,13 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - DPI 배치·system font 갱신에 새 control을 포함한다. 다른 공급자 입력 계약은 유지한다.
 
 남은 범위: 키보드 라디오 그룹/스크린리더/높은 배율·작은 화면 실행 검증, region 안내·credential parsing/OAuth·계정 수정 및 전체 Windows 기능 구현.
+
+## IMPL-107 — 선택 계정 변경 시 세션 baseline 분리
+
+상태 CODE_WRITTEN_UNVERIFIED. 컴파일/빌드/테스트/알림/계정/검증 미실시. guidelines/COMMITS.md 부재로 핵심 커밋 규칙을 적용한다.
+
+- 계정 선택 저장과 새 계정 추가 성공 경로에 공통 selected-account 상태 철회를 연결했다. 공급자 단위 session transition 상태를 제거해 다음 계정의 첫 관측을 이전 계정과 비교하지 않도록 작성했다.
+- Codex 전환 시 관측 watermark를 갱신하고 현재 계정 전용 historical dataset과 owner key를 비운다. history generation도 증가시켜 과거 generation의 비동기 결과 재사용을 막는 기존 guard를 사용한다. 영구 history 파일은 삭제하지 않는다.
+- 계정 discriminator가 이미 포함된 quota/pace 중복 방지 기록은 보존해 같은 계정으로 돌아왔을 때 경고가 반복되지 않도록 한다. 이름 변경은 이 경로를 호출하지 않는다.
+
+남은 범위: 이미 host mailbox 또는 OS 알림에 전달된 이전 계정 알림의 owner/generation 필터, 실제 switch·historical race·Windows 검증. 이번 변경은 알림 전달 전체의 계정 격리 완료가 아니다.

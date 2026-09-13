@@ -250,7 +250,7 @@ public actor WindowsUsageRuntime {
             config.setProviderConfig(entry)
             try self.configStore.save(config)
             self.latestProviderConfigs[providerID] = entry
-            self.dashboardContextCache.removeValue(forKey: providerID)
+            self.invalidateSelectedAccountState(providerID)
             // Withdraw the previous owner's presentation until the next refresh publishes.
             self.presentations.removeValue(forKey: providerID)
             self.providerCopyErrors.removeValue(forKey: providerID.rawValue)
@@ -306,7 +306,7 @@ public actor WindowsUsageRuntime {
             config.setProviderConfig(entry)
             try self.configStore.save(config)
             self.latestProviderConfigs[request.providerID] = entry
-            self.dashboardContextCache.removeValue(forKey: request.providerID)
+            self.invalidateSelectedAccountState(request.providerID)
             self.presentations.removeValue(forKey: request.providerID)
             self.providerCopyErrors.removeValue(forKey: request.providerID.rawValue)
             self.renderEntries = [.row("Account added. Refresh usage to load the selected account.")]
@@ -314,6 +314,21 @@ public actor WindowsUsageRuntime {
             self.publishRenderEntries(settings: WindowsUsagePresentationSettings.load())
             return .saved(account.id)
         } catch { return .failed }
+    }
+
+    private func invalidateSelectedAccountState(_ providerID: ProviderInstanceID) {
+        self.dashboardContextCache.removeValue(forKey: providerID)
+        // Session transitions are keyed only by provider. The first observation for
+        // a newly selected account must establish a baseline, not compare with its predecessor.
+        self.sessionQuotaStates.removeValue(forKey: providerID)
+        if providerID == UsageProvider.codex.instanceID {
+            self.codexSessionQuotaBaselineWatermark = Date()
+            self.historicalTrackingGeneration &+= 1
+            self.codexHistoricalDataset = nil
+            self.codexHistoricalDatasetAccountKey = nil
+        }
+        // Threshold and pace deduplication already include account discriminators.
+        // Retain those histories so returning to an account does not repeat its warning.
     }
 
     private static func accountLabelRevision(_ label: String) -> String {
