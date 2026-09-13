@@ -3,9 +3,23 @@ import Foundation
 
 /// Reads configuration only; never opens the credential vault or starts a request.
 public enum WindowsZedEditorSettings {
+    /// CodexBar-specific override matching the editor's custom data directory.
+    public static let dataDirectoryEnvironmentKey = "CODEXBAR_ZED_DATA_DIR"
+
     public enum Failure: Error { case unavailable, invalid, separateCredentialOrigin }
 
     public static func suggestedOrigin(environment: [String: String] = ProcessInfo.processInfo.environment) throws -> String {
+        try Task.checkCancellation()
+        if let raw = CodexBarPlatformPaths.environmentValue(self.dataDirectoryEnvironmentKey, environment: environment) {
+            let path = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !path.isEmpty, path.utf16.count <= 32_767,
+                  !path.unicodeScalars.contains(where: { $0.value < 32 || $0.value == 127 }),
+                  NSString(string: path).isAbsolutePath else { throw Failure.unavailable }
+            let url = URL(fileURLWithPath: path, isDirectory: true)
+                .appendingPathComponent("config", isDirectory: true).appendingPathComponent("settings.json")
+            // An explicit but missing profile must not silently select the default editor account.
+            return try self.suggestedOrigin(from: url, allowMissingDefaults: false)
+        }
         guard let root = CodexBarPlatformPaths.environmentValue("APPDATA", environment: environment),
               !root.isEmpty, NSString(string: root).isAbsolutePath else { throw Failure.unavailable }
         let url = URL(fileURLWithPath: root, isDirectory: true)
@@ -14,10 +28,15 @@ public enum WindowsZedEditorSettings {
     }
 
     public static func suggestedOrigin(from url: URL) throws -> String {
+        try self.suggestedOrigin(from: url, allowMissingDefaults: true)
+    }
+
+    private static func suggestedOrigin(from url: URL, allowMissingDefaults: Bool) throws -> String {
         try Task.checkCancellation()
         let handle: FileHandle
         do { handle = try FileHandle(forReadingFrom: url) }
         catch let error as NSError where error.domain == NSCocoaErrorDomain && error.code == NSFileReadNoSuchFileError {
+            guard allowMissingDefaults else { throw Failure.unavailable }
             return ZedStatusProbe.defaultKeychainServiceURL
         } catch { throw Failure.unavailable }
         defer { try? handle.close() }

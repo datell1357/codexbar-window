@@ -2776,3 +2776,11 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - loader 실패는 기존 UI의 직접 서버 입력 안내로 전달된다. 중복 설정을 임의의 첫 값/마지막 값으로 선택하지 않는다.
 - 남은 소요: custom data dir 탐색, 분리된 credential/API origin 계약, 실제 Windows 검증 및 전체 계획 나머지.
 - CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 파서·빌드·테스트·lint·실제 설정 조회 검증 미실행.
+
+## IMPL-243 — Zed 사용자 지정 데이터 디렉터리 설정
+
+- CodexBar 전용 CODEXBAR_ZED_DATA_DIR 절대 경로를 지원한다. IMPL-240에서 읽은 upstream paths.rs의 custom_dir/config 계약에 따라 settings.json을 찾는다.
+- 빈 값/상대 경로/control 문자/과대 경로를 거부하고 명시한 파일이 없으면 production 기본값으로 대체하지 않는다. 설정 실패는 기존 서버 직접 입력 안내로 전달된다.
+- 가져오기 사용법, 환경 변수 범위, 서버 단위 Credential Manager 저장과 데이터 디렉터리의 차이, 미구현 범위를 ZED-EDITOR-IMPORT.ko.md에 기록했다.
+- 남은 소요: 실행 중 편집기 디렉터리 자동 발견, 분리된 credential/API origin 계약, Windows 실제 검증 및 전체 계획 나머지.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·설정 조회·인증 검증 미실행.

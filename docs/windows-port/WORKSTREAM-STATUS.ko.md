@@ -1,5 +1,7 @@
 # Windows 전용 제품 작업 현황
 
+- IMPL-243: CODEXBAR_ZED_DATA_DIR의 config/settings.json을 서버 추천 입력에 연결하고 가져오기 안내를 작성했다. 잘못된 명시 경로는 기본 프로필로 대체하지 않는다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
 - IMPL-242: Zed 설정의 중복 root key를 거부하도록 공통 Windows JSON key scanner를 연결했다. Windsurf는 기존 64KiB 제한을 유지한다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
 
 - IMPL-241: Zed 서버 설정을 UI 밖에서 읽고 입력 창 기본값으로 연결했다. 읽기 실패는 빈 입력과 안내를 표시하고 명시적 확인 뒤 credential 조회를 시작한다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
