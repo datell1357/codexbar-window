@@ -12,6 +12,7 @@ struct CodexBarWindowsMain {
 private final class WindowsTrayApplication: @unchecked Sendable {
     private let cursorBrowserImports = WindowsCursorBrowserImportTask()
     private let augmentBrowserImports = WindowsCursorBrowserImportTask()
+    private let windsurfBrowserImports = WindowsCursorBrowserImportTask()
     private let zedEditorImports = WindowsCursorBrowserImportTask()
     private let runtime: WindowsUsageRuntime
     private let sessions: WindowsAgentSessionsRuntime
@@ -145,6 +146,28 @@ private final class WindowsTrayApplication: @unchecked Sendable {
             guard let self else { return }
             self.augmentBrowserImports.cancel(id: ticket)
             Task { await self.runtime.cancelAugmentBrowserImport(requestID: ticket) }
+        },
+        onWindsurfBrowserImportRequested: { [weak self] requestID in
+            guard let self else { return }
+            self.windsurfBrowserImports.start(id: requestID) { [weak self] in
+                guard let self else { return }
+                let result = await self.runtime.discoverWindsurfBrowserAccounts(requestID: requestID)
+                guard !Task.isCancelled else { return }
+                self.host.postWindsurfBrowserImport(requestID: requestID, result: result)
+            }
+        },
+        onWindsurfBrowserImportSave: { [weak self] hostID, ticket, candidate, label in
+            guard let self else { return }
+            Task {
+                let result = await self.runtime.importWindsurfBrowserAccount(requestID: ticket, candidateID: candidate, label: label)
+                await self.runtime.cancelWindsurfBrowserImport(requestID: ticket)
+                self.host.postWindsurfBrowserImportSave(requestID: hostID, result: result)
+            }
+        },
+        onWindsurfBrowserImportCancel: { [weak self] ticket in
+            guard let self else { return }
+            self.windsurfBrowserImports.cancel(id: ticket)
+            Task { await self.runtime.cancelWindsurfBrowserImport(requestID: ticket) }
         },
         onZedEditorServerRequested: { [weak self] requestID in
             guard let self else { return }

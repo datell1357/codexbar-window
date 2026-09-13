@@ -3004,3 +3004,12 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - 표시 이름은 일반 세션 이름과 출처이며 검증된 계정 ID를 부여하지 않는다. 개인정보 숨김 모드에서는 profile/origin 출처를 숨긴다.
 - 남은 소요: WindowsMain/트레이 메뉴/선택 창 연결, 추가 압축 지원 및 전체 계획 나머지.
 - CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·UI·브라우저·네트워크 검증 미실행.
+
+## IMPL-269 — Windsurf Chrome 가져오기 트레이 UI
+
+- WindowsMain 콜백과 독립 가져오기 작업을 연결하고 트레이에 Chrome 가져오기/취소 명령을 추가했다.
+- 후보 선택 메뉴와 이름 입력을 runtime ticket/후보 ID로 연결했다. 저장 성공/중복/만료/오류 안내와 mailbox 처리를 포함한다.
+- 선택 중 만료 또는 개인정보 숨김 설정 변경 시 메뉴를 닫는 timer를 연결했다. 이름 입력 및 저장 직전에도 개인정보 상태를 확인한다.
+- 후보 안내는 plan 응답이 있는 세션으로 표현하며 서버 신원을 검증했다는 문구를 사용하지 않는다.
+- 남은 소요: 추가 압축/브라우저 지원, Windows 실동작 검증 및 전체 계획 나머지. 현재 코드 연결은 사용자 사용 가능성이나 배포 준비 완료의 증거가 아니다.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·실제 UI/브라우저/네트워크 실행 미실행.

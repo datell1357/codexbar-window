@@ -38,10 +38,13 @@ public final class WindowsTrayHost: @unchecked Sendable {
     private var cliPathOperationRunning = false // Protected by mailboxLock.
     private var cursorImportMenuExpires: Date? // UI thread only.
     private var augmentImportMenuExpires: Date? // UI thread only.
+    private var windsurfImportMenuExpires: Date? // UI thread only.
     private var cursorImportMenuPrivacy: Bool? // UI thread only.
     private var augmentImportMenuPrivacy: Bool? // UI thread only.
+    private var windsurfImportMenuPrivacy: Bool? // UI thread only.
     private static let cursorImportPrivacyTimer = UINT_PTR(0x754B)
     private static let augmentImportPrivacyTimer = UINT_PTR(0x7F12)
+    private static let windsurfImportPrivacyTimer = UINT_PTR(0x7F32)
     private static let cliSetupTimer = UINT_PTR(0x754A)
     private var cliSetupDialogOpen = false
     private var cliSetupRunning = false // Protected by mailboxLock.
@@ -119,21 +122,29 @@ public final class WindowsTrayHost: @unchecked Sendable {
     private var zedImportMailbox: WindowsUsageRuntime.ZedEditorImportResult?
     private var zedImportSaveMailbox: WindowsTokenAccountAddResult?
     private static let augmentBrowserImportCancelCommand = UINT_PTR(0x7F10)
+    private static let windsurfBrowserImportCancelCommand = UINT_PTR(0x7F30)
     private static let cursorBrowserImportCommand = UINT_PTR(0x703E)
     private static let augmentBrowserImportCommand = UINT_PTR(0x7F11)
+    private static let windsurfBrowserImportCommand = UINT_PTR(0x7F31)
     private let onCursorBrowserImportRequested: @Sendable (UUID) -> Void
     private let onAugmentBrowserImportRequested: @Sendable (UUID) -> Void
+    private let onWindsurfBrowserImportRequested: @Sendable (UUID) -> Void
     private let onCursorBrowserImportSave: @Sendable (UUID, UUID, UUID, String) -> Void
     private let onAugmentBrowserImportSave: @Sendable (UUID, UUID, UUID, String) -> Void
+    private let onWindsurfBrowserImportSave: @Sendable (UUID, UUID, UUID, String) -> Void
     private let onCursorBrowserImportCancel: @Sendable (UUID) -> Void
     private let onAugmentBrowserImportCancel: @Sendable (UUID) -> Void
+    private let onWindsurfBrowserImportCancel: @Sendable (UUID) -> Void
     // Request and mailboxes are protected by mailboxLock.
     private var cursorImportRequest: UUID?
     private var augmentImportRequest: UUID?
+    private var windsurfImportRequest: UUID?
     private var cursorImportMailbox: WindowsUsageRuntime.CursorBrowserImportResult?
     private var augmentImportMailbox: WindowsUsageRuntime.AugmentBrowserImportResult?
+    private var windsurfImportMailbox: WindowsUsageRuntime.WindsurfBrowserImportResult?
     private var cursorImportSaveMailbox: WindowsTokenAccountAddResult?
     private var augmentImportSaveMailbox: WindowsTokenAccountAddResult?
+    private var windsurfImportSaveMailbox: WindowsTokenAccountAddResult?
     private static let spendJSONCopyCommand = UINT_PTR(0x703C)
     private static let spendJSONSaveCommand = UINT_PTR(0x703D)
     private let onSpendJSONRequested: @Sendable (UUID, Bool) -> Void
@@ -349,6 +360,9 @@ public final class WindowsTrayHost: @unchecked Sendable {
         onAugmentBrowserImportRequested: @escaping @Sendable (UUID) -> Void = { _ in },
         onAugmentBrowserImportSave: @escaping @Sendable (UUID, UUID, UUID, String) -> Void = { _, _, _, _ in },
         onAugmentBrowserImportCancel: @escaping @Sendable (UUID) -> Void = { _ in },
+        onWindsurfBrowserImportRequested: @escaping @Sendable (UUID) -> Void = { _ in },
+        onWindsurfBrowserImportSave: @escaping @Sendable (UUID, UUID, UUID, String) -> Void = { _, _, _, _ in },
+        onWindsurfBrowserImportCancel: @escaping @Sendable (UUID) -> Void = { _ in },
         onZedEditorServerRequested: @escaping @Sendable (UUID) -> Void = { _ in },
         onZedEditorImportRequested: @escaping @Sendable (UUID, WindowsZedEditorSettings.Configuration) -> Void = { _, _ in },
         onZedEditorImportSave: @escaping @Sendable (UUID, UUID, String) -> Void = { _, _, _ in },
@@ -401,10 +415,13 @@ public final class WindowsTrayHost: @unchecked Sendable {
         self.onSpendHistoryRequested = onSpendHistoryRequested
         self.onCursorBrowserImportRequested = onCursorBrowserImportRequested
         self.onAugmentBrowserImportRequested = onAugmentBrowserImportRequested
+        self.onWindsurfBrowserImportRequested = onWindsurfBrowserImportRequested
         self.onCursorBrowserImportSave = onCursorBrowserImportSave
         self.onAugmentBrowserImportSave = onAugmentBrowserImportSave
+        self.onWindsurfBrowserImportSave = onWindsurfBrowserImportSave
         self.onCursorBrowserImportCancel = onCursorBrowserImportCancel
         self.onAugmentBrowserImportCancel = onAugmentBrowserImportCancel
+        self.onWindsurfBrowserImportCancel = onWindsurfBrowserImportCancel
         self.onZedEditorServerRequested = onZedEditorServerRequested
         self.onZedEditorImportRequested = onZedEditorImportRequested
         self.onZedEditorImportSave = onZedEditorImportSave
@@ -660,6 +677,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
     }
 
     private func drainAugmentBrowserImport() {
+    private func drainWindsurfBrowserImport() {
         guard !self.remoteEditorOpen, !self.quitInvoked, let window = self.window,
               case .idle = self.providerEditorPhase, case .idle = self.codexWebSettingsEditorPhase else { return }
         self.mailboxLock.lock()
@@ -731,6 +749,99 @@ public final class WindowsTrayHost: @unchecked Sendable {
         }
         self.mailboxLock.lock()
         if self.augmentImportRequest == hostID { self.augmentImportRequest = nil }
+        self.mailboxLock.unlock()
+    }
+
+    public func postWindsurfBrowserImport(requestID: UUID, result: WindowsUsageRuntime.WindsurfBrowserImportResult) {
+        self.mailboxLock.lock()
+        guard !self.quitInvoked, self.windsurfImportRequest == requestID else { self.mailboxLock.unlock(); return }
+        self.windsurfImportMailbox = result
+        let window = self.window
+        self.mailboxLock.unlock()
+        if let window { PostMessageW(window, Self.wakeMessage, 0, 0) }
+    }
+
+    public func postWindsurfBrowserImportSave(requestID: UUID, result: WindowsTokenAccountAddResult) {
+        self.mailboxLock.lock()
+        guard !self.quitInvoked, self.windsurfImportRequest == requestID else { self.mailboxLock.unlock(); return }
+        self.windsurfImportSaveMailbox = result
+        let window = self.window
+        self.mailboxLock.unlock()
+        if let window { PostMessageW(window, Self.wakeMessage, 0, 0) }
+    }
+
+    private func drainWindsurfBrowserImport() {
+        guard !self.remoteEditorOpen, !self.quitInvoked, let window = self.window,
+              case .idle = self.providerEditorPhase, case .idle = self.codexWebSettingsEditorPhase else { return }
+        self.mailboxLock.lock()
+        let hostID = self.windsurfImportRequest
+        let discovery = self.windsurfImportMailbox
+        let saved = self.windsurfImportSaveMailbox
+        self.windsurfImportMailbox = nil
+        self.windsurfImportSaveMailbox = nil
+        self.mailboxLock.unlock()
+        guard let hostID, discovery != nil || saved != nil else { return }
+        if let saved {
+            self.mailboxLock.lock()
+            if self.windsurfImportRequest == hostID { self.windsurfImportRequest = nil }
+            self.mailboxLock.unlock()
+            let message: String
+            switch saved {
+            case .saved: message = "Windsurf account saved and selected. Refresh usage to load the imported account."
+            case .alreadyAdded: message = "This Windsurf session was already saved. The existing account is selected and its name is unchanged. Refresh usage to load it."
+            case .refreshInProgress: message = "Usage is refreshing. Wait for it to finish, then import again."
+            case .staleSelection: message = "The import expired or account settings changed. Import again."
+            case .invalidInput: message = "The account name or session could not be accepted. Import again."
+            case .unavailable: message = "Enable Windsurf before importing an account."
+            case .shuttingDown: return
+            case .failed: message = "The account could not be protected or saved. Check configuration access and import again."
+            }
+            self.showMessage(message, caption: "Import Windsurf account")
+            return
+        }
+        guard let discovery else { return }
+        switch discovery {
+        case let .unavailable(message): self.showMessage(message, caption: "Import Windsurf account")
+        case let .choices(ticket, rows, failed, omitted, privacy, expires):
+            guard expires > Date(), privacy == WindowsUsagePresentationSettings.load().hidePersonalInfo else {
+                self.onWindsurfBrowserImportCancel(ticket)
+                self.mailboxLock.lock(); self.windsurfImportRequest = nil; self.mailboxLock.unlock()
+                return
+            }
+            self.windsurfImportMenuExpires = expires
+            self.windsurfImportMenuPrivacy = privacy
+            guard SetTimer(window, Self.windsurfImportPrivacyTimer, 250, nil) != 0 else {
+                self.windsurfImportMenuExpires = nil
+                self.windsurfImportMenuPrivacy = nil
+                self.onWindsurfBrowserImportCancel(ticket)
+                self.mailboxLock.lock(); self.windsurfImportRequest = nil; self.mailboxLock.unlock()
+                self.showMessage("The account selector could not be opened. Import again.", caption: "Import Windsurf account")
+                return
+            }
+            self.remoteEditorOpen = true
+            let candidate = WindowsWindsurfBrowserAccountMenu.choose(owner: window, rows: rows,
+                failedCount: failed, omittedCount: omitted)
+            KillTimer(window, Self.windsurfImportPrivacyTimer)
+            self.windsurfImportMenuExpires = nil
+            self.windsurfImportMenuPrivacy = nil
+            let input: WindowsAccountNameDialog.Result
+            if candidate != nil, !self.quitInvoked,
+               privacy == WindowsUsagePresentationSettings.load().hidePersonalInfo {
+                input = WindowsAccountNameDialog.showImportedAccount(owner: window, expectedPrivacy: privacy, expires: expires, provider: .windsurf)
+            } else { input = .cancelled }
+            self.remoteEditorOpen = false
+            PostMessageW(window, Self.wakeMessage, 0, 0)
+            if let candidate, case let .saved(label) = input, !self.quitInvoked,
+               privacy == WindowsUsagePresentationSettings.load().hidePersonalInfo {
+                self.cancelPendingShareStatsCopy()
+                self.onWindsurfBrowserImportSave(hostID, ticket, candidate, label)
+                return
+            }
+            self.onWindsurfBrowserImportCancel(ticket)
+            if case .failed = input { self.showMessage("The account name dialog could not be opened.", caption: "Import Windsurf account") }
+        }
+        self.mailboxLock.lock()
+        if self.windsurfImportRequest == hostID { self.windsurfImportRequest = nil }
         self.mailboxLock.unlock()
     }
 
@@ -1831,6 +1942,15 @@ public final class WindowsTrayHost: @unchecked Sendable {
                 let title = importing ? "Cancel Augment browser import" : "Import Augment from Firefox…"
                 title.withCString(encodedAs: UTF16.self) {
                     _ = AppendMenuW(addMenu, UINT(MF_STRING), importing ? Self.augmentBrowserImportCancelCommand : Self.augmentBrowserImportCommand, $0)
+                }
+            }
+            if menuEntries.contains(where: { $0.providerID == UsageProvider.windsurf.rawValue }) {
+                self.mailboxLock.lock()
+                let importing = self.windsurfImportRequest != nil
+                self.mailboxLock.unlock()
+                let title = importing ? "Cancel Windsurf browser import" : "Import Windsurf from Chrome…"
+                title.withCString(encodedAs: UTF16.self) {
+                    _ = AppendMenuW(addMenu, UINT(MF_STRING), importing ? Self.windsurfBrowserImportCancelCommand : Self.windsurfBrowserImportCommand, $0)
                 }
             }
             if menuEntries.contains(where: { $0.providerID == UsageProvider.zed.rawValue }) {
@@ -3085,6 +3205,28 @@ public final class WindowsTrayHost: @unchecked Sendable {
             self.onAugmentBrowserImportRequested(requestID)
             return
         }
+        if command == Self.windsurfBrowserImportCancelCommand {
+            guard !self.remoteEditorOpen else { return }
+            self.mailboxLock.lock()
+            let requestID = self.windsurfImportRequest
+            self.windsurfImportRequest = nil
+            self.windsurfImportMailbox = nil
+            self.windsurfImportSaveMailbox = nil
+            self.mailboxLock.unlock()
+            if let requestID { self.onWindsurfBrowserImportCancel(requestID) }
+            return
+        }
+        if command == Self.windsurfBrowserImportCommand {
+            guard !self.quitInvoked, !self.remoteEditorOpen,
+                  case .idle = self.providerEditorPhase, case .idle = self.codexWebSettingsEditorPhase else { return }
+            self.mailboxLock.lock()
+            guard self.windsurfImportRequest == nil else { self.mailboxLock.unlock(); return }
+            let requestID = UUID()
+            self.windsurfImportRequest = requestID
+            self.mailboxLock.unlock()
+            self.onWindsurfBrowserImportRequested(requestID)
+            return
+        }
         if command == Self.zedEditorImportCancelCommand {
             guard !self.remoteEditorOpen else { return }
             self.mailboxLock.lock()
@@ -3861,6 +4003,13 @@ public final class WindowsTrayHost: @unchecked Sendable {
             }
             return 0
         }
+        if message == UINT(WM_TIMER), wParam == WPARAM(Self.windsurfImportPrivacyTimer) {
+            if let privacy = host.windsurfImportMenuPrivacy {
+                let expired = host.windsurfImportMenuExpires.map { $0 <= Date() } ?? true
+                if expired || privacy != WindowsUsagePresentationSettings.load().hidePersonalInfo { EndMenu() }
+            }
+            return 0
+        }
         if message == UINT(WM_TIMER), wParam == WPARAM(Self.cliSetupTimer) {
             host.drainCLISetup()
             return 0
@@ -3878,6 +4027,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
             host.drainCodexWebSettingsEditor()
             host.drainCursorBrowserImport()
             host.drainAugmentBrowserImport()
+            host.drainWindsurfBrowserImport()
             host.drainZedEditorImport()
             host.drainSpendSources()
             host.drainSpendSummary()

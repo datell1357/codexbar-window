@@ -1,5 +1,7 @@
 # Windows 전용 제품 작업 현황
 
+- IMPL-269: Windsurf Chrome 가져오기를 트레이 메뉴/후보 선택/이름 입력/저장 콜백에 연결했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
 - IMPL-268: Windsurf runtime에 탐색/probe, 만료 ticket과 보호 계정 저장 경로를 연결했다. 트레이 UI 연결은 남아 있다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
 
 - IMPL-267: Windows Windsurf Chrome 탐색과 후보 API probe를 작성했다. 서버 신원 확인과 구분하며 runtime/UI 저장 연결은 남아 있다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
