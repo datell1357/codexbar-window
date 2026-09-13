@@ -1742,3 +1742,13 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - 다른 플랫폼에서는 Windows 보호 envelope를 읽거나 save로 덮어쓰지 않도록 오류를 반환한다. token account 값과 환경변수 JSON 형식은 변경하지 않는다.
 
 남은 범위: 구버전 바이너리 호환 안내, store fileExists의 접근 오류 구분, multi-process 갱신/복구 UX, 실제 Windows DPAPI·cache migration·OAuth 검증 및 전체 계획 구현.
+
+## IMPL-130 — cache 접근 실패 전파
+
+상태 CODE_WRITTEN_UNVERIFIED. 컴파일/빌드/테스트/파일·캐시 접근/검증 미실시. guidelines/COMMITS.md 부재로 핵심 커밋 규칙을 적용한다.
+
+- Windows cache load에서 fileExists 선행 판정을 제거하고 Data 읽기의 명시적 file-not-found만 nil로 반환한다. 접근 권한 및 기타 I/O 오류는 cleanup recovery 호출부로 전파한다.
+- Windows cache delete도 실제 remove 오류 중 파일 부재만 성공으로 취급한다. 권한 오류를 파일 부재로 숨기지 않는다. 다른 플랫폼 경로는 유지한다.
+- 보호 envelope뿐 아니라 legacy plaintext도 JSON 파싱 전에 1 MiB 한도를 적용한다. 한도는 읽은 Data에 적용되며 아직 스트리밍 메모리 제한은 아니다.
+
+남은 범위: Windows Foundation 오류 매핑 검증, 경로/reparse·외부 프로세스 교체 경합, bounded file read, 전체 계획 및 Windows 실행 검증.

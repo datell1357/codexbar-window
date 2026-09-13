@@ -1,5 +1,7 @@
 # Windows 전용 제품 작업 현황
 
+- IMPL-130: Windows Antigravity cache의 파일 부재와 접근 오류 구분을 작성했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
 - IMPL-129: Antigravity shared OAuth cache의 Windows DPAPI·private ACL 저장을 작성했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
 
 - IMPL-128: provider 상세 snapshot의 privacy 변경 시 숨김·닫기 및 command 재확인을 작성했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
