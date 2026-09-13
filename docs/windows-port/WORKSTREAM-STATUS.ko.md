@@ -1,5 +1,7 @@
 # Windows 전용 제품 작업 현황
 
+- IMPL-173: 비-Codex 비용 캐시 경로에 선택 계정/설정/환경/쿠키/시간대 소유권 지문을 연결했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
 - IMPL-172: 비용/토큰 부분 합계 표식과 알려진 구독 수, 모델 순위·빈 이력 표시를 원본에 맞춰 연결했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
 
 - IMPL-171: 유지된 이전 비용 결과의 일별/시간별/heatmap 조회와 stale 안내, 설정 변경 시 retained state 철회를 연결했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.

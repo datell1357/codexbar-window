@@ -2176,3 +2176,13 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - 집계 산식과 JSON schema는 바꾸지 않는다. 기존 partial flag의 구독 값 존재 여부 정의를 그대로 따른다.
 
 남은 범위: 원본의 모든 표시/내보내기 정책, 전체 provider의 stale/ownership/cache 흐름 및 Windows 검증, 전체 계획 구현. 실제 화면에서 표식이나 정렬이 맞는지는 미검증이다.
+
+## IMPL-173 — 비-Codex 비용 캐시 소유권 분리
+
+상태 CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·인코더/인증/파일/실행 검증 미실시. guidelines/COMMITS.md 부재로 핵심 규칙을 적용한다.
+
+- 원본 sourceOwnershipFingerprints 정책을 참고해 비-Codex source의 캐시 경로를 계정 ID뿐 아니라 현재 설정·선택 계정·scoped environment·Cursor cookie·bucket timezone으로 구분한다.
+- config에서는 enabled/quotaWarnings/전체 tokenAccounts를 제외하고 선택 계정만 별도로 인코딩한다. JSON sortedKeys 및 길이 prefix로 구분한 바이트를 SHA256에 전달해 경로에는 digest만 사용한다. 비밀값은 메모리에서만 처리하고 기록하지 않는다. 인코딩 실패를 빈 scope로 삼키지 않고 전파한다.
+- 사용자 filter source ID는 그대로 유지하고 cacheRoot에 scope digest 하위 경로를 추가한다. 같은 UUID의 인증 정보 변경이나 scope 변경은 이전 캐시를 재사용하지 않는다. 기존 캐시 파일은 삭제/이동하지 않는다.
+
+남은 범위: OS/파일에 있는 ambient 인증 변경 감지, provider별 token snapshot publication scope, 비-Codex stale 재사용 정책, 기존 캐시 정리 정책 및 Windows 검증과 전체 계획 구현. 실제 캐시/인증 파일을 읽거나 삭제하지 않았다.

@@ -49,9 +49,29 @@ enum WindowsSpendSourceResolver {
             let key = SHA256.hash(data: Data(identity.utf8)).map { String(format: "%02x", $0) }.joined()
             let metadata = ProviderDescriptorRegistry.descriptor(for: provider).metadata
             let cookie = ProviderCredentialSettingsContext(config: entry, account: account).cookieSettings(for: provider)
+            // Retain the stable filter ID while separating cached data after credential or scope changes.
+            var scopeConfig = entry
+            scopeConfig?.enabled = nil
+            scopeConfig?.quotaWarnings = nil
+            scopeConfig?.tokenAccounts = nil
+            let encoder = JSONEncoder()
+            encoder.outputFormatting = [.sortedKeys]
+            let configData = try encoder.encode(scopeConfig)
+            let environmentData = try encoder.encode(scoped)
+            let accountData = try encoder.encode(account)
+            let cookieData = try encoder.encode(provider == .cursor ? cookie.manualCookieHeader : nil)
+            let zoneData = Data(bucketTimeZoneIdentifier.utf8)
+            var scopeDigest = SHA256()
+            for component in [configData, environmentData, accountData, cookieData, zoneData] {
+                scopeDigest.update(data: Data("\(component.count):".utf8))
+                scopeDigest.update(data: component)
+            }
+            let scopeKey = scopeDigest.finalize().map { String(format: "%02x", $0) }.joined()
+
             sources.append(.init(id: provider.rawValue + ":" + key, provider: provider,
                 displayName: metadata.displayName, modelProviderName: metadata.displayName,
-                environment: scoped, cacheRoot: cacheRoot.appendingPathComponent(key, isDirectory: true),
+                environment: scoped, cacheRoot: cacheRoot.appendingPathComponent(key, isDirectory: true)
+                    .appendingPathComponent(scopeKey, isDirectory: true),
                 codexHomePath: home, cursorCookieHeader: provider == .cursor ? cookie.manualCookieHeader : nil,
                 subscriptionName: nil, allowVertexClaudeFallback: allowVertexClaudeFallback,
                 includePiSessions: includePiSessions))
