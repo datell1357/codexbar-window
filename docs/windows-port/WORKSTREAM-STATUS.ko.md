@@ -1,5 +1,7 @@
 # Windows 전용 제품 작업 현황
 
+- IMPL-091: 토큰 계정 선택 projection과 UUID 기반 저장 backend를 작성했다. UI 미연결, CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
 - IMPL-090: 상세 창 작업 영역 배치와 액션 버튼 줄바꿈을 작성했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
 
 - IMPL-089: 상세 창 DPI 배치·시스템 글꼴 교체를 작성했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 전체 DPI awareness·실제 모니터 검증은 남아 있다.

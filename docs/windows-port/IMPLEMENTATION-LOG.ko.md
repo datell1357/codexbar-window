@@ -1347,3 +1347,13 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/hidpi/wm-dpichanged 
 - 최소 창 크기가 현재 모니터 작업 영역보다 커지지 않도록 제한한다. 버튼은 실제 사용 가능한 client 폭에 맞춰 줄바꿈하고 필요한 footer 높이만큼 텍스트 영역을 조절한다.
 
 남은 범위: 극단적으로 작은 작업 영역에서 전체 footer 스크롤, DPI awareness 통합, monitor 변경 중 실제 배치·키보드 순서·접근성·지역화 검증. rich card 및 전체 Windows 기능 완료를 의미하지 않는다.
+
+## IMPL-091 — 저장된 토큰 계정 선택 backend
+
+상태 CODE_WRITTEN_UNVERIFIED. 빌드/컴파일/테스트/설정 접근 실행/계정 수집/검증 미실시. guidelines/COMMITS.md 부재로 핵심 커밋 규칙을 적용한다.
+
+- credential/organization/workspace를 제외한 계정 UUID·제목·선택 ID projection을 작성했다. privacy 활성 시 순번 이름을 사용하고 일반 제목에도 redaction을 적용한다.
+- UUID로 저장된 계정을 다시 찾고 기존 선택 ID를 비교해 stale 요청을 거절한다. 중복 UUID, 삭제된 계정, 비활성 공급자, 미지원 공급자를 분리하고 refresh 진행 중에는 전환하지 않는다.
+- 저장 시 계정 목록·토큰을 보존하고 activeIndex와 catalog가 요구하는 manual cookie source만 갱신한다. 성공 후 이전 표시·복사·dashboard 캐시를 철회하고 caller가 refresh를 요청하는 계약이다. 예외 내용에 credential이 포함될 가능성을 피하도록 외부에는 일반 failed 결과만 반환한다.
+
+남은 범위: UI/콜백 연결 및 성공 후 refresh, process 간 설정 동시 쓰기, account 추가·삭제·수정, Codex visible OAuth account 선택 및 계정별 동시 표시, 실제 provider side-effect 계약·Windows 검증. 이번 backend는 아직 UI에서 호출되지 않으며 다중 계정 기능 완료가 아니다.

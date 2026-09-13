@@ -202,6 +202,64 @@ public actor WindowsUsageRuntime {
         self.notificationPublisher = publisher
     }
 
+    public func loadTokenAccountSelection(
+        providerID: ProviderInstanceID) -> WindowsTokenAccountSelectionLoadResult
+    {
+        guard !self.shuttingDown else { return .shuttingDown }
+        do {
+            guard let provider = providerID.firstPartyProvider,
+                  let support = TokenAccountSupportCatalog.support(for: provider),
+                  let config = try self.configStore.load(), config.enabledProviders().contains(providerID),
+                  let data = config.providerConfig(for: providerID)?.tokenAccounts,
+                  !data.accounts.isEmpty,
+                  Set(data.accounts.map(\.id)).count == data.accounts.count else { return .unavailable }
+            let hide = WindowsUsagePresentationSettings.load().hidePersonalInfo
+            let accounts = data.accounts.enumerated().map { index, account in
+                let label = hide ? "Account \(index + 1)" :
+                    String(LogRedactor.redact(account.label).replacingOccurrences(of: "\0", with: "").prefix(160))
+                return WindowsTokenAccountSelectionSnapshot.Account(
+                    id: account.id, title: label.isEmpty ? "Account \(index + 1)" : label)
+            }
+            return .loaded(.init(providerID: providerID, accounts: accounts,
+                                 selectedID: data.accounts[data.clampedActiveIndex()].id,
+                                 requiresManualSource: support.requiresManualCookieSource))
+        } catch { return .failed }
+    }
+
+    /// Rejects stale menus and in-flight fetches rather than publishing mixed-account results.
+    /// The caller requests refresh only after a successful save.
+    public func selectTokenAccount(providerID: ProviderInstanceID, accountID: UUID,
+                                   expectedSelectedID: UUID?) -> WindowsTokenAccountSelectionSaveResult {
+        guard !self.shuttingDown else { return .shuttingDown }
+        guard self.refreshTask == nil else { return .refreshInProgress }
+        do {
+            guard let provider = providerID.firstPartyProvider,
+                  let support = TokenAccountSupportCatalog.support(for: provider),
+                  var config = try self.configStore.load(), config.enabledProviders().contains(providerID),
+                  var entry = config.providerConfig(for: providerID), let data = entry.tokenAccounts,
+                  !data.accounts.isEmpty,
+                  Set(data.accounts.map(\.id)).count == data.accounts.count else { return .unavailable }
+            guard data.accounts[data.clampedActiveIndex()].id == expectedSelectedID,
+                  let index = data.accounts.firstIndex(where: { $0.id == accountID }) else { return .staleSelection }
+            let sourceChanged = support.requiresManualCookieSource && entry.cookieSource != .manual
+            guard index != data.clampedActiveIndex() || sourceChanged else { return .unchanged }
+            entry.tokenAccounts = ProviderTokenAccountData(version: data.version, accounts: data.accounts,
+                                                           activeIndex: index)
+            if support.requiresManualCookieSource { entry.cookieSource = .manual }
+            config.setProviderConfig(entry)
+            try self.configStore.save(config)
+            self.latestProviderConfigs[providerID] = entry
+            self.dashboardContextCache.removeValue(forKey: providerID)
+            // Withdraw the previous owner's presentation until the next refresh publishes.
+            self.presentations.removeValue(forKey: providerID)
+            self.providerCopyErrors.removeValue(forKey: providerID.rawValue)
+            self.renderEntries.removeAll()
+            self.statusMenuEntries.removeAll()
+            self.publishRenderEntries(settings: WindowsUsagePresentationSettings.load())
+            return .saved
+        } catch { return .failed }
+    }
+
     public func loadProviderQuotaWarningEditor(
         providerID: ProviderInstanceID) -> WindowsProviderQuotaWarningLoadResult
     {
