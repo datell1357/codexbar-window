@@ -2124,3 +2124,13 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - 트레이 Copy cost JSON/Export cost JSON, request UUID mailbox, UTF-8 텍스트 clipboard와 Windows .json 저장 대화상자를 연결했다. 저장은 overwrite prompt와 atomic write, 개인정보/계정 유효성 재확인을 따른다. 인코딩 실패는 사용자 오류로 전달한다.
 
 남은 범위: 원본 partial/stale 상태에서 export하는 정책 차이(현재 Windows는 완전한 수집만 허용), 전체 Windows 실행/스키마 검증, ownership ticket/원자적 게시, live ledger/cache 및 전체 계획 구현. 실제 JSON을 생성하거나 파일/클립보드를 변경하지 않았다.
+
+## IMPL-168 — 부분 수집 비용 JSON 내보내기
+
+상태 CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·인코더/파일/클립보드/실행 검증 미실시. guidelines/COMMITS.md 부재로 핵심 규칙을 적용한다.
+
+- 원본의 groups 존재 기준에 맞춰 Windows export에서 ready/non-stale 강제를 제거했다. 현재 설정과 일치하는 available snapshot에 비용 그룹이 있으면 일부 소스 실패/OpenCodeX unavailable 상태도 내보낸다.
+- 복사·저장의 공통 JSON 결과에 copy flag와 collection notice를 담는다. 제외된 실패 소스 수, OpenCodeX 읽기 실패, snapshot stale 여부를 알리고 원본 JSON에는 이러한 상태 필드가 없음을 설명한다. schema에 임의 필드를 추가하지 않는다.
+- 안내 이후 개인정보/캡처 유효성/종료를 다시 확인하고 clipboard 또는 save dialog로 진행한다. 기존 크기 제한 및 인코딩 실패 처리를 유지한다.
+
+남은 범위: runtime이 refresh 시작 시 이전 snapshot을 비우는 정책 때문에 수집 중/전체 실패 시 이전 데이터 내보내기는 아직 불가하다. 원본의 stale 유지 lifecycle, ownership/cache 및 Windows 실행/스키마 검증, 전체 계획 구현은 남아 있다.

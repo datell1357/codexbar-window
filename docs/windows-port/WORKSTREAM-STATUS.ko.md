@@ -1,5 +1,7 @@
 # Windows 전용 제품 작업 현황
 
+- IMPL-168: 부분 수집 비용 JSON 복사/저장을 허용하고 실패·stale 상태를 JSON 밖의 안내로 전달한다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
 - IMPL-167: 원본 Spend JSON DTO 및 Copy cost JSON/Export cost JSON 트레이 동작을 연결했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
 
 - IMPL-166: Windows 비용 모델에서 호출하지만 빠져 있던 ModelBreakdown 확장을 원본에서 이식했다. 이전 비용 UI/모델 구현은 이 누락을 포함한 미검증 상태였다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.

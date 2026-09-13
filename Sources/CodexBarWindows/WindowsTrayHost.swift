@@ -588,7 +588,20 @@ public final class WindowsTrayHost: @unchecked Sendable {
             if let error = WindowsClipboard.writeImage(png: png, dib: dib, owner: window, isCurrent: isCurrent) {
                 self.showMessage(error, caption: "Share Stats")
             }
-        case let .json(data, filename):
+        case let .json(data, filename, copy, notice):
+            if let notice { self.showMessage(notice, caption: "Cost JSON collection status") }
+            guard !self.quitInvoked, isCurrent(),
+                  request.privacy == WindowsUsagePresentationSettings.load().hidePersonalInfo else { return }
+            if copy {
+                guard let text = String(data: data, encoding: .utf8) else {
+                    self.showMessage("Cost JSON could not be decoded for copying.", caption: "Cost JSON export")
+                    return
+                }
+                if let error = WindowsClipboard.write(text, owner: window, isCurrent: isCurrent) {
+                    self.showMessage(error, caption: "Cost JSON export")
+                }
+                return
+            }
             self.remoteEditorOpen = true
             let error = WindowsSpendJSONSaveDialog.saveJSON(data, filename: filename, owner: window,
                 hidePersonalInfo: request.privacy, isCurrent: isCurrent)

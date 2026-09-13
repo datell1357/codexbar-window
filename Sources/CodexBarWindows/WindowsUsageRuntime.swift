@@ -152,7 +152,7 @@ public actor WindowsUsageRuntime {
 
     public enum ShareStatsCopyResult: Sendable {
         case costHistory(WindowsSpendHistorySnapshot)
-        case json(Data, filename: String)
+        case json(Data, filename: String, copy: Bool, notice: String?)
         case image(Data, filename: String)
         case clipboardImage(png: Data, dib: Data)
         case preview(png: Data, dib: Data, filename: String, text: String)
@@ -162,22 +162,33 @@ public actor WindowsUsageRuntime {
 
     public func spendJSONResult(copy: Bool) -> ShareStatsCopyResult {
         guard !self.shuttingDown, self.spendState == .available,
-              let snapshot = self.spendSnapshot, snapshot.phase == .ready, !snapshot.stale,
+              let snapshot = self.spendSnapshot,
               !snapshot.model.groups.isEmpty, let settings = self.collectedSpendSettings,
               WindowsSpendSettings.load() == settings else {
-            return .unavailable("Cost export requires a current, completed collection. Refresh all and retry.")
+            return .unavailable("No exportable cost snapshot is available for the current settings. Refresh all and retry.")
         }
         do {
             let data = try WindowsSpendDashboardJSONExporter.encodedData(
                 model: snapshot.model, hiddenSourceIDs: settings.hiddenSourceIDs.sorted())
             guard data.count <= 16 * 1024 * 1024 else { return .unavailable("The cost JSON exceeds the 16 MiB export limit.") }
+            var notices: [String] = []
+            if !snapshot.sourceFailures.isEmpty {
+                notices.append("Partial collection: \(snapshot.sourceFailures.count) failed source(s) are excluded.")
+            }
+            if snapshot.openCodexObservation == .unavailable {
+                notices.append("OpenCodeX logs are unavailable and are excluded.")
+            }
+            if snapshot.stale { notices.append("This export uses the last captured data; collection has not completed successfully.") }
+            if !notices.isEmpty {
+                notices.append("The original JSON schema does not include collection failure or stale-status fields.")
+            }
             if copy {
                 guard let text = String(data: data, encoding: .utf8), text.utf16.count <= 65_536 else {
                     return .unavailable("The cost JSON is too large for clipboard copying. Use Export cost JSON instead.")
                 }
-                return .ready(text)
             }
-            return .json(data, filename: WindowsSpendDashboardJSONExporter.defaultFilename(days: snapshot.model.requestedDays))
+            return .json(data, filename: WindowsSpendDashboardJSONExporter.defaultFilename(days: snapshot.model.requestedDays),
+                         copy: copy, notice: notices.isEmpty ? nil : notices.joined(separator: "\r\n"))
         } catch {
             return .unavailable("Cost JSON could not be encoded. No export was produced.")
         }
