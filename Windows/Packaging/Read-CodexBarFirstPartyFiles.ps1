@@ -4,7 +4,8 @@ function Get-CodexBarLifecycleFileNames {
         'Install-CodexBarVersion.ps1', 'Select-CodexBarVersion.ps1',
         'Restore-CodexBarActivation.ps1', 'Remove-CodexBarVersion.ps1',
         'Restore-CodexBarRemovedVersion.ps1', 'Write-CodexBarJournal.ps1',
-        'Read-CodexBarBuildProvenance.ps1', 'Read-CodexBarFirstPartyFiles.ps1'
+        'Read-CodexBarBuildProvenance.ps1', 'Read-CodexBarFirstPartyFiles.ps1',
+        'Register-CodexBarInstallation.ps1', 'Invoke-CodexBarUninstall.ps1'
     )
 }
 function Test-CodexBarFirstPartyFile([string] $RelativePath, [string] $Kind) {

@@ -1144,3 +1144,13 @@
 - installer는 tools를 포함한 모든 first-party 파일에 서명자/timestamp 확인을 적용하도록 작성했다. 기존 3개만 서명하는 인벤토리는 새 계약으로 다시 조립·서명해야 하며 실제 서명 작업은 하지 않았다.
 
 남은 범위: Apps 등록 및 버전 제거 중에도 유지되는 invocation 위치, installer bootstrap trust, 제거가 실행 중인 helper에 미치는 영향, staging/backup 공간 회수·PATH/startup migration·전체 Windows 검증. 도구 배포가 완전한 설치 프로그램/UI 통합을 의미하지 않는다.
+
+## IMPL-071 — 개발 설치 등록과 제거 진입점
+
+상태 CODE_WRITTEN_UNVERIFIED. PowerShell/레지스트리/WinForms/파일 복사·서명/설치·제거/빌드/테스트/검증 실행 미실시. guidelines/COMMITS.md 부재로 제공된 핵심 커밋 규칙을 따른다.
+
+- Register-CodexBarInstallation.ps1은 VersionID·signer·개발 opt-in을 받아 tools를 version 밖 management-ID 폴더에 복사하고 receipt hash 및 서명/timestamp를 확인하도록 작성했다. 관리 잠금과 준비 journal을 사용하며 현재 사용자 Registry64의 버전별 Uninstall 항목에 표시 이름/버전/설치 위치/제거 명령을 쓴다. 기존 등록은 덮어쓰지 않는다.
+- Invoke-CodexBarUninstall.ps1은 관리 폴더 위치 확인·기본 No 확인 대화상자·기존 제거 도구 호출을 연결한다. 제거 도구에 PassThru 결과 계약을 추가해 완전한 receipt payload retirement일 때만 등록 해제를 시도한다. 부분 결과/등록 소유권 변경/추가 데이터는 등록을 보존한다.
+- 등록용 도구 2개도 공통 배포/서명 목록에 포함했다. 필수 lifecycle tools는 10개, 앱·CLI·PATH resource 포함 서명 대상은 13개다. 실행 명령은 시스템 PowerShell과 AllSigned 정책을 사용한다.
+
+남은 범위: 선택 중인 version의 shortcut/PATH/startup 자동 전환, registry 생성·비교·삭제 race 및 제거 후 복원 동시 실행, 부분 등록 재개/등록 상태 journal 조정, management/staging/복구 사본 정리, 완전한 uninstall UI/localization·bootstrap trust·전체 Windows 검증. 현재는 개발 표시 등록이며 영구 삭제/공간 회수나 일반 출시 완료가 아니다.

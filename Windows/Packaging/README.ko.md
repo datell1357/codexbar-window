@@ -139,3 +139,13 @@ New-CodexBarDistributionManifest.ps1은 이제 tools 아래에 Install-CodexBarV
 Read-CodexBarFirstPartyFiles.ps1이 앱·CLI·단일 PATH resource·8개 tools의 필수 목록과 분류를 정의한다. manifest 생성/배포 조립/서명 요청/실제 서명/설치가 이 계약을 사용하며 모든 first-party 대상이 서명 대상으로 포함된다. 따라서 이전 문서의 정확히 3개 대상이라는 설명은 과거 단계다. 새 계약은 11개 대상을 요구하며 기존 인벤토리·서명 요청은 새로 생성해야 한다. 타사 파일은 여전히 원래 서명을 보존한다.
 
 배포물의 tools만으로 설치/선택/제거/복구 helper 상대 경로를 찾을 수 있도록 작성했지만 실제 설치된 앱 목록 등록과 안전한 제거 invocation은 아직 연결하지 않았다. 서명된 installer를 처음 실행하기 전의 신뢰 확인과 PowerShell 실행 정책은 이 계약만으로 해결되지 않으며, 도구 실행·서명·설치/제거 상호작용은 미검증이다. 현재 패키징 및 실제 서명 명령은 실행하지 않았다.
+
+## 개발 설치의 앱 목록 등록
+
+Register-CodexBarInstallation.ps1은 VersionID, ExpectedSignerThumbprint, AllowUnvalidatedBuild를 받는다. 설치 receipt의 tool hash와 서명을 대조한 독립 사본을 install root의 management-ID에 두고, 현재 사용자 Registry64의 Software/Microsoft/Windows/CurrentVersion/Uninstall/CodexBarWindows-<VersionID>를 작성한다. 표시 이름에는 development를 넣는다. 기존 항목을 덮어쓰지 않으며 생성 도중 실패한 관리 사본과 registry 상태는 보존한다. 준비/완료 기록은 management 폴더의 registration.json이다.
+
+제거 명령은 시스템 PowerShell의 -NoProfile -STA -ExecutionPolicy AllSigned -File과 명시적 VersionID/RegistrationID를 사용한다. Invoke-CodexBarUninstall.ps1은 기본 No인 확인 창 뒤 기존 제거 도구를 호출하고, receipt 파일 전부가 retire된 경우에만 같은 등록 ID/설치 위치의 항목을 해제한다. 추가 registry 데이터나 소유권 불일치는 보존한다. 수정 파일로 부분 제거가 됐거나 시작 메뉴/PATH/startup/프로세스 참조가 남았다면 오류를 표시하며 등록을 유지한다. 관리 도구와 복구 사본/사용자 설정은 삭제하지 않는다.
+
+이 두 스크립트 추가로 필수 tools는 10개, 전체 first-party 서명 대상은 13개다. 이전 8개/11개 설명은 과거 단계다. 실제 앱 목록 노출, WinForms 창, 스크립트 실행 정책/인증서 신뢰, 레지스트리 쓰기/삭제, 제거 실행은 하지 않았다. registry 작업은 전체 transaction이 아니며 외부 쓰기와 생성/비교/삭제 사이 race가 남아 있다. 부분 등록 복구와 자동 참조 migration, 관리 사본 공간 정리도 남아 있다.
+
+등록 필드의 참고 자료: [Microsoft의 Uninstall registry 필드 문서](https://learn.microsoft.com/en-us/windows/win32/msi/uninstall-registry-key), [NoModify 설명](https://learn.microsoft.com/en-us/windows/win32/msi/arpnomodify). 이 자료의 MSI 설명만으로 사용자별 비-MSI 스크립트의 실제 Windows 동작이 검증된 것은 아니다.
