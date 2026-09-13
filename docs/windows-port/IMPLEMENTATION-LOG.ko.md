@@ -2344,3 +2344,11 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - ID가 없는 기존/수동 계정은 기존 경로를 유지한다. macOS 동작 변경 없이 context 새 인자는 nil 기본값이다.
 - 남은 소요: Cursor 비용 수집의 별도 응답 소유권 확인, CLI context 전달, 팀 ID 모델, 추가 브라우저 지원 및 전체 계획의 나머지 항목.
 - CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·실제 계정/API 검증 미실행.
+
+## IMPL-191 — CLI 선택 계정 ID 전달
+
+- CLI usage, diagnose, guard, hooks watch의 fetch context에 같은 선택 계정의 externalIdentifier를 전달한다. Windows Cursor의 ID 확인 조건을 앱과 동일하게 적용하는 연결이다.
+- guard/watch의 updater 없는 읽기 전용 계약을 유지한다. 외부 ID를 새 출력이나 로그로 노출하지 않는다.
+- cookie refresh는 account:nil로 동작하는 별도 경로여서 특정 저장 계정 ID를 부착하지 않는다. 기존 수동 계정은 ID가 없으므로 기존 동작을 유지한다.
+- 남은 소요: 비용 수집의 계정 응답 확인, 팀 모델, 추가 브라우저 지원 및 전체 계획의 나머지 항목.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. CLI 실행·빌드·테스트·lint·실제 API 검증 미실행.

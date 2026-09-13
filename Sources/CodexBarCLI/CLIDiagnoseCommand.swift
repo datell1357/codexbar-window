@@ -141,6 +141,7 @@ extension CodexBarCLI {
             claudeFetcher: ClaudeUsageFetcher(browserDetection: browserDetection),
             browserDetection: browserDetection,
             selectedTokenAccountID: account?.id,
+            selectedTokenAccountExternalIdentifier: account?.externalIdentifier,
             tokenAccountTokenUpdater: tokenContext.tokenUpdater(for: account),
             providerManualTokenUpdater: tokenContext.manualTokenUpdater())
         let descriptor = ProviderDescriptorRegistry.descriptor(for: provider)

@@ -1,5 +1,7 @@
 # Windows 전용 제품 작업 현황
 
+- IMPL-191: CLI usage/diagnose/guard/hooks watch에 선택 계정 외부 ID 전달을 연결했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
 - IMPL-190: Windows Cursor quota 응답을 저장된 외부 계정 ID와 비교하고 미확인/불일치 응답 게시를 차단하도록 작성했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
 
 - IMPL-189: Cursor 가져오기에서 확인한 계정 ID 저장과 credential 변경 시 ID 철회를 연결했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
