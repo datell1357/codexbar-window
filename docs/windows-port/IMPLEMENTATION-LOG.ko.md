@@ -1408,3 +1408,13 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/hidpi/wm-dpichanged 
 - 창 생성 실패·메시지 루프 오류·WM_QUIT·owner 활성 상태 복원 경로를 작성했다. 취소는 저장 요청을 보내지 않는다.
 
 남은 범위: 이름 창 DPI/작업 영역/접근성·지역화 개선, account 목록의 rename action 배치, 추가·삭제·credential 편집·Codex OAuth·동시 표시, 실제 Windows UI/설정/ABI 검증. 전체 계정 관리 완료가 아니다.
+
+## IMPL-097 — 계정 이름 창 배율·초기 배치
+
+상태 CODE_WRITTEN_UNVERIFIED. 컴파일/빌드/테스트/UI/DPI/검증 미실시. guidelines/COMMITS.md 부재로 핵심 커밋 규칙을 적용한다.
+
+- 이름 창 client 크기/여백/입력칸/안내/버튼을 DPI로 환산하고 WM_SIZE 및 WM_DPICHANGED 배치를 작성했다. 현재 모니터 DPI의 system message font를 적용하며 교체 후 이전 소유 font를 해제한다.
+- owner 모니터 작업 영역 안으로 초기 창 크기를 제한하고 중앙에 배치한다. 모니터 정보 조회 실패 시 기본 위치와 계산된 크기를 사용한다. 안내 영역을 넓혀 입력 오류 문구를 위한 높이를 확보한다.
+- DPI/글꼴 변경이 입력 내용이나 저장 요청을 변경하지 않도록 기존 control을 유지한다.
+
+남은 범위: 매우 작은 작업 영역에서 수직 스크롤, 앱 전체 DPI awareness, 실제 다중 모니터/텍스트 크기/접근성/지역화 검증. 계정 관리 전체 완료가 아니다.

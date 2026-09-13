@@ -9,6 +9,10 @@ enum WindowsAccountNameDialog {
     private final class Context {
         var result: Result = .cancelled
         var closed = false
+        var dpi: UINT = 96
+        var font: HFONT?
+        deinit { if let font { DeleteObject(font) } }
+        func pixels(_ value: Int32) -> Int32 { MulDiv(value, Int32(self.dpi), 96) }
     }
     static func show(owner: HWND) -> Result {
         let context = Context()
@@ -34,6 +38,7 @@ enum WindowsAccountNameDialog {
             }
         }
         guard let hwnd else { return .failed }
+        Self.place(hwnd, near: owner, context: context)
         let wasEnabled = IsWindowEnabled(owner) != 0
         EnableWindow(owner, 0)
         withExtendedLifetime(context) {
@@ -86,6 +91,8 @@ enum WindowsAccountNameDialog {
         let context = Unmanaged<Context>.fromOpaque(UnsafeRawPointer(bitPattern: UInt(pointer))!).takeUnretainedValue()
         switch message {
         case UINT(WM_CREATE):
+            let dpi = GetDpiForWindow(hwnd)
+            context.dpi = dpi == 0 ? 96 : dpi
             guard Self.control(hwnd, "STATIC", "&New account name", 100, 0, 16, 14, 400, 22) != nil,
                   let edit = Self.control(hwnd, "EDIT", "", 101, DWORD(WS_TABSTOP | WS_BORDER | ES_AUTOHSCROLL),
                                           16, 40, 410, 26),
@@ -94,7 +101,25 @@ enum WindowsAccountNameDialog {
                   Self.control(hwnd, "BUTTON", "Save", 1, DWORD(WS_TABSTOP | BS_DEFPUSHBUTTON), 246, 126, 80, 28) != nil,
                   Self.control(hwnd, "BUTTON", "Cancel", 2, DWORD(WS_TABSTOP | BS_PUSHBUTTON), 336, 126, 90, 28) != nil else { return -1 }
             SendMessageW(edit, UINT(EM_SETLIMITTEXT), 160, 0)
+            Self.updateFont(hwnd, context: context)
+            Self.layout(hwnd, context: context)
             return 0
+        case UINT(WM_SIZE): Self.layout(hwnd, context: context); return 0
+        case UINT(WM_DPICHANGED):
+            let dpi = UINT(wParam & 0xffff)
+            if dpi != 0 { context.dpi = dpi }
+            Self.updateFont(hwnd, context: context)
+            if let suggested = UnsafeRawPointer(bitPattern: UInt(lParam))?.assumingMemoryBound(to: RECT.self) {
+                let rect = suggested.pointee
+                SetWindowPos(hwnd, nil, rect.left, rect.top, rect.right - rect.left, rect.bottom - rect.top,
+                             UINT(SWP_NOZORDER | SWP_NOACTIVATE))
+            }
+            Self.layout(hwnd, context: context)
+            return 0
+        case UINT(WM_SETTINGCHANGE):
+            Self.updateFont(hwnd, context: context)
+            Self.layout(hwnd, context: context)
+            return DefWindowProcW(hwnd, message, wParam, lParam)
         case UINT(WM_COMMAND):
             switch Int32(wParam & 0xffff) {
             case 1: Self.save(hwnd, context: context)
@@ -110,6 +135,57 @@ enum WindowsAccountNameDialog {
         default: return DefWindowProcW(hwnd, message, wParam, lParam)
         }
     }
+    private static func updateFont(_ hwnd: HWND, context: Context) {
+        var metrics = NONCLIENTMETRICSW()
+        metrics.cbSize = UINT(MemoryLayout<NONCLIENTMETRICSW>.size)
+        guard SystemParametersInfoForDpi(UINT(SPI_GETNONCLIENTMETRICS), metrics.cbSize,
+                                         &metrics, 0, context.dpi) != 0,
+              let font = CreateFontIndirectW(&metrics.lfMessageFont) else { return }
+        let previous = context.font
+        context.font = font
+        for id in [Int32(100), 101, 102, 1, 2] {
+            if let control = GetDlgItem(hwnd, id) {
+                SendMessageW(control, UINT(WM_SETFONT), WPARAM(Int(bitPattern: font)), 1)
+            }
+        }
+        if let previous { DeleteObject(previous) }
+    }
+
+    private static func layout(_ hwnd: HWND, context: Context) {
+        var rect = RECT()
+        guard GetClientRect(hwnd, &rect) != 0 else { return }
+        let px = context.pixels
+        let width = max(1, rect.right - rect.left - px(32))
+        MoveWindow(GetDlgItem(hwnd, 100), px(16), px(14), width, px(22), 1)
+        MoveWindow(GetDlgItem(hwnd, 101), px(16), px(40), width, px(26), 1)
+        MoveWindow(GetDlgItem(hwnd, 102), px(16), px(76), width, px(54), 1)
+        let buttonWidth = min(px(90), max(1, (width - px(10)) / 2))
+        MoveWindow(GetDlgItem(hwnd, 1), px(16) + max(0, width - buttonWidth * 2 - px(10)), px(140),
+                   buttonWidth, px(28), 1)
+        MoveWindow(GetDlgItem(hwnd, 2), px(16) + max(0, width - buttonWidth), px(140), buttonWidth, px(28), 1)
+    }
+
+    private static func place(_ hwnd: HWND, near owner: HWND, context: Context) {
+        var frame = RECT(left: 0, top: 0, right: context.pixels(450), bottom: context.pixels(184))
+        guard AdjustWindowRectExForDpi(&frame, DWORD(WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU),
+                                       0, DWORD(WS_EX_DLGMODALFRAME), context.dpi) != 0 else { return }
+        var info = MONITORINFO()
+        info.cbSize = DWORD(MemoryLayout<MONITORINFO>.size)
+        let monitor = MonitorFromWindow(owner, UINT(MONITOR_DEFAULTTONEAREST))
+        let desiredWidth = frame.right - frame.left, desiredHeight = frame.bottom - frame.top
+        if GetMonitorInfoW(monitor, &info) != 0,
+           info.rcWork.right > info.rcWork.left, info.rcWork.bottom > info.rcWork.top {
+            let area = info.rcWork
+            let width = min(desiredWidth, area.right - area.left), height = min(desiredHeight, area.bottom - area.top)
+            SetWindowPos(hwnd, nil, area.left + (area.right - area.left - width) / 2,
+                         area.top + (area.bottom - area.top - height) / 2, width, height,
+                         UINT(SWP_NOZORDER | SWP_NOACTIVATE))
+        } else {
+            SetWindowPos(hwnd, nil, 0, 0, desiredWidth, desiredHeight,
+                         UINT(SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE))
+        }
+    }
+
     private static func control(_ parent: HWND, _ klass: String, _ text: String, _ id: Int32,
                                 _ style: DWORD, _ x: Int32, _ y: Int32, _ width: Int32, _ height: Int32) -> HWND? {
         let control = klass.withCString(encodedAs: UTF16.self) { name in
