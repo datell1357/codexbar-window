@@ -78,6 +78,20 @@ private final class WindowsTrayApplication: @unchecked Sendable {
             guard let self else { return }
             Task { await self.runtime.optionalUsageSettingsDidChange() }
         },
+        onSpendSourcesRequested: { [weak self] requestID in
+            guard let self else { return }
+            Task {
+                let result = await self.runtime.loadSpendSourceSelection()
+                self.host.postSpendSources(requestID: requestID, result: result)
+            }
+        },
+        onSpendSourcesSave: { [weak self] requestID, generation, mutation in
+            guard let self else { return }
+            Task {
+                let result = await self.runtime.saveSpendSourceSelection(generation: generation, mutation: mutation)
+                self.host.postSpendSources(requestID: requestID, result: result)
+            }
+        },
         onShareStatsCopyRequested: { [weak self] requestID in
             guard let self else { return }
             Task {

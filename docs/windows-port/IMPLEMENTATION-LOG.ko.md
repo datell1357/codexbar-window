@@ -1912,3 +1912,13 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - 재집계 중 기존 공개 snapshot을 비우며 계정 변경·새 refresh·종료가 generation을 바꾸면 결과를 게시하지 않는다. 수집 구성 변경/데이터 없음/controller 중지 시 기존 재수집 흐름을 사용한다.
 
 남은 범위: 외부 계정/설정 파일 변경 즉시 감지, 네이티브 차트/source 필터/이미지 공유, 반복 설정 변경·자정·취소·Windows 검증 및 전체 계획 구현. partial scan 재집계는 partial 상태와 공유 금지를 유지한다.
+
+## IMPL-147 — 비용 소스 포함 선택
+
+상태 CODE_WRITTEN_UNVERIFIED. 컴파일/빌드/테스트/UI·설정·수집/검증 미실시. guidelines/COMMITS.md 부재로 핵심 커밋 규칙을 적용한다.
+
+- 실제 수집 model.availableSources에서 stable ID/표시 이름/포함 상태를 가져오는 runtime API를 작성했다. 수집 generation과 현재 설정 일치 여부를 저장 전에 다시 확인하고 존재하지 않는 source ID를 거절한다.
+- 트레이 Choose included cost sources 메뉴를 Main과 runtime에 연결했다. native popup에서 전체 포함/전체 제외/개별 토글을 제공하며 40개 초과는 하위 페이지로 나눈다. 빈 목록/4096개 초과/중복 ID는 안내한다.
+- 숨김 설정 저장 후 기존 scan 재집계를 호출한다. 표시 제외는 수집을 끄는 설정이 아니며 원본 availableSources 목록을 유지해 전체 제외 후에도 다시 포함할 수 있다. 선택 시 대기 중인 Share Stats 복사를 취소한다.
+
+남은 범위: 실패 소스의 선택/진단, 여러 Codex 계정과 OpenCodeX 입력 전체 parity, 키보드 popup 위치·DPI·접근성·동시성 검증, 전체 비용 차트·이미지 공유 및 계획 구현. UI와 실제 설정 저장은 실행하지 않았다.

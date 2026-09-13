@@ -66,6 +66,47 @@ public actor WindowsUsageRuntime {
         (self.spendState, self.spendSnapshot)
     }
 
+    public func loadSpendSourceSelection() -> WindowsSpendSourceResult {
+        guard !self.shuttingDown, self.refreshTask == nil, self.spendState == .available,
+              let snapshot = self.spendSnapshot, let settings = self.collectedSpendSettings,
+              WindowsSpendSettings.load() == settings else {
+            return .unavailable("Complete a cost collection before choosing sources.")
+        }
+        let sources = snapshot.model.availableSources
+        guard !sources.isEmpty, sources.count <= 4096, Set(sources.map(\.id)).count == sources.count else {
+            return .unavailable("No selectable cost sources are available.")
+        }
+        let entries = sources.enumerated().map { index, source in
+            let title = String(LogRedactor.redact(source.displayName).unicodeScalars
+                .filter { $0.value >= 0x20 && $0.value != 0x7F }.map(String.init).joined().prefix(160))
+            return WindowsSpendSourceSelection.Entry(id: source.id,
+                title: "\(index + 1). " + (title.isEmpty ? "Source" : title),
+                included: !settings.hiddenSourceIDs.contains(source.id))
+        }
+        return .selection(.init(generation: self.spendGeneration, entries: entries))
+    }
+
+    public func saveSpendSourceSelection(generation: UInt64,
+                                         mutation: WindowsSpendSourceMutation) async -> WindowsSpendSourceResult {
+        guard !self.shuttingDown, generation == self.spendGeneration,
+              case let .selection(selection) = self.loadSpendSourceSelection(),
+              var settings = self.collectedSpendSettings else {
+            return .unavailable("Cost sources or settings changed. Reopen the source menu.")
+        }
+        let ids = Set(selection.entries.map(\.id))
+        switch mutation {
+        case let .setIncluded(id, included):
+            guard ids.contains(id) else { return .unavailable("This cost source is no longer available.") }
+            if included { settings.hiddenSourceIDs.remove(id) } else { settings.hiddenSourceIDs.insert(id) }
+        case .showAll: settings.hiddenSourceIDs.subtract(ids)
+        case .hideAll: settings.hiddenSourceIDs.formUnion(ids)
+        }
+        do { try settings.save() }
+        catch { return .unavailable("Cost source preferences could not be saved.") }
+        await self.spendSettingsDidChange()
+        return .saved
+    }
+
     public enum ShareStatsCopyResult: Sendable {
         case ready(String)
         case unavailable(String)

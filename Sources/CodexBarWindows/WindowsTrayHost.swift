@@ -95,6 +95,11 @@ public final class WindowsTrayHost: @unchecked Sendable {
     private static let agentSessionsRefreshCommand = UINT_PTR(0x7501)
     private static let agentSessionCommandBase = UINT_PTR(0x7600)
     private static let wakeMessage = UINT(WM_APP) + 1
+    private static let spendSourcesCommand = UINT_PTR(0x7034)
+    private let onSpendSourcesRequested: @Sendable (UUID) -> Void
+    private let onSpendSourcesSave: @Sendable (UUID, UInt64, WindowsSpendSourceMutation) -> Void
+    private var spendSourcesRequest: UUID? // Protected by mailboxLock.
+    private var spendSourcesMailbox: WindowsSpendSourceResult? // Protected by mailboxLock.
     private static let shareStatsCopyCommand = UINT_PTR(0x7033)
     private let onShareStatsCopyRequested: @Sendable (UUID) -> Void
     private var shareStatsCopyRequest: (id: UUID, privacy: Bool)? // Protected by mailboxLock.
@@ -287,6 +292,8 @@ public final class WindowsTrayHost: @unchecked Sendable {
         onRemoteSessionPage: @escaping @Sendable (WindowsSessionPageRequest) -> Void = { _ in },
         onPresentationSettingsChanged: @escaping PresentationSettingsChangedHandler = {},
         onOptionalUsageSettingsChanged: @escaping OptionalUsageSettingsChangedHandler = {},
+        onSpendSourcesRequested: @escaping @Sendable (UUID) -> Void = { _ in },
+        onSpendSourcesSave: @escaping @Sendable (UUID, UInt64, WindowsSpendSourceMutation) -> Void = { _, _, _ in },
         onShareStatsCopyRequested: @escaping @Sendable (UUID) -> Void = { _ in },
         onSpendSummaryRequested: @escaping @Sendable (UUID) -> Void = { _ in },
         onSpendSettingsChanged: @escaping @Sendable () -> Void = {},
@@ -324,6 +331,8 @@ public final class WindowsTrayHost: @unchecked Sendable {
         self.onMenuOpen = onMenuOpen
         self.onPresentationSettingsChanged = onPresentationSettingsChanged
         self.onOptionalUsageSettingsChanged = onOptionalUsageSettingsChanged
+        self.onSpendSourcesRequested = onSpendSourcesRequested
+        self.onSpendSourcesSave = onSpendSourcesSave
         self.onShareStatsCopyRequested = onShareStatsCopyRequested
         self.onSpendSummaryRequested = onSpendSummaryRequested
         self.onSpendSettingsChanged = onSpendSettingsChanged
@@ -448,6 +457,47 @@ public final class WindowsTrayHost: @unchecked Sendable {
     }
 
     /// Replaces the rows displayed by the next tray popup and wakes the UI thread.
+    public func postSpendSources(requestID: UUID, result: WindowsSpendSourceResult) {
+        self.mailboxLock.lock()
+        guard !self.quitInvoked, self.spendSourcesRequest == requestID else { self.mailboxLock.unlock(); return }
+        self.spendSourcesMailbox = result
+        let window = self.window
+        self.mailboxLock.unlock()
+        if let window { PostMessageW(window, Self.wakeMessage, 0, 0) }
+    }
+
+    private func drainSpendSources() {
+        guard !self.remoteEditorOpen, !self.quitInvoked, let window = self.window,
+              case .idle = self.providerEditorPhase, case .idle = self.codexWebSettingsEditorPhase else { return }
+        self.mailboxLock.lock()
+        let requestID = self.spendSourcesRequest
+        let result = self.spendSourcesMailbox
+        self.spendSourcesMailbox = nil
+        self.mailboxLock.unlock()
+        guard let requestID, let result else { return }
+        switch result {
+        case let .selection(selection):
+            self.remoteEditorOpen = true
+            let choice = WindowsSpendSourceMenu.show(owner: window, selection: selection)
+            self.remoteEditorOpen = false
+            PostMessageW(window, Self.wakeMessage, 0, 0)
+            guard !self.quitInvoked else { return }
+            switch choice {
+            case let .selected(mutation):
+                self.cancelPendingShareStatsCopy()
+                self.onSpendSourcesSave(requestID, selection.generation, mutation)
+                return
+            case .cancelled: break
+            case .unavailable: self.showMessage("The cost source menu could not be opened.", caption: "Cost sources")
+            }
+        case .saved: break
+        case let .unavailable(message): self.showMessage(message, caption: "Cost sources")
+        }
+        self.mailboxLock.lock()
+        if self.spendSourcesRequest == requestID { self.spendSourcesRequest = nil }
+        self.mailboxLock.unlock()
+    }
+
     public func postShareStatsCopy(requestID: UUID, result: WindowsUsageRuntime.ShareStatsCopyResult) {
         self.mailboxLock.lock()
         guard !self.quitInvoked, self.shareStatsCopyRequest?.id == requestID else { self.mailboxLock.unlock(); return }
@@ -2356,6 +2406,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
         var items: [(UINT_PTR, String, Bool)] = [
             (Self.spendSummaryCommand, "Open cost summary…", false),
             (Self.shareStatsCopyCommand, "Copy Share Stats", false),
+            (Self.spendSourcesCommand, "Choose included cost sources…", false),
             (Self.spendCollectionCommand, "Collect supported provider costs", settings.collectionEnabled),
             (Self.spendLedgerCommand, "Keep Codex local cost ledger", settings.codexLocalLedgerEnabled)
         ]
@@ -2805,6 +2856,13 @@ public final class WindowsTrayHost: @unchecked Sendable {
             self.presentationDefaults.set(!enabled, forKey: "agentSessionsEnabled")
             self.onAgentSessionsSettingsChanged()
         case Self.agentSessionsRefreshCommand: self.onAgentSessionsRefresh()
+        case Self.spendSourcesCommand:
+            let requestID = UUID()
+            self.mailboxLock.lock()
+            self.spendSourcesRequest = requestID
+            self.spendSourcesMailbox = nil
+            self.mailboxLock.unlock()
+            self.onSpendSourcesRequested(requestID)
         case Self.shareStatsCopyCommand:
             let requestID = UUID()
             let privacy = WindowsUsagePresentationSettings.load().hidePersonalInfo
@@ -3243,6 +3301,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
             host.drainTokenAccountSelection()
             host.drainProviderQuotaWarningEditor()
             host.drainCodexWebSettingsEditor()
+            host.drainSpendSources()
             host.drainSpendSummary()
             host.drainShareStatsCopy()
             host.drainSessionQuotaNotifications()
