@@ -3,9 +3,23 @@ import Foundation
 public enum ZedProviderDescriptor {
     public static let descriptor: ProviderDescriptor = Self.makeDescriptor()
 
+    private static var credentials: ProviderCredentialAdapter? {
+        #if os(Windows)
+        ProviderCredentialAdapter(tokenAccountSupport: TokenAccountSupport(
+            title: "Zed credentials",
+            subtitle: "Enter the numeric user ID and access token for the same production Zed account, separated by one space.",
+            placeholder: "userID accessToken",
+            injection: .environment(key: WindowsZedCredentialsReader.environmentKey),
+            requiresManualCookieSource: false, cookieName: nil))
+        #else
+        nil
+        #endif
+    }
+
     static func makeDescriptor() -> ProviderDescriptor {
         ProviderDescriptor(
             id: .zed,
+            credentials: Self.credentials,
             metadata: ProviderMetadata(
                 id: .zed,
                 displayName: "Zed",
@@ -47,7 +61,14 @@ public enum ZedProviderDescriptor {
                 })),
             cli: ProviderCLIConfig(
                 name: "zed",
-                versionDetector: nil))
+                versionDetector: nil,
+                browserSupportExemption: { _, _, _ in
+                    #if os(Windows)
+                    true
+                    #else
+                    false
+                    #endif
+                }))
     }
 }
 
@@ -61,8 +82,15 @@ struct ZedLocalFetchStrategy: ProviderFetchStrategy {
 
     func fetch(_ context: ProviderFetchContext) async throws -> ProviderFetchResult {
         _ = context
+        #if os(Windows)
+        let snapshot = try await ZedStatusProbe(
+            credentialsReader: WindowsZedCredentialsReader(environment: context.env),
+            settingsLoader: { nil }).fetch()
+        return self.makeResult(usage: snapshot.toUsageSnapshot(), sourceLabel: "manual API")
+        #else
         let snapshot = try await ZedStatusProbe().fetch()
         return self.makeResult(usage: snapshot.toUsageSnapshot(), sourceLabel: "local")
+        #endif
     }
 
     func shouldFallback(on _: Error, context _: ProviderFetchContext) -> Bool {

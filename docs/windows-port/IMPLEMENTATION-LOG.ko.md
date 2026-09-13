@@ -2649,3 +2649,11 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - 구독 조회가 실패한 경우 credit 조회와 구분해 안내하며 서버가 제공하지 않은 한도를 역산하지 않는다. macOS details는 기존 빈 배열을 유지한다.
 - 남은 소요: 실제 Windows 렌더링 및 전체 가져오기 검증, Chromium/Windsurf 지원과 전체 계획 나머지.
 - CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·UI·API 검증 미실행.
+
+## IMPL-228 — Zed Windows 수동 인증 조회
+
+- Windows 전용 Zed 저장 계정 adapter를 추가한다. 입력은 숫자 user ID/공백 하나/access token이며 기존 환경 주입으로 CODEXBAR_ZED_AUTHORIZATION에 전달한다. 이는 CodexBar 수동 입력 계약이며 Zed 편집기의 환경 변수라고 주장하지 않는다.
+- Windows credential reader는 64KiB/숫자 ID/토큰 문자 제한을 적용하고 production Zed service에만 자격증명을 반환한다. strategy는 로컬 editor settings를 읽지 않는 고정 production API를 사용한다.
+- Windows 응답 user ID가 입력 ID와 일치해야 snapshot을 반환한다. 요청 15초/수신 후 4MiB/취소 확인을 추가하고 브라우저 없이 auto/api 사용이 가능하도록 CLI 지원 예외를 연결한다.
+- 원본 Keychain 경로는 macOS에 유지한다. 편집기 자격증명 자동 가져오기, 사용자 서버 설정 및 입력 저장 전 validation UI는 남아 있다.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·API·저장 계정 검증 미실행.

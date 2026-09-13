@@ -372,6 +372,12 @@ public struct ZedStatusProbe: Sendable {
         }
 
         let response = try await self.fetchAuthenticatedUser(credentials: credentials, apiURL: cloudAPIURL)
+        #if os(Windows)
+        try Task.checkCancellation()
+        guard response.user.id > 0, String(response.user.id) == credentials.userID else {
+            throw ZedStatusProbeError.unauthorized
+        }
+        #endif
         return ZedUsageSnapshot(response: response)
     }
 
@@ -381,6 +387,9 @@ public struct ZedStatusProbe: Sendable {
     {
         var request = URLRequest(url: apiURL)
         request.httpMethod = "GET"
+        #if os(Windows)
+        request.timeoutInterval = 15
+        #endif
         request.setValue(credentials.authorizationHeader, forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
 
@@ -396,6 +405,12 @@ public struct ZedStatusProbe: Sendable {
             throw ZedStatusProbeError.networkError(error.localizedDescription)
         }
 
+        #if os(Windows)
+        try Task.checkCancellation()
+        guard httpResponse.data.count <= 4 * 1024 * 1024 else {
+            throw ZedStatusProbeError.parseFailed("Response exceeds the supported size.")
+        }
+        #endif
         switch httpResponse.statusCode {
         case 200:
             return try Self.parseResponse(httpResponse.data)
