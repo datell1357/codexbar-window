@@ -140,8 +140,19 @@ public actor WindowsUsageRuntime {
         let accountIDs: [UUID]
     }
     private var accountRemovalTicket: AccountRemovalTicket?
-    // Private, process-local retry state for already-confirmed removals. Never publish these credentials.
+    // Private retry state restored from a DPAPI-protected removal journal. Never publish credentials.
     private var pendingAntigravityRemovals: [UUID: ProviderTokenAccount] = [:]
+    private var removalJournalLoaded = false
+    private var removalJournalFailed = false
+    private var removalJournal: WindowsAccountRemovalJournal {
+        .init(fileURL: self.configStore.fileURL.appendingPathExtension("removal-recovery"))
+    }
+    private func loadRemovalJournalIfNeeded() throws {
+        guard !self.removalJournalLoaded else { return }
+        self.pendingAntigravityRemovals = try self.removalJournal.load()
+        self.removalJournalLoaded = true
+        self.removalJournalFailed = false
+    }
 
 
     private var quotaWarningGeneration: UInt64 = 0
@@ -535,11 +546,26 @@ public actor WindowsUsageRuntime {
             let sourceChanged = support.clearsAPIKeyOnMutation && entry.apiKey != nil
             if support.clearsAPIKeyOnMutation { entry.apiKey = nil }
             config.setProviderConfig(entry)
+            if provider == .antigravity {
+                try self.loadRemovalJournalIfNeeded()
+                var pending = self.pendingAntigravityRemovals
+                pending[removed.id] = removed
+                // Persist intent before removing config. If config save fails, retry sees
+                // the still-saved account and preserves its shared credential.
+                try self.removalJournal.save(pending)
+                self.pendingAntigravityRemovals = pending
+            }
             try self.configStore.save(config)
             var cleanupFailed = false
             do {
                 try WindowsAccountRemovalCleanup.removeSharedCredentialIfNeeded(
                     provider: provider, removed: removed, remaining: remaining)
+                if provider == .antigravity {
+                    var pending = self.pendingAntigravityRemovals
+                    pending.removeValue(forKey: removed.id)
+                    try self.removalJournal.save(pending)
+                    self.pendingAntigravityRemovals = pending
+                }
             } catch {
                 // Config removal already succeeded. Report the partial outcome without secrets.
                 cleanupFailed = true
@@ -561,6 +587,8 @@ public actor WindowsUsageRuntime {
     }
 
     private func retryPendingAntigravityRemovals(config: CodexBarConfig) {
+        do { try self.loadRemovalJournalIfNeeded() }
+        catch { self.removalJournalFailed = true; return }
         guard !self.pendingAntigravityRemovals.isEmpty else { return }
         let remaining = config.providerConfig(for: UsageProvider.antigravity.instanceID)?.tokenAccounts?.accounts ?? []
         // A fresh list matters: a user may have re-added the same identity since the failure.
@@ -568,7 +596,10 @@ public actor WindowsUsageRuntime {
             do {
                 try WindowsAccountRemovalCleanup.removeSharedCredentialIfNeeded(
                     provider: .antigravity, removed: removed, remaining: remaining)
-                self.pendingAntigravityRemovals.removeValue(forKey: id)
+                var pending = self.pendingAntigravityRemovals
+                pending.removeValue(forKey: id)
+                try self.removalJournal.save(pending)
+                self.pendingAntigravityRemovals = pending
             } catch {
                 // Keep the account blocked for this refresh; no credential or filesystem error is logged.
             }
@@ -1130,7 +1161,7 @@ public actor WindowsUsageRuntime {
                     else { entries.append(contentsOf: fetched.map(RenderEntry.row)) }
                     continue
                 }
-                if provider == .antigravity, !self.pendingAntigravityRemovals.isEmpty {
+                if provider == .antigravity, self.removalJournalFailed || !self.pendingAntigravityRemovals.isEmpty {
                     let message = "Antigravity: shared authentication cache cleanup is pending. Usage collection is paused; refresh retries cleanup."
                     self.providerCopyErrors[provider.rawValue] = message
                     entries.append(.row(message))
@@ -1379,6 +1410,7 @@ public actor WindowsUsageRuntime {
         self.credentialEditTicket = nil
         self.accountRemovalTicket = nil
         self.pendingAntigravityRemovals.removeAll()
+        self.removalJournalLoaded = false
         await CLIProbeSessionResetter.resetAll()
     }
 

@@ -1682,3 +1682,13 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - UI 부분 실패 안내에 현재 앱 세션의 수집 보류와 refresh 재시도를 설명한다. pending credential은 출력·영구 저장하지 않고 shutdown에서 비운다.
 
 남은 범위: 재시작 이후의 지속 가능한 차단/복구 기록, 프로세스 간 cache 교체 경합, shared cache 자체 보호 저장, 재시도 UI와 Windows 실행 검증. 현재 보호는 runtime 프로세스 수명에 한정된다.
+
+## IMPL-124 — 암호화 삭제 복구 journal
+
+상태 CODE_WRITTEN_UNVERIFIED. 컴파일/빌드/테스트/DPAPI/파일·캐시 접근/검증 미실시. guidelines/COMMITS.md 부재로 핵심 커밋 규칙을 적용한다.
+
+- config 경로의 .removal-recovery 파일에 Antigravity pending UUID와 사용자 범위 DPAPI 암호문을 저장하는 journal을 추가했다. 삭제 복구 전용 purpose를 사용하고 label/평문 token은 디스크에 쓰지 않는다. 최대 128개/16 MiB와 중복 UUID·형식·복호화 입력 한도를 적용한다.
+- config 삭제 전에 intent를 원자 쓰기로 저장한다. config 저장 실패 시 남은 계정 비교가 cache를 보존한다. 정리 성공 후 journal 갱신이 실패하면 pending을 유지하여 다음 refresh/재시작에 재시도한다.
+- 최초 refresh에서 journal을 복원하며 읽기 실패는 빈 목록으로 처리하지 않고 Antigravity 수집을 보류한다. 정상적인 파일 부재만 빈 기록으로 처리한다. 빈 journal은 파일 삭제 없이 저장한다.
+
+남은 범위: 프로세스 간 동시 writer lock, 복구 journal ACL 및 내구성/크래시 검증, 손상 복구 UI, credential 캐시 자체 보호 저장과 전체 Windows 검증. 실제 journal 생성·DPAPI·삭제는 실행하지 않았다.

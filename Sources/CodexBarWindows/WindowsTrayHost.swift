@@ -650,7 +650,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
             switch saved {
             case .removed: message = "Saved account removed. Usage refresh was requested. Remote authentication was not revoked."
             case .removedWithCacheCleanupFailure:
-                message = "The saved account was removed, but its shared Antigravity authentication cache could not be cleared. Check access to the local CodexBar Antigravity cache. During this app session, Antigravity usage collection is paused until a refresh can finish cleanup. Check local cache access before restarting the app."
+                message = "The saved account was removed, but its shared Antigravity authentication cache could not be cleared. Check access to the local CodexBar Antigravity cache. Antigravity usage collection is paused until a refresh can finish cleanup. An encrypted recovery record preserves the pending operation across app restarts."
             case .staleAccount: message = "The account list or selection changed, or confirmation expired. Refresh usage and try again."
             case .refreshInProgress: message = "Usage is refreshing. Reopen Saved accounts after it finishes."
             case .shuttingDown: break

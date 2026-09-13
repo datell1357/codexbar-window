@@ -36,6 +36,12 @@ public enum WindowsTokenAccountProtection {
         return payload.token
     }
 
+    /// Separate DPAPI purpose for already-confirmed account-removal recovery records.
+    public static func removalRecoveryPayload(_ data: Data, accountID: UUID, protect: Bool) throws -> Data {
+        try Self.transform(data, providerID: UsageProvider.antigravity.instanceID, accountID: accountID,
+                           protect: protect, purpose: "AccountRemovalRecovery.v1")
+    }
+
     static func providerFields(_ data: Data, providerID: ProviderInstanceID, protect: Bool) throws -> Data {
         // A separate purpose prevents a provider bundle from being substituted for an account token.
         let scopeID = UUID(uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0))
