@@ -521,6 +521,7 @@ public actor WindowsUsageRuntime {
                   data.accounts[data.clampedActiveIndex()].id == removal.selectedID,
                   let index = data.accounts.firstIndex(where: { $0.id == ticket.accountID }),
                   try Self.credentialEditRevision(data.accounts[index]) == ticket.revision else { return .staleAccount }
+            let removed = data.accounts[index]
             var remaining = data.accounts
             remaining.remove(at: index)
             if remaining.isEmpty {
@@ -533,10 +534,18 @@ public actor WindowsUsageRuntime {
             if support.clearsAPIKeyOnMutation { entry.apiKey = nil }
             config.setProviderConfig(entry)
             try self.configStore.save(config)
+            var cleanupFailed = false
+            do {
+                try WindowsAccountRemovalCleanup.removeSharedCredentialIfNeeded(
+                    provider: provider, removed: removed, remaining: remaining)
+            } catch {
+                // Config removal already succeeded. Report the partial outcome without secrets.
+                cleanupFailed = true
+            }
             self.latestProviderConfigs[ticket.providerID] = entry
             if self.credentialEditTicket?.providerID == ticket.providerID,
                self.credentialEditTicket?.accountID == ticket.accountID { self.credentialEditTicket = nil }
-            if removal.selectedID == ticket.accountID || sourceChanged {
+            if removal.selectedID == ticket.accountID || sourceChanged || cleanupFailed {
                 self.invalidateSelectedAccountState(ticket.providerID)
                 self.presentations.removeValue(forKey: ticket.providerID)
                 self.providerCopyErrors.removeValue(forKey: ticket.providerID.rawValue)
@@ -544,7 +553,7 @@ public actor WindowsUsageRuntime {
                 self.statusMenuEntries.removeAll()
             }
             self.publishRenderEntries(settings: WindowsUsagePresentationSettings.load())
-            return .removed
+            return cleanupFailed ? .removedWithCacheCleanupFailure : .removed
         } catch { return .failed }
     }
 

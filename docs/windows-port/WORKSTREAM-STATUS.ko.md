@@ -1,5 +1,7 @@
 # Windows 전용 제품 작업 현황
 
+- IMPL-122: Antigravity 계정 삭제 후 일치 shared cache 정리와 부분 실패 안내를 작성했다. 실제 삭제는 실행하지 않았다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
 - IMPL-121: 삭제 확인에 ticket 시점의 계정 이름·위치 및 privacy 재확인을 연결했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
 
 - IMPL-120: 저장 계정 삭제 메뉴·기본 No 확인 창·runtime 삭제·refresh 연결을 작성했다. 실제 삭제는 실행하지 않았다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.

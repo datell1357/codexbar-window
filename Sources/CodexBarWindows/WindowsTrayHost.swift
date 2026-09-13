@@ -616,9 +616,11 @@ public final class WindowsTrayHost: @unchecked Sendable {
                 } else {
                     impact = "The currently selected saved account will stay selected."
                 }
+                let cacheNotice = snapshot.provider == .antigravity
+                    ? "\nAn identical Antigravity shared OAuth cache will also be removed unless another saved account still uses it." : ""
                 let body = "Remove this saved account from " + providerName + "?\n\nAccount: " + snapshot.accountTitle +
                     "\nPosition in saved accounts: " + String(snapshot.accountPosition) + "\n\n" + impact +
-                    "\nRemaining saved accounts: " + String(snapshot.remainingAccountCount) +
+                    "\nRemaining saved accounts: " + String(snapshot.remainingAccountCount) + cacheNotice +
                     "\n\nThis removes its saved credential from CodexBar configuration. It does not revoke the remote account or token. To restore it, add the credential again."
                 self.remoteEditorOpen = true
                 let choice = body.withCString(encodedAs: UTF16.self) { text in
@@ -647,6 +649,8 @@ public final class WindowsTrayHost: @unchecked Sendable {
         if let saved {
             switch saved {
             case .removed: message = "Saved account removed. Usage refresh was requested. Remote authentication was not revoked."
+            case .removedWithCacheCleanupFailure:
+                message = "The saved account was removed, but its shared Antigravity authentication cache could not be cleared. Check access to the local CodexBar Antigravity cache. Refresh was not requested by this operation; later automatic refreshes may still use that cache."
             case .staleAccount: message = "The account list or selection changed, or confirmation expired. Refresh usage and try again."
             case .refreshInProgress: message = "Usage is refreshing. Reopen Saved accounts after it finishes."
             case .shuttingDown: break

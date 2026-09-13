@@ -1662,3 +1662,13 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - snapshot privacy 상태가 확인 창 열기 전 또는 Yes 후 현재 설정과 달라지면 ticket을 취소하며 삭제하지 않는다. 실제 계정 작업은 실행하지 않았다.
 
 남은 범위: 이미 열린 native MessageBox의 외부 privacy 변경 시 즉시 닫기, provider shared credential cleanup, Windows 상호작용 검증 및 전체 계획 구현.
+
+## IMPL-122 — Antigravity shared cache 제거 parity
+
+상태 CODE_WRITTEN_UNVERIFIED. 컴파일/빌드/테스트/인증 캐시 읽기·삭제/검증 미실시. guidelines/COMMITS.md 부재로 핵심 커밋 규칙을 적용한다.
+
+- 원본의 remaining-account 및 shared-token 일치 규칙을 Windows helper에 이식했다. 같은 계정이 남아 있으면 보존하고, 없을 때 store의 lock-scoped matching delete만 호출한다. 식별자가 모두 없는 두 항목은 동일 계정으로 간주하지 않는다.
+- config 저장 성공 이후 캐시 정리를 수행한다. 실패는 별도 removedWithCacheCleanupFailure로 반환하고 UI에서 계정 삭제 성공과 캐시 정리 실패를 구분한다. 이 결과에서는 Main의 즉시 refresh를 요청하지 않는다.
+- 삭제 확인에 일치 Antigravity cache 정리 영향을 추가했다. 실제 파일/계정/캐시는 읽거나 삭제하지 않았다.
+
+남은 범위: 실패 후 재시도 UI, 외부 프로세스 동시 cache 교체, 자동 refresh의 잔여 cache 재사용 정책, shared cache 자체 보호 저장, Windows 실행 검증 및 전체 기능 구현.

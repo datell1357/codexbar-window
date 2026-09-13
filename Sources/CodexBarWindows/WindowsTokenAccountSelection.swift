@@ -203,6 +203,7 @@ public enum WindowsTokenAccountRemovalLoadResult: Sendable {
 
 public enum WindowsTokenAccountRemovalSaveResult: Sendable {
     case removed
+    case removedWithCacheCleanupFailure
     case staleAccount
     case refreshInProgress
     case shuttingDown
