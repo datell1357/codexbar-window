@@ -78,6 +78,7 @@ public struct WindowsSpendHistorySnapshot: Sendable {
                 + "\r\n" + WindowsSpendSummary.accountingDetails(group).joined(separator: "\r\n")
                 + "\r\n" + group.timeZone.identifier + " · source hour samples are grouped into local hour intervals."
                 + "\r\nMissing samples are not zero; hourly totals may not explain the full daily total. UTC offsets distinguish repeated clock hours."
+                + (snapshot.stale ? "\r\nStale data: this view uses the previous collection while a refresh is pending or failed." : "")
                 + (snapshot.openCodexObservation == .unavailable ? "\r\nOpenCodeX logs are unavailable; this collection is partial." : "")
                 + (snapshot.sourceFailures.isEmpty ? "" : "\r\nPartial collection: \(snapshot.sourceFailures.count) failed source(s).")
             return Series(legend: daily.series.first { $0.code == group.currencyCode }?.legend ?? [], code: group.currencyCode,
@@ -109,6 +110,7 @@ public struct WindowsSpendHistorySnapshot: Sendable {
                        label: label, segments: [], details: label + "\r\n" + status)
         }
         var summary = "Token activity · last \(points.count) days · " + calendar.timeZone.identifier
+        if snapshot.stale { summary += "\r\nStale data: this view uses the previous collection while a refresh is pending or failed." }
         summary += "\r\nRows run Monday to Sunday; columns are weeks. Unscanned, unknown and confirmed zero have distinct cells."
         summary += "\r\nGreen intensity is logarithmic relative to the largest known day. Select a day for its exact tracked count."
         summary += "\r\nTracked counts include scanned sources; sources without coverage may be absent."

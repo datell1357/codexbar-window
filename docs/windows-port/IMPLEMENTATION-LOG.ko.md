@@ -2155,3 +2155,13 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - JSON은 retained snapshot이 있는 collecting/failed 상태에서도 내보내며 기존 stale 안내를 사용한다. 비용 요약은 snapshot이 있으면 수집/실패 상태에서도 상세를 보여준다.
 
 남은 범위: Codex 외 provider 및 OpenCodeX의 원본 stale 유지, native usage 조회 초기 구간의 이전 화면 유지, 실제 auth 변경의 원자적 경계, source별 실패 시 과거 행 보존, Windows 실행 검증과 전체 계획 구현. 이번 단계는 전체 stale lifecycle 완성이 아니다.
+
+## IMPL-171 — 이전 비용 결과의 차트 탐색
+
+상태 CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·화면/인증/실행 검증 미실시. guidelines/COMMITS.md 부재로 핵심 규칙을 적용한다.
+
+- retained snapshot이 있는 collecting/failed/available 상태에서 일별/시간별/heatmap/JSON 조회를 허용하는 공통 조건을 작성했다. idle/disabled/stopped는 제외하며 각 경로의 동일 설정 확인은 유지한다.
+- heatmap/시간별 상세에 stale 문구를 추가하고 일별 차트의 기존 stale 안내와 맞춘다. hourly projection은 원본 snapshot loadedAt과 반환된 projection/current snapshot loadedAt이 같은지 확인해 다른 수집 결과를 혼합하지 않는다.
+- 수집 중 외부 설정 불일치를 발견하면 controller뿐 아니라 retained snapshot/source/settings도 비운다. 비용 요약도 현재 설정과 collected settings가 다르면 데이터를 표시하지 않는다.
+
+남은 범위: retained 수집 자체는 IMPL-170의 Codex 전용 제한을 유지한다. 전체 source stale lifecycle, per-source failure 보존, 수집 세대/계정의 원자적 경계, Windows 검증 및 전체 계획 구현은 남아 있다.

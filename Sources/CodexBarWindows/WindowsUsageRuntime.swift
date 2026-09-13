@@ -113,8 +113,15 @@ public actor WindowsUsageRuntime {
         return .saved
     }
 
+    private var canPresentSpendSnapshot: Bool {
+        switch self.spendState {
+        case .available, .collecting, .failed: return self.spendSnapshot != nil
+        case .idle, .disabled, .stopped: return false
+        }
+    }
+
     public func tokenActivityResult() -> ShareStatsCopyResult {
-        guard !self.shuttingDown, self.spendState == .available,
+        guard !self.shuttingDown, self.canPresentSpendSnapshot,
               let snapshot = self.spendSnapshot, !snapshot.model.tokenActivity.isEmpty,
               let settings = self.collectedSpendSettings, WindowsSpendSettings.load() == settings else {
             return .unavailable("Token activity is not ready. Complete a cost collection and try again.")
@@ -123,7 +130,7 @@ public actor WindowsUsageRuntime {
     }
 
     public func spendHourlyResult(day: Date, currency: String, generation: UInt64) async -> ShareStatsCopyResult {
-        guard !self.shuttingDown, generation == self.spendGeneration, self.spendState == .available,
+        guard !self.shuttingDown, generation == self.spendGeneration, self.canPresentSpendSnapshot,
               let snapshot = self.spendSnapshot, let controller = self.spendController,
               let settings = self.collectedSpendSettings, WindowsSpendSettings.load() == settings,
               let group = snapshot.model.groups.first(where: { $0.currencyCode == currency }),
@@ -131,17 +138,18 @@ public actor WindowsUsageRuntime {
             return .unavailable("The cost history changed. Reopen the daily chart before requesting hourly details.")
         }
         let selected = await controller.snapshot(forDay: day, now: snapshot.loadedAt ?? Date())
-        guard !self.shuttingDown, generation == self.spendGeneration, WindowsSpendSettings.load() == settings else {
+        guard !self.shuttingDown, generation == self.spendGeneration, WindowsSpendSettings.load() == settings,
+              self.spendSnapshot?.loadedAt == snapshot.loadedAt, selected.loadedAt == snapshot.loadedAt else {
             return .unavailable("The cost history changed while preparing hourly details.")
         }
-        var history = WindowsSpendHistorySnapshot.hourly(selected, day: day)
+        var history = WindowsSpendHistorySnapshot.hourly(snapshot.stale ? selected.refreshing() : selected, day: day)
         history.generation = generation
         history.preferredSeriesCode = currency
         return .costHistory(history)
     }
 
     public func spendHistoryResult() -> ShareStatsCopyResult {
-        guard !self.shuttingDown, self.spendState == .available,
+        guard !self.shuttingDown, self.canPresentSpendSnapshot,
               let snapshot = self.spendSnapshot, !snapshot.model.groups.isEmpty,
               let settings = self.collectedSpendSettings, WindowsSpendSettings.load() == settings else {
             return .unavailable("Cost history is not ready. Complete a cost collection and try again.")
@@ -162,7 +170,7 @@ public actor WindowsUsageRuntime {
     }
 
     public func spendJSONResult(copy: Bool) -> ShareStatsCopyResult {
-        guard !self.shuttingDown, (self.spendState == .available || self.spendState == .collecting || self.spendState == .failed),
+        guard !self.shuttingDown, self.canPresentSpendSnapshot,
               let snapshot = self.spendSnapshot,
               !snapshot.model.groups.isEmpty, let settings = self.collectedSpendSettings,
               WindowsSpendSettings.load() == settings else {
@@ -258,7 +266,10 @@ public actor WindowsUsageRuntime {
             if self.spendSnapshot == nil { return "Cost collection failed. Refresh all to retry." }
         case .available: break
         }
-        guard let snapshot = self.spendSnapshot else { return "Cost data is unavailable." }
+        guard let snapshot = self.spendSnapshot,
+              self.collectedSpendSettings == WindowsSpendSettings.load() else {
+            return "Cost data is unavailable for the current settings. Refresh all and reopen the summary."
+        }
         return WindowsSpendSummary.text(snapshot: snapshot, hidePersonalInfo: hidePersonalInfo)
     }
 
@@ -1638,6 +1649,9 @@ public actor WindowsUsageRuntime {
             guard WindowsSpendSettings.load() == settings else {
                 await controller.stop()
                 self.spendController = nil
+                self.spendSnapshot = nil
+                self.collectedSpendSources = nil
+                self.collectedSpendSettings = nil
                 self.spendState = .idle
                 return
             }
