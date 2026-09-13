@@ -2352,3 +2352,11 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - cookie refresh는 account:nil로 동작하는 별도 경로여서 특정 저장 계정 ID를 부착하지 않는다. 기존 수동 계정은 ID가 없으므로 기존 동작을 유지한다.
 - 남은 소요: 비용 수집의 계정 응답 확인, 팀 모델, 추가 브라우저 지원 및 전체 계획의 나머지 항목.
 - CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. CLI 실행·빌드·테스트·lint·실제 API 검증 미실행.
+
+## IMPL-192 — Windows Cursor 비용 소스 소유권
+
+- 비용 소스에 선택 Cursor 계정 externalIdentifier를 캡처한다. Source 동등성에도 포함되어 ID가 바뀌면 이전 collector를 재사용하지 않는다. 기존 scope digest에도 account 전체가 포함되어 ID별 캐시 범위를 유지한다.
+- ID가 있는 계정은 비용 수집 전후 명시적 동일 쿠키로 계정 ID를 확인하고, 없거나 다르면 해당 수집을 소스 실패로 반환한다. cached/browser/app auth fallback은 사용하지 않는다.
+- 추가 identity 요청 2회가 발생한다. ID가 없는 기존 수동 계정 동작은 유지한다.
+- 제한: 비용 이벤트 자체에 ID가 포함된 증명은 아니며 사후 확인 전에 Core 캐시 쓰기가 발생할 수 있다. 사후 확인 실패 시 새 결과를 대시보드 입력에 넣지 않는다. CLI 비용 경로, 캐시 commit 시점의 소유권 및 기존 stale 결과 정책은 별도 작업이 남는다.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·실제 API/비용 수집 검증 미실행.

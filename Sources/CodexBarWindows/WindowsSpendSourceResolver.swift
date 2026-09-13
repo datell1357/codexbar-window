@@ -74,7 +74,8 @@ enum WindowsSpendSourceResolver {
                     .appendingPathComponent(scopeKey, isDirectory: true),
                 codexHomePath: home, cursorCookieHeader: provider == .cursor ? cookie.manualCookieHeader : nil,
                 subscriptionName: nil, allowVertexClaudeFallback: allowVertexClaudeFallback,
-                includePiSessions: includePiSessions))
+                includePiSessions: includePiSessions,
+                expectedCursorAccountID: provider == .cursor ? account?.externalIdentifier : nil))
         }
         return sources
     }
