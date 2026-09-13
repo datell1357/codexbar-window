@@ -1,5 +1,7 @@
 # Windows 전용 제품 작업 현황
 
+IMPL-076: Uninstall phase records and recovery transaction IDs connected to failure dialogs; lifecycle orchestration and Windows validation remain pending.
+
 IMPL-075: Environment notification after reference PATH writes and separate outcome recording written; lifecycle recovery handoff and Windows validation remain pending.
 
 IMPL-074: Conflict-aware reference rollback and shortcut hash boundaries written; environment notification and Windows validation remain pending.

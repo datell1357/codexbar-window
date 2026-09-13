@@ -183,3 +183,11 @@ PATH·Run 명령·shortcut은 before와 같으면 이미 복원된 것으로 두
 구현은 [WM_SETTINGCHANGE의 Environment 안내](https://learn.microsoft.com/en-us/windows/win32/winmsg/wm-settingchange)에 따라 동기 SendMessageTimeoutW를 사용한다. 타임아웃 100ms는 수신 창별 값으로 전체 시간 상한이 아니다. 정책이 Add-Type/native call을 막으면 통지 실패 상태를 반환한다. C# interop 코드의 실제 컴파일/호출은 하지 않았다. 필수 tools 13개와 앱·CLI·PATH resource를 합한 서명 대상은 16개다.
 
 복구 시 어떤 단계가 이미 적용됐는지를 먼저 구분한다. 제거 payload가 일부 이동했다면 removed-ID 사본을 해당 제거 복구 도구로 먼저 복원하고, 이후 references-ID를 참조 복구 도구에 전달한다. 참조 복구는 원래 앱/CLI와 서명자를 요구하므로 순서를 뒤집으면 거절될 수 있다. registry 등록 복구에는 management-ID와 동일 receipt/signer가 필요하다. 각 도구는 기존 충돌 값을 덮어쓰지 않으며 자동 전체 rollback이나 일반 배포 완료를 의미하지 않는다. 현재 작업에서는 어떤 복구/통지/registry 명령도 실행하지 않았다.
+
+## 제거 실패 시 복구 정보
+
+제거 launcher는 확인 후 management 폴더의 uninstall-ID.json에 실행 단계를 기록한다. 참조 변경 도구의 PassThru 결과와 기존 제거 결과를 받아 referenceTransactionID/removalTransactionID를 연결하고 등록 해제 전에도 단계를 저장한다. 성공한 통지 여부는 environmentNotification으로 별도 남긴다.
+
+도구가 도중에 예외를 내면 생성된 transaction ID를 Exception.Data로 전달한다. launcher는 최대 8단계 exception chain에서 32자리 ID만 받아 오류창에 표시한다. 파일이 이동했다면 제거 payload를 먼저 복구하고 원래 앱/CLI와 signer가 준비된 뒤 참조를 복원하도록 안내한다. 관리 ID는 앱 등록 복구에 사용한다. 자동 rollback을 실행하지 않는다.
+
+최종 오류 기록 저장까지 실패하면 원래 오류와 화면 ID를 유지하고 저장 실패 사실을 안내한다. ID가 생성됐다고 반드시 journal/backup이 생성된 것은 아니며 강제 종료 시 caller 기록보다 실제 child 파일 변경이 앞설 수 있다. 실제 두 폴더와 registry 상태가 우선이다. 이번 작업에서는 WinForms UI·PowerShell 예외 전달·journal 쓰기·설치/제거를 실행하지 않았다.

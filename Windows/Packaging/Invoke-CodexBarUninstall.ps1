@@ -6,6 +6,18 @@ param(
 )
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot 'Write-CodexBarJournal.ps1')
+$handoff = $null
+$handoffPath = $null
+function Read-FailureTransaction([Exception] $Exception, [string] $Key) {
+    $current = $Exception
+    for ($depth = 0; $depth -lt 8 -and $null -ne $current; $depth++) {
+        $value = [string] $current.Data[$Key]
+        if ($value -match '^[0-9a-f]{32}$') { return $value }
+        $current = $current.InnerException
+    }
+    return $null
+}
 if ([Environment]::OSVersion.Platform -ne [PlatformID]::Win32NT) { throw 'Windows is required.' }
 Add-Type -AssemblyName System.Windows.Forms
 try {
@@ -23,11 +35,30 @@ try {
         'CodexBar Windows', [Windows.Forms.MessageBoxButtons]::YesNo, [Windows.Forms.MessageBoxIcon]::Question,
         [Windows.Forms.MessageBoxDefaultButton]::Button2)
     if ($answer -ne [Windows.Forms.DialogResult]::Yes) { exit 0 }
-    & (Join-Path $bundle 'Set-CodexBarVersionReferences.ps1') -FromVersionID $VersionID -AllowUnvalidatedBuild | Out-Null
+    $handoffPath = Join-Path $bundle ('uninstall-' + [Guid]::NewGuid().ToString('N') + '.json')
+    $handoff = [ordered] @{ schemaVersion = 1; versionID = $VersionID; registrationID = $RegistrationID;
+        stage = 'DETACHING_REFERENCES'; referenceTransactionID = $null; removalTransactionID = $null;
+        referenceState = $null; removalState = $null; environmentNotification = $null }
+    Write-CodexBarJournal $handoffPath $handoff
+    $reference = & (Join-Path $bundle 'Set-CodexBarVersionReferences.ps1') -FromVersionID $VersionID -AllowUnvalidatedBuild -PassThru
+    if ($null -eq $reference -or $reference.transactionID -notmatch '^[0-9a-f]{32}$' -or
+        $reference.state -ne 'REFERENCES_UPDATED_RUNTIME_UNVERIFIED') { throw 'Reference update did not return a supported completion record.' }
+    $handoff.referenceTransactionID = $reference.transactionID
+    $handoff.referenceState = $reference.state
+    $handoff.environmentNotification = $reference.environmentNotification
+    $handoff.stage = 'RETIRING_FILES'
+    Write-CodexBarJournal $handoffPath $handoff
     $result = & (Join-Path $bundle 'Remove-CodexBarVersion.ps1') -VersionID $VersionID -AllowUnvalidatedBuild -PassThru
+    if ($null -ne $result -and $result.transactionID -match '^[0-9a-f]{32}$') {
+        $handoff.removalTransactionID = $result.transactionID
+        $handoff.removalState = $result.state
+        Write-CodexBarJournal $handoffPath $handoff
+    }
     if ($null -eq $result -or $result.state -ne 'RECEIPT_PAYLOAD_RETIRED_UNVERIFIED') {
         throw 'Removal is partial. Registration and recoverable files were retained; inspect the removal journal.'
     }
+    $handoff.stage = 'REMOVING_REGISTRATION'
+    Write-CodexBarJournal $handoffPath $handoff
     $registry = [Microsoft.Win32.RegistryKey]::OpenBaseKey([Microsoft.Win32.RegistryHive]::CurrentUser, [Microsoft.Win32.RegistryView]::Registry64)
     $key = $null
     try {
@@ -45,8 +76,35 @@ try {
         if ($null -ne $key) { $key.Dispose() }
         $registry.Dispose()
     }
+    $handoff.stage = 'COMPLETED_RUNTIME_UNVERIFIED'
+    Write-CodexBarJournal $handoffPath $handoff
     $null = [Windows.Forms.MessageBox]::Show('Version files retired and registration removed. Settings, recovery copies and management tools were retained.', 'CodexBar Windows')
 } catch {
-    $null = [Windows.Forms.MessageBox]::Show($_.Exception.Message, 'CodexBar Windows removal', [Windows.Forms.MessageBoxButtons]::OK, [Windows.Forms.MessageBoxIcon]::Error)
+    $failure = $_.Exception
+    $message = $failure.Message
+    if ($null -ne $handoff) {
+        $referenceID = Read-FailureTransaction $failure 'CodexBarReferenceTransactionID'
+        $removalID = Read-FailureTransaction $failure 'CodexBarRemovalTransactionID'
+        if ($null -ne $referenceID) { $handoff.referenceTransactionID = $referenceID }
+        if ($null -ne $removalID) { $handoff.removalTransactionID = $removalID }
+        $message += "`r`n`r`nStopped during: " + $handoff.stage
+        $message += "`r`nManagement ID: " + $RegistrationID
+        if ($null -ne $handoff.removalTransactionID) {
+            $message += "`r`nFile recovery ID: " + $handoff.removalTransactionID
+            $message += "`r`nIf files were moved, restore that removal payload first."
+        }
+        if ($null -ne $handoff.referenceTransactionID) {
+            $message += "`r`nReference recovery ID: " + $handoff.referenceTransactionID
+            $message += "`r`nRestore references only after the original app and CLI are present. The original signer is required."
+        }
+        $message += "`r`nNo automatic rollback was performed. Keep the recovery files."
+        try {
+            Write-CodexBarJournal $handoffPath $handoff
+            $message += "`r`nRecovery record: " + $handoffPath
+        } catch {
+            $message += "`r`nThe final recovery record could not be saved. Retain the IDs shown here and inspect actual files and registration."
+        }
+    }
+    $null = [Windows.Forms.MessageBox]::Show($message, 'CodexBar Windows removal', [Windows.Forms.MessageBoxButtons]::OK, [Windows.Forms.MessageBoxIcon]::Error)
     exit 1
 }

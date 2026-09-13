@@ -7,6 +7,7 @@ param(
 )
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+$transaction = $null
 . (Join-Path $PSScriptRoot 'Write-CodexBarJournal.ps1')
 if ([Environment]::OSVersion.Platform -ne [PlatformID]::Win32NT) { throw 'Windows is required.' }
 if (-not $AllowUnvalidatedBuild) { throw 'Explicit development removal opt-in is required.' }
@@ -140,6 +141,7 @@ try {
         Write-Output ('Removal transaction: ' + $transaction + '. ' + $journal.state + '. Files remain recoverable; settings and receipts are preserved.')
     }
 } catch {
+    if ($null -ne $transaction) { $_.Exception.Data['CodexBarRemovalTransactionID'] = $transaction }
     Write-Warning 'Removal did not finish cleanly. Inspect both version and removal directories; no automatic rollback or recursive cleanup was attempted.'
     throw
 } finally {

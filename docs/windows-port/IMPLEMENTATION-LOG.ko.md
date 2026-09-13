@@ -1194,3 +1194,13 @@
 - helper도 배포·서명 목록에 포함했다. 필수 tools는 13개, 전체 first-party 서명 대상은 16개다.
 
 남은 범위: 모든 창을 포함한 통지 전체 시간 상한, 사용자 프로세스별 실제 환경 갱신, 통지 직후 기록 실패, lifecycle 실패 ID 인계/UI 안내·보존 파일 정리·Windows 검증. 성공 반환도 모든 앱의 환경 재로드를 보장하지 않는다.
+
+## IMPL-076 — 제거 실패 복구 정보 인계
+
+상태 CODE_WRITTEN_UNVERIFIED. PowerShell/WinForms/예외 전달/파일·registry/빌드/테스트/컴파일/검증 실행 미실시. guidelines/COMMITS.md 부재로 제공된 핵심 커밋 규칙을 따른다.
+
+- 참조 변경 도구에 PassThru 결과를 추가하고 참조/제거 도구 예외 Data에 생성된 transaction ID를 전달하도록 작성했다. ID 생성 이전 오류에는 임의 ID를 만들지 않는다.
+- 제거 launcher가 management 폴더에 uninstall-ID.json을 작성하고 참조 해제·파일 이동·등록 해제 단계를 기록한다. 반환된 transaction ID/상태/환경 통지 결과를 연결한다.
+- 실패 시 제한된 exception chain에서 형식이 맞는 ID만 수집해 오류창에 단계·관리 ID·파일/참조 복구 ID·복구 순서를 표시한다. 마지막 journal 저장이 실패해도 원래 오류를 유지하고 화면 ID 보관을 안내한다.
+
+남은 범위: 비정상 프로세스 종료 시 호출자 기록과 실제 child journal 사이 공백, ID 생성 후 journal 생성 실패 구분, 자동 recovery orchestrator·UI 접근성/localization·동시 변경·공간 회수·전체 Windows 검증. 기록은 복구 근거이며 변경의 원자성/완료 증명이 아니다.

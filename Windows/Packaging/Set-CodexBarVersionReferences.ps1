@@ -4,10 +4,12 @@ param(
     [Parameter(Mandatory = $true)][ValidatePattern('^[0-9]+\.[0-9]+\.[0-9]+([+-][0-9A-Za-z.-]+)?-(x64|arm64)-[0-9a-fA-F]{40}$')][string] $FromVersionID,
     [ValidatePattern('^[0-9]+\.[0-9]+\.[0-9]+([+-][0-9A-Za-z.-]+)?-(x64|arm64)-[0-9a-fA-F]{40}$')][string] $ToVersionID,
     [ValidatePattern('^[0-9a-fA-F]{40}$')][string] $ExpectedSignerThumbprint,
-    [switch] $AllowUnvalidatedBuild
+    [switch] $AllowUnvalidatedBuild,
+    [switch] $PassThru
 )
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+$transaction = $null
 . (Join-Path $PSScriptRoot 'Write-CodexBarJournal.ps1')
 . (Join-Path $PSScriptRoot 'Send-CodexBarEnvironmentChange.ps1')
 if ([Environment]::OSVersion.Platform -ne [PlatformID]::Win32NT -or -not $AllowUnvalidatedBuild) { throw 'Windows and development opt-in are required.' }
@@ -154,8 +156,14 @@ try {
     if ($null -ne $processPath) { [Environment]::SetEnvironmentVariable('Path', (Update-ReferencePath $processPath), 'Process') }
     $record.state = 'REFERENCES_UPDATED_RUNTIME_UNVERIFIED'
     Write-CodexBarJournal $journalPath $record
-    Write-Output ('Reference transaction: ' + $transaction + '. Existing processes retain their inherited environment.')
+    if ($PassThru) {
+        [pscustomobject] @{ transactionID = $transaction; state = $record.state;
+            environmentNotification = $record.environmentNotification; fromVersionID = $FromVersionID }
+    } else {
+        Write-Output ('Reference transaction: ' + $transaction + '. Existing processes retain their inherited environment.')
+    }
 } catch {
+    if ($null -ne $transaction) { $_.Exception.Data['CodexBarReferenceTransactionID'] = $transaction }
     Write-Warning 'Reference update incomplete. Earlier changes may have succeeded; inspect the journal and shortcut backup before retrying.'
     throw
 } finally {
