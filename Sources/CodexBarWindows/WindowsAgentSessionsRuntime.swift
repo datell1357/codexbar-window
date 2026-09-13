@@ -234,7 +234,8 @@ public actor WindowsAgentSessionsRuntime {
             claudeOverride: self.defaults.string(forKey: "windowsClaudeProjectDirectory"),
             allowNewSessions: self.defaults.object(forKey: "windowsInferNewSessionMetadataEnabled") as? Bool ?? false,
             codexTitleIndexOverride: self.defaults.string(forKey: "windowsCodexTitleIndex"),
-            readClaudeTitles: self.defaults.object(forKey: "windowsClaudeSessionTitlesEnabled") as? Bool ?? false)
+            readClaudeTitles: self.defaults.object(forKey: "windowsClaudeSessionTitlesEnabled") as? Bool ?? false,
+            codexTitleDatabaseOverride: self.defaults.string(forKey: "windowsCodexTitleDatabase"))
     }
 
     private func publish() {

@@ -23,6 +23,9 @@ public final class WindowsTrayHost: @unchecked Sendable {
     public typealias CodexWebSettingsSaveHandler = @Sendable (UInt64, WindowsCodexWebSettingsPatch) -> Void
     public typealias QuitHandler = @Sendable () -> Void
 
+    private static let chooseTitleDatabaseCommand = UINT_PTR(0x7530)
+    private static let clearTitleDatabaseCommand = UINT_PTR(0x7531)
+    private static let disableTitleDatabaseCommand = UINT_PTR(0x7532)
     private static let sessionDetailsCommand = UINT_PTR(0x752F)
     private static let claudeTitlesCommand = UINT_PTR(0x752E)
     private static let codexTitleFolderCommand = UINT_PTR(0x752B)
@@ -816,6 +819,13 @@ public final class WindowsTrayHost: @unchecked Sendable {
             succeeded = succeeded && append("Use title source from environment",
                                             flags: UINT(MF_STRING), command: Self.clearCodexTitleCommand)
         }
+        succeeded = succeeded && append("Choose Codex SQLite title file…", flags: UINT(MF_STRING), command: Self.chooseTitleDatabaseCommand)
+        succeeded = succeeded && append(self.codexTitleSourceLabel(hidePersonalInfo: hidePersonalInfo, database: true),
+                                        flags: UINT(MF_STRING | MF_GRAYED), command: 0)
+        succeeded = succeeded && append("Disable SQLite title fallback", flags: UINT(MF_STRING), command: Self.disableTitleDatabaseCommand)
+        if self.presentationDefaults.string(forKey: "windowsCodexTitleDatabase") != nil {
+            succeeded = succeeded && append("Use SQLite source from environment", flags: UINT(MF_STRING), command: Self.clearTitleDatabaseCommand)
+        }
         for item in self.sessionSourceGuidance(localEnabled: localEnabled) {
             succeeded = succeeded && append(item.title, flags: UINT(MF_STRING), command: item.command)
         }
@@ -968,23 +978,60 @@ public final class WindowsTrayHost: @unchecked Sendable {
             do { _ = try WindowsSessionMetadataRoots(codexSessions: nil, claudeProjects: nil, codexTitleIndex: title) }
             catch { rows.append(("Fix invalid title source: choose index folder…", Self.codexTitleFolderCommand)) }
         }
+        if let database = configured("windowsCodexTitleDatabase", "CODEXBAR_WINDOWS_CODEX_TITLE_DATABASE") {
+            do { _ = try WindowsSessionMetadataRoots(codexSessions: nil, claudeProjects: nil, codexTitleDatabase: database) }
+            catch { rows.append(("Fix invalid SQLite source: choose database file…", Self.chooseTitleDatabaseCommand)) }
+        }
         return rows
     }
 
-    private func codexTitleSourceLabel(hidePersonalInfo: Bool) -> String {
-        let override = self.presentationDefaults.string(forKey: "windowsCodexTitleIndex")
+    private func codexTitleSourceLabel(hidePersonalInfo: Bool, database: Bool = false) -> String {
+        let override = self.presentationDefaults.string(forKey: database ? "windowsCodexTitleDatabase" : "windowsCodexTitleIndex")
         let environment = CodexBarPlatformPaths.environmentValue(
-            "CODEXBAR_WINDOWS_CODEX_TITLE_INDEX", environment: ProcessInfo.processInfo.environment)
+            database ? "CODEXBAR_WINDOWS_CODEX_TITLE_DATABASE" : "CODEXBAR_WINDOWS_CODEX_TITLE_INDEX", environment: ProcessInfo.processInfo.environment)
         guard let raw = override ?? environment,
               !raw.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            return override != nil ? "Indexed titles: disabled" : "Indexed titles: no source configured"
+            return (database ? "SQLite titles: " : "Indexed titles: ") + (override != nil ? "disabled" : "no source configured")
         }
-        let source = override != nil ? "selected folder" : "environment"
+        let source = override != nil ? "selected source" : "environment"
+        let kind = database ? "SQLite source" : "Title source"
         // Describe configuration only; this does not claim the file exists or was matched.
-        guard !hidePersonalInfo else { return "Title source: \(source) (path hidden)" }
+        guard !hidePersonalInfo else { return "\(kind): \(source) (path hidden)" }
         let clean = raw.unicodeScalars.filter { !CharacterSet.controlCharacters.contains($0) }
             .prefix(160).map(String.init).joined().replacingOccurrences(of: "&", with: "&&")
-        return "Title source (\(source)): \(clean)"
+        return "\(kind) (\(source)): \(clean)"
+    }
+
+    private func chooseCodexTitleDatabase() {
+        guard !self.remoteEditorOpen, !self.quitInvoked, let window = self.window,
+              case .idle = self.providerEditorPhase, case .idle = self.codexWebSettingsEditorPhase else { return }
+        self.remoteEditorOpen = true
+        defer {
+            self.remoteEditorOpen = false
+            if !self.quitInvoked { PostMessageW(window, Self.wakeMessage, 0, 0) }
+        }
+        guard let path = WindowsSessionMetadataFolderPicker.choose(
+            owner: window, title: "Choose a Codex SQLite title file (.sqlite or .db)", includeFiles: true),
+              !self.quitInvoked else { return }
+        do {
+            let roots = try WindowsSessionMetadataRoots(codexSessions: nil, claudeProjects: nil, codexTitleDatabase: path)
+            let units = Array(path.utf16) + [0]
+            let attributes = units.withUnsafeBufferPointer { GetFileAttributesW($0.baseAddress) }
+            guard let normalized = roots.codexTitleDatabase,
+                  attributes != INVALID_FILE_ATTRIBUTES,
+                  attributes & DWORD(FILE_ATTRIBUTE_DIRECTORY | FILE_ATTRIBUTE_REPARSE_POINT) == 0,
+                  normalized.lowercased().hasSuffix(".sqlite") || normalized.lowercased().hasSuffix(".db") else {
+                throw CocoaError(.fileReadUnsupportedScheme)
+            }
+            self.presentationDefaults.set(normalized, forKey: "windowsCodexTitleDatabase")
+            self.sessionMetadataSettingsChanged()
+        } catch {
+            "Choose a local .sqlite or .db file. The previous setting has been retained.".withCString(encodedAs: UTF16.self) { text in
+                "Codex SQLite source".withCString(encodedAs: UTF16.self) { title in
+                    _ = MessageBoxW(window, text, title, UINT(MB_OK | MB_ICONERROR))
+                }
+            }
+        }
     }
 
     private func chooseCodexTitleFolder() {
@@ -1368,6 +1415,13 @@ public final class WindowsTrayHost: @unchecked Sendable {
         case Self.claudeTitlesCommand:
             let enabled = self.presentationDefaults.object(forKey: "windowsClaudeSessionTitlesEnabled") as? Bool ?? false
             self.presentationDefaults.set(!enabled, forKey: "windowsClaudeSessionTitlesEnabled")
+            self.sessionMetadataSettingsChanged()
+        case Self.chooseTitleDatabaseCommand: self.chooseCodexTitleDatabase()
+        case Self.clearTitleDatabaseCommand:
+            self.presentationDefaults.removeObject(forKey: "windowsCodexTitleDatabase")
+            self.sessionMetadataSettingsChanged()
+        case Self.disableTitleDatabaseCommand:
+            self.presentationDefaults.set("", forKey: "windowsCodexTitleDatabase")
             self.sessionMetadataSettingsChanged()
         case Self.codexTitleFolderCommand: self.chooseCodexTitleFolder()
         case Self.clearCodexTitleCommand:

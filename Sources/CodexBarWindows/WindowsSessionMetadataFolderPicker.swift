@@ -4,14 +4,15 @@ import WinSDK
 
 /// The picker selects a folder only; selecting it does not enable metadata correlation.
 enum WindowsSessionMetadataFolderPicker {
-    static func choose(owner: HWND, title: String) -> String? {
+    static func choose(owner: HWND, title: String, includeFiles: Bool = false) -> String? {
         let initialized = CoInitializeEx(nil, DWORD(0x2) /* COINIT_APARTMENTTHREADED */)
         guard initialized >= 0 else { return nil }
         defer { CoUninitialize() }
         var display = [UInt16](repeating: 0, count: 260)
         var info = BROWSEINFOW()
         info.hwndOwner = owner
-        info.ulFlags = UINT(BIF_RETURNONLYFSDIRS | BIF_NEWDIALOGSTYLE | BIF_NONEWFOLDERBUTTON)
+        info.ulFlags = UINT(BIF_NEWDIALOGSTYLE | BIF_NONEWFOLDERBUTTON) |
+            (includeFiles ? UINT(BIF_BROWSEINCLUDEFILES) : UINT(BIF_RETURNONLYFSDIRS))
         let item = title.withCString(encodedAs: UTF16.self) { caption in
             display.withUnsafeMutableBufferPointer { name in
                 info.lpszTitle = caption; info.pszDisplayName = name.baseAddress

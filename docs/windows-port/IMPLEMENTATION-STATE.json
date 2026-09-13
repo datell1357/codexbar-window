@@ -26,8 +26,8 @@
   "static_qa_status": "NOT_RUN_DURING_IMPLEMENTATION",
   "windows_runtime_status": "NOT_VALIDATED",
   "completion_claim": false,
-  "latest_completed_slice": "IMPL-022 code written: explicit CLI/environment read-only SQLite title fallback with UUID scope and index precedence; unverified",
-  "next": "Connect GUI SQLite title source controls and recovery; SQLite distribution, ownership and Windows validation remain pending.",
+  "latest_completed_slice": "IMPL-023 code written: GUI SQLite file selection, disable/environment reset, privacy-aware source labels and runtime overrides; unverified",
+  "next": "Differentiate SQLite title errors for module availability, source access, schema, locking and deadlines; Windows validation remains pending.",
   "inventory": {
     "baseline_entries": 2844,
     "provider_ids": 69,
@@ -49,7 +49,7 @@
     "widget_provider_choices": 17
   },
   "automation_action_this_revision": "Created active thread heartbeat codexbar-windows-30 at 30-minute intervals",
-  "publication_action_this_revision": "Commit and push IMPL-022; actual commit and push output are publication evidence",
+  "publication_action_this_revision": "Commit and push IMPL-023; actual commit and push output are publication evidence",
   "historical_state_before_2026_09_12": {
     "phase": "IMPLEMENTING",
     "repository": "/Users/yeoreum/Documents/codexbar-window/fork",
@@ -366,6 +366,17 @@
     {
       "id": "IMPL-022",
       "contracts": [
+        "WIN-040",
+        "WIN-042"
+      ],
+      "status": "CODE_WRITTEN_UNVERIFIED",
+      "validation": "NOT_RUN_BY_USER_INSTRUCTION"
+    },
+    {
+      "id": "IMPL-023",
+      "contracts": [
+        "WIN-010",
+        "WIN-012",
         "WIN-040",
         "WIN-042"
       ],

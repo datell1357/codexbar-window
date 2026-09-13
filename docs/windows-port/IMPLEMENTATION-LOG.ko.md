@@ -459,3 +459,21 @@
 4. 증분 cache, 신규 추론 제목, 전체 Windows 기능/배포 검증은 남아 있다.
 
 다음 구현: SQLite title source의 GUI 선택·해제/표시 및 읽기 실패 복구 안내를 연결한다. DB ownership와 Windows 검증은 별도 미완료로 유지한다.
+
+## IMPL-023 — GUI SQLite title source controls
+
+상태: CODE_WRITTEN_UNVERIFIED. 빌드·컴파일·테스트·lint·앱·실제 DB/source/계정 조회·검증 스크립트를 실행하지 않았다. 계약: WIN-010/012/040/042.
+
+작성한 코드:
+
+- 기존 Shell browse picker에 파일 표시 옵션을 추가했다. SQLite source 선택은 absolute .sqlite/.db 파일을 대상으로 하며 실행 시 파일 attribute로 directory/reparse를 거부하도록 작성했다. 선택 실패/취소는 이전 설정을 유지하고 DB 내용 자체를 picker에서 읽지 않는다.
+- settings submenu에 SQLite 선택·비활성화·환경 설정 복귀와 현재 source 표시를 연결했다. 빈 override는 환경변수 fallback을 억제하고 removeObject는 복귀한다. title source 표시 helper를 공유하며 개인정보 숨김 시 path를 표시하지 않는다.
+- runtime roots load에 GUI SQLite override를 전달해 기존 설정 snapshot 비교·scan 취소·보강 결과 초기화 경로에 포함했다. invalid absolute DB 설정은 기존 선택 명령으로 복구하도록 안내한다.
+
+남은 범위:
+
+1. 기존 Shell picker의260자 API 경계가 유지된다. 현대적 long-path 파일 dialog와 임의 확장자 파일 선택은 미구현이다. CLI/환경 경로는 별도 제한을 따른다.
+2. picker attribute 확인은 source 소유권/DB 형식/쿼리 가능성 증명이 아니다. 실제 Shell picker, callback 수명, Windows SQLite 배포/링크·WAL·path race·취소 지연 및 UI는 미검증이다.
+3. 증분 cache, DB agent_path, 신규 추론 제목과 전체 Windows 기능·배포 검증은 남아 있다.
+
+다음 구현: SQLite title source의 오류 원인을 구분해 사용자 설정 복구와 모듈 부재/잠금/형식/시간 초과를 다르게 안내한다.
