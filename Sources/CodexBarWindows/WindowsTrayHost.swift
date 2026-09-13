@@ -145,6 +145,9 @@ public final class WindowsTrayHost: @unchecked Sendable {
     private var popupSessionDetails: String?
     private var popupAgentSessionCommands: [UINT_PTR: WindowsSessionFocusRequest] = [:]
     private let onTokenAccountSelect: @Sendable (WindowsTokenAccountSelectionRequest) -> Void
+    private var tokenAccountPage = 0
+    private var tokenAccountPageIDs: [UUID] = []
+    private var popupTokenAccountPages: [UINT_PTR: Int] = [:]
     private var popupTokenAccountCommands: [UINT_PTR: WindowsTokenAccountSelectionRequest] = [:]
     // Pending request and result are protected by mailboxLock.
     private var tokenAccountPendingID: UUID?
@@ -775,6 +778,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
         self.popupCopyErrors.removeAll(keepingCapacity: true)
         self.popupProviderDetails.removeAll(keepingCapacity: true)
         self.popupTokenAccountCommands.removeAll(keepingCapacity: true)
+        self.popupTokenAccountPages.removeAll(keepingCapacity: true)
         var continuingPage = false
         defer {
             self.popupIsOpen = false
@@ -782,6 +786,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
             self.popupCopyErrors.removeAll(keepingCapacity: true)
         self.popupProviderDetails.removeAll(keepingCapacity: true)
         self.popupTokenAccountCommands.removeAll(keepingCapacity: true)
+        self.popupTokenAccountPages.removeAll(keepingCapacity: true)
             self.mailboxLock.lock()
             let cliReady = self.cliSetupResult != nil
             self.mailboxLock.unlock()
@@ -826,12 +831,41 @@ public final class WindowsTrayHost: @unchecked Sendable {
                 _ = AppendMenuW(menu, UINT(MF_STRING), Self.copySummaryCommand, $0)
             }
         }
+        let accountIDs = menuEntries.flatMap { $0.tokenAccountSelection?.accounts.map(\.id) ?? [] }
+        if accountIDs != self.tokenAccountPageIDs {
+            self.tokenAccountPageIDs = accountIDs
+            self.tokenAccountPage = 0
+        }
+        let accountPageCount = max(1, (accountIDs.count + 127) / 128)
+        self.tokenAccountPage = min(self.tokenAccountPage, accountPageCount - 1)
+        let accountStart = self.tokenAccountPage * 128
+        let accountEnd = min(accountIDs.count, accountStart + 128)
         if let accountsMenu = CreatePopupMenu() {
+            var accountOffset = 0
+            var pageCommands: [UINT_PTR: Int] = [:]
+            if accountPageCount > 1 {
+                let title = "Page \(self.tokenAccountPage + 1) of \(accountPageCount)"
+                title.withCString(encodedAs: UTF16.self) {
+                    _ = AppendMenuW(accountsMenu, UINT(MF_STRING | MF_GRAYED), 0, $0)
+                }
+                for (command, page, label) in [(UINT_PTR(0x7F00), self.tokenAccountPage - 1, "Previous accounts…"),
+                                                (UINT_PTR(0x7F01), self.tokenAccountPage + 1, "Next accounts…")]
+                    where page >= 0 && page < accountPageCount {
+                    if label.withCString(encodedAs: UTF16.self, {
+                        AppendMenuW(accountsMenu, UINT(MF_STRING), command, $0)
+                    }) != 0 { pageCommands[command] = page }
+                }
+            }
             var commands: [UINT_PTR: WindowsTokenAccountSelectionRequest] = [:]
             for entry in menuEntries {
-                guard let selection = entry.tokenAccountSelection, let providerMenu = CreatePopupMenu() else { continue }
+                guard let selection = entry.tokenAccountSelection else { continue }
+                let providerStart = accountOffset
+                accountOffset += selection.accounts.count
+                let start = max(0, accountStart - providerStart)
+                let end = min(selection.accounts.count, accountEnd - providerStart)
+                guard start < end, let providerMenu = CreatePopupMenu() else { continue }
                 var providerCommands: [UINT_PTR: WindowsTokenAccountSelectionRequest] = [:]
-                for account in selection.accounts where commands.count + providerCommands.count < 128 {
+                for account in selection.accounts[start..<end] {
                     let command = UINT_PTR(0x7E00 + commands.count + providerCommands.count)
                     let request = WindowsTokenAccountSelectionRequest(id: UUID(), providerID: selection.providerID,
                         accountID: account.id, expectedSelectedID: selection.selectedID)
@@ -848,10 +882,13 @@ public final class WindowsTrayHost: @unchecked Sendable {
                 }
                 if attached { commands.merge(providerCommands) { _, new in new } } else { DestroyMenu(providerMenu) }
             }
-            let attached = !commands.isEmpty && "Saved &accounts".withCString(encodedAs: UTF16.self) {
+            let attached = (!commands.isEmpty || !pageCommands.isEmpty) && "Saved &accounts".withCString(encodedAs: UTF16.self) {
                 AppendMenuW(menu, UINT(MF_STRING | MF_POPUP), UINT_PTR(UInt(bitPattern: accountsMenu)), $0) != 0
             }
-            if attached { self.popupTokenAccountCommands = commands } else { DestroyMenu(accountsMenu) }
+            if attached {
+                self.popupTokenAccountCommands = commands
+                self.popupTokenAccountPages = pageCommands
+            } else { DestroyMenu(accountsMenu) }
         }
         let detailEntries = menuEntries.filter { $0.usageCopyText != nil || $0.errorCopyText != nil }
         if !detailEntries.isEmpty, let detailsMenu = CreatePopupMenu() {
@@ -1856,6 +1893,12 @@ public final class WindowsTrayHost: @unchecked Sendable {
     }
 
     private func dispatchCommand(_ command: UINT_PTR) {
+        if let page = self.popupTokenAccountPages[command] {
+            guard !self.quitInvoked, let window = self.window else { return }
+            self.tokenAccountPage = page
+            PostMessageW(window, Self.pagePopupMessage, 0, 0)
+            return
+        }
         if let request = self.popupTokenAccountCommands[command] {
             guard !self.quitInvoked, !self.remoteEditorOpen,
                   case .idle = self.providerEditorPhase, case .idle = self.codexWebSettingsEditorPhase else { return }

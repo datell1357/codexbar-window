@@ -1367,3 +1367,12 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/hidpi/wm-dpichanged 
 - WindowsMain에서 runtime 저장과 성공 후 refresh를 연결했다. 이전 계정 표시 철회 시 No providers 메시지 대신 계정 변경 후 갱신 중 안내를 표시한다. 결과 안내는 요청 사실만 알리고 수집 성공을 주장하지 않는다.
 
 남은 범위: 128개 초과 목록 페이지, 신규 계정 추가·삭제·수정, Codex visible OAuth 계정 전환, 동시 계정 표시·자동 소스 전환 의미, 저장 프로세스 간 동시성, 전체 Windows UI·수집·privacy 검증. 원본 다중 계정 기능 전체 완료가 아니다.
+
+## IMPL-093 — 저장된 계정 메뉴 페이지 이동
+
+상태 CODE_WRITTEN_UNVERIFIED. 컴파일/빌드/테스트/UI/계정/검증 미실시. guidelines/COMMITS.md 부재로 핵심 커밋 규칙을 적용한다.
+
+- 전체 계정을 128개씩 표시하고 Previous/Next 및 현재 페이지 정보를 작성했다. 공급자별 계정 구간과 현재 페이지의 교집합만 생성해 기존 공급자 하위 메뉴와 UUID 선택 계약을 유지한다.
+- 페이지 이동은 기존 popup 재열기 메시지를 사용하며 설정 저장이나 수집을 호출하지 않는다. 계정 UUID 목록/순서가 변경되면 첫 페이지로 돌아간다. 메뉴 종료 시 이동 command를 제거하고 메뉴 생성 실패 때 목적지를 등록하지 않는다.
+
+남은 범위: 페이지 이동 후 Saved accounts 하위 메뉴 자동 포커스, provider/계정 검색, 계정 lifecycle·Codex OAuth·동시 표시, 전체 Windows 검증. 새 페이지를 표시했다는 실행 증거는 없다.
