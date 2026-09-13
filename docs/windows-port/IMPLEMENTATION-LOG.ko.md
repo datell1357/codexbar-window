@@ -2913,3 +2913,12 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - 현재 Zstd 등 다른 compression은 명시적으로 unsupported이다. 새 의존성은 추가하지 않았다.
 - 남은 소요: block prefix/restart entry 및 index traversal, 추가 compression 지원, manifest와 파일 일관성 및 Chromium/Windsurf 연결과 전체 계획 나머지.
 - CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 파서 실행·빌드·테스트·lint·실제 브라우저 파일 조회 미실행.
+
+## IMPL-259 — SSTable 블록 entry 복원
+
+- 원본 https://github.com/google/leveldb/blob/main/table/block_builder.cc를 읽고 shared/unshared/value length와 restart 배열 형식을 구현했다.
+- restart 0 시작/증가/entry 경계/공유 prefix 0을 검사한다. 빈 블록의 단일 restart 0을 처리하고 중간 payload를 가리키는 restart는 실패한다.
+- 4MiB 블록/키, 100000 entry, 복원 데이터 64MiB 예산과 취소 확인을 포함한다. varint overflow, 잘림, prefix 길이 초과를 거부한다.
+- 이미 checksum/압축 해제가 끝난 Data만 받는다. 정렬 규칙은 index/data caller에서 검사해야 한다.
+- 남은 소요: table index traversal 및 key 범위 검사, 일관된 실제 파일 확보, Chromium/Windsurf 연결과 전체 계획 나머지.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 파서 실행·빌드·테스트·lint·실제 브라우저 파일 조회 미실행.

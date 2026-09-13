@@ -1,5 +1,7 @@
 # Windows 전용 제품 작업 현황
 
+- IMPL-259: SSTable 블록의 prefix/restart 기반 키·값 복원 파서를 작성했다. index 순회와 정렬 검사는 남아 있다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
 - IMPL-258: SSTable footer/handle/CRC와 비압축·Snappy 블록 읽기를 연결했다. entry/index 해석은 남아 있다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
 
 - IMPL-257: LevelDB table용 raw Snappy 블록 해제 파서를 작성했다. SSTable 연결은 남아 있다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
