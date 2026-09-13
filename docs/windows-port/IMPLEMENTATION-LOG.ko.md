@@ -477,3 +477,20 @@
 3. 증분 cache, DB agent_path, 신규 추론 제목과 전체 Windows 기능·배포 검증은 남아 있다.
 
 다음 구현: SQLite title source의 오류 원인을 구분해 사용자 설정 복구와 모듈 부재/잠금/형식/시간 초과를 다르게 안내한다.
+
+## IMPL-024 — SQLite title 실패 원인별 안내
+
+상태: CODE_WRITTEN_UNVERIFIED. 빌드·컴파일·테스트·lint·앱·실제 DB/source 조회·검증 스크립트를 실행하지 않았다. 계약: WIN-010/040/042.
+
+작성한 코드:
+
+- SQLite title 실패를 module 부재, read-only 접근, busy/locked, query/schema, invalid DB, resource limit, duplicate UUID, interruption, 기타 query 실패로 나누었다. extended code는 기본 code로 분류하며 현재 취소/시간 초과를 우선한다.
+- open/prepare/bind/step 결과를 해당 안내로 전달한다. missing module이면 index 사용/지원 build, busy이면 나중 refresh, invalid source이면 source 선택을 안내한다. raw sqlite errmsg/path/title을 출력하거나 DB repair/lock 우회를 실행하지 않는다.
+- prepare 실패 시에도 반환된 statement가 있으면 finalize하도록 defer 수명을 보완했다. 한 UUID의 두 번째 row는 일반 query 오류와 별도로 ambiguous title로 처리한다. 기존 label fallback과 read-only/budget 정책을 유지한다.
+
+남은 범위:
+
+1. SQLite 기본 code만으로 구체적인 filesystem/ACL/DB version 원인을 확정할 수 없다. 실제 code mapping·Windows 모듈/링크·WAL/취소 동작은 미검증이다.
+2. 증분 cache, DB agent_path 및 신규 추론 제목, 전체 Windows 기능·배포 검증은 계속 미완료다.
+
+다음 구현: Codex DB의 agent_path 보강을 기존 rollout 역할과 title 우선순위에 맞춰 연결한다. SQLite/path ownership의 미검증 경계는 유지한다.

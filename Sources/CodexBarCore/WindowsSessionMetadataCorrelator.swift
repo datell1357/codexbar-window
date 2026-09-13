@@ -177,7 +177,8 @@ enum WindowsSessionMetadataCorrelator {
                     output[index].metadataTitleSource = "codex_title_database"
                 }
             } catch {
-                notices.append("Codex title database is unavailable, unsupported, or over budget; existing labels are retained.")
+                let reason = (error as? DatabaseReadFailure)?.message ?? (error as? TitleReadFailure)?.message ?? DatabaseReadFailure.query.message
+                notices.append("Codex title database: \(reason) Existing labels are retained.")
             }
         }
         if unresolved || budget.exhausted || budget.rootUnavailable {
@@ -538,6 +539,39 @@ enum WindowsSessionMetadataCorrelator {
         return TitleNames(names: names, seenIDs: seenIDs, unresolvedIDs: startOffset > 0 ? ids.subtracting(seenIDs) : [])
     }
 
+    private enum DatabaseReadFailure: Error {
+        case module, access, busy, schema, invalidDatabase, limit, duplicate, interrupted, query
+        var message: String {
+            switch self {
+            case .module: "This build has no SQLite module. Use the title index or a build with SQLite support."
+            case .access: "The selected database could not be opened read-only. Check the source path and permissions."
+            case .busy: "The database is busy or locked. Refresh later; no lock was bypassed."
+            case .schema: "The selected database does not support the expected title query. Check the selected Codex database."
+            case .invalidDatabase: "SQLite reported an invalid or damaged database. Select another source; no repair was attempted."
+            case .limit: "SQLite reported a size or resource limit while reading titles."
+            case .duplicate: "The database returned multiple rows for one session UUID; the title is ambiguous."
+            case .interrupted: "The SQLite query was interrupted."
+            case .query: "The SQLite title query could not complete."
+            }
+        }
+    }
+
+    #if canImport(SQLite3) || canImport(CSQLite3)
+    private static func databaseFailure(_ status: Int32, deadline: Date) -> Error {
+        if Task.isCancelled { return TitleReadFailure.cancelled }
+        if Date() >= deadline { return TitleReadFailure.deadline }
+        switch status & 0xFF {
+        case SQLITE_BUSY, SQLITE_LOCKED: return DatabaseReadFailure.busy
+        case SQLITE_CANTOPEN, SQLITE_PERM, SQLITE_AUTH, SQLITE_READONLY: return DatabaseReadFailure.access
+        case SQLITE_NOTADB, SQLITE_CORRUPT: return DatabaseReadFailure.invalidDatabase
+        case SQLITE_TOOBIG, SQLITE_NOMEM, SQLITE_FULL: return DatabaseReadFailure.limit
+        case SQLITE_SCHEMA, SQLITE_ERROR: return DatabaseReadFailure.schema
+        case SQLITE_INTERRUPT, SQLITE_ABORT: return DatabaseReadFailure.interrupted
+        default: return DatabaseReadFailure.query
+        }
+    }
+    #endif
+
     #if canImport(SQLite3) || canImport(CSQLite3)
     private final class DatabaseDeadline {
         let date: Date
@@ -556,7 +590,7 @@ enum WindowsSessionMetadataCorrelator {
         let opened = sqlite3_open_v2(absolute, &database, SQLITE_OPEN_READONLY, nil)
         guard opened == SQLITE_OK, let database else {
             if let database { sqlite3_close(database) }
-            throw TitleReadFailure.unavailable
+            throw self.databaseFailure(opened, deadline: deadline)
         }
         defer { sqlite3_close(database) }
         sqlite3_busy_timeout(database, 0)
@@ -570,9 +604,9 @@ enum WindowsSessionMetadataCorrelator {
             return Task.isCancelled || Date() >= deadline ? 1 : 0
         }, context)
         var statement: OpaquePointer?
-        guard sqlite3_prepare_v2(database, "SELECT title FROM threads WHERE id = ?1 LIMIT 2", -1, &statement, nil) == SQLITE_OK,
-              let statement else { throw TitleReadFailure.format }
-        defer { sqlite3_finalize(statement) }
+        let prepared = sqlite3_prepare_v2(database, "SELECT title FROM threads WHERE id = ?1 LIMIT 2", -1, &statement, nil)
+        defer { if let statement { sqlite3_finalize(statement) } }
+        guard prepared == SQLITE_OK, let statement else { throw self.databaseFailure(prepared, deadline: deadline) }
         var titles: [String: String] = [:]
         let transient = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
         for id in ids.sorted() {
@@ -580,21 +614,24 @@ enum WindowsSessionMetadataCorrelator {
             guard UUID(uuidString: id) != nil else { throw TitleReadFailure.format }
             sqlite3_reset(statement)
             sqlite3_clear_bindings(statement)
-            guard sqlite3_bind_text(statement, 1, id, -1, transient) == SQLITE_OK else { throw TitleReadFailure.format }
+            let bound = sqlite3_bind_text(statement, 1, id, -1, transient)
+            guard bound == SQLITE_OK else { throw self.databaseFailure(bound, deadline: deadline) }
             let status = sqlite3_step(statement)
             if status == SQLITE_DONE { continue }
-            guard status == SQLITE_ROW else { throw TitleReadFailure.unavailable }
+            guard status == SQLITE_ROW else { throw self.databaseFailure(status, deadline: deadline) }
             if sqlite3_column_type(statement, 0) == SQLITE_TEXT, let raw = sqlite3_column_text(statement, 0) {
                 let title = WindowsSessionLaunchHints.label(String(cString: raw))
                 if !title.isEmpty { titles[id] = title }
             }
-            guard sqlite3_step(statement) == SQLITE_DONE else { throw TitleReadFailure.format }
+            let next = sqlite3_step(statement)
+            if next == SQLITE_ROW { throw DatabaseReadFailure.duplicate }
+            guard next == SQLITE_DONE else { throw self.databaseFailure(next, deadline: deadline) }
         }
         try self.checkTitleDeadline(deadline)
         guard let after = self.fileInfo(absolute), before == after else { throw TitleReadFailure.changed }
         return titles
         #else
-        throw TitleReadFailure.unavailable
+        throw DatabaseReadFailure.module
         #endif
     }
 
