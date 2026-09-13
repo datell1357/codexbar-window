@@ -1417,6 +1417,9 @@ public actor WindowsUsageRuntime {
                 options: settings.dashboardOptions, publisher: { _ in })
             self.spendController = controller
             self.spendState = .collecting
+            // The original converter refreshes non-USD rates at most daily and retains fallback rates on failure.
+            await CurrencyExchange.shared.fetchLatestRatesIfNeeded(preferredCurrencyCode: settings.preferredCurrencyCode)
+            guard !self.shuttingDown, generation == self.spendGeneration, !Task.isCancelled else { return }
             await controller.refresh()
             guard !self.shuttingDown, generation == self.spendGeneration, !Task.isCancelled else { return }
             // External preference changes while scanning must not publish the old configuration.

@@ -106,6 +106,8 @@ public final class WindowsTrayHost: @unchecked Sendable {
     private static let spendCollectionCommand = UINT_PTR(0x7030)
     private static let spendLedgerCommand = UINT_PTR(0x7031)
     private static let spendPeriodCommandBase = UINT_PTR(0x7040)
+    private static let spendCurrencyCommandBase = UINT_PTR(0x7080)
+    private static let spendCurrencies = ["auto"] + CurrencyExchange.supportedCurrencies
     private static let spendPeriods = [7, 14, 30, 90, 180, 365]
     private static let refreshCommand = UINT_PTR(0x7001)
     private static let quitCommand = UINT_PTR(0x7002)
@@ -2365,10 +2367,31 @@ public final class WindowsTrayHost: @unchecked Sendable {
             let appended = label.withCString(encodedAs: UTF16.self) { AppendMenuW(submenu, flags, command, $0) }
             guard appended != 0 else { _ = DestroyMenu(submenu); return }
         }
+        guard self.appendSpendCurrencyMenu(to: submenu, settings: settings) else {
+            _ = DestroyMenu(submenu)
+            return
+        }
         let appended = "Cost collection".withCString(encodedAs: UTF16.self) {
             AppendMenuW(menu, UINT(MF_STRING | MF_POPUP), UINT_PTR(UInt(bitPattern: submenu)), $0)
         }
         if appended == 0 { _ = DestroyMenu(submenu) }
+    }
+
+    private func appendSpendCurrencyMenu(to menu: HMENU, settings: WindowsSpendSettings) -> Bool {
+        guard let currencies = CreatePopupMenu() else { return false }
+        for (index, code) in Self.spendCurrencies.enumerated() {
+            let label = code == "auto" ? "Original currencies" : code
+            let flags = UINT(MF_STRING) | (settings.preferredCurrencyCode == code ? UINT(MF_CHECKED) : 0)
+            let appended = label.withCString(encodedAs: UTF16.self) {
+                AppendMenuW(currencies, flags, Self.spendCurrencyCommandBase + UINT_PTR(index), $0)
+            }
+            guard appended != 0 else { _ = DestroyMenu(currencies); return false }
+        }
+        let attached = "Display currency".withCString(encodedAs: UTF16.self) {
+            AppendMenuW(menu, UINT(MF_STRING | MF_POPUP), UINT_PTR(UInt(bitPattern: currencies)), $0)
+        }
+        if attached == 0 { _ = DestroyMenu(currencies) }
+        return attached != 0
     }
 
     private func changeSpendSetting(command: UINT_PTR) {
@@ -2378,6 +2401,9 @@ public final class WindowsTrayHost: @unchecked Sendable {
             settings.collectionEnabled.toggle()
         } else if command == Self.spendLedgerCommand {
             settings.codexLocalLedgerEnabled.toggle()
+        } else if command >= Self.spendCurrencyCommandBase,
+                  command < Self.spendCurrencyCommandBase + UINT_PTR(Self.spendCurrencies.count) {
+            settings.preferredCurrencyCode = Self.spendCurrencies[Int(command - Self.spendCurrencyCommandBase)]
         } else {
             guard command >= Self.spendPeriodCommandBase,
                   command < Self.spendPeriodCommandBase + UINT_PTR(Self.spendPeriods.count) else { return }
@@ -2794,6 +2820,8 @@ public final class WindowsTrayHost: @unchecked Sendable {
             self.spendSummaryMailbox = nil
             self.mailboxLock.unlock()
             self.onSpendSummaryRequested(requestID)
+        case Self.spendCurrencyCommandBase..<(Self.spendCurrencyCommandBase + UINT_PTR(Self.spendCurrencies.count)):
+            self.changeSpendSetting(command: command)
         case Self.spendCollectionCommand, Self.spendLedgerCommand:
             self.changeSpendSetting(command: command)
         case Self.spendPeriodCommandBase..<(Self.spendPeriodCommandBase + UINT_PTR(Self.spendPeriods.count)):

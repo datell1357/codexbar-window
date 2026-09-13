@@ -1892,3 +1892,13 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - UUID/개인정보 표시 상태를 저장한 mailbox에서 UI thread만 클립보드에 쓴다. 계정 무효화와 트레이 비용 설정 변경은 대기 요청을 취소한다. 복사는 명시적인 메뉴 선택으로만 시작한다.
 
 남은 범위: 이미지 Share Stats 미리보기/저장, 전체 비용 차트·필터, 외부 설정 변경 및 이미 표시된 snapshot의 즉시 갱신, Windows 클립보드/동시성 검증 및 전체 계획 구현. 실제 클립보드에는 쓰지 않았다.
+
+## IMPL-145 — 비용 표시 통화 선택
+
+상태 CODE_WRITTEN_UNVERIFIED. 컴파일/빌드/테스트/UI·환율 요청/검증 미실시. guidelines/COMMITS.md 부재로 핵심 커밋 규칙을 적용한다.
+
+- Cost collection의 Display currency 하위 메뉴에 Original currencies(auto)와 Core CurrencyExchange.supportedCurrencies를 연결했다. 현재 통화에 체크하고 기존 설정 저장/수집 갱신/대기 공유 취소 흐름을 재사용한다.
+- 활성 비용 수집의 집계 전에 원본 CurrencyExchange.fetchLatestRatesIfNeeded 호출을 연결했다. USD/auto는 요청하지 않으며 나머지는 원본의 일 단위 갱신 및 실패 시 기존 환율 유지 정책을 따른다. await 이후 generation/취소/종료를 확인한다.
+- 요약에 캐시 또는 근사 fallback 환율을 사용할 수 있음을 표시한다. 원본 통화 선택은 서로 다른 통화를 합산하지 않는 기존 그룹 집계를 따른다.
+
+남은 범위: 환율 freshness/출처 상세 표시, 표시 옵션만 재집계하는 경로, 전체 차트·source 필터·이미지 공유 및 Windows 검증. 실제 네트워크 환율 요청은 실행하지 않았다.

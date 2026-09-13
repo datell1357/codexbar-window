@@ -7,7 +7,8 @@ enum WindowsSpendSummary {
     static func text(snapshot: WindowsSpendDashboardController.Snapshot) -> String {
         let model = snapshot.model
         var rows = ["Cost summary · last \(model.requestedDays) days",
-                    "Costs are estimates unless reported as metered by the source."]
+                    "Costs are estimates unless reported as metered by the source.",
+                    "Currency conversion may use cached or approximate fallback exchange rates."]
         if let loadedAt = snapshot.loadedAt {
             rows.append("Collected: " + loadedAt.formatted(date: .abbreviated, time: .shortened))
         }
