@@ -1,5 +1,7 @@
 # Windows 전용 제품 작업 현황
 
+- IMPL-212: Windows Windsurf JSON 세션의 중복 root 키를 이스케이프 해석 후 검사하도록 작성했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
 - IMPL-211: Windows Windsurf 세션 별칭 값 충돌 및 잘못된 JSON의 key/value 재해석을 거부하도록 작성했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
 
 - IMPL-210: Windsurf 로컬 읽기를 Windows utility task로 분리하고 SQLite/JSON 취소 전달을 연결했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.

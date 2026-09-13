@@ -260,6 +260,9 @@ public enum WindsurfWebFetcher {
         else {
             return nil
         }
+        #if os(Windows)
+        guard WindowsWindsurfSessionJSONKeys.areUnique(in: data) else { return nil }
+        #endif
         return self.sessionAuth(from: json)
     }
 

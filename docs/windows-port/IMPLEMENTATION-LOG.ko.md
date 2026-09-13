@@ -2512,3 +2512,11 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - macOS 파서 선택 규칙은 유지한다. JSON 객체 안의 정확히 같은 키 반복은 Foundation JSONSerialization의 해석에 따르며 별도 중복 키 검출은 아직 구현하지 않았다.
 - 남은 소요: JSON 동일 키 중복 검출, 브라우저 로그인 및 전체 계획 나머지 항목.
 - CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 파서 실행·빌드·테스트·lint·실제 API 검증 미실행.
+
+## IMPL-212 — Windsurf JSON 동일 키 중복
+
+- Foundation JSON 구문 해석 이후 원본 UTF-8에서 root 객체의 키를 별도 추적한다. 키 문자열은 JSONDecoder로 이스케이프를 해석한 뒤 비교하므로 같은 키의 유니코드 escape 표기도 중복으로 처리한다.
+- 같은 값이라도 root 키 중복은 거부하고 기존 고정 오류 경로를 사용한다. 중첩 객체/배열과 문자열 안 구분자는 root 키로 오인하지 않도록 depth와 문자열 escape를 추적한다.
+- sessionAuth는 root의 네 인증 필드만 사용한다. 사용하지 않는 중첩 객체의 키에는 이 중복 정책을 적용하지 않는다. 입력은 기존 64KiB 상한을 유지한다.
+- 남은 소요: 실제 파서 회귀 검증, 브라우저 로그인 및 전체 계획 나머지 항목.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 파서 실행·빌드·테스트·lint·실제 API 검증 미실행.
