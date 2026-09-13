@@ -1712,3 +1712,13 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - 알 수 없는 기존 scope는 선택 없음과 안내로 표시한다. 새 control을 DPI 배치와 font 업데이트에 포함했다.
 
 남은 범위: 실제 라디오 키보드/접근성 동작, 작은 화면·legacy 값 편집 검증과 전체 계획 구현.
+
+## IMPL-127 — metadata editor 개인정보 변경 취소
+
+상태 CODE_WRITTEN_UNVERIFIED. 컴파일/빌드/테스트/UI/설정 접근/검증 미실시. guidelines/COMMITS.md 부재로 핵심 커밋 규칙을 적용한다.
+
+- metadata 창 진입·활성화·저장 시 개인정보 숨김 설정을 다시 읽는다. 열린 창에는 250ms native timer로 로컬 표시 설정만 확인하도록 작성했다. timer 설치 실패 시 편집 창을 열지 않는다.
+- 숨김 활성화 감지 시 창을 먼저 숨기고 파괴하며 unsaved patch를 반환하지 않는다. host가 ticket을 취소하고 개인정보 변경으로 저장되지 않았음을 안내한다. 창 종료 시 timer를 제거한다.
+- host의 save callback 호출 직전에도 숨김 상태를 확인한다. 실제 설정 또는 창은 실행하지 않았다.
+
+남은 범위: 타이머/메시지 큐 지연과 OS 표시 race, 다른 detail/삭제 확인 창의 live privacy 대응, Windows 실행·접근성 검증 및 전체 계획 구현.

@@ -715,12 +715,18 @@ public final class WindowsTrayHost: @unchecked Sendable {
                 let input = WindowsAccountMetadataDialog.show(owner: window, snapshot: snapshot)
                 self.remoteEditorOpen = false
                 if !self.quitInvoked { PostMessageW(window, Self.wakeMessage, 0, 0) }
-                if !self.quitInvoked, case let .saved(patch) = input {
+                if !self.quitInvoked, !WindowsUsagePresentationSettings.load().hidePersonalInfo,
+                   case let .saved(patch) = input {
                     self.onMetadataEditSave(requestID, ticketID, patch)
                     return
                 }
                 self.onCredentialEditCancel(ticketID)
                 if case .failed = input { message = "Could not open the account scope editor." }
+                else if case .privacyCancelled = input {
+                    message = "Account scope editing was cancelled because Hide personal info was enabled. No changes were saved."
+                } else if case .saved = input {
+                    message = "Privacy settings changed before saving. No account scope changes were requested."
+                }
             case .unavailable: message = "The saved account is no longer available. Refresh usage and try again."
             case .refreshInProgress: message = "Usage is refreshing. Try again after it finishes."
             case .shuttingDown: break

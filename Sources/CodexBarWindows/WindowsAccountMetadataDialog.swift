@@ -5,7 +5,8 @@ import CodexBarCore
 
 /// Edits account routing metadata only; no credential is received by this window.
 enum WindowsAccountMetadataDialog {
-    enum Result { case cancelled, failed, saved(WindowsTokenAccountMetadataPatch) }
+    enum Result { case cancelled, privacyCancelled, failed, saved(WindowsTokenAccountMetadataPatch) }
+    private static let privacyTimer: UINT_PTR = 1
     private static let className = "CodexBar.AccountMetadataDialog"
     private final class Context {
         let support: TokenAccountSupport
@@ -26,6 +27,7 @@ enum WindowsAccountMetadataDialog {
         func pixels(_ value: Int32) -> Int32 { MulDiv(value, Int32(self.dpi), 96) }
     }
     static func show(owner: HWND, snapshot: WindowsTokenAccountMetadataSnapshot) -> Result {
+        guard !WindowsUsagePresentationSettings.load().hidePersonalInfo else { return .privacyCancelled }
         guard let support = TokenAccountSupportCatalog.support(for: snapshot.provider),
               support.showsOrganizationField || support.showsTeamModeControls else { return .failed }
         // Refuse to silently truncate a legacy value while populating a bounded editor.
@@ -83,6 +85,7 @@ enum WindowsAccountMetadataDialog {
         return context.result
     }
     private static func save(_ hwnd: HWND, context: Context) {
+        guard !Self.closeForPrivacyIfNeeded(hwnd, context: context) else { return }
         func read(_ id: Int32, original: String?) -> String? {
             guard let edit = GetDlgItem(hwnd, id) else { return original }
             var buffer = [WCHAR](repeating: 0, count: 514)
@@ -154,10 +157,17 @@ enum WindowsAccountMetadataDialog {
             guard Self.control(hwnd, "STATIC", guidance, 102, 0, 0, 0, 1, 1) != nil,
                   Self.control(hwnd, "BUTTON", "Save", 1, DWORD(WS_TABSTOP | BS_DEFPUSHBUTTON), 0, 0, 1, 1) != nil,
                   Self.control(hwnd, "BUTTON", "Cancel", 2, DWORD(WS_TABSTOP | BS_PUSHBUTTON), 0, 0, 1, 1) != nil else { return -1 }
+            guard SetTimer(hwnd, Self.privacyTimer, 250, nil) != 0 else { return -1 }
             Self.updateFont(hwnd, context: context)
             Self.updateScope(hwnd, context: context)
             Self.layout(hwnd, context: context)
             return 0
+        case UINT(WM_TIMER):
+            if wParam == Self.privacyTimer { _ = Self.closeForPrivacyIfNeeded(hwnd, context: context) }
+            return 0
+        case UINT(WM_ACTIVATE):
+            if Self.closeForPrivacyIfNeeded(hwnd, context: context) { return 0 }
+            return DefWindowProcW(hwnd, message, wParam, lParam)
         case UINT(WM_SIZE): Self.layout(hwnd, context: context); return 0
         case UINT(WM_DPICHANGED):
             let dpi = UINT(wParam & 0xffff)
@@ -189,12 +199,23 @@ enum WindowsAccountMetadataDialog {
             return 0
         case UINT(WM_CLOSE): DestroyWindow(hwnd); return 0
         case UINT(WM_NCDESTROY):
+            KillTimer(hwnd, Self.privacyTimer)
             context.closed = true
             SetWindowLongPtrW(hwnd, Int32(GWLP_USERDATA), 0)
             return DefWindowProcW(hwnd, message, wParam, lParam)
         default: return DefWindowProcW(hwnd, message, wParam, lParam)
         }
     }
+    /// Poll only the local presentation preference; never query credentials or providers.
+    private static func closeForPrivacyIfNeeded(_ hwnd: HWND, context: Context) -> Bool {
+        guard !context.closed, WindowsUsagePresentationSettings.load().hidePersonalInfo else { return false }
+        context.result = .privacyCancelled
+        // Hide first, then destroy the native fields. Discard every unsaved edit.
+        ShowWindow(hwnd, Int32(SW_HIDE))
+        DestroyWindow(hwnd)
+        return true
+    }
+
     private static func updateScope(_ hwnd: HWND, context: Context) {
         guard context.provider == .zai else { return }
         SendMessageW(GetDlgItem(hwnd, 105), UINT(BM_SETCHECK), WPARAM(context.selectedScope == "personal" ? BST_CHECKED : BST_UNCHECKED), 0)
