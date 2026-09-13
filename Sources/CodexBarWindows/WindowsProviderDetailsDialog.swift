@@ -25,6 +25,10 @@ enum WindowsProviderDetailsDialog {
         let links: [Link]
         var result: Result = .closed
         var closed = false
+        var dpi: UINT = 96
+        var font: HFONT?
+        deinit { if let font { DeleteObject(font) } }
+        func pixels(_ value: Int32) -> Int32 { MulDiv(value, Int32(self.dpi), 96) }
         init(text: String, links: [Link]) { self.text = text; self.links = Array(links.prefix(3)) }
     }
 
@@ -53,6 +57,12 @@ enum WindowsProviderDetailsDialog {
             }
         }
         guard let hwnd else { return nil }
+        var initial = RECT(left: 0, top: 0, right: context.pixels(700), bottom: context.pixels(500))
+        if AdjustWindowRectExForDpi(&initial, DWORD(WS_OVERLAPPEDWINDOW), 0,
+                                   DWORD(WS_EX_DLGMODALFRAME), context.dpi) != 0 {
+            SetWindowPos(hwnd, nil, 0, 0, initial.right - initial.left, initial.bottom - initial.top,
+                         UINT(SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE))
+        }
         let ownerWasEnabled = IsWindowEnabled(owner) != 0
         if IsWindow(owner) != 0 { EnableWindow(owner, 0) }
         var succeeded = true
@@ -98,6 +108,8 @@ enum WindowsProviderDetailsDialog {
             UnsafeRawPointer(bitPattern: UInt(pointer))!).takeUnretainedValue()
         switch message {
         case UINT(WM_CREATE):
+            let dpi = GetDpiForWindow(hwnd)
+            context.dpi = dpi == 0 ? 96 : dpi
             guard Self.addControl(hwnd, "EDIT", context.text, Self.textID,
                                   DWORD(WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_BORDER | WS_VSCROLL |
                                         ES_MULTILINE | ES_AUTOVSCROLL | ES_READONLY)) != nil,
@@ -115,14 +127,32 @@ enum WindowsProviderDetailsDialog {
                     return -1
                 }
             }
-            Self.layout(hwnd)
+            Self.updateFont(hwnd, context: context)
+            Self.layout(hwnd, context: context)
             return 0
-        case UINT(WM_SIZE): Self.layout(hwnd); return 0
+        case UINT(WM_SIZE): Self.layout(hwnd, context: context); return 0
+        case UINT(WM_DPICHANGED):
+            let dpi = UINT(wParam & 0xffff)
+            if dpi != 0 { context.dpi = dpi }
+            Self.updateFont(hwnd, context: context)
+            if let suggested = UnsafeRawPointer(bitPattern: UInt(lParam))?.assumingMemoryBound(to: RECT.self) {
+                let rect = suggested.pointee
+                SetWindowPos(hwnd, nil, rect.left, rect.top, rect.right - rect.left, rect.bottom - rect.top,
+                             UINT(SWP_NOZORDER | SWP_NOACTIVATE))
+            }
+            Self.layout(hwnd, context: context)
+            return 0
+        case UINT(WM_SETTINGCHANGE):
+            Self.updateFont(hwnd, context: context)
+            return DefWindowProcW(hwnd, message, wParam, lParam)
         case UINT(WM_SETFOCUS): SetFocus(GetDlgItem(hwnd, Self.textID)); return 0
         case UINT(WM_GETMINMAXINFO):
             if let limits = UnsafeMutableRawPointer(bitPattern: UInt(lParam))?.assumingMemoryBound(to: MINMAXINFO.self) {
-                limits.pointee.ptMinTrackSize.x = 540
-                limits.pointee.ptMinTrackSize.y = 260
+                var frame = RECT(left: 0, top: 0, right: context.pixels(520), bottom: context.pixels(230))
+                AdjustWindowRectExForDpi(&frame, DWORD(WS_OVERLAPPEDWINDOW), 0,
+                                        DWORD(WS_EX_DLGMODALFRAME), context.dpi)
+                limits.pointee.ptMinTrackSize.x = frame.right - frame.left
+                limits.pointee.ptMinTrackSize.y = frame.bottom - frame.top
             }
             return 0
         case UINT(WM_COMMAND):
@@ -148,18 +178,36 @@ enum WindowsProviderDetailsDialog {
         }
     }
 
-    private static func layout(_ hwnd: HWND) {
+    private static func updateFont(_ hwnd: HWND, context: Context) {
+        var metrics = NONCLIENTMETRICSW()
+        metrics.cbSize = UINT(MemoryLayout<NONCLIENTMETRICSW>.size)
+        guard SystemParametersInfoForDpi(UINT(SPI_GETNONCLIENTMETRICS), metrics.cbSize,
+                                         &metrics, 0, context.dpi) != 0,
+              let font = CreateFontIndirectW(&metrics.lfMessageFont) else { return }
+        let previous = context.font
+        context.font = font
+        for id in [Self.textID, Self.closeID, Self.refreshID, Self.linkBaseID,
+                   Self.linkBaseID + 1, Self.linkBaseID + 2] {
+            if let control = GetDlgItem(hwnd, id) {
+                SendMessageW(control, UINT(WM_SETFONT), WPARAM(Int(bitPattern: font)), 1)
+            }
+        }
+        if let previous { DeleteObject(previous) }
+    }
+
+    private static func layout(_ hwnd: HWND, context: Context) {
+        let px = context.pixels
         var rect = RECT()
         guard GetClientRect(hwnd, &rect) != 0 else { return }
         let width = max(0, rect.right - rect.left), height = max(0, rect.bottom - rect.top)
-        MoveWindow(GetDlgItem(hwnd, Self.textID), 12, 12, max(1, width - 24), max(1, height - 100), 1)
+        MoveWindow(GetDlgItem(hwnd, Self.textID), px(12), px(12), max(1, width - px(24)), max(1, height - px(100)), 1)
         for index in 0..<3 {
             if let control = GetDlgItem(hwnd, Self.linkBaseID + Int32(index)) {
-                MoveWindow(control, 12 + Int32(index) * 132, max(12, height - 40), 124, 28, 1)
+                MoveWindow(control, px(12 + Int32(index) * 132), max(px(12), height - px(40)), px(124), px(28), 1)
             }
         }
-        MoveWindow(GetDlgItem(hwnd, Self.refreshID), 12, max(12, height - 76), 180, 28, 1)
-        MoveWindow(GetDlgItem(hwnd, Self.closeID), max(12, width - 104), max(12, height - 40), 92, 28, 1)
+        MoveWindow(GetDlgItem(hwnd, Self.refreshID), px(12), max(px(12), height - px(76)), px(180), px(28), 1)
+        MoveWindow(GetDlgItem(hwnd, Self.closeID), max(px(12), width - px(104)), max(px(12), height - px(40)), px(92), px(28), 1)
     }
 
     private static func addControl(_ parent: HWND, _ klass: String, _ text: String,

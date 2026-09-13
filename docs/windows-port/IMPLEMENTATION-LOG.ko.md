@@ -1326,3 +1326,15 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winus
 - Close/Escape/창 닫기는 새로고침을 요청하지 않는다. 업데이트 완료를 기다리거나 최신 데이터를 받았다고 표시하지 않으며, 업데이트 뒤 상세 창을 다시 여는 안내를 작성했다.
 
 남은 범위: 상세 창을 유지하는 live refresh/로딩·실패 상태, 공급자·계정별 갱신과 rich card, DPI/접근성/지역화 및 Windows 런타임 검증. WIN-010 완료를 의미하지 않는다.
+
+## IMPL-089 — 상세 창 DPI 배치와 글꼴
+
+상태 CODE_WRITTEN_UNVERIFIED. 컴파일/빌드/테스트/UI/DPI/글꼴/검증 미실시. guidelines/COMMITS.md 부재로 핵심 커밋 규칙을 적용한다.
+
+- 상세 창의 초기 client 크기·최소 크기·버튼·여백을 96 DPI 기준에서 현재 창 DPI로 환산하도록 작성했다. 프레임 크기는 AdjustWindowRectExForDpi를 사용한다.
+- WM_DPICHANGED에서 새 DPI와 제안 RECT를 적용하고 컨트롤 배치를 다시 계산한다. 배율 변경과 시스템 설정 변경 때 SystemParametersInfoForDpi의 message font로 교체하며 기존 폰트는 컨트롤 교체 후 해제한다. 조회 실패 시 기존 글꼴을 유지한다.
+- Context가 소유한 글꼴은 창 메시지 루프 정리 이후 해제한다. 기본 stock font는 소유하거나 해제하지 않는다.
+
+남은 범위: 앱/스레드 전체 DPI awareness 통합, 실제 다중 모니터·배율·작업 영역 초과·접근성 텍스트 크기, 지역화 및 WinSDK ABI 검증. 이번 상세 창 코드만으로 전체 DPI 지원 완료를 주장하지 않는다.
+
+API 참고: https://learn.microsoft.com/en-us/windows/win32/hidpi/wm-dpichanged , https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-systemparametersinfofordpi
