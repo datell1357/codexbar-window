@@ -6,7 +6,29 @@ public enum WindowsZedEditorSettings {
     /// CodexBar-specific override matching the editor's custom data directory.
     public static let dataDirectoryEnvironmentKey = "CODEXBAR_ZED_DATA_DIR"
 
-    public enum Failure: Error { case unavailable, invalid, separateCredentialOrigin }
+    public enum Failure: LocalizedError {
+        case unavailable, invalid, separateCredentialOrigin
+        case invalidDataDirectory, missingCustomSettings, oversized, duplicateKeys
+
+        public var errorDescription: String? {
+            switch self {
+            case .unavailable:
+                "Zed settings could not be read. Check access to the editor settings or import the account with explicit server addresses."
+            case .invalid:
+                "Zed settings have an unsupported format or server address. Use UTF-8 JSON with HTTPS server origins."
+            case .separateCredentialOrigin:
+                "Zed uses a separate credential address. Import the account using both server and credential addresses."
+            case .invalidDataDirectory:
+                "CODEXBAR_ZED_DATA_DIR must contain an absolute directory path without quotes or control characters."
+            case .missingCustomSettings:
+                "The custom Zed data directory has no config/settings.json. Check CODEXBAR_ZED_DATA_DIR or import with explicit addresses."
+            case .oversized:
+                "Zed settings exceed the 1 MiB read limit. Import the account with explicit server addresses."
+            case .duplicateKeys:
+                "Zed settings contain duplicate top-level keys. Remove the ambiguity in the editor settings or import with explicit addresses."
+            }
+        }
+    }
 
     public struct Configuration: Sendable, Equatable {
         public let serverURL: String
@@ -45,7 +67,7 @@ public enum WindowsZedEditorSettings {
             let path = raw.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !path.isEmpty, path.utf16.count <= 32_767,
                   !path.unicodeScalars.contains(where: { $0.value < 32 || $0.value == 127 }),
-                  NSString(string: path).isAbsolutePath else { throw Failure.unavailable }
+                  !path.contains("\""), NSString(string: path).isAbsolutePath else { throw Failure.invalidDataDirectory }
             let url = URL(fileURLWithPath: path, isDirectory: true)
                 .appendingPathComponent("config", isDirectory: true).appendingPathComponent("settings.json")
             // An explicit but missing profile must not silently select the default editor account.
@@ -67,7 +89,7 @@ public enum WindowsZedEditorSettings {
         let handle: FileHandle
         do { handle = try FileHandle(forReadingFrom: url) }
         catch let error as NSError where error.domain == NSCocoaErrorDomain && error.code == NSFileReadNoSuchFileError {
-            guard allowMissingDefaults else { throw Failure.unavailable }
+            guard allowMissingDefaults else { throw Failure.missingCustomSettings }
             return try Configuration(serverURL: ZedStatusProbe.defaultKeychainServiceURL)
         } catch { throw Failure.unavailable }
         defer { try? handle.close() }
@@ -79,13 +101,14 @@ public enum WindowsZedEditorSettings {
     }
 
     static func parseConfiguration(_ data: Data) throws -> Configuration {
-        guard data.count <= 1_048_576, String(data: data, encoding: .utf8) != nil else { throw Failure.invalid }
+        guard data.count <= 1_048_576 else { throw Failure.oversized }
+        guard String(data: data, encoding: .utf8) != nil else { throw Failure.invalid }
         let json = try self.removingCommentsAndTrailingCommas(data)
         guard let object = try? JSONSerialization.jsonObject(with: json),
-              let fields = object as? [String: Any],
-              WindowsJSONRootKeys.areUnique(in: json, maximumBytes: 1_048_576) else { throw Failure.invalid }
+              let fields = object as? [String: Any] else { throw Failure.invalid }
+        guard WindowsJSONRootKeys.areUnique(in: json, maximumBytes: 1_048_576) else { throw Failure.duplicateKeys }
         func origin(_ key: String) throws -> String? {
-            guard let value = fields[key] else { return nil }
+            guard let value = fields[key], !(value is NSNull) else { return nil }
             guard let text = value as? String else { throw Failure.invalid }
             let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
             if trimmed.isEmpty { return nil }

@@ -2819,3 +2819,11 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - 설정/인증 오류의 다른 프로필 대체는 없고 기존 source mode 및 shouldFallback false 계약을 유지한다.
 - 남은 소요: 실제 Windows 자동 조회/계정 전환 검증, 편집기 디렉터리 자동 발견 및 전체 계획 나머지.
 - CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·설정 조회·Credential Manager·API 검증 미실행.
+
+## IMPL-248 — Zed 설정 실패 안내
+
+- 설정 Failure를 LocalizedError로 확장하고 접근 실패, 형식 오류, 분리 주소, 잘못된 custom path, 명시 파일 누락, 1MiB 초과, 중복 root key를 구분한다.
+- 자동 조회에서 전달 가능한 고정 복구 안내를 제공하며 실제 경로/설정 값/비밀값을 메시지에 포함하지 않는다. 가져오기 UI의 일반 실패 안내는 유지한다.
+- custom data dir의 따옴표 문자를 거부하고 선택적 server_url/credentials_url의 JSON null은 기존 optional 모델과 같이 미지정으로 처리한다.
+- 남은 소요: Windows 실제 오류/인증 검증, 편집기 디렉터리 자동 발견 및 전체 계획 나머지.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 파서·빌드·테스트·lint·설정 조회·인증 검증 미실행.
