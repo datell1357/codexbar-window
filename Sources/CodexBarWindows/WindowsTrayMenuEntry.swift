@@ -23,6 +23,7 @@ public struct WindowsTrayMenuEntry: Sendable, Equatable {
     public let disabledText: String?
     /// Redacted failure from this provider in the current refresh only.
     public let errorCopyText: String?
+    public var usageCopyText: String? = nil
 
     public init(
         providerID: String,

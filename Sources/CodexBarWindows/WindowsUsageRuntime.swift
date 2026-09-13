@@ -673,7 +673,8 @@ public actor WindowsUsageRuntime {
                 .flatMap { $0.sanitizedUsageScope.flatMap(ZaiUsageScope.init(rawValue:)) }
             self.statusMenuEntries = config.enabledProviders().compactMap { instanceID in
                 guard let provider = instanceID.firstPartyProvider else {
-                    guard let errorText = self.providerCopyErrors[instanceID.rawValue] else { return nil }
+                    let errorText = self.providerCopyErrors[instanceID.rawValue]
+                    guard errorText != nil || self.presentations[instanceID] != nil else { return nil }
                     let name = UserProviderPluginRegistry.plugin(for: instanceID)?.manifest.name ?? "Missing plugin"
                     let title = LogRedactor.redact("\(name) [\(instanceID.rawValue)]")
                         .replacingOccurrences(of: "\0", with: "")
@@ -780,6 +781,7 @@ public actor WindowsUsageRuntime {
 
     private func publishRenderEntries(settings: WindowsUsagePresentationSettings) {
         guard !self.shuttingDown else { return }
+        var copyRows: [String: String] = [:]
         let rendered = self.renderEntries.flatMap { entry -> [String] in
             switch entry {
             case let .presentation(presentation):
@@ -791,14 +793,21 @@ public actor WindowsUsageRuntime {
                     showOptionalUsage: settings.showOptionalCreditsAndExtraUsage,
                     usageBarsShowUsed: settings.usageBarsShowUsed,
                     resetTimesShowAbsolute: settings.resetTimesShowAbsolute)
-                return updated.rows()
+                let rows = updated.rows()
+                copyRows[presentation.instanceID.rawValue] = WindowsClipboard.summary(rows: rows)
+                return rows
             case let .row(row): return [row]
             }
         }
         let displayRows = rendered.isEmpty ? ["No providers are enabled"] : rendered
         let publishedRows = settings.hidePersonalInfo ? displayRows.map { LogRedactor.redact($0) } : displayRows
         self.publisher(publishedRows)
-        self.combinedPublisher(publishedRows, self.statusMenuEntries)
+        let copyEntries = self.statusMenuEntries.map { entry in
+            var updated = entry
+            updated.usageCopyText = copyRows[entry.providerID]
+            return updated
+        }
+        self.combinedPublisher(publishedRows, copyEntries)
     }
 
     public func shutdown() async {

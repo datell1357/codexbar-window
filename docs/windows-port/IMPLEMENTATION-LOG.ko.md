@@ -1266,3 +1266,13 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winus
 - WindowsTrayMenuEntry에 statusVisible을 추가해 오류 전용 plugin entry가 허위 상태 페이지/대시보드 메뉴를 만들지 않도록 분리했다. 기본 first-party 상태 항목은 기존 동작을 유지한다.
 
 남은 범위: 계정별 동시 오류 선택, plugin별 dashboard/status 선언 연결, 제목·오류 redaction 범위, 상세 카드/UI 계약 및 전체 Windows 검증. plugin 기능 전체 또는 WIN-010 완료를 의미하지 않는다.
+
+## IMPL-083 — 공급자별 사용량 복사
+
+상태 CODE_WRITTEN_UNVERIFIED. Swift 컴파일/빌드/테스트/UI/clipboard/plugin/검증 실행 미실시. guidelines/COMMITS.md 부재로 핵심 커밋 규칙을 적용한다.
+
+- plugin manifest를 읽은 결과 dashboard/status URL 선언이 없어 추정 링크를 추가하지 않았다. 대신 WIN-010의 공급자별 usage copy를 연결했다.
+- 표시 행을 다시 렌더링하는 지점에서 현재 privacy/optional usage/used-or-remaining/reset 설정을 적용한 instance별 copy text를 작성한다. first-party 및 성공한 plugin의 menu entry에 연결하며 오류-only 항목은 사용량으로 복사하지 않는다.
+- Copy provider usage 하위 메뉴를 추가하고 기존 popup-bound 명령/clipboard 실패/개인정보 변경 guard를 재사용한다. 오류 복사와 별도 명령 범위를 쓰며 메뉴 종료 때 함께 정리한다.
+
+남은 범위: 계정별 동시 상세 선택, rich card/Share Stats 이미지 내보내기, plugin link 계약이 추가되는 경우의 별도 지원, 전체 Windows UI/ABI/redaction 검증. WIN-010 완료로 판정하지 않는다.
