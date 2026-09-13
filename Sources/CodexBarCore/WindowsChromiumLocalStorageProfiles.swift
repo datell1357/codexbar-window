@@ -31,6 +31,7 @@ enum WindowsChromiumLocalStorageProfiles {
         for browser in browsers {
             try self.check(deadline)
             guard browser != .firefox else { continue }
+            var listingError: Error?
             let directories = WindowsBrowserProfileLocator.profileDirectories(
                 for: browser, home: home, environment: environment,
                 fileExists: { path in
@@ -38,13 +39,15 @@ enum WindowsChromiumLocalStorageProfiles {
                 },
                 directoryContents: { path in
                     guard !Task.isCancelled, Date() < deadline else { return nil }
-                    return try? manager.contentsOfDirectory(atPath: path)
+                    do { return try WindowsBoundedDirectoryNames.read(URL(fileURLWithPath: path), deadline: deadline) }
+                    catch { listingError = error; return nil }
                 },
                 isDirectory: { path in
                     guard !Task.isCancelled, Date() < deadline else { return false }
                     let attributes = try? URL(fileURLWithPath: path).resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey])
                     return attributes?.isDirectory == true && attributes?.isSymbolicLink != true
                 })
+            if let listingError { throw listingError }
             for (index, directory) in directories.enumerated() {
                 try self.check(deadline)
                 let storage = directory.appendingPathComponent("Local Storage", isDirectory: true)

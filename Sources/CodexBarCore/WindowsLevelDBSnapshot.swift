@@ -22,9 +22,7 @@ enum WindowsLevelDBSnapshot {
             }
             func inventory() throws -> [WindowsLevelDBFileNames.Numbered: String] {
                 try self.check(deadline)
-                let names: [String]
-                do { names = try FileManager.default.contentsOfDirectory(atPath: directory.path) }
-                catch { throw Failure.unavailable }
+                let names = try WindowsBoundedDirectoryNames.read(directory, deadline: deadline)
                 return try WindowsLevelDBFileNames.inventory(names)
             }
             let current = try readFile("CURRENT", maximumBytes: 64)

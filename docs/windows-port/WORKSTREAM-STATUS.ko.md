@@ -1,5 +1,7 @@
 # Windows 전용 제품 작업 현황
 
+- IMPL-277: 프로필 루트/LevelDB inventory에 Windows 항목별 디렉터리 열거와 크기·취소·시간 제한을 연결했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
 - IMPL-276: Chromium 프로필을 Default/번호순으로 정렬하고 localStorage 탐색의 프로필 내부 전체 목록 읽기를 제거했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
 
 - IMPL-275: Vivaldi 기본 프로필 경로와 Windsurf 선택을 연결하고 통합 사용 안내를 작성했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.

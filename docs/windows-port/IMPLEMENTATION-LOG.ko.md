@@ -3071,3 +3071,12 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - 기존 표준 경로 중복 제거와 64개 제한을 유지한다. 루트 디렉터리 열거 자체의 완전한 streaming 제한은 아직 구현하지 않았다.
 - 남은 소요: 추가 브라우저/압축 및 전체 계획 나머지.
 - CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·실제 파일/브라우저 실행 미실행.
+
+## IMPL-277 — Windows 디렉터리 열거 제한
+
+- FindFirstFileW/FindNextFileW 기반 단일 디렉터리 열거 모듈을 작성했다. 기존 WindowsSessionMetadataCorrelator의 WinSDK 호출 형태를 참고했다.
+- 최대 100000개 항목/이름 UTF-8 합계 16MiB, 항목별 취소/deadline 확인, 핸들 해제를 포함한다. 열거 실패/예산 초과 시 부분 목록을 반환하지 않는다.
+- Chromium 기본 프로필 루트와 LevelDB snapshot inventory를 새 열거 코드로 연결했다. 프로필 locator의 nil 결과로 열거 오류가 숨겨지지 않도록 상위에서 다시 전달한다.
+- 파일 내용/재귀 디렉터리는 읽지 않는다. 네이티브 파일 시스템 호출 자체의 응답 지연을 강제 중단하는 기능은 아니다.
+- 남은 소요: 추가 브라우저/압축 및 전체 계획 나머지.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·실제 파일/브라우저 실행 미실행.
