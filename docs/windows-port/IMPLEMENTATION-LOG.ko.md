@@ -2995,3 +2995,12 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - GetPlanStatus 모델에는 서버 계정 ID가 없으므로 결과는 ProbedCandidate이며 검증된 계정 ID를 제공하지 않는다. 브라우저 입력 account ID를 서버에서 확인된 신원으로 표시하지 않는다.
 - 남은 소요: runtime의 임시 후보 수명/설정 변경 방어, 후보 선택 및 계정 저장 UI, 추가 압축 지원과 전체 계획 나머지.
 - CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·실제 브라우저/네트워크 요청 미실행.
+
+## IMPL-268 — Windsurf 가져오기 runtime
+
+- Chrome 후보 탐색과 API probe를 actor 밖 작업으로 연결하고 취소/종료 시 작업 및 임시 후보를 해제하도록 작성했다.
+- 최대 16개 후보 probe, 동일 bundle 중복 제거, 실패/생략 집계와 5분 ticket 만료를 포함한다. 전체 deadline을 넘긴 결과는 선택 목록으로 반환하지 않는다.
+- 설정 revision/선택 계정/개인정보 숨김 상태를 보존하고 저장 시 재확인한다. 기존 보호 저장 경로를 재사용하며 정확히 같은 bundle만 기존 계정으로 선택한다.
+- 표시 이름은 일반 세션 이름과 출처이며 검증된 계정 ID를 부여하지 않는다. 개인정보 숨김 모드에서는 profile/origin 출처를 숨긴다.
+- 남은 소요: WindowsMain/트레이 메뉴/선택 창 연결, 추가 압축 지원 및 전체 계획 나머지.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·UI·브라우저·네트워크 검증 미실행.

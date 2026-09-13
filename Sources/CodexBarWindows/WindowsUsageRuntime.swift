@@ -930,6 +930,207 @@ public actor WindowsUsageRuntime {
         } catch { return .failed }
     }
 
+    public struct WindsurfBrowserChoice: Sendable {
+        public let id: UUID
+        public let title: String
+    }
+    public enum WindsurfBrowserImportResult: Sendable {
+        case choices(requestID: UUID, rows: [WindsurfBrowserChoice], failedCount: Int, omittedCount: Int, privacy: Bool, expires: Date)
+        case unavailable(String)
+    }
+    private struct PendingWindsurfBrowserImport {
+        let id: UUID
+        let expires: Date
+        let revision: Data
+        let selectedID: UUID?
+        let privacy: Bool
+        let candidates: [UUID: WindowsWindsurfBrowserSessionImporter.ProbedCandidate]
+    }
+    private var windsurfBrowserExpiryTask: Task<Void, Never>?
+    private var windsurfBrowserValidationTask: Task<WindowsWindsurfBrowserSessionImporter.ProbedCandidate, Error>?
+    private var windsurfBrowserImportRequest: UUID?
+    private var windsurfBrowserDiscoveryTask: Task<WindowsWindsurfBrowserSessionImporter.Discovery, Error>?
+    private var pendingWindsurfBrowserImport: PendingWindsurfBrowserImport?
+
+    private func windsurfImportRevision() throws -> (Data, UUID?)? {
+        guard let config = try self.configStore.load(), config.enabledProviders().contains(UsageProvider.windsurf.instanceID),
+              let entry = config.providerConfig(for: UsageProvider.windsurf.instanceID) else { return nil }
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        let revision = Data(SHA256.hash(data: try encoder.encode(entry)))
+        let accounts = entry.tokenAccounts
+        let selected = accounts.flatMap { $0.accounts.isEmpty ? nil : $0.accounts[$0.clampedActiveIndex()].id }
+        return (revision, selected)
+    }
+
+    public func discoverWindsurfBrowserAccounts(requestID: UUID = UUID()) async -> WindsurfBrowserImportResult {
+        guard !Task.isCancelled else { return .unavailable("The browser import was cancelled.") }
+        guard !self.shuttingDown, self.refreshTask == nil else { return .unavailable("Wait for the current refresh to finish.") }
+        self.cancelWindsurfBrowserImport()
+        self.windsurfBrowserImportRequest = requestID
+        self.pendingWindsurfBrowserImport = nil
+        defer {
+            if self.pendingWindsurfBrowserImport?.id != requestID {
+                self.cancelWindsurfBrowserImport(requestID: requestID)
+            }
+        }
+        let privacy = WindowsUsagePresentationSettings.load().hidePersonalInfo
+        do {
+            guard let (revision, selected) = try self.windsurfImportRevision() else { return .unavailable("Enable Windsurf before importing an account.") }
+            let deadline = Date().addingTimeInterval(60)
+            let importer = WindowsWindsurfBrowserSessionImporter()
+            // Profile enumeration and LevelDB reads must not occupy the usage runtime actor.
+            let discoveryTask = Task.detached(priority: .utility) {
+                try importer.discover(deadline: deadline)
+            }
+            self.windsurfBrowserDiscoveryTask = discoveryTask
+            defer {
+                if self.windsurfBrowserImportRequest == requestID { self.windsurfBrowserDiscoveryTask = nil }
+            }
+            let discovery = try await withTaskCancellationHandler {
+                try await discoveryTask.value
+            } onCancel: {
+                discoveryTask.cancel()
+            }
+            try Task.checkCancellation()
+            guard !self.shuttingDown, self.windsurfBrowserImportRequest == requestID else {
+                return .unavailable("The browser import was cancelled or replaced.")
+            }
+            var validated: [UUID: WindowsWindsurfBrowserSessionImporter.ProbedCandidate] = [:]
+            var rows: [WindsurfBrowserChoice] = []
+            var failures = discovery.failedProfileCount + discovery.busyProfileCount + discovery.invalidOriginCount + discovery.incompleteOriginCount
+            var attempted = 0
+            var seenSessions = Set<Data>()
+            for candidate in discovery.candidates.prefix(16) {
+                try Task.checkCancellation()
+                guard Date() < deadline else { break }
+                guard !self.shuttingDown, self.windsurfBrowserImportRequest == requestID,
+                      try self.windsurfImportRevision()?.0 == revision,
+                      WindowsUsagePresentationSettings.load().hidePersonalInfo == privacy else {
+                    return .unavailable("Windsurf accounts or privacy settings changed. Start the import again.")
+                }
+                attempted += 1
+                // Collapse only identical bundles; browser account IDs do not prove server identity.
+                let fingerprint = Data(SHA256.hash(data: Data(candidate.sessionBundle.utf8)))
+                guard seenSessions.insert(fingerprint).inserted else { continue }
+                do {
+                    let validationTask = Task.detached(priority: .utility) {
+                        try await importer.probe(candidate, deadline: deadline)
+                    }
+                    self.windsurfBrowserValidationTask = validationTask
+                    defer {
+                        if self.windsurfBrowserImportRequest == requestID { self.windsurfBrowserValidationTask = nil }
+                    }
+                    let result = try await withTaskCancellationHandler {
+                        try await validationTask.value
+                    } onCancel: {
+                        validationTask.cancel()
+                    }
+                    try Task.checkCancellation()
+                    guard !self.shuttingDown, self.windsurfBrowserImportRequest == requestID else {
+                        return .unavailable("The browser import was cancelled or replaced.")
+                    }
+                    let id = UUID()
+                    validated[id] = result
+                    let label = privacy ? "Windsurf account \(rows.count + 1)" :
+                        "Windsurf session \(rows.count + 1)"
+                    let safe = String(LogRedactor.redact(label).unicodeScalars.filter { $0.value >= 32 && $0.value != 127 }.map(String.init).joined().prefix(160))
+                    let source = privacy ? "Chrome session \(rows.count + 1)" :
+                        String(LogRedactor.redact(result.candidate.sourceLabel + " / " + result.candidate.origin).unicodeScalars
+                            .filter { $0.value >= 32 && $0.value != 127 }.map(String.init).joined().prefix(120))
+                    rows.append(.init(id: id, title: safe + " — " + source))
+                } catch is CancellationError { throw CancellationError() }
+                catch WindowsWindsurfBrowserSessionImporter.Failure.timedOut {
+                    failures += 1
+                    break
+                }
+                catch { failures += 1 }
+            }
+            try Task.checkCancellation()
+            guard !self.shuttingDown, self.windsurfBrowserImportRequest == requestID,
+                  try self.windsurfImportRevision()?.0 == revision,
+                  WindowsUsagePresentationSettings.load().hidePersonalInfo == privacy else {
+                return .unavailable("Windsurf accounts or privacy settings changed. Start the import again.")
+            }
+            guard Date() < deadline else {
+                return .unavailable("Windsurf browser import reached its time limit. Retry the import.")
+            }
+            guard !rows.isEmpty else {
+                if Date() >= deadline {
+                    return .unavailable("Windsurf browser import reached its time limit. Check connectivity and retry.")
+                }
+                return .unavailable("No usable Windsurf session was found. Sign in to windsurf.com in Chrome, close Chrome, and retry.")
+            }
+            let expires = Date().addingTimeInterval(300)
+            self.pendingWindsurfBrowserImport = .init(id: requestID, expires: expires,
+                revision: revision, selectedID: selected, privacy: privacy, candidates: validated)
+            self.windsurfBrowserExpiryTask?.cancel()
+            self.windsurfBrowserExpiryTask = Task { [weak self] in
+                do { try await Task.sleep(nanoseconds: 300_000_000_000) }
+                catch { return }
+                guard !Task.isCancelled else { return }
+                await self?.cancelWindsurfBrowserImport(requestID: requestID)
+            }
+            return .choices(requestID: requestID, rows: rows, failedCount: failures,
+                            omittedCount: discovery.candidates.count - attempted + discovery.omittedProfileCount, privacy: privacy, expires: expires)
+        } catch {
+            return .unavailable("Windsurf browser import did not complete. Close Chrome and retry. Unsupported or damaged storage cannot be imported.")
+        }
+    }
+
+    public func cancelWindsurfBrowserImport(requestID: UUID? = nil) {
+        if let requestID, self.windsurfBrowserImportRequest != requestID { return }
+        self.windsurfBrowserExpiryTask?.cancel()
+        self.windsurfBrowserExpiryTask = nil
+        self.windsurfBrowserValidationTask?.cancel()
+        self.windsurfBrowserValidationTask = nil
+        self.windsurfBrowserDiscoveryTask?.cancel()
+        self.windsurfBrowserDiscoveryTask = nil
+        self.windsurfBrowserImportRequest = nil
+        self.pendingWindsurfBrowserImport = nil
+    }
+
+    public func importWindsurfBrowserAccount(requestID: UUID, candidateID: UUID, label: String) -> WindowsTokenAccountAddResult {
+        guard !self.shuttingDown else { return .shuttingDown }
+        guard self.refreshTask == nil else { return .refreshInProgress }
+        guard let pending = self.pendingWindsurfBrowserImport, pending.id == requestID,
+              pending.expires > Date(), pending.privacy == WindowsUsagePresentationSettings.load().hidePersonalInfo,
+              let candidate = pending.candidates[candidateID] else { return .staleSelection }
+        do {
+            guard try self.windsurfImportRevision()?.0 == pending.revision else { return .staleSelection }
+            let providerID = UsageProvider.windsurf.instanceID
+            let existingAccounts = try self.configStore.load()?.providerConfig(for: providerID)?.tokenAccounts?.accounts ?? []
+            // Plan status contains no authoritative account ID. Reuse only the exact bundle
+            // without assigning an external identifier or changing metadata.
+            if let existing = existingAccounts.first(where: {
+                $0.externalIdentifier == nil &&
+                    $0.token == candidate.candidate.sessionBundle &&
+                    $0.usageScope == nil && $0.organizationID == nil && $0.workspaceID == nil
+            }) {
+                let selection = self.selectTokenAccount(providerID: providerID, accountID: existing.id,
+                                                        expectedSelectedID: pending.selectedID)
+                switch selection {
+                case .saved, .unchanged:
+                    self.cancelWindsurfBrowserImport(requestID: requestID)
+                    return .alreadyAdded(existing.id)
+                case .staleSelection: return .staleSelection
+                case .refreshInProgress: return .refreshInProgress
+                case .unavailable: return .unavailable
+                case .shuttingDown: return .shuttingDown
+                case .failed: return .failed
+                }
+            }
+            let result = self.addTokenAccount(.init(providerID: UsageProvider.windsurf.instanceID, accountID: candidateID,
+                label: label, token: candidate.candidate.sessionBundle, usageScope: nil, organizationID: nil,
+                workspaceID: nil, expectedSelectedID: pending.selectedID))
+            switch result {
+            case .saved, .alreadyAdded: self.cancelWindsurfBrowserImport()
+            default: break
+            }
+            return result
+        } catch { return .failed }
+    }
+
     public enum ZedEditorImportResult: Sendable {
         case serverSuggestion(configuration: WindowsZedEditorSettings.Configuration?, privacy: Bool)
         case ready(requestID: UUID, title: String, privacy: Bool, expires: Date)
@@ -2270,6 +2471,7 @@ public actor WindowsUsageRuntime {
         self.cancelCursorBrowserImport()
         self.cancelAugmentBrowserImport()
         self.cancelZedEditorImport()
+        self.cancelWindsurfBrowserImport()
         self.queuedSpendRefresh = false
         self.spendGeneration &+= 1
         self.spendSnapshot = nil
