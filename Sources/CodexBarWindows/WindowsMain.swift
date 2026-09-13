@@ -152,24 +152,25 @@ private final class WindowsTrayApplication: @unchecked Sendable {
                 guard let self else { return }
                 let privacy = WindowsUsagePresentationSettings.load().hidePersonalInfo
                 let task = Task.detached(priority: .utility) {
-                    try WindowsZedEditorSettings.suggestedOrigin()
+                    try WindowsZedEditorSettings.suggestedConfiguration()
                 }
-                let origin: String?
+                let configuration: WindowsZedEditorSettings.Configuration?
                 do {
-                    origin = try await withTaskCancellationHandler {
+                    configuration = try await withTaskCancellationHandler {
                         try await task.value
                     } onCancel: { task.cancel() }
-                } catch { origin = nil }
+                } catch { configuration = nil }
                 guard !Task.isCancelled else { return }
                 self.host.postZedEditorImport(requestID: requestID,
-                    result: .serverSuggestion(origin: origin, privacy: privacy))
+                    result: .serverSuggestion(configuration: configuration, privacy: privacy))
             }
         },
-        onZedEditorImportRequested: { [weak self] requestID, origin in
+        onZedEditorImportRequested: { [weak self] requestID, configuration in
             guard let self else { return }
             self.zedEditorImports.start(id: requestID) { [weak self] in
                 guard let self else { return }
-                let result = await self.runtime.discoverZedEditorAccount(requestID: requestID, serviceURL: origin)
+                let result = await self.runtime.discoverZedEditorAccount(requestID: requestID, serviceURL: configuration.serverURL,
+                    credentialServiceURL: configuration.credentialServiceURL)
                 guard !Task.isCancelled else { return }
                 self.host.postZedEditorImport(requestID: requestID, result: result)
             }

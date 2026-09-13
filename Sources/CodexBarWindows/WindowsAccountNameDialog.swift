@@ -22,7 +22,9 @@ enum WindowsAccountNameDialog {
         let providerName: String?
         let accountTitle: String?
         let suggestedOrigin: String?
-        init(mode: Mode, provider: UsageProvider?, expectedPrivacy: Bool?, expires: Date?, accountTitle: String?, suggestedOrigin: String?) {
+        let isCredentialOrigin: Bool
+        init(mode: Mode, provider: UsageProvider?, expectedPrivacy: Bool?, expires: Date?, accountTitle: String?, suggestedOrigin: String?, isCredentialOrigin: Bool) {
+            self.isCredentialOrigin = isCredentialOrigin
             self.suggestedOrigin = suggestedOrigin
             self.accountTitle = accountTitle
             self.provider = provider
@@ -34,6 +36,7 @@ enum WindowsAccountNameDialog {
         }
         var guidance: String {
             if self.mode == .zedServer {
+                if self.isCredentialOrigin { return "Confirm the HTTPS address used to store the editor credential. It may differ from the API server. Continue reads this saved credential." }
                 return self.suggestedOrigin == nil
                     ? "Editor settings could not supply a server. Enter its HTTPS origin. Continue reads the saved credential for that server."
                     : "Server from editor settings (or the default if no settings file exists). Confirm or edit it before continuing."
@@ -51,8 +54,8 @@ enum WindowsAccountNameDialog {
         deinit { if let font { DeleteObject(font) } }
         func pixels(_ value: Int32) -> Int32 { MulDiv(value, Int32(self.dpi), 96) }
     }
-    static func showZedServer(owner: HWND, expectedPrivacy: Bool, suggestedOrigin: String?) -> Result {
-        Self.show(owner: owner, mode: .zedServer, provider: .zed, expectedPrivacy: expectedPrivacy, suggestedOrigin: suggestedOrigin)
+    static func showZedServer(owner: HWND, expectedPrivacy: Bool, suggestedOrigin: String?, isCredentialOrigin: Bool = false) -> Result {
+        Self.show(owner: owner, mode: .zedServer, provider: .zed, expectedPrivacy: expectedPrivacy, suggestedOrigin: suggestedOrigin, isCredentialOrigin: isCredentialOrigin)
     }
 
     static func show(owner: HWND) -> Result { Self.show(owner: owner, mode: .name) }
@@ -66,8 +69,8 @@ enum WindowsAccountNameDialog {
         Self.show(owner: owner, mode: .credential, provider: provider)
     }
 
-    private static func show(owner: HWND, mode: Mode, provider: UsageProvider? = nil, expectedPrivacy: Bool? = nil, expires: Date? = nil, accountTitle: String? = nil, suggestedOrigin: String? = nil) -> Result {
-        let context = Context(mode: mode, provider: provider, expectedPrivacy: expectedPrivacy, expires: expires, accountTitle: accountTitle, suggestedOrigin: suggestedOrigin)
+    private static func show(owner: HWND, mode: Mode, provider: UsageProvider? = nil, expectedPrivacy: Bool? = nil, expires: Date? = nil, accountTitle: String? = nil, suggestedOrigin: String? = nil, isCredentialOrigin: Bool = false) -> Result {
+        let context = Context(mode: mode, provider: provider, expectedPrivacy: expectedPrivacy, expires: expires, accountTitle: accountTitle, suggestedOrigin: suggestedOrigin, isCredentialOrigin: isCredentialOrigin)
         guard context.inputContextIsValid else { return .cancelled }
         let instance = GetModuleHandleW(nil)
         var klass = WNDCLASSEXW()
@@ -81,7 +84,7 @@ enum WindowsAccountNameDialog {
             return RegisterClassExW(&klass)
         }
         guard registered != 0 || GetLastError() == ERROR_CLASS_ALREADY_EXISTS else { return .failed }
-        let caption = Array((mode == .zedServer ? "Choose Zed editor server" : mode == .importedAccount ? "Name imported " + (context.providerName ?? "Cursor") + " account" : mode == .name ? "Rename saved account" : "Replace account credential — " + (context.providerName ?? "Saved account")).utf16) + [0]
+        let caption = Array((mode == .zedServer ? (isCredentialOrigin ? "Confirm Zed credential address" : "Choose Zed API server") : mode == .importedAccount ? "Name imported " + (context.providerName ?? "Cursor") + " account" : mode == .name ? "Rename saved account" : "Replace account credential — " + (context.providerName ?? "Saved account")).utf16) + [0]
         let hwnd = name.withUnsafeBufferPointer { n in
             caption.withUnsafeBufferPointer { c in
                 CreateWindowExW(DWORD(WS_EX_DLGMODALFRAME), n.baseAddress, c.baseAddress,
@@ -166,7 +169,7 @@ enum WindowsAccountNameDialog {
             if context.expectedPrivacy != nil || context.expires != nil, SetTimer(hwnd, Self.privacyTimer, 250, nil) == 0 { return -1 }
             let dpi = GetDpiForWindow(hwnd)
             context.dpi = dpi == 0 ? 96 : dpi
-            guard Self.control(hwnd, "STATIC", context.mode == .zedServer ? "&Zed server origin" : context.mode != .credential ? "&New account name" : "&New " + (context.support?.title ?? "credential").replacingOccurrences(of: "&", with: "&&"), 100, 0, 16, 14, 400, 22) != nil,
+            guard Self.control(hwnd, "STATIC", context.mode == .zedServer ? (context.isCredentialOrigin ? "&Credential storage origin" : "&Zed API server origin") : context.mode != .credential ? "&New account name" : "&New " + (context.support?.title ?? "credential").replacingOccurrences(of: "&", with: "&&"), 100, 0, 16, 14, 400, 22) != nil,
                   let edit = Self.control(hwnd, "EDIT", "", 101, DWORD(WS_TABSTOP | WS_BORDER | ES_AUTOHSCROLL) | (context.mode == .credential ? DWORD(ES_PASSWORD) : 0),
                                           16, 40, 410, 26),
                   Self.control(hwnd, "STATIC", context.guidance,

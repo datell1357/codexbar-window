@@ -931,7 +931,7 @@ public actor WindowsUsageRuntime {
     }
 
     public enum ZedEditorImportResult: Sendable {
-        case serverSuggestion(origin: String?, privacy: Bool)
+        case serverSuggestion(configuration: WindowsZedEditorSettings.Configuration?, privacy: Bool)
         case ready(requestID: UUID, title: String, privacy: Bool, expires: Date)
         case unavailable(String)
     }

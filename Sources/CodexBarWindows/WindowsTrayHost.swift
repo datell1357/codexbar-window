@@ -112,7 +112,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
     private static let zedEditorImportCancelCommand = UINT_PTR(0x7F20)
     private static let zedEditorImportCommand = UINT_PTR(0x7F21)
     private let onZedEditorServerRequested: @Sendable (UUID) -> Void
-    private let onZedEditorImportRequested: @Sendable (UUID, String) -> Void
+    private let onZedEditorImportRequested: @Sendable (UUID, WindowsZedEditorSettings.Configuration) -> Void
     private let onZedEditorImportSave: @Sendable (UUID, UUID, String) -> Void
     private let onZedEditorImportCancel: @Sendable (UUID) -> Void
     private var zedImportRequest: UUID?
@@ -350,7 +350,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
         onAugmentBrowserImportSave: @escaping @Sendable (UUID, UUID, UUID, String) -> Void = { _, _, _, _ in },
         onAugmentBrowserImportCancel: @escaping @Sendable (UUID) -> Void = { _ in },
         onZedEditorServerRequested: @escaping @Sendable (UUID) -> Void = { _ in },
-        onZedEditorImportRequested: @escaping @Sendable (UUID, String) -> Void = { _, _ in },
+        onZedEditorImportRequested: @escaping @Sendable (UUID, WindowsZedEditorSettings.Configuration) -> Void = { _, _ in },
         onZedEditorImportSave: @escaping @Sendable (UUID, UUID, String) -> Void = { _, _, _ in },
         onZedEditorImportCancel: @escaping @Sendable (UUID) -> Void = { _ in },
         onSpendJSONRequested: @escaping @Sendable (UUID, Bool) -> Void = { _, _ in },
@@ -792,13 +792,28 @@ public final class WindowsTrayHost: @unchecked Sendable {
             }
             self.remoteEditorOpen = true
             let input = WindowsAccountNameDialog.showZedServer(owner: window, expectedPrivacy: privacy,
-                suggestedOrigin: suggested)
+                suggestedOrigin: suggested?.serverURL)
+            var confirmed: WindowsZedEditorSettings.Configuration?
+            if case let .saved(server) = input, !self.quitInvoked,
+               privacy == WindowsUsagePresentationSettings.load().hidePersonalInfo {
+                let credentialInput = WindowsAccountNameDialog.showZedServer(owner: window, expectedPrivacy: privacy,
+                    suggestedOrigin: suggested?.credentialServiceURL ?? server, isCredentialOrigin: true)
+                if case let .saved(credentialOrigin) = credentialInput, !self.quitInvoked {
+                    do {
+                        confirmed = try WindowsZedEditorSettings.Configuration(serverURL: server,
+                            credentialServiceURL: credentialOrigin)
+                    } catch {
+                        self.showMessage("This server and credential address combination is not supported. Import again with the editor's configured addresses.", caption: "Import Zed account")
+                    }
+                } else if case .failed = credentialInput {
+                    self.showMessage("The credential address dialog could not be opened.", caption: "Import Zed account")
+                }
+            }
             self.remoteEditorOpen = false
             PostMessageW(window, Self.wakeMessage, 0, 0)
-            if case let .saved(rawOrigin) = input, !self.quitInvoked,
-               privacy == WindowsUsagePresentationSettings.load().hidePersonalInfo,
-               let origin = try? ZedManualCredentialInput.normalizedServiceOrigin(rawOrigin) {
-                self.onZedEditorImportRequested(hostID, origin)
+            if let confirmed, !self.quitInvoked,
+               privacy == WindowsUsagePresentationSettings.load().hidePersonalInfo {
+                self.onZedEditorImportRequested(hostID, confirmed)
                 return
             }
             self.onZedEditorImportCancel(hostID)
