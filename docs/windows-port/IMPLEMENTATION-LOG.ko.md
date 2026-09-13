@@ -1572,3 +1572,13 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - 이름 변경의 입력 제한은 유지한다. UI는 기존 credential을 받지 않으며 결과 문자열은 저장 호출에만 전달해야 한다.
 
 남은 범위: tray 메뉴 및 ticket begin/cancel/save의 host/Main 연결, 공급자별 문구, 작은 작업 영역과 접근성, 문자열 메모리 zeroization, Windows 실행 검증. 아직 사용자 메뉴에서 호출되지 않는다.
+
+## IMPL-113 — credential 교체 메뉴·host·Main 연결
+
+상태 CODE_WRITTEN_UNVERIFIED. 컴파일/빌드/테스트/UI/계정/검증 미실시. guidelines/COMMITS.md 부재로 핵심 커밋 규칙을 적용한다.
+
+- 페이지별 저장 계정 메뉴에 credential 교체 항목을 추가하고 provider/account UUID를 보존한다. privacy 변경과 다른 계정 저장 진행 중에는 편집 시작을 거절한다.
+- host mailbox에서 begin 결과를 받은 후 UI thread에 masked 입력을 표시한다. 취소/열기 실패 및 늦게 도착해 거절된 load 결과의 ticket은 취소한다. modal/editor guard와 기존 wake 경로를 공유한다.
+- WindowsMain이 runtime begin/replace/cancel을 호출한다. save 결과 후 ticket을 정리하고 성공 시 refresh를 요청한다. 성공 메시지는 인증 검증과 구분하며 오류 메시지에 credential을 포함하지 않는다.
+
+남은 범위: 공급자별 credential parsing/안내, scope/org metadata 편집, 만료·refresh 경합·shutdown·접근성·작은 화면 Windows 검증, 실제 인증 성공 확인. 새 경로는 실행하지 않았다.
