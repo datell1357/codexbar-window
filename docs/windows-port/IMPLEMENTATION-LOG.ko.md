@@ -2134,3 +2134,13 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - 안내 이후 개인정보/캡처 유효성/종료를 다시 확인하고 clipboard 또는 save dialog로 진행한다. 기존 크기 제한 및 인코딩 실패 처리를 유지한다.
 
 남은 범위: runtime이 refresh 시작 시 이전 snapshot을 비우는 정책 때문에 수집 중/전체 실패 시 이전 데이터 내보내기는 아직 불가하다. 원본의 stale 유지 lifecycle, ownership/cache 및 Windows 실행/스키마 검증, 전체 계획 구현은 남아 있다.
+
+## IMPL-169 — 비용 설정 키 호환
+
+상태 CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·설정 접근/실행 검증 미실시. guidelines/COMMITS.md 부재로 핵심 규칙을 적용한다.
+
+- 원본 SettingsStore가 쓰는 tokenCostUsageHistoryDays, spendDashboardHiddenSourceIDs, hideNativeCodexCostWhenOpenCodexPresent를 Windows 비용 설정의 우선 키로 사용한다.
+- 우선 키가 없을 때만 이전 Windows costUsageHistoryDays/spendHiddenSourceIDs/spendHideNativeCodexWithOpenCodex를 읽는다. 명시적인 false/빈 배열은 기존 값보다 우선한다. 읽기 시 저장하거나 수집을 시작하지 않는다.
+- 저장 시 정규화된 동일 값을 원본 이름과 기존 Windows 이름에 함께 저장해 구버전 읽기와 기존 사용자 설정을 보존한다. 기간 clamp/source ID validation은 유지한다. 실제 사용자 defaults에는 접근하지 않았다.
+
+남은 범위: 다른 플랫폼의 설정 suite 자동 이관은 포함하지 않는다. 구버전에서 다시 수정한 legacy 값과 이미 있는 canonical 값의 충돌은 canonical 우선이다. 전체 sync/설정 호환과 Windows 실행 검증, stale lifecycle/ownership/cache 및 전체 계획 구현이 남아 있다.

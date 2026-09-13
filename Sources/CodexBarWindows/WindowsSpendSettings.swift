@@ -20,13 +20,13 @@ struct WindowsSpendSettings: Sendable, Equatable {
         value.collectionEnabled = defaults.object(forKey: "tokenCostUsageEnabled") as? Bool ?? false
         value.codexLocalLedgerEnabled = defaults.object(forKey: "codexLocalSessionCostLedgerEnabled") as? Bool ?? false
         value.historyDays = max(1, min(WindowsSpendHistoryPolicy.scanDays,
-            defaults.object(forKey: "costUsageHistoryDays") as? Int ?? 30))
+            Self.storedValue(defaults, key: "tokenCostUsageHistoryDays", legacyKey: "costUsageHistoryDays") as? Int ?? 30))
         let storedZone = defaults.string(forKey: "tokenCostUsageBucketTimeZone") ?? ""
         value.bucketTimeZoneIdentifier = CostUsageBucketTimeZone.isValidIdentifier(storedZone)
             ? storedZone : CostUsageBucketTimeZone.pinIdentifier()
         value.preferredCurrencyCode = Self.currency(defaults.string(forKey: "preferredCurrencyCode") ?? "USD")
-        value.hiddenSourceIDs = Set((defaults.stringArray(forKey: "spendHiddenSourceIDs") ?? []).filter(Self.validSourceID))
-        value.hideNativeCodexWhenOpenCodexPresent = defaults.object(forKey: "spendHideNativeCodexWithOpenCodex") as? Bool ?? false
+        value.hiddenSourceIDs = Set((Self.storedValue(defaults, key: "spendDashboardHiddenSourceIDs", legacyKey: "spendHiddenSourceIDs") as? [String] ?? []).filter(Self.validSourceID))
+        value.hideNativeCodexWhenOpenCodexPresent = Self.storedValue(defaults, key: "hideNativeCodexCostWhenOpenCodexPresent", legacyKey: "spendHideNativeCodexWithOpenCodex") as? Bool ?? false
         return value
     }
 
@@ -41,10 +41,24 @@ struct WindowsSpendSettings: Sendable, Equatable {
         defaults.set(self.openCodexUsageLogsEnabled, forKey: "openCodexUsageLogsEnabled")
         defaults.set(self.collectionEnabled, forKey: "tokenCostUsageEnabled")
         defaults.set(self.codexLocalLedgerEnabled, forKey: "codexLocalSessionCostLedgerEnabled")
-        defaults.set(max(1, min(WindowsSpendHistoryPolicy.scanDays, self.historyDays)), forKey: "costUsageHistoryDays")
+        Self.store(max(1, min(WindowsSpendHistoryPolicy.scanDays, self.historyDays)), in: defaults,
+                   key: "tokenCostUsageHistoryDays", legacyKey: "costUsageHistoryDays")
         defaults.set(Self.currency(self.preferredCurrencyCode), forKey: "preferredCurrencyCode")
-        defaults.set(self.hiddenSourceIDs.filter(Self.validSourceID).sorted(), forKey: "spendHiddenSourceIDs")
-        defaults.set(self.hideNativeCodexWhenOpenCodexPresent, forKey: "spendHideNativeCodexWithOpenCodex")
+        Self.store(self.hiddenSourceIDs.filter(Self.validSourceID).sorted(), in: defaults,
+                   key: "spendDashboardHiddenSourceIDs", legacyKey: "spendHiddenSourceIDs")
+        Self.store(self.hideNativeCodexWhenOpenCodexPresent, in: defaults,
+                   key: "hideNativeCodexCostWhenOpenCodexPresent", legacyKey: "spendHideNativeCodexWithOpenCodex")
+    }
+
+    /// Prefer the original key, including explicit false/empty values. Loading never writes defaults.
+    private static func storedValue(_ defaults: UserDefaults, key: String, legacyKey: String) -> Any? {
+        defaults.object(forKey: key) ?? defaults.object(forKey: legacyKey)
+    }
+
+    /// Mirror earlier Windows keys so an older build can still read settings saved by this build.
+    private static func store(_ value: Any, in defaults: UserDefaults, key: String, legacyKey: String) {
+        defaults.set(value, forKey: key)
+        defaults.set(value, forKey: legacyKey)
     }
 
     func enabledProviders(config: CodexBarConfig) -> Set<UsageProvider> {
