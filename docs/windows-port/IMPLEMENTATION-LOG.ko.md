@@ -1942,3 +1942,13 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - clipboard helper는 registered PNG와 CF_DIB 메모리를 모두 준비한 다음 클립보드를 열고 교체한다. 전달한 핸들은 Windows에 소유권을 넘기며 전달하지 못한 메모리는 해제한다. PNG만 복사된 부분 실패와 전체 실패를 구분해 안내한다.
 
 남은 범위: DIB 방향·색상·PNG 디코딩·Office/그림판/브라우저 붙여넣기 검증, 이미지 미리보기/원본 디자인 상세 parity, 전체 비용 차트와 나머지 계획 구현. 실제 클립보드는 읽거나 쓰지 않았다.
+
+## IMPL-150 — Share Stats 미리보기 창
+
+상태 CODE_WRITTEN_UNVERIFIED. 컴파일/빌드/테스트/이미지·UI·저장·클립보드/검증 미실시. guidelines/COMMITS.md 부재로 핵심 커밋 규칙을 적용한다.
+
+- Preview Share Stats 메뉴를 기존 ready/settings/UUID mailbox에 연결했다. 동일 renderer의 PNG/DIB와 redacted 공유 텍스트를 하나의 캡처로 전달한다.
+- native modal preview를 작성했다. DIB를 창 영역에 비율 유지로 표시하고 읽기 전용 텍스트 영역, PNG 저장/이미지 복사/텍스트 복사/닫기 버튼을 제공한다. 저장과 복사는 표시된 raster를 사용하며 새 데이터를 섞지 않는다.
+- monitor work area와 DPI 변경에 맞춰 창/컨트롤 위치를 조정하고 Tab/Escape/종료 message loop 및 owner 활성 상태 복원을 작성했다. 개인정보 표시 설정이 바뀌면 timer/message/command 경로에서 창을 숨기고 닫는다.
+
+남은 범위: native preview 렌더링·텍스트 접근성·DPI font·작은 화면·키보드·dialog 중 종료 검증, 계정 변경 시 캡처 취소 정책, 원본 카드 시각 상세 parity, 전체 비용 차트 및 나머지 계획 구현. 미리보기는 실행하지 않았다.

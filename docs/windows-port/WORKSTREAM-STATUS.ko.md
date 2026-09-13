@@ -1,5 +1,7 @@
 # Windows 전용 제품 작업 현황
 
+- IMPL-150: native Share Stats 미리보기·비율 유지 이미지·읽기 전용 통계·저장/복사 버튼을 연결했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
 - IMPL-149: Share Stats 이미지 복사 메뉴와 PNG/CF_DIB 이중 클립보드 전달을 작성했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
 
 - IMPL-148: GDI 1200×630 공유 카드/PNG encoder/Windows PNG 저장 메뉴를 작성했다. 이미지 실행·검증 미실시. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.

@@ -110,11 +110,12 @@ public actor WindowsUsageRuntime {
     public enum ShareStatsCopyResult: Sendable {
         case image(Data, filename: String)
         case clipboardImage(png: Data, dib: Data)
+        case preview(png: Data, dib: Data, filename: String, text: String)
         case ready(String)
         case unavailable(String)
     }
 
-    public func shareStatsImageResult(copyToClipboard: Bool = false) -> ShareStatsCopyResult {
+    public func shareStatsImageResult(copyToClipboard: Bool = false, preview: Bool = false) -> ShareStatsCopyResult {
         guard !self.shuttingDown, self.spendState == .available,
               let snapshot = self.spendSnapshot, snapshot.phase == .ready, !snapshot.stale,
               let payload = snapshot.sharePayload, let settings = self.collectedSpendSettings,
@@ -124,8 +125,16 @@ public actor WindowsUsageRuntime {
         guard let image = WindowsShareStatsRenderer.render(payload: payload, calendar: settings.bucketCalendar) else {
             return .unavailable("The Share Stats image could not be generated.")
         }
+        let filename = "codexbar-subscriptions-last-\(payload.days)-days.png"
+        if preview {
+            let text = WindowsShareStatsFormatting.text(payload, calendar: settings.bucketCalendar)
+            guard let redacted = WindowsClipboard.summary(rows: text.components(separatedBy: "\n")) else {
+                return .unavailable("The Share Stats preview text is unavailable.")
+            }
+            return .preview(png: image.png, dib: image.dib, filename: filename, text: redacted)
+        }
         if copyToClipboard { return .clipboardImage(png: image.png, dib: image.dib) }
-        return .image(image.png, filename: "codexbar-subscriptions-last-\(payload.days)-days.png")
+        return .image(image.png, filename: filename)
     }
 
     public func shareStatsCopyResult() -> ShareStatsCopyResult {
