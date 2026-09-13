@@ -3029,3 +3029,12 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - 선택 결과를 WindowsMain/runtime/importer에 전달하고 후보/오류 문구의 Chrome 고정 표현을 일반화했다. 브라우저 선택 취소는 가져오기를 시작하지 않는다.
 - 기본 프로필 경로만 지원하며 사용자 지정 정책/명령행 경로와 추가 브라우저/압축 지원은 남아 있다. 전체 계획은 계속 진행 중이다.
 - CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·브라우저/UI/네트워크 실행 미실행.
+
+## IMPL-272 — Windsurf 사용자 지정 프로필 경로
+
+- CODEXBAR_WINDSURF_BROWSER_PROFILE_DIRECTORY가 있으면 선택 브라우저의 해당 프로필 하나만 읽는 경로를 추가했다. 환경 변수 이름은 대소문자를 구분하지 않으며 중복 항목은 거부한다.
+- 로컬 드라이브 절대 경로와 기존 profile/Local Storage/leveldb 디렉터리를 요구한다. UNC/device/drive-relative 입력을 받지 않고 표시에는 실제 경로를 넣지 않는다.
+- 잘못된 경로는 오류로 종료하며 기본 프로필로 fallback하지 않는다. 프로필/저장소의 링크 속성은 확인하지만 모든 상위 junction 경로를 검증하는 기능은 아니다.
+- 사용 방법: Windows에서 CODEXBAR_WINDSURF_BROWSER_PROFILE_DIRECTORY를 개별 프로필 폴더(예: D:\\BrowserData\\Default)로 지정하고 CodexBar를 다시 시작한다. User Data 루트나 leveldb 폴더를 직접 지정하지 않는다. 원래 경로 탐색으로 돌아가려면 환경 변수를 제거하고 다시 시작한다.
+- 남은 소요: GUI 경로 선택, 추가 브라우저/압축 및 전체 계획 나머지.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·실제 파일/브라우저/UI 실행 미실행.

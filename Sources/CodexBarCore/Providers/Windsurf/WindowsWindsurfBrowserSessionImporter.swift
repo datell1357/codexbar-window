@@ -23,16 +23,25 @@ public struct WindowsWindsurfBrowserSessionImporter: Sendable {
         public let snapshot: UsageSnapshot
         // Intentionally no verified account ID: GetPlanStatus does not provide one.
     }
-    public enum Failure: Error { case timedOut, browserUnavailable }
+    public enum Failure: Error { case timedOut, browserUnavailable, invalidProfileDirectory }
+
+    public static let profileDirectoryEnvironmentKey = "CODEXBAR_WINDSURF_BROWSER_PROFILE_DIRECTORY"
 
     public static let supportedBrowsers: [Browser] = [.chrome, .edge, .chromium, .chromeBeta, .chromeCanary, .edgeBeta, .edgeCanary]
 
     public init() {}
 
-    public func discover(browser: Browser = .chrome, deadline: Date = Date().addingTimeInterval(15)) throws -> Discovery {
+    public func discover(browser: Browser = .chrome, environment: [String: String] = ProcessInfo.processInfo.environment, deadline: Date = Date().addingTimeInterval(15)) throws -> Discovery {
         try Self.check(deadline)
         guard Self.supportedBrowsers.contains(browser), BrowserCookieAccessGate.shouldAttempt(browser) else { throw Failure.browserUnavailable }
-        let profiles = try WindowsChromiumLocalStorageProfiles.discover(browsers: [browser], deadline: deadline)
+        let matches = environment.filter { $0.key.caseInsensitiveCompare(Self.profileDirectoryEnvironmentKey) == .orderedSame }
+        guard matches.count <= 1 else { throw Failure.invalidProfileDirectory }
+        let profiles: WindowsChromiumLocalStorageProfiles.Discovery
+        if let path = matches.first?.value {
+            profiles = .init(profiles: [try Self.customProfile(path, browser: browser)], omittedCount: 0)
+        } else {
+            profiles = try WindowsChromiumLocalStorageProfiles.discover(browsers: [browser], environment: environment, deadline: deadline)
+        }
         var candidates: [Candidate] = []
         var failed = 0
         var busy = 0
@@ -81,6 +90,27 @@ public struct WindowsWindsurfBrowserSessionImporter: Sendable {
         }
         try Self.check(deadline)
         return ProbedCandidate(candidate: candidate, snapshot: result)
+    }
+
+    private static func customProfile(_ path: String, browser: Browser) throws -> WindowsChromiumLocalStorageProfiles.Profile {
+        // Require an explicit local drive path, not drive-relative, UNC or device namespace input.
+        let bytes = Array(path.utf8)
+        guard path.utf16.count <= 32700, bytes.count >= 3,
+              (65...90).contains(bytes[0]) || (97...122).contains(bytes[0]),
+              bytes[1] == 58, bytes[2] == 92 || bytes[2] == 47,
+              !path.unicodeScalars.contains(where: { $0.value < 32 || $0.value == 127 }),
+              !path.contains("\""), !path.dropFirst(2).contains(":") else { throw Failure.invalidProfileDirectory }
+        let directory = URL(fileURLWithPath: path, isDirectory: true)
+        let storage = directory.appendingPathComponent("Local Storage", isDirectory: true)
+            .appendingPathComponent("leveldb", isDirectory: true)
+        for url in [directory, storage] {
+            guard let attributes = try? url.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey]),
+                  attributes.isDirectory == true, attributes.isSymbolicLink != true else {
+                throw Failure.invalidProfileDirectory
+            }
+        }
+        return .init(id: browser.rawValue + ":custom", browser: browser,
+            label: browser.rawValue + " custom profile", directory: storage)
     }
 
     private static func check(_ deadline: Date) throws {

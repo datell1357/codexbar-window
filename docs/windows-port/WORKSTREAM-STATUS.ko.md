@@ -1,5 +1,7 @@
 # Windows 전용 제품 작업 현황
 
+- IMPL-272: Windsurf 개별 브라우저 프로필 경로 환경 변수와 실패 시 기본 탐색 금지를 추가했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
 - IMPL-271: Windsurf 가져오기에 지원 Chromium 브라우저 선택을 연결했다. Chrome 기본값과 단일 브라우저 접근 범위를 유지한다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
 
 - IMPL-270: Windsurf 가져오기 실패 원인을 사용 중/미지원 형식/읽기 실패/세션 오류/API 응답 실패로 구분했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.

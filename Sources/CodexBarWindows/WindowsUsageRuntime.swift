@@ -1090,6 +1090,8 @@ public actor WindowsUsageRuntime {
                             omittedCount: discovery.candidates.count - attempted + discovery.omittedProfileCount, privacy: privacy, expires: expires)
         } catch is CancellationError {
             return .unavailable("Windsurf browser import was cancelled.")
+        } catch WindowsWindsurfBrowserSessionImporter.Failure.invalidProfileDirectory {
+            return .unavailable("The custom Windsurf browser profile directory is invalid or unavailable. Set CODEXBAR_WINDSURF_BROWSER_PROFILE_DIRECTORY to an existing local profile directory and restart CodexBar. Default profiles were not searched.")
         } catch WindowsWindsurfBrowserSessionImporter.Failure.browserUnavailable {
             return .unavailable("browser access is disabled. Enable access for the selected browser before importing a Windsurf account.")
         } catch WindowsWindsurfBrowserSessionImporter.Failure.timedOut {
