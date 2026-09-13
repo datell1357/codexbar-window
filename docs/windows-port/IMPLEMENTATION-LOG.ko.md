@@ -2958,3 +2958,13 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - 다음 통합을 위해 원본 https://github.com/google/leveldb/blob/main/db/db_impl.cc의 Recover를 읽었다. log number 이상 또는 previous log인 로그를 번호순 복구하고 manifest의 last sequence보다 큰 WAL sequence를 반영하는 계약이다.
 - 남은 소요: LOCK/CURRENT/manifest/table/log orchestration, Chromium/Windsurf 연결 및 전체 계획 나머지.
 - CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·실제 파일/LOCK 조회 미실행.
+
+## IMPL-264 — 잠긴 LevelDB snapshot 읽기 통합
+
+- 기존 LOCK 범위 안에서 CURRENT/manifest inventory를 확정하고 live table 전부와 복구 대상 WAL을 번호순으로 읽는다. 이전에 읽은 db_impl.cc 계약에 따라 log number 이상 또는 previous log를 포함한다.
+- table의 sequence는 manifest 상한을 검사하고 WAL의 최대 sequence를 반영한 뒤 최신 version을 선택한다. 삭제는 결과에 유지한다.
+- 필수 파일 누락, level 1 이상 범위 겹침, 입력/복원 예산 초과와 deadline/취소를 처리한다. 지정 log 파일 누락도 엄격하게 거부한다.
+- 읽기 총 256MiB, mutation 100000개/64MiB 제한을 적용한다. 반환 전에 CURRENT/manifest bytes 및 번호별 파일 목록을 재확인한다. repair/compaction/쓰기 동작은 없다.
+- 이는 LOCK을 준수하는 닫힌 브라우저 DB를 대상으로 한다. 실행 중 브라우저 강제 종료나 온라인 snapshot은 구현하지 않았다.
+- 남은 소요: Chromium origin/key/value 변환, Windsurf session 검증/UI, 추가 compression 및 전체 계획 나머지.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·실제 LOCK/브라우저 파일 조회 미실행.

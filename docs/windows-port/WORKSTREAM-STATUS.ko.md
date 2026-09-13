@@ -1,5 +1,7 @@
 # Windows 전용 제품 작업 현황
 
+- IMPL-264: 잠금 안에서 CURRENT/manifest/table/WAL을 읽고 최신 mutation 상태를 복원하도록 연결했다. Chromium 문자열/세션 변환은 남아 있다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
 - IMPL-263: LevelDB 파일을 한 Windows 핸들로 크기 제한/EOF/변경 검사를 포함해 읽는 모듈을 작성했다. DB 통합은 남아 있다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
 
 - IMPL-262: 기존 LevelDB LOCK 파일의 Windows 잠금 획득/해제 코드를 작성했다. 실제 snapshot 읽기 연결은 남아 있다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
