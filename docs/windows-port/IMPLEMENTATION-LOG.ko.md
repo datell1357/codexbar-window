@@ -1104,3 +1104,13 @@
 - 파일별 journal과 부분 완료 상태를 작성한다. 이동 직후 hash가 달라지면 바이트를 복구 폴더에 보존한 채 중단한다. 실제 삭제/이동은 실행하지 않았다.
 
 남은 범위: 영구 삭제 및 공간 회수, 자동 removal rollback/부분 설치 복구, 원자적 journal, 경로/프로세스/참조 변경 race, 다른 registry view/작업 스케줄러/별도 shortcut 참조, Apps 제거 등록 및 Windows 검증. 이 변경은 전체 제거 기능 완료가 아니다.
+
+## IMPL-067 — 제거 payload 복원과 journal 교체
+
+상태 CODE_WRITTEN_UNVERIFIED. PowerShell/파일 복사·교체/설치/빌드/컴파일/테스트/검증 실행 미실시. guidelines/COMMITS.md 부재로 제공된 핵심 커밋 규칙을 따른다.
+
+- Restore-CodexBarRemovedVersion.ps1은 고정된 removed transaction 폴더의 receipt와 원래 version receipt의 일치를 요구한다. 기록된 상대 경로만 사용하고 원래 디렉터리가 보존됐을 때만 빈 목적지에 복사한다. 기존 목적지/변경된 사본을 덮지 않으며 recovery 사본도 남긴다.
+- removal journal의 마지막 저장 성공을 전제하지 않고 실제 receipt-owned payload 존재/hash를 사용한다. 이미 복원됨·다른 transaction에 있음/없음·충돌을 구분하고 부분 결과를 기록한다.
+- Write-CodexBarJournal 공통 함수를 작성해 removal/restore/activation journal에 연결했다. 새 임시 파일에 UTF-8 JSON을 쓰고 Flush(true) 후 Move 또는 File.Replace로 교체하며 이전 generation과 실패한 임시 파일을 보존한다.
+
+남은 범위: 전원 차단/파일시스템별 교체 내구성 검증, previous generation 자동 선택·정리, 상위 경로 및 외부 writer race, 복원 중 새 프로세스, incomplete-install 복구·Apps 등록·PATH/startup migration·전체 Windows 검증. 복구는 payload 파일에 한정하며 런타임/서명 재승인이나 자동 활성화를 의미하지 않는다.

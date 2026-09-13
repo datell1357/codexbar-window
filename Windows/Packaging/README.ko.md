@@ -107,3 +107,11 @@ Remove-CodexBarVersion.ps1은 VersionID와 AllowUnvalidatedBuild를 받아 완�
 해시가 일치하는 일반 파일을 install root의 removed-<transaction>/payload 아래로 옮기며 원본 receipt 사본과 removal-journal.json을 남긴다. 원래 receipt·디렉터리·설정·알 수 없는 파일은 보존한다. 수정된 파일/링크/디렉터리는 그대로 두고, 이미 없는 파일은 ALREADY_ABSENT로 처리하므로 중단 뒤 재실행 시 남은 파일을 처리할 수 있다. 복구 사본은 여러 transaction에 나뉠 수 있다. 영구 삭제나 디스크 공간 회수는 하지 않는다.
 
 이동 뒤 해시가 달라지면 RETIRED_CHANGED_CONCURRENTLY로 기록하고 중단한다. 외부 변경과 파일 이동은 원자적으로 묶이지 않으므로 해당 파일이 원래 위치가 아닌 복구 폴더에 남을 수 있다. journal 쓰기 실패 시 파일은 이미 이동했을 수 있으며 실제 두 폴더 상태가 우선이다. 자동 복구/정리·불완전 설치 receipt 복구·상위 경로 race·새 프로세스 및 새로운 참조 생성·다른 registry view/예약 작업/별도 shortcut 검색·Apps 제거 등록은 미구현이다. 로컬 receipt는 서명된 권한 증명이 아니다. 현재 스크립트와 모든 프로세스/registry/파일 이동 동작은 실행하지 않았으며 제품 제거 완료를 의미하지 않는다.
+
+## 제거 파일 복원 및 기록 저장
+
+Restore-CodexBarRemovedVersion.ps1에 제거 시 출력된 TransactionID와 AllowUnvalidatedBuild를 전달하면 해당 removed 폴더에 남은 payload를 원래 version의 빈 파일 경로로 복사한다. 원래 receipt와 사본 receipt가 같아야 하며 기존 목적지 파일은 덮어쓰지 않는다. 일치한 기존 파일은 ALREADY_PRESENT, 서로 다른 파일은 충돌로 기록한다. 복사 원본은 모두 보존한다. 원래 디렉터리가 사라졌거나 링크로 바뀌었으면 중단하며 이를 임의 재생성하지 않는다.
+
+제거 journal의 마지막 쓰기가 완료되지 않았어도 receipt에 등재된 실제 사본을 복원할 수 있다. 여러 차례 제거했으면 transaction별로 실행해야 하며, 다른 transaction의 파일이 아직 없으면 PARTIAL_RECOVERY_UNVERIFIED다. 런타임 실행·서명 승인·Start Menu/PATH/startup 복구를 수행하는 명령은 아니다. 설치 receipt가 없는 미완료 설치 복구는 별도 미구현 범위다.
+
+Write-CodexBarJournal.ps1을 선택/선택 복구/제거/제거 복구 스크립트와 함께 배포해야 한다. 해당 스크립트들은 새 임시 파일 쓰기와 Flush(true) 이후 Move 또는 File.Replace로 journal을 게시하며, 교체 전 파일은 고유한 previous 파일로 보존한다. 실패한 pending 파일도 자동 삭제하지 않는다. 이는 journal 자체의 중간 쓰기 노출을 줄이는 구현이며 payload 이동과 journal 게시를 하나의 transaction으로 만들지는 않는다. 이전 generation 자동 복구/공간 정리, 전원 손실과 파일시스템별 내구성, 상위 경로 race, 복사 도중 외부 writer/프로세스 생성은 미검증이다. 실제 스크립트 실행과 파일 복원/교체 검증은 하지 않았다.

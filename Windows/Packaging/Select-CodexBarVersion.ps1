@@ -7,6 +7,7 @@ param(
 )
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot 'Write-CodexBarJournal.ps1')
 if ([Environment]::OSVersion.Platform -ne [PlatformID]::Win32NT) { throw 'Windows is required.' }
 if (-not $AllowUnvalidatedBuild) { throw 'Explicit development activation opt-in is required.' }
 $localData = [Environment]::GetFolderPath([Environment+SpecialFolder]::LocalApplicationData)
@@ -64,7 +65,7 @@ try {
         shortcut = $shortcut; previousShortcutBackup = $backup; candidateShortcut = $temporary
         previousHash = $previousHash; createdAtUtc = [DateTime]::UtcNow.ToString('o')
     }
-    [IO.File]::WriteAllText($journal, ($record | ConvertTo-Json), [Text.UTF8Encoding]::new($false))
+    Write-CodexBarJournal $journal $record
     $link = $shell.CreateShortcut($temporary)
     $link.TargetPath = $app
     $link.WorkingDirectory = $version
@@ -74,14 +75,14 @@ try {
     $null = [Runtime.InteropServices.Marshal]::FinalReleaseComObject($link)
     $link = $null
     $record['candidateHash'] = (Get-FileHash -LiteralPath $temporary -Algorithm SHA256).Hash
-    [IO.File]::WriteAllText($journal, ($record | ConvertTo-Json), [Text.UTF8Encoding]::new($false))
+    Write-CodexBarJournal $journal $record
     if ($null -ne $previousHash) {
         if ((Get-FileHash -LiteralPath $shortcut -Algorithm SHA256).Hash -ne $previousHash) { throw 'Shortcut changed concurrently.' }
         [IO.File]::Replace($temporary, $shortcut, $backup)
     } else { [IO.File]::Move($temporary, $shortcut) }
     $record.state = 'SHORTCUT_SELECTED_RUNTIME_UNVERIFIED'
     $record['selectedShortcutHash'] = (Get-FileHash -LiteralPath $shortcut -Algorithm SHA256).Hash
-    [IO.File]::WriteAllText($journal, ($record | ConvertTo-Json), [Text.UTF8Encoding]::new($false))
+    Write-CodexBarJournal $journal $record
     Write-Output 'Start Menu target selected. Running apps, PATH and startup entries were not changed.'
 } catch {
     Write-Warning 'Selection did not finish cleanly. Inspect the actual shortcut and activation journal; the shortcut may already have changed.'

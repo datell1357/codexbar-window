@@ -3,6 +3,7 @@
 param([Parameter(Mandatory = $true)][ValidatePattern('^[0-9a-f]{32}$')][string] $TransactionID)
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot 'Write-CodexBarJournal.ps1')
 if ([Environment]::OSVersion.Platform -ne [PlatformID]::Win32NT) { throw 'Windows is required.' }
 $localData = [Environment]::GetFolderPath([Environment+SpecialFolder]::LocalApplicationData)
 $programs = [Environment]::GetFolderPath([Environment+SpecialFolder]::Programs)
@@ -55,7 +56,7 @@ try {
         displacedShortcut = $displaced; expectedCurrentHash = $currentHash
         restoredHash = $record.previousHash
     }
-    [IO.File]::WriteAllText($recoveryPath, ($recovery | ConvertTo-Json), [Text.UTF8Encoding]::new($false))
+    Write-CodexBarJournal $recoveryPath $recovery
     if ((Get-RegularHash $shortcut) -ine $currentHash) { throw 'Shortcut changed during recovery preparation.' }
     if ($null -ne $record.previousHash) {
         $replacement = Join-Path $programs ('CodexBar-' + $recoveryID + '.restore.lnk')
@@ -67,7 +68,7 @@ try {
         [IO.File]::Move($shortcut, $displaced)
     }
     $recovery.state = 'RESTORED_RUNTIME_UNVERIFIED'
-    [IO.File]::WriteAllText($recoveryPath, ($recovery | ConvertTo-Json), [Text.UTF8Encoding]::new($false))
+    Write-CodexBarJournal $recoveryPath $recovery
     Write-Output 'Previous shortcut state restored. Installed versions and user data were preserved.'
 } catch {
     Write-Warning 'Recovery incomplete. Inspect the actual shortcut and recovery records before retrying.'

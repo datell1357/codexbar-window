@@ -6,6 +6,7 @@ param(
 )
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot 'Write-CodexBarJournal.ps1')
 if ([Environment]::OSVersion.Platform -ne [PlatformID]::Win32NT) { throw 'Windows is required.' }
 if (-not $AllowUnvalidatedBuild) { throw 'Explicit development removal opt-in is required.' }
 $localData = [Environment]::GetFolderPath([Environment+SpecialFolder]::LocalApplicationData)
@@ -100,7 +101,7 @@ try {
     $results = [Collections.Generic.List[object]]::new()
     $journal = [ordered] @{ schemaVersion = 1; versionID = $VersionID; state = 'PREPARED';
         createdAtUtc = [DateTime]::UtcNow.ToString('o'); files = @() }
-    [IO.File]::WriteAllText($journalPath, ($journal | ConvertTo-Json -Depth 6), [Text.UTF8Encoding]::new($false))
+    Write-CodexBarJournal $journalPath $journal
     foreach ($file in $prepared) {
         $source = $version
         $state = 'READY'
@@ -126,12 +127,12 @@ try {
         }
         $results.Add([pscustomobject] @{ path = $file.relative; state = $state })
         $journal.files = $results.ToArray()
-        [IO.File]::WriteAllText($journalPath, ($journal | ConvertTo-Json -Depth 6), [Text.UTF8Encoding]::new($false))
+        Write-CodexBarJournal $journalPath $journal
         if ($state -eq 'RETIRED_CHANGED_CONCURRENTLY') { throw 'Concurrent change preserved in the removal directory; manual recovery is required.' }
     }
     $preserved = @($results | Where-Object { $_.state -like 'PRESERVED_*' })
     $journal.state = if ($preserved.Count -gt 0) { 'PARTIALLY_RETIRED_UNVERIFIED' } else { 'RECEIPT_PAYLOAD_RETIRED_UNVERIFIED' }
-    [IO.File]::WriteAllText($journalPath, ($journal | ConvertTo-Json -Depth 6), [Text.UTF8Encoding]::new($false))
+    Write-CodexBarJournal $journalPath $journal
     Write-Output ('Removal transaction: ' + $transaction + '. ' + $journal.state + '. Files remain recoverable; settings and receipts are preserved.')
 } catch {
     Write-Warning 'Removal did not finish cleanly. Inspect both version and removal directories; no automatic rollback or recursive cleanup was attempted.'

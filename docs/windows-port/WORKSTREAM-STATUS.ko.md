@@ -1,5 +1,7 @@
 # Windows 전용 제품 작업 현황
 
+IMPL-067: Removed payload restoration and journal replacement written; incomplete-install recovery, registration and all Windows validation remain pending.
+
 IMPL-066: receipt 파일의 복구 가능한 버전 제거 경로·참조 차단·부분 상태 기록을 작성했다. 영구 정리/자동 복구/실행 검증은 남아 있다.
 
 IMPL-065: candidate hash 기반 shortcut 복구와 displaced backup 보존을 연결했다. 제거/원자적 journal/실행 검증은 남아 있다.
