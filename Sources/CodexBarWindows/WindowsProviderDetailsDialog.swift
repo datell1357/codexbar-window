@@ -9,6 +9,9 @@ enum WindowsProviderDetailsDialog {
     private static let closeID: Int32 = 2
     private static let refreshID: Int32 = 3
     private static let expandID: Int32 = 4
+    private static let searchID: Int32 = 102
+    private static let findID: Int32 = 5
+    private static let searchLabelID: Int32 = 103
     private static let linkBaseID: Int32 = 201
 
     struct Link {
@@ -29,6 +32,8 @@ enum WindowsProviderDetailsDialog {
         let text: String
         let expandedText: String?
         var expanded = false
+        var searchOffset = 0
+        var searchQuery = ""
         let links: [Link]
         var result: Result = .closed
         var closed = false
@@ -102,6 +107,16 @@ enum WindowsProviderDetailsDialog {
                     if message.wParam == WPARAM(VK_ESCAPE) {
                         DestroyWindow(hwnd); continue
                     }
+                    if message.wParam == WPARAM(0x46), GetKeyState(Int32(VK_CONTROL)) < 0 {
+                        SetFocus(GetDlgItem(hwnd, Self.searchID))
+                        SendMessageW(GetDlgItem(hwnd, Self.searchID), UINT(EM_SETSEL), 0, -1)
+                        continue
+                    }
+                    if message.wParam == WPARAM(VK_F3) ||
+                        (message.wParam == WPARAM(VK_RETURN) && GetFocus() == GetDlgItem(hwnd, Self.searchID)) {
+                        Self.findNext(hwnd, context: context)
+                        continue
+                    }
                     if message.wParam == WPARAM(0x41), GetKeyState(Int32(VK_CONTROL)) < 0,
                        GetFocus() == GetDlgItem(hwnd, Self.textID) {
                         SendMessageW(GetDlgItem(hwnd, Self.textID), UINT(EM_SETSEL), 0, -1)
@@ -154,6 +169,12 @@ enum WindowsProviderDetailsDialog {
                     return -1
                 }
             }
+            guard Self.addControl(hwnd, "STATIC", "&Find:", Self.searchLabelID, DWORD(WS_CHILD | WS_VISIBLE)) != nil,
+                  let search = Self.addControl(hwnd, "EDIT", "", Self.searchID,
+                    DWORD(WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_BORDER | ES_AUTOHSCROLL)),
+                  Self.addControl(hwnd, "BUTTON", "Find &next", Self.findID,
+                    DWORD(WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON)) != nil else { return -1 }
+            SendMessageW(search, UINT(EM_SETLIMITTEXT), 256, 0)
             guard SetTimer(hwnd, Self.privacyTimer, 250, nil) != 0 else { return -1 }
             Self.updateFont(hwnd, context: context)
             Self.layout(hwnd, context: context)
@@ -193,9 +214,11 @@ enum WindowsProviderDetailsDialog {
         case UINT(WM_COMMAND):
             guard !Self.closeForPrivacyIfNeeded(hwnd, context: context) else { return 0 }
             let command = Int32(wParam & 0xffff)
+            if command == Self.findID { Self.findNext(hwnd, context: context); return 0 }
             if command == Self.closeID { DestroyWindow(hwnd); return 0 }
             if command == Self.expandID, let expandedText = context.expandedText {
                 context.expanded.toggle()
+                context.searchOffset = 0
                 let body = Array((context.expanded ? expandedText : context.text).utf16) + [0]
                 body.withUnsafeBufferPointer { _ = SetWindowTextW(GetDlgItem(hwnd, Self.textID), $0.baseAddress) }
                 let caption = Array((context.expanded ? "Show &less" : "Show &all rows").utf16) + [0]
@@ -225,6 +248,38 @@ enum WindowsProviderDetailsDialog {
         }
     }
 
+    /// NSString ranges match the UTF-16 offsets used by the native EDIT selection messages.
+    private static func findNext(_ hwnd: HWND, context: Context) {
+        guard !Self.closeForPrivacyIfNeeded(hwnd, context: context) else { return }
+        var buffer = [WCHAR](repeating: 0, count: 257)
+        let count = buffer.withUnsafeMutableBufferPointer {
+            GetWindowTextW(GetDlgItem(hwnd, Self.searchID), $0.baseAddress, Int32($0.count))
+        }
+        guard count > 0 else { SetFocus(GetDlgItem(hwnd, Self.searchID)); return }
+        let query = String(decoding: buffer.prefix(Int(count)), as: UTF16.self)
+        if context.searchQuery != query { context.searchQuery = query; context.searchOffset = 0 }
+        let body = (context.expanded ? (context.expandedText ?? context.text) : context.text) as NSString
+        let start = min(context.searchOffset, body.length)
+        var match = body.range(of: query, options: [.caseInsensitive], range: NSRange(location: start, length: body.length - start))
+        if match.location == NSNotFound, start > 0 {
+            match = body.range(of: query, options: [.caseInsensitive], range: NSRange(location: 0, length: start))
+        }
+        let caption: String
+        if match.location == NSNotFound {
+            context.searchOffset = 0
+            caption = "No match"
+        } else {
+            context.searchOffset = match.location + match.length
+            SendMessageW(GetDlgItem(hwnd, Self.textID), UINT(EM_SETSEL), WPARAM(match.location), LPARAM(context.searchOffset))
+            SendMessageW(GetDlgItem(hwnd, Self.textID), UINT(EM_SCROLLCARET), 0, 0)
+            SetFocus(GetDlgItem(hwnd, Self.textID))
+            caption = "Find &next"
+        }
+        (Array(caption.utf16) + [0]).withUnsafeBufferPointer {
+            _ = SetWindowTextW(GetDlgItem(hwnd, Self.findID), $0.baseAddress)
+        }
+    }
+
     private static func closeForPrivacyIfNeeded(_ hwnd: HWND, context: Context) -> Bool {
         guard !context.closed,
               context.hidePersonalInfo != WindowsUsagePresentationSettings.load().hidePersonalInfo else { return false }
@@ -242,7 +297,7 @@ enum WindowsProviderDetailsDialog {
               let font = CreateFontIndirectW(&metrics.lfMessageFont) else { return }
         let previous = context.font
         context.font = font
-        for id in [Self.textID, Self.closeID, Self.refreshID, Self.expandID, Self.linkBaseID,
+        for id in [Self.textID, Self.closeID, Self.refreshID, Self.expandID, Self.searchID, Self.findID, Self.searchLabelID, Self.linkBaseID,
                    Self.linkBaseID + 1, Self.linkBaseID + 2] {
             if let control = GetDlgItem(hwnd, id) {
                 SendMessageW(control, UINT(WM_SETFONT), WPARAM(Int(bitPattern: font)), 1)
@@ -271,8 +326,14 @@ enum WindowsProviderDetailsDialog {
         }
         let footer = (row + 1) * px(36) + px(12)
         let top = max(px(12), height - footer)
-        MoveWindow(GetDlgItem(hwnd, Self.textID), px(12), px(12), available,
-                   max(1, top - px(24)), 1)
+        let labelWidth = min(px(44), available)
+        let findWidth = min(px(120), max(1, available - labelWidth))
+        let searchWidth = max(1, available - labelWidth - findWidth - px(16))
+        MoveWindow(GetDlgItem(hwnd, Self.searchLabelID), px(12), px(16), labelWidth, px(24), 1)
+        MoveWindow(GetDlgItem(hwnd, Self.searchID), px(12) + labelWidth, px(12), searchWidth, px(28), 1)
+        MoveWindow(GetDlgItem(hwnd, Self.findID), px(12) + available - findWidth, px(12), findWidth, px(28), 1)
+        MoveWindow(GetDlgItem(hwnd, Self.textID), px(12), px(48), available,
+                   max(1, top - px(60)), 1)
         for (id, x, row, buttonWidth) in positions {
             MoveWindow(GetDlgItem(hwnd, id), px(12) + x, top + row * px(36), buttonWidth, px(28), 1)
         }

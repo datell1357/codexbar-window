@@ -2064,3 +2064,13 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - 기존 provider details 호출은 optional expandedText 기본값 nil을 유지한다. privacy 변경 차단/모달 생명주기는 기존 경로를 따른다. 최근 세션 12개는 원본 모델 범위를 유지한다.
 
 남은 범위: 대용량 목록 virtualization/search/sort, 전체 dashboard UX/비교, 계정 외부 변경에 따른 열린 창 무효화, live ledger ownership/cache lifecycle, Windows 검증과 전체 계획 구현. 수집 원본 밖의 프로젝트/세션을 복원하거나 실제 화면 검증을 수행하지 않았다.
+
+## IMPL-162 — 비용 목록 및 상세 스냅샷 검색
+
+상태 CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·실행·검증 미실시. guidelines/COMMITS.md 부재로 핵심 규칙을 적용한다.
+
+- 공용 native read-only 상세 창에 검색 입력과 다음 찾기를 추가해 전체로 펼친 비용 모델/프로젝트 이름 및 표시된 상세 내용을 탐색한다. 검색은 현재 표시된 스냅샷에 한정하며 접힌 행은 펼쳐서 검색한다.
+- Ctrl+F는 입력으로 이동, 입력에서 Enter 또는 F3는 다음 일치 항목을 선택한다. 대소문자 무시, 끝에서 처음으로 순환, no match 표시를 포함한다. 검색어는 256 UTF-16 단위로 제한하며 저장/로그/외부 전송하지 않는다.
+- NSString UTF-16 range를 Win32 EDIT 선택 위치에 사용하며 선택 항목으로 스크롤한다. 펼치기 변경 시 검색 위치를 초기화하고 기존 개인정보 변경 차단과 DPI font/layout을 적용한다.
+
+남은 범위: 대용량 가상 목록, 구조화된 정렬/필터, 비교와 전체 dashboard UX, 열린 창의 계정 무효화, live ledger ownership/cache lifecycle, Windows 검증 및 전체 계획 구현. 실제 UI 입력 성공은 미검증이다.
