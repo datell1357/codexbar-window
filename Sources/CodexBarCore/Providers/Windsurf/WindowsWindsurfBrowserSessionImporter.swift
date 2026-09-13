@@ -12,6 +12,7 @@ public struct WindowsWindsurfBrowserSessionImporter: Sendable {
     public struct Discovery: Sendable {
         public let candidates: [Candidate]
         public let failedProfileCount: Int
+        public let unsupportedProfileCount: Int
         public let busyProfileCount: Int
         public let omittedProfileCount: Int
         public let incompleteOriginCount: Int
@@ -33,6 +34,7 @@ public struct WindowsWindsurfBrowserSessionImporter: Sendable {
         var candidates: [Candidate] = []
         var failed = 0
         var busy = 0
+        var unsupported = 0
         var incomplete = 0
         var invalid = 0
         for profile in profiles.profiles {
@@ -46,11 +48,13 @@ public struct WindowsWindsurfBrowserSessionImporter: Sendable {
                 })
             } catch is CancellationError { throw CancellationError() }
             catch WindowsLevelDBReadLock.Failure.busy { busy += 1 }
+            catch WindowsChromiumLocalStorageDecoder.Failure.unsupportedSchema { unsupported += 1 }
+            catch WindowsLevelDBTableContainer.Failure.unsupportedCompression { unsupported += 1 }
             catch { failed += 1 }
             // A per-profile timeout must not become a successful partial discovery.
             try Self.check(deadline)
         }
-        return Discovery(candidates: candidates, failedProfileCount: failed, busyProfileCount: busy,
+        return Discovery(candidates: candidates, failedProfileCount: failed, unsupportedProfileCount: unsupported, busyProfileCount: busy,
             omittedProfileCount: profiles.omittedCount, incompleteOriginCount: incomplete, invalidOriginCount: invalid)
     }
 

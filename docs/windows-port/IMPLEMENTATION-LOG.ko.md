@@ -3013,3 +3013,11 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - 후보 안내는 plan 응답이 있는 세션으로 표현하며 서버 신원을 검증했다는 문구를 사용하지 않는다.
 - 남은 소요: 추가 압축/브라우저 지원, Windows 실동작 검증 및 전체 계획 나머지. 현재 코드 연결은 사용자 사용 가능성이나 배포 준비 완료의 증거가 아니다.
 - CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·실제 UI/브라우저/네트워크 실행 미실행.
+
+## IMPL-270 — Windsurf 가져오기 실패 안내
+
+- 지원하지 않는 schema/압축을 별도 프로필 집계로 분리했다.
+- 후보가 없을 때 사용 중인 Chrome, 미지원 형식, 읽기 실패, 불완전한 세션 원인을 누적해 안내한다. 후보는 있으나 API 조회가 실패한 경우 별도 메시지를 반환한다.
+- 접근 차단/취소/시간 제한을 구분하며 경로나 인증 값을 오류 메시지에 포함하지 않는다.
+- 남은 소요: 추가 압축/브라우저 지원과 전체 계획 나머지.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·실행 검증 미실행.

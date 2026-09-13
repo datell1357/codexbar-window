@@ -1,5 +1,7 @@
 # Windows 전용 제품 작업 현황
 
+- IMPL-270: Windsurf 가져오기 실패 원인을 사용 중/미지원 형식/읽기 실패/세션 오류/API 응답 실패로 구분했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
 - IMPL-269: Windsurf Chrome 가져오기를 트레이 메뉴/후보 선택/이름 입력/저장 콜백에 연결했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
 
 - IMPL-268: Windsurf runtime에 탐색/probe, 만료 ticket과 보호 계정 저장 경로를 연결했다. 트레이 UI 연결은 남아 있다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.

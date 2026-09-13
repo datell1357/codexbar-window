@@ -998,7 +998,7 @@ public actor WindowsUsageRuntime {
             }
             var validated: [UUID: WindowsWindsurfBrowserSessionImporter.ProbedCandidate] = [:]
             var rows: [WindsurfBrowserChoice] = []
-            var failures = discovery.failedProfileCount + discovery.busyProfileCount + discovery.invalidOriginCount + discovery.incompleteOriginCount
+            var failures = discovery.failedProfileCount + discovery.unsupportedProfileCount + discovery.busyProfileCount + discovery.invalidOriginCount + discovery.incompleteOriginCount
             var attempted = 0
             var seenSessions = Set<Data>()
             for candidate in discovery.candidates.prefix(16) {
@@ -1056,10 +1056,25 @@ public actor WindowsUsageRuntime {
                 return .unavailable("Windsurf browser import reached its time limit. Retry the import.")
             }
             guard !rows.isEmpty else {
-                if Date() >= deadline {
-                    return .unavailable("Windsurf browser import reached its time limit. Check connectivity and retry.")
+                if !discovery.candidates.isEmpty {
+                    return .unavailable("Chrome session data was found, but no usable plan response was received. Check connectivity or sign in to Windsurf again, close Chrome, and retry.")
                 }
-                return .unavailable("No usable Windsurf session was found. Sign in to windsurf.com in Chrome, close Chrome, and retry.")
+                var reasons: [String] = []
+                if discovery.busyProfileCount > 0 {
+                    reasons.append("Some Chrome profiles are in use. Close Chrome normally, including background processes, and retry.")
+                }
+                if discovery.unsupportedProfileCount > 0 {
+                    reasons.append("Some profiles use a storage format or compression this importer does not support yet. Use a manual Windsurf session bundle for those profiles.")
+                }
+                if discovery.failedProfileCount > 0 {
+                    reasons.append("Some Chrome profiles could not be read consistently. Check profile access; the importer does not repair browser storage.")
+                }
+                if discovery.incompleteOriginCount > 0 || discovery.invalidOriginCount > 0 {
+                    reasons.append("Some stored Windsurf sessions are incomplete or invalid. Sign in again and close Chrome before retrying.")
+                }
+                return .unavailable(reasons.isEmpty
+                    ? "No Windsurf session was found in supported Chrome profiles. Sign in to windsurf.com in Chrome, close Chrome, and retry."
+                    : reasons.joined(separator: "\n\n"))
             }
             let expires = Date().addingTimeInterval(300)
             self.pendingWindsurfBrowserImport = .init(id: requestID, expires: expires,
@@ -1073,6 +1088,12 @@ public actor WindowsUsageRuntime {
             }
             return .choices(requestID: requestID, rows: rows, failedCount: failures,
                             omittedCount: discovery.candidates.count - attempted + discovery.omittedProfileCount, privacy: privacy, expires: expires)
+        } catch is CancellationError {
+            return .unavailable("Windsurf browser import was cancelled.")
+        } catch WindowsWindsurfBrowserSessionImporter.Failure.browserUnavailable {
+            return .unavailable("Chrome access is disabled. Enable browser access before importing a Windsurf account.")
+        } catch WindowsWindsurfBrowserSessionImporter.Failure.timedOut {
+            return .unavailable("Windsurf browser import reached its time limit. Retry the import.")
         } catch {
             return .unavailable("Windsurf browser import did not complete. Close Chrome and retry. Unsupported or damaged storage cannot be imported.")
         }
