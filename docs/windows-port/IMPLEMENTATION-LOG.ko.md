@@ -686,3 +686,21 @@
 2. 키보드 focus/scroll 복원, 임의 shortcut capture·접근성 및 전체 Windows 기능/배포 검증은 남아 있다.
 
 다음 구현: keyboard popup 취소 시 원래 foreground window로 포커스를 돌리는 경로를 제한적으로 연결하되 다른 창으로 의도적으로 이동한 상태를 덮어쓰지 않는다.
+
+## IMPL-036 — keyboard popup 취소 포커스 복원
+
+상태: CODE_WRITTEN_UNVERIFIED. 빌드·컴파일·테스트·lint·앱·실제 foreground/key 입력·검증 스크립트를 실행하지 않았다. 계약: WIN-011.
+
+작성한 코드:
+
+- hotkey popup 시작 시 현재 foreground HWND/process ID/thread ID를 기록한다. 마우스 진입은 기록하지 않고 페이지 재열기는 기존 복원 대상을 유지한다.
+- 메뉴가 명령 선택 없이 끝났거나 좌표를 얻지 못해 중단되면, foreground가 여전히 tray owner인 경우에만 복원을 시도한다. 대상의 visible/enabled/non-minimized 상태와 process/thread identity가 유지되는지도 확인한다.
+- 다른 창이 foreground이면 복원하지 않는다. session focus/설정 등 명령 선택 후에는 원래 창으로 돌리지 않는다. 페이지 명령 외 popup 종료 시 기록을 제거한다.
+- SetForegroundWindow를 한 번 요청하는 best-effort 동작이며 input queue 연결·최소화 복원·반복 강제 포커스를 추가하지 않는다.
+
+남은 범위:
+
+1. HWND/process/thread 확인은 동일 thread 내 HWND 재사용을 완전히 식별하지 못한다. 포커스 판단과 호출 사이 race 및 Windows foreground 제한도 남아 있다. 실제 UI/key 입력·취소/페이지/Alt-Tab 동작은 미검증이다.
+2. 중간 페이지 요청이 거부된 경우 복원 기록은 다음 새 진입에서 초기화된다. 메뉴 scroll/선택 복원·임의 shortcut editor와 전체 Windows 기능/배포 검증은 미완료다.
+
+다음 구현: 키보드로 열린 메뉴의 초기 선택과 navigation 접근성을 보강한다. native 동작 검증은 사용자 승인 후 별도 진행한다.

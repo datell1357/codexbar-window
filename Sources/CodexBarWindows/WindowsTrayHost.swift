@@ -34,6 +34,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
     private static let cleanupHotkeyCommand = UINT_PTR(0x7544)
     private var popupIsOpen = false
     private var keyboardPopupAnchor: POINT?
+    private var keyboardReturnTarget: (window: HWND, process: DWORD, thread: DWORD)?
     private static let chooseTitleDatabaseCommand = UINT_PTR(0x7530)
     private static let clearTitleDatabaseCommand = UINT_PTR(0x7531)
     private static let disableTitleDatabaseCommand = UINT_PTR(0x7532)
@@ -608,6 +609,29 @@ public final class WindowsTrayHost: @unchecked Sendable {
         if !attached { _ = DestroyMenu(child) }
     }
 
+    private func captureKeyboardReturnTarget() {
+        self.keyboardReturnTarget = nil
+        guard let target = GetForegroundWindow(), target != self.window,
+              IsWindow(target) != 0, IsWindowVisible(target) != 0 else { return }
+        var process: DWORD = 0
+        let thread = GetWindowThreadProcessId(target, &process)
+        guard thread != 0, process != 0 else { return }
+        self.keyboardReturnTarget = (target, process, thread)
+    }
+
+    private func restoreKeyboardReturnTarget(owner: HWND) {
+        guard !self.quitInvoked, !self.remoteEditorOpen,
+              GetForegroundWindow() == owner, let target = self.keyboardReturnTarget,
+              IsWindow(target.window) != 0, IsWindowVisible(target.window) != 0,
+              IsWindowEnabled(target.window) != 0, IsIconic(target.window) == 0 else { return }
+        var process: DWORD = 0
+        let thread = GetWindowThreadProcessId(target.window, &process)
+        guard thread == target.thread, process == target.process else { return }
+        // Best effort only: never attach input queues, restore minimized windows, or retry
+        // after another application has taken foreground ownership.
+        _ = SetForegroundWindow(target.window)
+    }
+
     private func keyboardMenuPoint() -> POINT? {
         // Capture the user's foreground monitor before activating the hidden tray owner window.
         let foreground = GetForegroundWindow()
@@ -627,8 +651,16 @@ public final class WindowsTrayHost: @unchecked Sendable {
     private func popup(notifyMenuOpen: Bool = true, keyboardInitiated: Bool = false, preserveAnchor: Bool = false) {
         guard !self.remoteEditorOpen, !self.popupIsOpen, !self.quitInvoked else { return }
         self.popupIsOpen = true
-        defer { self.popupIsOpen = false }
-        if !preserveAnchor { self.keyboardPopupAnchor = keyboardInitiated ? self.keyboardMenuPoint() : nil }
+        var continuingPage = false
+        defer {
+            self.popupIsOpen = false
+            if !continuingPage { self.keyboardReturnTarget = nil }
+        }
+        if !preserveAnchor {
+            if keyboardInitiated { self.captureKeyboardReturnTarget() }
+            else { self.keyboardReturnTarget = nil }
+            self.keyboardPopupAnchor = keyboardInitiated ? self.keyboardMenuPoint() : nil
+        }
         guard let hwnd = self.window, let menu = CreatePopupMenu() else { return }
         if notifyMenuOpen { self.onMenuOpen() }
         self.mailboxLock.lock()
@@ -834,6 +866,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
         let havePoint = self.keyboardPopupAnchor != nil || GetCursorPos(&point) != 0
         guard havePoint else {
             _ = DestroyMenu(menu)
+            self.restoreKeyboardReturnTarget(owner: hwnd)
             self.popupPageCommands.removeAll(keepingCapacity: true)
         self.popupRemoteCommands.removeAll(keepingCapacity: true)
         self.popupRemoteDetails.removeAll(keepingCapacity: true)
@@ -861,7 +894,9 @@ public final class WindowsTrayHost: @unchecked Sendable {
         }
         let command = TrackPopupMenu(menu, flags, point.x, point.y, 0, hwnd, nil)
         _ = DestroyMenu(menu)
+        continuingPage = command != 0 && self.popupPageCommands[UINT_PTR(command)] != nil
         if command != 0 { self.dispatchCommand(UINT_PTR(command)) }
+        else { self.restoreKeyboardReturnTarget(owner: hwnd) }
         self.popupPageCommands.removeAll(keepingCapacity: true)
         self.popupRemoteCommands.removeAll(keepingCapacity: true)
         self.popupRemoteDetails.removeAll(keepingCapacity: true)
