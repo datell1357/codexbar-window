@@ -159,15 +159,9 @@ public enum WindsurfWebFetcher {
             }
             log("Using manual Windsurf session bundle")
             #if os(Windows)
-            guard manualSessionInput.utf8.count <= 65_536 else {
-                throw WindsurfWebFetcherError.invalidManualSession("input exceeds 64 KiB")
-            }
-            #endif
+            let auth = try self.checkedManualSessionInput(manualSessionInput)
+            #else
             let auth = try self.parseManualSessionInput(manualSessionInput)
-            #if os(Windows)
-            guard [auth.sessionToken, auth.auth1Token, auth.accountID, auth.primaryOrgID].allSatisfy({
-                !$0.isEmpty && $0.utf8.allSatisfy { $0 >= 0x21 && $0 <= 0x7E }
-            }) else { throw WindsurfWebFetcherError.invalidManualSession("invalid authentication header characters") }
             #endif
             let response = try await self.fetchPlanStatus(auth: auth, timeout: timeout, transport: transport)
             try Task.checkCancellation()
@@ -218,6 +212,22 @@ public enum WindsurfWebFetcher {
         #else
         throw WindsurfWebFetcherError.noSessionData
         #endif
+    }
+
+    /// Structural validation only. Makes no network request and does not establish account authentication.
+    public static func validateManualSessionInput(_ raw: String) throws {
+        _ = try self.checkedManualSessionInput(raw)
+    }
+
+    private static func checkedManualSessionInput(_ raw: String) throws -> WindsurfDevinSessionAuth {
+        guard raw.utf8.count <= 65_536 else {
+            throw WindsurfWebFetcherError.invalidManualSession("input exceeds 64 KiB")
+        }
+        let auth = try self.parseManualSessionInput(raw)
+        guard [auth.sessionToken, auth.auth1Token, auth.accountID, auth.primaryOrgID].allSatisfy({
+            !$0.isEmpty && $0.utf8.allSatisfy { $0 >= 0x21 && $0 <= 0x7E }
+        }) else { throw WindsurfWebFetcherError.invalidManualSession("invalid authentication header characters") }
+        return auth
     }
 
     static func parseManualSessionInput(_ raw: String) throws -> WindsurfDevinSessionAuth {

@@ -758,6 +758,10 @@ public actor WindowsUsageRuntime {
             guard WindowsAccountInputRules.providerIssue(provider: provider, support: support, scope: scope,
                                                          organization: organization, workspace: workspace) == nil
             else { return .invalidInput }
+            if provider == .windsurf {
+                do { try WindsurfWebFetcher.validateManualSessionInput(token) }
+                catch { return .invalidInput }
+            }
             let data = entry.tokenAccounts
             let accounts = data?.accounts ?? []
             guard Set(accounts.map(\.id)).count == accounts.count else { return .unavailable }
@@ -1085,6 +1089,10 @@ public actor WindowsUsageRuntime {
             }
             let existing = data.accounts[index]
             let token = replacementToken ?? existing.token
+            if provider == .windsurf, replacementToken != nil {
+                do { try WindsurfWebFetcher.validateManualSessionInput(token) }
+                catch { return .invalidInput }
+            }
             func applying(_ patch: WindowsTokenAccountFieldPatch?, to current: String?) -> String? {
                 guard let patch, case let .replace(value) = patch else { return current }
                 guard let value = value?.trimmingCharacters(in: .whitespacesAndNewlines), !value.isEmpty else { return nil }

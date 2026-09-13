@@ -2480,3 +2480,11 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - reset/billing 시각이 없는 데이터의 최신성은 추정하지 않는다. updatedAt은 읽기 시각으로 유지하며 live 검증으로 간주하지 않는다. macOS 변환 동작은 유지한다.
 - 남은 소요: Windows UI에서 진단 표시/구간 경계 실증, 브라우저 로그인 및 전체 계획 나머지 항목.
 - CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·실제 캐시/UI 검증 미실행.
+
+## IMPL-208 — Windsurf 세션 저장 전 형식 확인
+
+- 네트워크 요청 없는 수동 세션 형식 확인 API를 분리하고 Windows 웹 조회도 같은 bounded parser를 사용한다.
+- Windows 계정 추가와 credential 교체는 필수 네 필드/64KiB/HTTP header 문자 조건을 만족해야 저장한다. 실패는 기존 invalidInput 결과로 반환하며 기존 저장 계정을 덮어쓰지 않는다.
+- 형식 확인은 로그인 성공이나 세션 유효성 확인이 아니다. 기존 잘못된 계정의 이름/metadata 수정까지 막지 않도록 credential을 실제 교체하는 경우에만 재확인한다.
+- 남은 소요: 구체적 입력 오류 UI, 브라우저 로그인 및 전체 계획 나머지 항목.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 실제 형식 확인 API 호출·빌드·테스트·lint·저장/API 검증 미실행.
