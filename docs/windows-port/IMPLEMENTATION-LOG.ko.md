@@ -1296,3 +1296,13 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winus
 - 창 닫힘 시 owner 활성 상태 복원, WM_QUIT 재전달, 메시지 루프/컨트롤 생성 실패 처리, 기존 editor 중복 진입 차단을 연결했다.
 
 남은 범위: rich detail card/그래프/계정 선택과 개별 action 통합, DPI별 배치·최소 창 크기·접근성·지역화, 선택 복사/긴 텍스트/메시지 루프의 Windows ABI 및 런타임 검증. WIN-010 또는 전체 제품 완료를 의미하지 않는다.
+
+## IMPL-086 — 공급자 상세 창 링크 동작
+
+상태 CODE_WRITTEN_UNVERIFIED. 빌드/컴파일/테스트/UI/브라우저 열기/검증 미실시. guidelines/COMMITS.md 부재로 핵심 커밋 규칙을 적용한다.
+
+- 상세 snapshot에 같은 공급자의 dashboard/status/changelog 링크를 함께 보관하고 최대 세 개의 버튼을 작성했다. 링크가 없는 공급자에는 추정 목적지를 추가하지 않으며 release notes는 기존 providerChangelogLinksEnabled 설정을 따른다.
+- 버튼 선택 시 선택 URL을 반환하고 상세 창이 닫혀 owner가 복구된 다음 기존 HTTP(S)/host/credentials/control-character 검사 경로로 전달한다. 단순 창 열기·닫기로 URL을 실행하지 않는다.
+- 상세 창을 연 동안 privacy가 변경되면 링크 실행 대신 재열기 안내를 표시한다. 버튼 행과 Close가 겹치지 않도록 최소 창 크기를 작성했다.
+
+남은 범위: rich card/계정 선택·refresh 통합, 링크 열기 실패의 사용자 표시 개선, DPI별 크기와 접근성/지역화, Windows ABI·실행 검증. WIN-010 완료를 의미하지 않는다.

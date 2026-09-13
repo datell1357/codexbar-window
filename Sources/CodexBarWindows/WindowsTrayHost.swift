@@ -25,7 +25,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
 
     private static let startupRegistrationCommand = UINT_PTR(0x7546)
     private static let providerDetailsCommandBase = UINT_PTR(0x7D00)
-    private var popupProviderDetails: [UINT_PTR: (title: String, body: String)] = [:]
+    private var popupProviderDetails: [UINT_PTR: (title: String, body: String, links: [WindowsProviderDetailsDialog.Link])] = [:]
     private static let copyUsageCommandBase = UINT_PTR(0x7C00)
     private static let copyErrorCommandBase = UINT_PTR(0x7B00)
     private var popupCopyErrors: [UINT_PTR: String] = [:]
@@ -787,17 +787,28 @@ public final class WindowsTrayHost: @unchecked Sendable {
         }
         let detailEntries = menuEntries.filter { $0.usageCopyText != nil || $0.errorCopyText != nil }
         if !detailEntries.isEmpty, let detailsMenu = CreatePopupMenu() {
-            var commands: [UINT_PTR: (title: String, body: String)] = [:]
+            var commands: [UINT_PTR: (title: String, body: String, links: [WindowsProviderDetailsDialog.Link])] = [:]
             for (index, entry) in detailEntries.prefix(128).enumerated() {
                 let title = String(LogRedactor.redact(entry.title).replacingOccurrences(of: "\0", with: "").prefix(160))
                 var sections: [String] = []
                 if let usage = entry.usageCopyText { sections.append("Usage\r\n" + usage) }
                 if let error = entry.errorCopyText { sections.append("Fetch error\r\n" + error) }
                 let body = sections.joined(separator: "\r\n\r\n")
+                var links: [WindowsProviderDetailsDialog.Link] = []
+                if entry.dashboardVisible, let url = entry.dashboardURL {
+                    links.append(.init(title: "Dashboard", url: url))
+                }
+                if entry.statusVisible, let url = entry.statusURL {
+                    links.append(.init(title: "Status page", url: url))
+                }
+                if self.presentationDefaults.object(forKey: "providerChangelogLinksEnabled") as? Bool ?? false,
+                   entry.changelogVisible, let url = entry.changelogURL {
+                    links.append(.init(title: "Release notes", url: url))
+                }
                 let command = Self.providerDetailsCommandBase + UINT_PTR(index)
                 if title.replacingOccurrences(of: "&", with: "&&").withCString(encodedAs: UTF16.self, {
                     AppendMenuW(detailsMenu, UINT(MF_STRING), command, $0)
-                }) != 0 { commands[command] = (title, body) }
+                }) != 0 { commands[command] = (title, body, links) }
             }
             let attached = !commands.isEmpty && "Provider &details".withCString(encodedAs: UTF16.self) {
                 AppendMenuW(menu, UINT(MF_STRING | MF_POPUP), UINT_PTR(UInt(bitPattern: detailsMenu)), $0) != 0
@@ -1305,17 +1316,28 @@ public final class WindowsTrayHost: @unchecked Sendable {
                          caption: caption)
     }
 
-    private func showProviderDetails(_ body: String, title: String) {
+    private func showProviderDetails(_ body: String, title: String, links: [WindowsProviderDetailsDialog.Link]) {
         guard !self.remoteEditorOpen, !self.quitInvoked, let window = self.window,
               case .idle = self.providerEditorPhase, case .idle = self.codexWebSettingsEditorPhase else { return }
         self.remoteEditorOpen = true
-        let shown = WindowsProviderDetailsDialog.show(
+        let privacy = WindowsUsagePresentationSettings.load().hidePersonalInfo
+        let result = WindowsProviderDetailsDialog.show(
             owner: window, title: title,
-            text: "Redacted snapshot from the opened menu. Refresh usage to update.\r\n\r\n" + body)
+            text: "Redacted snapshot from the opened menu. Refresh usage to update.\r\n\r\n" + body,
+            links: links)
         self.remoteEditorOpen = false
         if !self.quitInvoked {
             PostMessageW(window, Self.wakeMessage, 0, 0)
-            if !shown { self.showMessage("Could not open provider details.", caption: "Provider details") }
+            if let result {
+                if let url = result.selectedURL {
+                    guard privacy == WindowsUsagePresentationSettings.load().hidePersonalInfo else {
+                        self.showMessage("Privacy settings changed. Reopen provider details before opening a link.",
+                                         caption: "Provider details")
+                        return
+                    }
+                    self.openStatusPage(url)
+                }
+            } else { self.showMessage("Could not open provider details.", caption: "Provider details") }
         }
     }
 
@@ -1768,7 +1790,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
                 self.showMessage("Privacy settings changed. Reopen the menu to view current details.", caption: "Provider details")
                 return
             }
-            self.showProviderDetails(details.body, title: details.title)
+            self.showProviderDetails(details.body, title: details.title, links: details.links)
             return
         }
         if let text = self.popupCopyErrors[command], let owner = self.window {

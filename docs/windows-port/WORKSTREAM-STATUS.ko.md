@@ -1,5 +1,7 @@
 # Windows 전용 제품 작업 현황
 
+- IMPL-086: 상세 창의 공급자별 dashboard/status/release notes 버튼과 최소 창 크기를 작성했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
 - IMPL-085: 공급자 상세 창에 크기 조절·스크롤·텍스트 선택·Ctrl+A를 작성했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. rich card·계정 선택·Windows 검증은 남아 있다.
 
 IMPL-084: Provider detail snapshot dialogs and context-correct clipboard messages written; full native cards and Windows validation remain pending.

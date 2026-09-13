@@ -7,17 +7,28 @@ enum WindowsProviderDetailsDialog {
     private static let className = "CodexBar.ProviderDetailsDialog"
     private static let textID: Int32 = 101
     private static let closeID: Int32 = 2
+    private static let linkBaseID: Int32 = 201
+
+    struct Link {
+        let title: String
+        let url: String
+    }
+    struct Result {
+        let selectedURL: String?
+    }
 
     private final class Context {
         let text: String
+        let links: [Link]
+        var selectedURL: String?
         var closed = false
-        init(text: String) { self.text = text }
+        init(text: String, links: [Link]) { self.text = text; self.links = Array(links.prefix(3)) }
     }
 
-    static func show(owner: HWND, title: String, text: String) -> Bool {
+    static func show(owner: HWND, title: String, text: String, links: [Link]) -> Result? {
         let normalized = text.replacingOccurrences(of: "\r\n", with: "\n")
             .replacingOccurrences(of: "\r", with: "\n").replacingOccurrences(of: "\n", with: "\r\n")
-        let context = Context(text: normalized)
+        let context = Context(text: normalized, links: links)
         let instance = GetModuleHandleW(nil)
         var klass = WNDCLASSEXW()
         klass.cbSize = UINT(MemoryLayout<WNDCLASSEXW>.size)
@@ -29,7 +40,7 @@ enum WindowsProviderDetailsDialog {
             klass.lpszClassName = $0.baseAddress
             return RegisterClassExW(&klass)
         }
-        guard registered != 0 || GetLastError() == ERROR_CLASS_ALREADY_EXISTS else { return false }
+        guard registered != 0 || GetLastError() == ERROR_CLASS_ALREADY_EXISTS else { return nil }
         let caption = Array(title.utf16) + [0]
         let hwnd = name.withUnsafeBufferPointer { n in
             caption.withUnsafeBufferPointer { c in
@@ -38,7 +49,7 @@ enum WindowsProviderDetailsDialog {
                                 720, 540, owner, nil, instance, Unmanaged.passUnretained(context).toOpaque())
             }
         }
-        guard let hwnd else { return false }
+        guard let hwnd else { return nil }
         let ownerWasEnabled = IsWindowEnabled(owner) != 0
         if IsWindow(owner) != 0 { EnableWindow(owner, 0) }
         var succeeded = true
@@ -68,7 +79,7 @@ enum WindowsProviderDetailsDialog {
         }
         if IsWindow(hwnd) != 0 { DestroyWindow(hwnd) }
         if IsWindow(owner) != 0, ownerWasEnabled { EnableWindow(owner, 1); SetForegroundWindow(owner) }
-        return succeeded
+        return succeeded ? Result(selectedURL: context.selectedURL) : nil
     }
 
     private static let windowProc: WNDPROC = { hwnd, message, wParam, lParam in
@@ -91,12 +102,30 @@ enum WindowsProviderDetailsDialog {
                                   DWORD(WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_DEFPUSHBUTTON)) != nil else {
                 return -1
             }
+            for (index, link) in context.links.enumerated() {
+                guard Self.addControl(hwnd, "BUTTON", link.title, Self.linkBaseID + Int32(index),
+                                      DWORD(WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON)) != nil else {
+                    return -1
+                }
+            }
             Self.layout(hwnd)
             return 0
         case UINT(WM_SIZE): Self.layout(hwnd); return 0
         case UINT(WM_SETFOCUS): SetFocus(GetDlgItem(hwnd, Self.textID)); return 0
+        case UINT(WM_GETMINMAXINFO):
+            if let limits = UnsafeMutableRawPointer(bitPattern: UInt(lParam))?.assumingMemoryBound(to: MINMAXINFO.self) {
+                limits.pointee.ptMinTrackSize.x = 540
+                limits.pointee.ptMinTrackSize.y = 260
+            }
+            return 0
         case UINT(WM_COMMAND):
-            if Int32(wParam & 0xffff) == Self.closeID { DestroyWindow(hwnd) }
+            let command = Int32(wParam & 0xffff)
+            if command == Self.closeID { DestroyWindow(hwnd); return 0 }
+            let index = Int(command - Self.linkBaseID)
+            if context.links.indices.contains(index) {
+                context.selectedURL = context.links[index].url
+                DestroyWindow(hwnd)
+            }
             return 0
         case UINT(WM_CLOSE): DestroyWindow(hwnd); return 0
         case UINT(WM_NCDESTROY):
@@ -112,6 +141,11 @@ enum WindowsProviderDetailsDialog {
         guard GetClientRect(hwnd, &rect) != 0 else { return }
         let width = max(0, rect.right - rect.left), height = max(0, rect.bottom - rect.top)
         MoveWindow(GetDlgItem(hwnd, Self.textID), 12, 12, max(1, width - 24), max(1, height - 64), 1)
+        for index in 0..<3 {
+            if let control = GetDlgItem(hwnd, Self.linkBaseID + Int32(index)) {
+                MoveWindow(control, 12 + Int32(index) * 132, max(12, height - 40), 124, 28, 1)
+            }
+        }
         MoveWindow(GetDlgItem(hwnd, Self.closeID), max(12, width - 104), max(12, height - 40), 92, 28, 1)
     }
 
