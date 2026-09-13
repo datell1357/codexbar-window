@@ -3159,3 +3159,11 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - 확인 주기와 실제 프로세스 종료 시간은 동일하지 않다. 파일 시스템/actor 응답과 프로세스 정리 시간이 추가될 수 있으며 실행 검증은 하지 않았다.
 - 남은 소요: plugin/외부 계정/status probe 및 fetch 진입 실패 경로, hook 설정 UI와 전체 계획 나머지.
 - CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·실제 훅/명령 실행 미실행.
+
+## IMPL-287 — Windows Statuspage 조회 모듈
+
+- 원본 UsageStore+Status.swift의 api/v2/status.json 계약을 WindowsProviderStatusProbe로 옮겼다. HookProviderStatus indicator만 반환하며 계정/인증 데이터는 요청에 넣지 않는다.
+- HTTPS URL의 로그인 정보/query/fragment를 거부하고 기존 격리 transport, 10초 timeout, HTTP 200 조건과 JSON 1MiB 제한을 적용했다.
+- 알 수 없는 indicator는 unknown으로 유지한다. 조회 실패를 서비스 장애로 바꾸지 않으며 원문 응답을 오류에 담지 않는다. 취소는 상위로 전달한다.
+- 남은 소요: runtime 상태 관측 연결, incident.io/component/Workspace 상태 피드 및 전체 계획 나머지. 현재 Windows 상태 페이지는 링크만 있고 이 모듈은 아직 자동 호출되지 않는다.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·실제 HTTP/훅 실행 미실행.

@@ -1,5 +1,7 @@
 # Windows 전용 제품 작업 현황
 
+- IMPL-287: Windows classic Statuspage 조회/indicator 변환 모듈을 작성했다. runtime 및 다른 피드 연결은 남아 있다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
 - IMPL-286: Windows hook 실행 중 설정 조건을 주기적으로 확인하고 취소/drain에 연결했다. 실제 종료 지연은 미검증이다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
 
 - IMPL-285: Windows refresh hook batch 제출/규칙별 설정 재확인/종료 drain/누락 안내를 연결했다. 나머지 공급자·계정 및 설정 UI는 남아 있다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
