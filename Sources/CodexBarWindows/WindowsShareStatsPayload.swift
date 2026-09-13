@@ -395,7 +395,7 @@ enum WindowsShareStatsFormatting {
             : "\(covered)/\(payload.days) days"
     }
 
-    static func text(_ payload: WindowsShareStatsPayload) -> String {
+    static func text(_ payload: WindowsShareStatsPayload, calendar: Calendar = .current) -> String {
         var lines = [self.periodHeadline(payload)]
         if let tokens = payload.totalTokens {
             let count = self.compactCount(tokens)
@@ -441,7 +441,7 @@ enum WindowsShareStatsFormatting {
                 return "\(model.modelName) (\(model.providerName)): \(metrics.joined(separator: " · "))"
             })
         }
-        lines.append("Generated locally by CodexBar · Data through \(self.dataThrough(payload.periodEnd))")
+        lines.append("Generated locally by CodexBar · Data through \(self.dataThrough(payload.periodEnd, calendar: calendar))")
         return lines.joined(separator: "\n")
     }
 }

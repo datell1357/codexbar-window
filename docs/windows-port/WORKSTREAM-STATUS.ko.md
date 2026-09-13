@@ -1,5 +1,7 @@
 # Windows 전용 제품 작업 현황
 
+- IMPL-144: Copy Share Stats 메뉴와 원본 텍스트 포맷/클립보드 전달을 연결했다. ready 상태/설정 일치 조건을 적용한다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
 - IMPL-143: 트레이 비용 요약 요청과 읽기 전용 통화/공급자/모델 요약 창을 연결했다. 전체 대시보드 대체가 아니다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
 
 - IMPL-142: 트레이 비용 수집/로컬 Codex ledger/표시 기간 메뉴와 설정 변경 재수집을 연결했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.

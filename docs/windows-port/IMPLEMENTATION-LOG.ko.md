@@ -1882,3 +1882,13 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - 수집 비활성/진행/실패/종료 상태는 각각 안내하며 이름은 redaction 및 제어문자 제거를 적용한다. 프로젝트 경로나 세션 내용은 요약에 포함하지 않는다.
 
 남은 범위: 전체 차트/토큰 heatmap/프로젝트/세션 탐색 및 필터, native share preview/export, 표시 중 계정 변경에 따른 snapshot 갱신·요청 취소, Windows 검증. 기존 상세 창을 재사용한 요약이며 완전한 비용 대시보드 구현 완료를 의미하지 않는다.
+
+## IMPL-144 — Share Stats 텍스트 복사
+
+상태 CODE_WRITTEN_UNVERIFIED. 컴파일/빌드/테스트/클립보드·UI·수집/검증 미실시. guidelines/COMMITS.md 부재로 핵심 커밋 규칙을 적용한다.
+
+- Copy Share Stats 메뉴 요청을 Main/runtime으로 연결했다. ready snapshot, stale 아님, 공유 payload 존재, 수집 당시와 현재 설정 일치를 모두 요구한다. 부분 실패/갱신/빈 공유 데이터는 복사하지 않고 안내한다.
+- 원본 ShareStatsFormatting.text와 sanitizer를 재사용하고 data-through 날짜는 수집 bucket calendar로 표시한다. 기존 bounded/redacted clipboard helper를 거친다.
+- UUID/개인정보 표시 상태를 저장한 mailbox에서 UI thread만 클립보드에 쓴다. 계정 무효화와 트레이 비용 설정 변경은 대기 요청을 취소한다. 복사는 명시적인 메뉴 선택으로만 시작한다.
+
+남은 범위: 이미지 Share Stats 미리보기/저장, 전체 비용 차트·필터, 외부 설정 변경 및 이미 표시된 snapshot의 즉시 갱신, Windows 클립보드/동시성 검증 및 전체 계획 구현. 실제 클립보드에는 쓰지 않았다.

@@ -56,6 +56,7 @@ public actor WindowsUsageRuntime {
 
     enum SpendCollectionState: Sendable { case idle, disabled, collecting, available, failed, stopped }
     private var spendController: WindowsSpendDashboardController?
+    private var collectedSpendSettings: WindowsSpendSettings?
     private var spendSnapshot: WindowsSpendDashboardController.Snapshot?
     private var spendState: SpendCollectionState = .idle
     private var spendGeneration: UInt64 = 0
@@ -63,6 +64,25 @@ public actor WindowsUsageRuntime {
     /// The native dashboard reads this actor-owned value, never a previous controller's data.
     func currentSpendSnapshot() -> (SpendCollectionState, WindowsSpendDashboardController.Snapshot?) {
         (self.spendState, self.spendSnapshot)
+    }
+
+    public enum ShareStatsCopyResult: Sendable {
+        case ready(String)
+        case unavailable(String)
+    }
+
+    public func shareStatsCopyResult() -> ShareStatsCopyResult {
+        guard !self.shuttingDown, self.spendState == .available,
+              let snapshot = self.spendSnapshot, snapshot.phase == .ready, !snapshot.stale,
+              let payload = snapshot.sharePayload, let settings = self.collectedSpendSettings,
+              WindowsSpendSettings.load() == settings else {
+            return .unavailable("Share Stats needs a completed collection with unchanged settings and no failed sources. Refresh all and try again.")
+        }
+        let text = WindowsShareStatsFormatting.text(payload, calendar: settings.bucketCalendar)
+        guard let redacted = WindowsClipboard.summary(rows: text.components(separatedBy: "\n")) else {
+            return .unavailable("The Share Stats text is empty or too large to copy.")
+        }
+        return .ready(redacted)
     }
 
     public func spendSummaryText() -> String {
@@ -1408,6 +1428,7 @@ public actor WindowsUsageRuntime {
             }
             let snapshot = await controller.snapshot()
             guard !self.shuttingDown, generation == self.spendGeneration, !Task.isCancelled else { return }
+            self.collectedSpendSettings = settings
             self.spendSnapshot = snapshot
             self.spendState = snapshot.phase == .failed ? .failed : .available
         } catch {

@@ -95,6 +95,10 @@ public final class WindowsTrayHost: @unchecked Sendable {
     private static let agentSessionsRefreshCommand = UINT_PTR(0x7501)
     private static let agentSessionCommandBase = UINT_PTR(0x7600)
     private static let wakeMessage = UINT(WM_APP) + 1
+    private static let shareStatsCopyCommand = UINT_PTR(0x7033)
+    private let onShareStatsCopyRequested: @Sendable (UUID) -> Void
+    private var shareStatsCopyRequest: (id: UUID, privacy: Bool)? // Protected by mailboxLock.
+    private var shareStatsCopyMailbox: WindowsUsageRuntime.ShareStatsCopyResult? // Protected by mailboxLock.
     private static let spendSummaryCommand = UINT_PTR(0x7032)
     private let onSpendSummaryRequested: @Sendable (UUID) -> Void
     private var spendSummaryRequest: UUID? // Protected by mailboxLock.
@@ -281,6 +285,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
         onRemoteSessionPage: @escaping @Sendable (WindowsSessionPageRequest) -> Void = { _ in },
         onPresentationSettingsChanged: @escaping PresentationSettingsChangedHandler = {},
         onOptionalUsageSettingsChanged: @escaping OptionalUsageSettingsChangedHandler = {},
+        onShareStatsCopyRequested: @escaping @Sendable (UUID) -> Void = { _ in },
         onSpendSummaryRequested: @escaping @Sendable (UUID) -> Void = { _ in },
         onSpendSettingsChanged: @escaping @Sendable () -> Void = {},
         onRefreshSettingsChanged: @escaping RefreshSettingsChangedHandler = {},
@@ -317,6 +322,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
         self.onMenuOpen = onMenuOpen
         self.onPresentationSettingsChanged = onPresentationSettingsChanged
         self.onOptionalUsageSettingsChanged = onOptionalUsageSettingsChanged
+        self.onShareStatsCopyRequested = onShareStatsCopyRequested
         self.onSpendSummaryRequested = onSpendSummaryRequested
         self.onSpendSettingsChanged = onSpendSettingsChanged
         self.onRefreshSettingsChanged = onRefreshSettingsChanged
@@ -440,6 +446,47 @@ public final class WindowsTrayHost: @unchecked Sendable {
     }
 
     /// Replaces the rows displayed by the next tray popup and wakes the UI thread.
+    public func postShareStatsCopy(requestID: UUID, result: WindowsUsageRuntime.ShareStatsCopyResult) {
+        self.mailboxLock.lock()
+        guard !self.quitInvoked, self.shareStatsCopyRequest?.id == requestID else { self.mailboxLock.unlock(); return }
+        self.shareStatsCopyMailbox = result
+        let window = self.window
+        self.mailboxLock.unlock()
+        if let window { PostMessageW(window, Self.wakeMessage, 0, 0) }
+    }
+
+    private func drainShareStatsCopy() {
+        guard !self.remoteEditorOpen, !self.quitInvoked, let window = self.window,
+              case .idle = self.providerEditorPhase, case .idle = self.codexWebSettingsEditorPhase else { return }
+        self.mailboxLock.lock()
+        let request = self.shareStatsCopyRequest
+        let result = self.shareStatsCopyMailbox
+        if result != nil {
+            self.shareStatsCopyRequest = nil
+            self.shareStatsCopyMailbox = nil
+        }
+        self.mailboxLock.unlock()
+        guard let result, let request else { return }
+        guard request.privacy == WindowsUsagePresentationSettings.load().hidePersonalInfo else {
+            self.showMessage("Privacy settings changed. Choose Copy Share Stats again.", caption: "Share Stats")
+            return
+        }
+        switch result {
+        case let .unavailable(message): self.showMessage(message, caption: "Share Stats")
+        case let .ready(text):
+            if let error = WindowsClipboard.write(text, owner: window) {
+                self.showMessage(error, caption: "Share Stats")
+            }
+        }
+    }
+
+    private func cancelPendingShareStatsCopy() {
+        self.mailboxLock.lock()
+        self.shareStatsCopyRequest = nil
+        self.shareStatsCopyMailbox = nil
+        self.mailboxLock.unlock()
+    }
+
     public func postSpendSummary(requestID: UUID, text: String) {
         self.mailboxLock.lock()
         guard !self.quitInvoked, self.spendSummaryRequest == requestID else { self.mailboxLock.unlock(); return }
@@ -507,6 +554,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
     /// Queues a session quota event from any thread. Delivery is bounded and
     /// performed only by the tray UI thread once the icon exists.
     public func invalidateQueuedAccountNotifications(providerID: ProviderInstanceID) {
+        self.cancelPendingShareStatsCopy()
         self.mailboxLock.lock()
         defer { self.mailboxLock.unlock() }
         self.mailboxSessionQuotaNotifications.removeAll { $0.providerID == providerID }
@@ -2305,6 +2353,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
         let settings = WindowsSpendSettings.load()
         var items: [(UINT_PTR, String, Bool)] = [
             (Self.spendSummaryCommand, "Open cost summary…", false),
+            (Self.shareStatsCopyCommand, "Copy Share Stats", false),
             (Self.spendCollectionCommand, "Collect supported provider costs", settings.collectionEnabled),
             (Self.spendLedgerCommand, "Keep Codex local cost ledger", settings.codexLocalLedgerEnabled)
         ]
@@ -2323,6 +2372,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
     }
 
     private func changeSpendSetting(command: UINT_PTR) {
+        self.cancelPendingShareStatsCopy()
         var settings = WindowsSpendSettings.load()
         if command == Self.spendCollectionCommand {
             settings.collectionEnabled.toggle()
@@ -2729,6 +2779,14 @@ public final class WindowsTrayHost: @unchecked Sendable {
             self.presentationDefaults.set(!enabled, forKey: "agentSessionsEnabled")
             self.onAgentSessionsSettingsChanged()
         case Self.agentSessionsRefreshCommand: self.onAgentSessionsRefresh()
+        case Self.shareStatsCopyCommand:
+            let requestID = UUID()
+            let privacy = WindowsUsagePresentationSettings.load().hidePersonalInfo
+            self.mailboxLock.lock()
+            self.shareStatsCopyRequest = (requestID, privacy)
+            self.shareStatsCopyMailbox = nil
+            self.mailboxLock.unlock()
+            self.onShareStatsCopyRequested(requestID)
         case Self.spendSummaryCommand:
             let requestID = UUID()
             self.mailboxLock.lock()
@@ -3158,6 +3216,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
             host.drainProviderQuotaWarningEditor()
             host.drainCodexWebSettingsEditor()
             host.drainSpendSummary()
+            host.drainShareStatsCopy()
             host.drainSessionQuotaNotifications()
             if case .editing = host.providerEditorPhase {} else if case .saving = host.providerEditorPhase {}
             else if case .editing = host.codexWebSettingsEditorPhase {} else if case .saving = host.codexWebSettingsEditorPhase {} else {
