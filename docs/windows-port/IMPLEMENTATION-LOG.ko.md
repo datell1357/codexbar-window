@@ -2144,3 +2144,14 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - 저장 시 정규화된 동일 값을 원본 이름과 기존 Windows 이름에 함께 저장해 구버전 읽기와 기존 사용자 설정을 보존한다. 기간 clamp/source ID validation은 유지한다. 실제 사용자 defaults에는 접근하지 않았다.
 
 남은 범위: 다른 플랫폼의 설정 suite 자동 이관은 포함하지 않는다. 구버전에서 다시 수정한 legacy 값과 이미 있는 canonical 값의 충돌은 canonical 우선이다. 전체 sync/설정 호환과 Windows 실행 검증, stale lifecycle/ownership/cache 및 전체 계획 구현이 남아 있다.
+
+## IMPL-170 — 동일 Codex 수집의 이전 결과 유지
+
+상태 CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·인증/수집/실행 검증 미실시. guidelines/COMMITS.md 부재로 핵심 규칙을 적용한다.
+
+- Source에 값 동등성을 추가해 기존 controller와 새 source 설정을 비교한다. secret/cookie/environment를 포함한 값은 이미 loader가 보유하는 메모리 범위에서만 비교하고 디스크/로그에 기록하지 않는다. 별도 digest는 만들지 않았다.
+- 설정과 모든 source 필드가 같고, 모든 source가 verifyCodexOwner 및 예상 인증 지문을 가진 Codex이며 OpenCodeX가 꺼져 있으면 이전 controller를 재사용한다. 그 외는 기존 재생성 경로를 유지한다.
+- controller의 이전 snapshot을 refreshing/stale로 복사해 비용 수집 중 summary와 JSON에서 사용할 수 있게 했다. sharePayload는 제거하며 완료된 공유 카드로 취급하지 않는다. 계정 무효화 시 비교용 source를 지우고 await 이후 generation을 재확인한다.
+- JSON은 retained snapshot이 있는 collecting/failed 상태에서도 내보내며 기존 stale 안내를 사용한다. 비용 요약은 snapshot이 있으면 수집/실패 상태에서도 상세를 보여준다.
+
+남은 범위: Codex 외 provider 및 OpenCodeX의 원본 stale 유지, native usage 조회 초기 구간의 이전 화면 유지, 실제 auth 변경의 원자적 경계, source별 실패 시 과거 행 보존, Windows 실행 검증과 전체 계획 구현. 이번 단계는 전체 stale lifecycle 완성이 아니다.

@@ -55,6 +55,7 @@ public actor WindowsUsageRuntime {
     public typealias RefreshSignalProvider = @Sendable () -> RefreshSignals
 
     enum SpendCollectionState: Sendable { case idle, disabled, collecting, available, failed, stopped }
+    private var collectedSpendSources: [WindowsSpendSnapshotLoader.Source]?
     private var spendController: WindowsSpendDashboardController?
     private var collectedSpendSettings: WindowsSpendSettings?
     private var spendSnapshot: WindowsSpendDashboardController.Snapshot?
@@ -161,7 +162,7 @@ public actor WindowsUsageRuntime {
     }
 
     public func spendJSONResult(copy: Bool) -> ShareStatsCopyResult {
-        guard !self.shuttingDown, self.spendState == .available,
+        guard !self.shuttingDown, (self.spendState == .available || self.spendState == .collecting || self.spendState == .failed),
               let snapshot = self.spendSnapshot,
               !snapshot.model.groups.isEmpty, let settings = self.collectedSpendSettings,
               WindowsSpendSettings.load() == settings else {
@@ -250,9 +251,11 @@ public actor WindowsUsageRuntime {
         switch self.spendState {
         case .idle: return "Cost data is not ready. Refresh all to collect enabled sources."
         case .disabled: return "Cost collection is disabled or no enabled provider supports costs. Use Cost collection to change preferences."
-        case .collecting: return "Cost collection is in progress. Reopen this summary after collection finishes."
+        case .collecting:
+            if self.spendSnapshot == nil { return "Cost collection is in progress. Reopen this summary after collection finishes." }
         case .stopped: return "Cost collection has stopped."
-        case .failed: return "Cost collection failed. Refresh all to retry."
+        case .failed:
+            if self.spendSnapshot == nil { return "Cost collection failed. Refresh all to retry." }
         case .available: break
         }
         guard let snapshot = self.spendSnapshot else { return "Cost data is unavailable." }
@@ -623,6 +626,7 @@ public actor WindowsUsageRuntime {
 
     private func invalidateSelectedAccountState(_ providerID: ProviderInstanceID) {
         self.spendGeneration &+= 1
+        self.collectedSpendSources = nil
         self.spendSnapshot = nil
         self.spendState = .idle
         // Delivery adapters run synchronously, preserving order with earlier runtime notifications.
@@ -1585,10 +1589,11 @@ public actor WindowsUsageRuntime {
         guard !self.shuttingDown, !Task.isCancelled else { return }
         let generation = self.spendGeneration
         let settings = WindowsSpendSettings.load()
-        if let previous = self.spendController { await previous.stop() }
-        self.spendController = nil
         guard !self.shuttingDown, generation == self.spendGeneration, !Task.isCancelled else { return }
         guard !settings.enabledProviders(config: config).isEmpty || settings.openCodexUsageLogsEnabled else {
+            if let previous = self.spendController { await previous.stop() }
+            self.spendController = nil
+            self.collectedSpendSources = nil
             self.spendState = .disabled
             return
         }
@@ -1600,11 +1605,28 @@ public actor WindowsUsageRuntime {
                 cacheRoot: self.configStore.fileURL.deletingLastPathComponent()
                     .appendingPathComponent("spend-cache", isDirectory: true),
                 codexContext: codexContext)
-            let controller = WindowsSpendDashboardController(
+            let canReuse = self.collectedSpendSettings == settings && self.collectedSpendSources == sources &&
+                !settings.openCodexUsageLogsEnabled && sources.allSatisfy {
+                    $0.provider == .codex && $0.verifyCodexOwner && $0.expectedCodexAuthFingerprint != nil
+                }
+            let controller: WindowsSpendDashboardController
+            if canReuse, let previous = self.spendController {
+                controller = previous
+                let previousSnapshot = await previous.snapshot()
+                guard !self.shuttingDown, generation == self.spendGeneration, !Task.isCancelled else { return }
+                self.spendSnapshot = previousSnapshot.refreshing()
+            } else {
+                if let previous = self.spendController { await previous.stop() }
+                controller = WindowsSpendDashboardController(
                 loader: WindowsSpendSnapshotLoader.make(sources: sources, settings: settings,
                     openCodexCacheRoot: self.configStore.fileURL.deletingLastPathComponent()
                         .appendingPathComponent("opencodex-cache", isDirectory: true)),
                 options: settings.dashboardOptions, publisher: { _ in })
+            }
+            guard !self.shuttingDown, generation == self.spendGeneration, !Task.isCancelled else {
+                await controller.stop()
+                return
+            }
             self.spendController = controller
             self.spendState = .collecting
             // The original converter refreshes non-USD rates at most daily and retains fallback rates on failure.
@@ -1621,6 +1643,7 @@ public actor WindowsUsageRuntime {
             }
             let snapshot = await controller.snapshot()
             guard !self.shuttingDown, generation == self.spendGeneration, !Task.isCancelled else { return }
+            self.collectedSpendSources = sources
             self.collectedSpendSettings = settings
             self.spendSnapshot = snapshot
             self.spendState = snapshot.phase == .failed ? .failed : .available

@@ -4,7 +4,7 @@ import CodexBarCore
 
 /// Captured collection inputs. Environment/cookie values may contain secrets and must not be logged.
 struct WindowsSpendSnapshotLoader {
-    struct Source: Sendable {
+    struct Source: Sendable, Equatable {
         let id: String
         let provider: UsageProvider
         let displayName: String

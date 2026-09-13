@@ -37,6 +37,12 @@ actor WindowsSpendDashboardController {
         let failure: Failure?
         let openCodexObservation: WindowsOpenCodexSpendSource.Observation
         let sourceFailures: [SourceFailure]
+
+        func refreshing() -> Self {
+            Self(generation: self.generation, phase: .refreshing, model: self.model, sharePayload: nil,
+                 loadedAt: self.loadedAt, stale: true, failure: nil,
+                 openCodexObservation: self.openCodexObservation, sourceFailures: self.sourceFailures)
+        }
     }
     typealias Loader = @Sendable (_ historyDays: Int) async throws -> Scan
     typealias Publisher = @Sendable (Snapshot) -> Void
