@@ -75,6 +75,7 @@ public struct WindowsSpendHistorySnapshot: Sendable {
             }
             let maximum = max(1, slots.flatMap(\.segments).map(\.end).max() ?? 0)
             let summary = "Hourly costs · " + group.currencyCode + " · " + WindowsShareStatsFormatting.dataThrough(day, calendar: calendar)
+                + "\r\n" + WindowsSpendSummary.accountingDetails(group).joined(separator: "\r\n")
                 + "\r\n" + group.timeZone.identifier + " · source hour samples are grouped into local hour intervals."
                 + "\r\nMissing samples are not zero; hourly totals may not explain the full daily total. UTC offsets distinguish repeated clock hours."
                 + (snapshot.openCodexObservation == .unavailable ? "\r\nOpenCodeX logs are unavailable; this collection is partial." : "")
@@ -158,6 +159,7 @@ public struct WindowsSpendHistorySnapshot: Sendable {
             if snapshot.openCodexObservation == .unavailable { summary.append("OpenCodeX logs are unavailable; this collection is partial.") }
             if !snapshot.sourceFailures.isEmpty { summary.append("Partial collection: \(snapshot.sourceFailures.count) source(s) failed.") }
             if snapshot.stale { summary.append("Stale collection.") }
+            summary.append(contentsOf: WindowsSpendSummary.accountingDetails(group))
             return Series(legend: legend, code: group.currencyCode, days: days, maximum: maximum,
                             maximumLabel: WindowsShareStatsFormatting.currency(maximum, code: group.currencyCode),
                             summary: summary.joined(separator: "\r\n"))

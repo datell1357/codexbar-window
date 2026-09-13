@@ -31,6 +31,7 @@ enum WindowsSpendSummary {
             rows.append("Currency: " + safe(group.currencyCode))
             rows.append("Estimated cost: " + cost(group.totalCost, currency: group.currencyCode))
             rows.append("Tokens: " + tokens(group.totalTokens))
+            rows.append(contentsOf: accountingDetails(group))
             rows.append("Covered days: \(group.coveredDayCount) / \(model.requestedDays)")
             rows.append("Bucket time zone: " + group.timeZone.identifier)
             if group.modelHistoryCompleteness == .incomplete {
@@ -45,6 +46,7 @@ enum WindowsSpendSummary {
             for model in group.models.prefix(100) {
                 rows.append("  " + safe(model.providerName) + " / " + safe(model.modelName) + " · "
                     + cost(model.totalCost, currency: group.currencyCode) + " · " + tokens(model.totalTokens) + " tokens")
+                rows.append("    " + tokenMixDetails(model.tokenMix))
             }
             if group.models.count > 100 { rows.append("  \(group.models.count - 100) additional models are not shown in this summary.") }
             rows.append("Projects")
@@ -72,6 +74,36 @@ enum WindowsSpendSummary {
         rows.append("")
         rows.append("Unknown values mean missing coverage, not zero usage. Refresh all and reopen to update this snapshot.")
         return rows.joined(separator: "\r\n")
+    }
+
+    /// Use the same captured accounting metadata in the summary and chart detail views.
+    static func accountingDetails(_ group: WindowsSpendDashboardModel.CurrencyGroup) -> [String] {
+        let provenance: String
+        switch group.provenance {
+        case .listPriceEstimate: provenance = "List-price equivalent"
+        case .vendorMetered: provenance = "Plan metered"
+        case .mixed: provenance = "Metered and list-price"
+        case .unknown: provenance = "Spend unavailable"
+        }
+        let coverage = group.coverage
+        var rows = ["Cost basis: " + provenance,
+                    "Subscriptions: \(group.providers.count)",
+                    tokenMixDetails(group.tokenMix),
+                    "Coverage: Priced \(coverage.priced.formatted()) · Unpriced \(coverage.unpriced.formatted())"
+                        + " · Unmetered \(coverage.unmetered.formatted()) · Estimated \(coverage.estimated.formatted())"]
+        if let metered = group.meteredCost {
+            rows.append("Plan metered: " + cost(metered, currency: group.currencyCode))
+        }
+        rows.append("Coverage counts describe source requests or rows, not covered days. Cost figures are not billing receipts.")
+        rows.append("Token classes may overlap or have partial coverage; they must not be added to infer the total.")
+        return rows
+    }
+
+    private static func tokenMixDetails(_ mix: CostUsageTokenMix) -> String {
+        func exact(_ value: Int?) -> String { value.map { $0.formatted() } ?? "Unknown" }
+        return "Input: " + exact(mix.inputTokens) + " · Output: " + exact(mix.outputTokens)
+            + " · Cache read: " + exact(mix.cacheReadTokens) + " · Cache write: " + exact(mix.cacheCreationTokens)
+            + " · Reasoning: " + exact(mix.reasoningTokens)
     }
 
     private static func tokens(_ value: Int?) -> String {

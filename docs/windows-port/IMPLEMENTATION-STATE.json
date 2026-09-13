@@ -26,8 +26,8 @@
   "static_qa_status": "NOT_RUN_DURING_IMPLEMENTATION",
   "windows_runtime_status": "NOT_VALIDATED",
   "completion_claim": false,
-  "latest_completed_slice": "IMPL-159 code written: bounded, throwing Windows Codex fingerprint reads distinguish absence and failure; unverified",
-  "next": "Connect Windows spend model to local cost snapshots, implement Share Stats preview/export and remaining full parity work.",
+  "latest_completed_slice": "IMPL-160 code written: spend accounting provenance, metered amounts, coverage and token classes in summary/chart details; unverified",
+  "next": "Implement remaining full Windows parity, including spend project/session exploration, ownership lifecycle and release integration; validation deferred by user instruction.",
   "inventory": {
     "baseline_entries": 2844,
     "provider_ids": 69,
@@ -49,7 +49,7 @@
     "widget_provider_choices": 17
   },
   "automation_action_this_revision": "Created active thread heartbeat codexbar-windows-30 at 30-minute intervals",
-  "publication_action_this_revision": "Commit and push IMPL-159 to origin/main; no validation by user instruction.",
+  "publication_action_this_revision": "Commit and push IMPL-160 to origin/main; no validation by user instruction.",
   "historical_state_before_2026_09_12": {
     "phase": "IMPLEMENTING",
     "repository": "/Users/yeoreum/Documents/codexbar-window/fork",
@@ -1483,6 +1483,14 @@
     },
     {
       "id": "IMPL-159",
+      "contracts": [
+        "WIN-070"
+      ],
+      "status": "CODE_WRITTEN_UNVERIFIED",
+      "validation": "NOT_RUN_BY_USER_INSTRUCTION"
+    },
+    {
+      "id": "IMPL-160",
       "contracts": [
         "WIN-070"
       ],

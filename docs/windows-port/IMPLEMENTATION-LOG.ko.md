@@ -2043,3 +2043,14 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - Windows spend loader의 수집 전후 지문 검사를 throwing API로 연결했다. 양쪽 읽기가 실패해 nil==nil로 통과하는 대신 해당 소스의 실패로 처리한다. fixture 승인 실패도 인증 파일 부재로 삼키지 않는다.
 
 남은 범위: 인증/로그 읽기 사이 atomic ownership barrier, live ledger ownership/tombstone/캐시 parity, 원격 managed-home 및 외부 변경 감지, Windows 검증과 전체 계획 구현. 실제 인증 파일은 읽지 않았다.
+
+## IMPL-160 — 비용 산정 근거와 토큰 유형 표시
+
+상태 CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·실행·검증은 하지 않았다. guidelines/COMMITS.md 부재로 핵심 커밋 규칙을 적용한다.
+
+- 원본 PreferencesSpendDashboardPane의 요약 항목을 기준으로 Windows 요약 및 일별/시간별 차트 상세에 list-price/vendor-metered/mixed/unknown 구분, 구독 수, plan metered 금액, priced/unpriced/unmetered/estimated coverage를 연결했다.
+- 입력·출력·cache read/write·reasoning 토큰을 그룹과 모델별로 표시한다. 원래 집계된 값을 사용하며 nil은 Unknown, 0은 0으로 유지하고 정확한 정수값을 표시한다.
+- coverage 요청/행 개수와 covered days를 구분하고 비용은 청구 영수증이 아님을 설명한다. 토큰 클래스는 중복/부분 집계를 포함할 수 있으므로 합산하여 전체 토큰으로 간주하지 않도록 안내한다.
+- 수집/가격/통화 변환 로직은 기존 모델을 사용한다. 새로운 파일 수집이나 실계정 접근은 수행하지 않았다.
+
+남은 범위: 프로젝트/세션 전체 탐색, 비교 및 전체 대시보드 UX, live ledger ownership/cache lifecycle, Windows 실행 검증과 전체 계획 구현. 화면 동작 또는 기능 parity 완료를 주장하지 않는다.
