@@ -1,5 +1,7 @@
 # Windows 전용 제품 작업 현황
 
+- IMPL-219: 비용 프로젝트/세션 선택 목록에 표시 제목 필터와 결과 수·선택 유지·요약 복귀를 연결했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
 - IMPL-218: 프로젝트 상세에 해당 프로젝트/기간의 모델별 비용·토큰 유형을 기존 completeness 정책으로 집계·표시한다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
 
 - IMPL-217: 프로젝트별 일별 비용/토큰을 보존·표시하고 합계 미확인 활동 프로젝트도 목록에 유지한다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.

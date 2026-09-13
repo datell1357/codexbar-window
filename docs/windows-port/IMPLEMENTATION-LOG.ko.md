@@ -2571,3 +2571,11 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - 원래 소스의 통화 배수와 모델 집계의 unknown/overflow 규칙을 사용한다. 새 집계 정책을 별도로 도입하지 않는다.
 - 남은 소요: 대규모 항목 탐색 UX, Windsurf 자동 가져오기 및 전체 계획의 다른 Windows parity 항목.
 - CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·UI·실제 데이터 검증 미실행.
+
+## IMPL-219 — 프로젝트·세션 목록 필터
+
+- 본문 Find와 별도로 Filter items 입력을 추가한다. 이미 개인정보 정책을 적용한 section 제목만 대소문자 무시 검색하며 원본 경로/세션 ID는 검색하지 않는다.
+- 필터 결과의 원본 section 인덱스를 따로 보존한다. 선택 항목이 결과에 남으면 유지하고 제외되면 Summary로 복귀한다. 일치 수와 결과 없음 문구를 제공하며 필터를 지우면 전체 목록을 복원한다.
+- 필터 입력은 256자로 제한하고 기존 DPI/font/layout과 개인정보/snapshot 취소 처리를 사용한다. 목록 갱신 실패 시 창을 종료한다.
+- 남은 소요: 대규모 목록 성능/접근성 검증, Windsurf 자동 가져오기 및 전체 계획 나머지. 본 변경만으로 대규모 데이터 성능을 주장하지 않는다.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·UI·성능 검증 미실행.

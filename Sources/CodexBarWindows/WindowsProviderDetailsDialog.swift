@@ -13,6 +13,8 @@ enum WindowsProviderDetailsDialog {
     private static let findID: Int32 = 5
     private static let searchLabelID: Int32 = 103
     private static let sectionID: Int32 = 104
+    private static let filterID: Int32 = 105
+    private static let filterLabelID: Int32 = 106
     private static let linkBaseID: Int32 = 201
 
     struct Link {
@@ -35,6 +37,7 @@ enum WindowsProviderDetailsDialog {
         let expandedText: String?
         let sections: [WindowsSnapshotSection]
         var selectedSection: Int? = nil
+        var visibleSections: [Int] = []
         var displayedText: String {
             if let selectedSection, self.sections.indices.contains(selectedSection) {
                 return self.sections[selectedSection].text
@@ -187,15 +190,14 @@ enum WindowsProviderDetailsDialog {
                   Self.addControl(hwnd, "BUTTON", "Find &next", Self.findID,
                     DWORD(WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON)) != nil else { return -1 }
             if !context.sections.isEmpty {
-                guard let picker = Self.addControl(hwnd, "COMBOBOX", "", Self.sectionID,
-                    DWORD(WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_VSCROLL | CBS_DROPDOWNLIST)) else { return -1 }
-                for title in ["Summary — choose a project or session"] + context.sections.map(\.title) {
-                    let added = (Array(title.utf16) + [0]).withUnsafeBufferPointer {
-                        SendMessageW(picker, UINT(CB_ADDSTRING), 0, LPARAM(Int(bitPattern: $0.baseAddress)))
-                    }
-                    guard added != LRESULT(CB_ERR), added != LRESULT(CB_ERRSPACE) else { return -1 }
-                }
-                SendMessageW(picker, UINT(CB_SETCURSEL), 0, 0)
+                guard Self.addControl(hwnd, "COMBOBOX", "", Self.sectionID,
+                    DWORD(WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_VSCROLL | CBS_DROPDOWNLIST)) != nil,
+                    Self.addControl(hwnd, "STATIC", "Filter &items:", Self.filterLabelID,
+                        DWORD(WS_CHILD | WS_VISIBLE)) != nil,
+                    let filter = Self.addControl(hwnd, "EDIT", "", Self.filterID,
+                        DWORD(WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_BORDER | ES_AUTOHSCROLL)) else { return -1 }
+                SendMessageW(filter, UINT(EM_SETLIMITTEXT), 256, 0)
+                guard Self.filterSections(hwnd, context: context) else { return -1 }
             }
             SendMessageW(search, UINT(EM_SETLIMITTEXT), 256, 0)
             guard SetTimer(hwnd, Self.privacyTimer, 250, nil) != 0 else { return -1 }
@@ -237,10 +239,14 @@ enum WindowsProviderDetailsDialog {
         case UINT(WM_COMMAND):
             guard !Self.closeForPrivacyIfNeeded(hwnd, context: context) else { return 0 }
             let command = Int32(wParam & 0xffff)
+            if command == Self.filterID, Int32((wParam >> 16) & 0xffff) == Int32(EN_CHANGE) {
+                if !Self.filterSections(hwnd, context: context) { DestroyWindow(hwnd) }
+                return 0
+            }
             if command == Self.sectionID, Int32((wParam >> 16) & 0xffff) == Int32(CBN_SELCHANGE) {
                 let selected = Int(SendMessageW(GetDlgItem(hwnd, Self.sectionID), UINT(CB_GETCURSEL), 0, 0))
-                guard selected >= 0, selected <= context.sections.count else { return 0 }
-                context.selectedSection = selected == 0 ? nil : selected - 1
+                guard selected >= 0, selected <= context.visibleSections.count else { return 0 }
+                context.selectedSection = selected == 0 ? nil : context.visibleSections[selected - 1]
                 context.searchOffset = 0
                 (Array(context.displayedText.utf16) + [0]).withUnsafeBufferPointer {
                     _ = SetWindowTextW(GetDlgItem(hwnd, Self.textID), $0.baseAddress)
@@ -282,6 +288,38 @@ enum WindowsProviderDetailsDialog {
             return DefWindowProcW(hwnd, message, wParam, lParam)
         default: return DefWindowProcW(hwnd, message, wParam, lParam)
         }
+    }
+
+    /// Filter only already-redacted titles; hidden paths and session identifiers are not searched.
+    private static func filterSections(_ hwnd: HWND, context: Context) -> Bool {
+        var buffer = [WCHAR](repeating: 0, count: 257)
+        let count = buffer.withUnsafeMutableBufferPointer {
+            GetWindowTextW(GetDlgItem(hwnd, Self.filterID), $0.baseAddress, Int32($0.count))
+        }
+        let query = String(decoding: buffer.prefix(max(0, Int(count))), as: UTF16.self)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        context.visibleSections = context.sections.indices.filter {
+            query.isEmpty || context.sections[$0].title.localizedCaseInsensitiveContains(query)
+        }
+        let picker = GetDlgItem(hwnd, Self.sectionID)
+        SendMessageW(picker, UINT(CB_RESETCONTENT), 0, 0)
+        let summaryTitle = context.visibleSections.isEmpty
+            ? "Summary — no matching items" : "Summary — \(context.visibleSections.count) matching items"
+        for title in [summaryTitle] + context.visibleSections.map({ context.sections[$0].title }) {
+            let added = (Array(title.utf16) + [0]).withUnsafeBufferPointer {
+                SendMessageW(picker, UINT(CB_ADDSTRING), 0, LPARAM(Int(bitPattern: $0.baseAddress)))
+            }
+            guard added != LRESULT(CB_ERR), added != LRESULT(CB_ERRSPACE) else { return false }
+        }
+        let position = context.selectedSection.flatMap { context.visibleSections.firstIndex(of: $0) }
+        if position == nil { context.selectedSection = nil }
+        SendMessageW(picker, UINT(CB_SETCURSEL), WPARAM(position.map { $0 + 1 } ?? 0), 0)
+        EnableWindow(GetDlgItem(hwnd, Self.expandID), context.selectedSection == nil ? 1 : 0)
+        context.searchOffset = 0
+        (Array(context.displayedText.utf16) + [0]).withUnsafeBufferPointer {
+            _ = SetWindowTextW(GetDlgItem(hwnd, Self.textID), $0.baseAddress)
+        }
+        return true
     }
 
     /// NSString ranges match the UTF-16 offsets used by the native EDIT selection messages.
@@ -339,7 +377,7 @@ enum WindowsProviderDetailsDialog {
               let font = CreateFontIndirectW(&metrics.lfMessageFont) else { return }
         let previous = context.font
         context.font = font
-        for id in [Self.textID, Self.closeID, Self.refreshID, Self.expandID, Self.searchID, Self.findID, Self.searchLabelID, Self.sectionID, Self.linkBaseID,
+        for id in [Self.textID, Self.closeID, Self.refreshID, Self.expandID, Self.searchID, Self.findID, Self.searchLabelID, Self.sectionID, Self.filterID, Self.filterLabelID, Self.linkBaseID,
                    Self.linkBaseID + 1, Self.linkBaseID + 2] {
             if let control = GetDlgItem(hwnd, id) {
                 SendMessageW(control, UINT(WM_SETFONT), WPARAM(Int(bitPattern: font)), 1)
@@ -374,9 +412,13 @@ enum WindowsProviderDetailsDialog {
         MoveWindow(GetDlgItem(hwnd, Self.searchLabelID), px(12), px(16), labelWidth, px(24), 1)
         MoveWindow(GetDlgItem(hwnd, Self.searchID), px(12) + labelWidth, px(12), searchWidth, px(28), 1)
         MoveWindow(GetDlgItem(hwnd, Self.findID), px(12) + available - findWidth, px(12), findWidth, px(28), 1)
-        let contentTop: Int32 = context.sections.isEmpty ? 48 : 84
+        let contentTop: Int32 = context.sections.isEmpty ? 48 : 120
         if !context.sections.isEmpty {
-            MoveWindow(GetDlgItem(hwnd, Self.sectionID), px(12), px(48), available, px(260), 1)
+            let filterLabelWidth = min(px(100), available)
+            MoveWindow(GetDlgItem(hwnd, Self.filterLabelID), px(12), px(52), filterLabelWidth, px(24), 1)
+            MoveWindow(GetDlgItem(hwnd, Self.filterID), px(12) + filterLabelWidth, px(48),
+                max(1, available - filterLabelWidth), px(28), 1)
+            MoveWindow(GetDlgItem(hwnd, Self.sectionID), px(12), px(84), available, px(260), 1)
         }
         MoveWindow(GetDlgItem(hwnd, Self.textID), px(12), px(contentTop), available,
                    max(1, top - px(contentTop + 12)), 1)
