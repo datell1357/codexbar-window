@@ -441,6 +441,28 @@ public actor WindowsUsageRuntime {
         } catch { return .failed }
     }
 
+    public func beginTokenAccountMetadataEdit(providerID: ProviderInstanceID,
+                                              accountID: UUID) -> WindowsTokenAccountMetadataLoadResult {
+        guard !self.shuttingDown else { return .shuttingDown }
+        guard self.refreshTask == nil else { return .refreshInProgress }
+        self.credentialEditTicket = nil
+        do {
+            guard let provider = providerID.firstPartyProvider,
+                  let support = TokenAccountSupportCatalog.support(for: provider),
+                  support.showsOrganizationField || support.showsTeamModeControls,
+                  let config = try self.configStore.load(), config.enabledProviders().contains(providerID),
+                  let data = config.providerConfig(for: providerID)?.tokenAccounts,
+                  Set(data.accounts.map(\.id)).count == data.accounts.count,
+                  let account = data.accounts.first(where: { $0.id == accountID }) else { return .unavailable }
+            // One disk read supplies both the editor values and its save revision.
+            let ticket = CredentialEditTicket(id: UUID(), providerID: providerID, accountID: accountID,
+                revision: try Self.credentialEditRevision(account), expiresAt: Date().addingTimeInterval(600))
+            self.credentialEditTicket = ticket
+            return .loaded(.init(ticketID: ticket.id, provider: provider, usageScope: account.usageScope,
+                organizationID: account.organizationID, workspaceID: account.workspaceID))
+        } catch { return .failed }
+    }
+
     public func cancelTokenAccountCredentialEdit(ticketID: UUID) {
         if self.credentialEditTicket?.id == ticketID { self.credentialEditTicket = nil }
     }
@@ -488,7 +510,12 @@ public actor WindowsUsageRuntime {
                 guard let value = value?.trimmingCharacters(in: .whitespacesAndNewlines), !value.isEmpty else { return nil }
                 return value
             }
-            let scope = applying(metadata?.usageScope, to: existing.usageScope)
+            let scope: String?
+            if let patch = metadata?.usageScope, case .replace = patch {
+                scope = applying(patch, to: existing.usageScope)?.lowercased()
+            } else {
+                scope = existing.usageScope
+            }
             let organization = applying(metadata?.organizationID, to: existing.organizationID)
             let workspace = applying(metadata?.workspaceID, to: existing.workspaceID)
             if metadata != nil {

@@ -158,4 +158,28 @@ public struct WindowsTokenAccountMetadataPatch: Sendable {
     }
 }
 
+/// Account metadata is private UI data, not diagnostic output. Credentials are excluded.
+public struct WindowsTokenAccountMetadataSnapshot: Sendable {
+    public let ticketID: UUID
+    public let provider: UsageProvider
+    public let usageScope: String?
+    public let organizationID: String?
+    public let workspaceID: String?
+
+    /// Preserve untouched legacy values exactly, including nil versus empty strings.
+    public func patch(usageScope: String?, organizationID: String?, workspaceID: String?) -> WindowsTokenAccountMetadataPatch {
+        .init(usageScope: usageScope == self.usageScope ? .unchanged : .replace(usageScope),
+              organizationID: organizationID == self.organizationID ? .unchanged : .replace(organizationID),
+              workspaceID: workspaceID == self.workspaceID ? .unchanged : .replace(workspaceID))
+    }
+}
+
+public enum WindowsTokenAccountMetadataLoadResult: Sendable {
+    case loaded(WindowsTokenAccountMetadataSnapshot)
+    case unavailable
+    case refreshInProgress
+    case shuttingDown
+    case failed
+}
+
 #endif

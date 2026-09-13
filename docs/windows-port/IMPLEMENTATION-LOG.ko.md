@@ -1602,3 +1602,13 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - 공급자 지원 필드와 z.ai team 필수 값을 기존 shared rules로 판정하며 선택 계정 변경에는 기존 상태 철회를 적용한다. provider credential 교체 호출 계약도 유지한다.
 
 남은 범위: metadata snapshot·native 편집 UI/host/Main 연결, 공급자별 canonical scope 처리, Windows 입력·동시 저장 검증과 전체 계획 기능. backend만 작성되었으며 UI에는 노출되지 않는다.
+
+## IMPL-116 — metadata 편집 snapshot 조회
+
+상태 CODE_WRITTEN_UNVERIFIED. 컴파일/빌드/테스트/계정/검증 미실시. guidelines/COMMITS.md 부재로 핵심 커밋 규칙을 적용한다.
+
+- metadata 지원 공급자의 현재 scope/org/workspace와 edit ticket을 하나의 config read로 캡처하는 begin API를 추가했다. credential이나 digest는 UI snapshot에 넣지 않는다.
+- 기존 단일 ticket을 공유해 새 편집 시작은 이전 편집을 대체하며 cancel/expiry/save revision 경로를 유지한다. 지원하지 않는 공급자·중복 UUID·사라진 계정은 unavailable 처리한다.
+- snapshot에서 unchanged와 replace를 구분하는 patch 생성 API를 추가했다. scope가 실제 교체될 때만 소문자로 정규화하고 기존 미수정 값은 유지한다.
+
+남은 범위: native metadata 입력 UI/host/Main 연결, 개인정보 표시 정책, legacy invalid metadata 편집 안내, Windows 실행 검증 및 전체 계획 기능.
