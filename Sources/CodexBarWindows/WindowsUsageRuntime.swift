@@ -542,6 +542,7 @@ public actor WindowsUsageRuntime {
         let privacy: Bool
         let candidates: [UUID: WindowsCursorBrowserSessionImporter.ValidatedCandidate]
     }
+    private var cursorBrowserValidationTask: Task<WindowsCursorBrowserSessionImporter.ValidatedCandidate, Error>?
     private var cursorBrowserImportRequest: UUID?
     private var cursorBrowserDiscoveryTask: Task<WindowsCursorBrowserSessionImporter.Discovery, Error>?
     private var pendingCursorBrowserImport: PendingCursorBrowserImport?
@@ -557,10 +558,10 @@ public actor WindowsUsageRuntime {
         return (revision, selected)
     }
 
-    public func discoverCursorBrowserAccounts() async -> CursorBrowserImportResult {
+    public func discoverCursorBrowserAccounts(requestID: UUID = UUID()) async -> CursorBrowserImportResult {
+        guard !Task.isCancelled else { return .unavailable("The browser import was cancelled.") }
         guard !self.shuttingDown, self.refreshTask == nil else { return .unavailable("Wait for the current refresh to finish.") }
         self.cancelCursorBrowserImport()
-        let requestID = UUID()
         self.cursorBrowserImportRequest = requestID
         self.pendingCursorBrowserImport = nil
         let privacy = WindowsUsagePresentationSettings.load().hidePersonalInfo
@@ -604,7 +605,18 @@ public actor WindowsUsageRuntime {
                 let fingerprint = Data(SHA256.hash(data: Data(candidate.cookieHeader.utf8)))
                 guard seenSessions.insert(fingerprint).inserted else { continue }
                 do {
-                    let result = try await importer.validate(candidate)
+                    let validationTask = Task.detached(priority: .utility) {
+                        try await importer.validate(candidate)
+                    }
+                    self.cursorBrowserValidationTask = validationTask
+                    defer {
+                        if self.cursorBrowserImportRequest == requestID { self.cursorBrowserValidationTask = nil }
+                    }
+                    let result = try await withTaskCancellationHandler {
+                        try await validationTask.value
+                    } onCancel: {
+                        validationTask.cancel()
+                    }
                     try Task.checkCancellation()
                     guard !self.shuttingDown, self.cursorBrowserImportRequest == requestID else {
                         return .unavailable("The browser import was cancelled or replaced.")
@@ -635,6 +647,8 @@ public actor WindowsUsageRuntime {
 
     public func cancelCursorBrowserImport(requestID: UUID? = nil) {
         if let requestID, self.cursorBrowserImportRequest != requestID { return }
+        self.cursorBrowserValidationTask?.cancel()
+        self.cursorBrowserValidationTask = nil
         self.cursorBrowserDiscoveryTask?.cancel()
         self.cursorBrowserDiscoveryTask = nil
         self.cursorBrowserImportRequest = nil

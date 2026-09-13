@@ -1,5 +1,7 @@
 # Windows 전용 제품 작업 현황
 
+- IMPL-186: Cursor 가져오기 취소 메뉴 및 UI task/HTTP 후보 검증 취소를 연결했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
 - IMPL-185: Cursor Firefox 탐색을 runtime actor 밖으로 분리하고 취소/종료 연결, 동일 세션 후보 중복 제거를 작성했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
 
 - IMPL-184: 트레이의 Firefox Cursor 가져오기 시작/후보 선택/이름 입력/보호 저장 결과를 연결했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.

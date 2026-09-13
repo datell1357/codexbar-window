@@ -10,6 +10,7 @@ struct CodexBarWindowsMain {
 }
 
 private final class WindowsTrayApplication: @unchecked Sendable {
+    private let cursorBrowserImports = WindowsCursorBrowserImportTask()
     private let runtime: WindowsUsageRuntime
     private let sessions: WindowsAgentSessionsRuntime
     private let remoteSessions: WindowsRemoteSessionsRuntime
@@ -101,8 +102,10 @@ private final class WindowsTrayApplication: @unchecked Sendable {
         },
         onCursorBrowserImportRequested: { [weak self] requestID in
             guard let self else { return }
-            Task {
-                let result = await self.runtime.discoverCursorBrowserAccounts()
+            self.cursorBrowserImports.start(id: requestID) { [weak self] in
+                guard let self else { return }
+                let result = await self.runtime.discoverCursorBrowserAccounts(requestID: requestID)
+                guard !Task.isCancelled else { return }
                 self.host.postCursorBrowserImport(requestID: requestID, result: result)
             }
         },
@@ -116,6 +119,7 @@ private final class WindowsTrayApplication: @unchecked Sendable {
         },
         onCursorBrowserImportCancel: { [weak self] ticket in
             guard let self else { return }
+            self.cursorBrowserImports.cancel(id: ticket)
             Task { await self.runtime.cancelCursorBrowserImport(requestID: ticket) }
         },
         onSpendJSONRequested: { [weak self] requestID, copy in

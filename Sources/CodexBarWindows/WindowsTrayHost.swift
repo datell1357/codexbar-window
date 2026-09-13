@@ -102,6 +102,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
     private static let spendHistoryCommand = UINT_PTR(0x7038)
     private let onSpendHoursRequested: @Sendable (UUID, UInt64, Date, String) -> Void
     private let onSpendHistoryRequested: @Sendable (UUID) -> Void
+    private static let cursorBrowserImportCancelCommand = UINT_PTR(0x703F)
     private static let cursorBrowserImportCommand = UINT_PTR(0x703E)
     private let onCursorBrowserImportRequested: @Sendable (UUID) -> Void
     private let onCursorBrowserImportSave: @Sendable (UUID, UUID, UUID, String) -> Void
@@ -1570,9 +1571,9 @@ public final class WindowsTrayHost: @unchecked Sendable {
                 self.mailboxLock.lock()
                 let importing = self.cursorImportRequest != nil
                 self.mailboxLock.unlock()
-                let title = importing ? "Importing Cursor account…" : "Import Cursor from Firefox…"
+                let title = importing ? "Cancel Cursor browser import" : "Import Cursor from Firefox…"
                 title.withCString(encodedAs: UTF16.self) {
-                    _ = AppendMenuW(addMenu, UINT(MF_STRING) | (importing ? UINT(MF_GRAYED) : 0), Self.cursorBrowserImportCommand, $0)
+                    _ = AppendMenuW(addMenu, UINT(MF_STRING), importing ? Self.cursorBrowserImportCancelCommand : Self.cursorBrowserImportCommand, $0)
                 }
             }
             let attached = !commands.isEmpty && "Add saved account…".withCString(encodedAs: UTF16.self) {
@@ -2774,6 +2775,17 @@ public final class WindowsTrayHost: @unchecked Sendable {
     }
 
     private func dispatchCommand(_ command: UINT_PTR) {
+        if command == Self.cursorBrowserImportCancelCommand {
+            guard !self.remoteEditorOpen else { return }
+            self.mailboxLock.lock()
+            let requestID = self.cursorImportRequest
+            self.cursorImportRequest = nil
+            self.cursorImportMailbox = nil
+            self.cursorImportSaveMailbox = nil
+            self.mailboxLock.unlock()
+            if let requestID { self.onCursorBrowserImportCancel(requestID) }
+            return
+        }
         if command == Self.cursorBrowserImportCommand {
             guard !self.quitInvoked, !self.remoteEditorOpen,
                   case .idle = self.providerEditorPhase, case .idle = self.codexWebSettingsEditorPhase else { return }

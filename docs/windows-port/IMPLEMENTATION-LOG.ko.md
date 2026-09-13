@@ -2303,3 +2303,11 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - 동일 cookie header의 SHA-256 지문으로 중복 세션 후보를 제거한다. 사용자 ID만으로는 팀 컨텍스트를 구분할 수 없어 서로 다른 세션은 같은 사용자여도 유지한다. 지문은 메모리에서만 사용한다.
 - 남은 소요: 동기 브라우저 I/O 내부의 즉시 중단 보장, HTTP 진행 취소/전체 deadline, UI 취소 액션, 계정/팀 식별 기반 병합, Chrome/Edge/WebView2 및 나머지 계획.
 - CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·실제 계정/브라우저/API 검증 미실행.
+
+## IMPL-186 — Cursor 가져오기 진행 취소
+
+- 진행 중 가져오기 메뉴를 Cancel 액션으로 바꾸고 request/mailbox를 폐기해 늦은 응답을 표시하지 않도록 작성했다.
+- UI가 시작한 task를 동기 lock 소유자로 관리한다. actor 진입 전 취소도 전달하며 host/runtime ticket을 같은 UUID로 사용한다.
+- 후보 HTTP 검증 task를 보관하고 부모 취소, runtime 취소/교체/종료에 cancel을 연결했다. 저장 완료를 되돌리는 취소 기능은 아니다.
+- 남은 소요: 전체 HTTP deadline, 네이티브 I/O 취소 응답성, 열린 후보 메뉴 privacy 변경 대응, Chrome/Edge/WebView2 및 나머지 계획. 실제 transport의 취소 반응은 검증하지 않았다.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·실행·브라우저/API 검증 미실행.
