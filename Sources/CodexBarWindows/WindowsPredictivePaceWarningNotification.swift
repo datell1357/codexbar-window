@@ -5,6 +5,7 @@ import Foundation
 /// Semantic predictive warning delivered to the Windows notification adapter.
 /// Formatting and privacy redaction remain owned by the host UI layer.
 public struct WindowsPredictivePaceWarningNotification: Sendable {
+    public let providerID: ProviderInstanceID?
     public let providerName: String
     public let window: QuotaWarningWindow
     public let etaSeconds: TimeInterval
@@ -14,8 +15,10 @@ public struct WindowsPredictivePaceWarningNotification: Sendable {
         providerName: String,
         window: QuotaWarningWindow,
         etaSeconds: TimeInterval,
-        accountDisplayName: String? = nil)
+        accountDisplayName: String? = nil,
+        providerID: ProviderInstanceID? = nil)
     {
+        self.providerID = providerID
         self.providerName = providerName
         self.window = window
         self.etaSeconds = etaSeconds

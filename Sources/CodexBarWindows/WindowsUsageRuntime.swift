@@ -62,6 +62,7 @@ public actor WindowsUsageRuntime {
     private var publisher: RowPublisher
     private var combinedPublisher: CombinedPublisher
     private var notificationPublisher: NotificationPublisher
+    private var accountInvalidationPublisher: @Sendable (ProviderInstanceID) -> Void = { _ in }
     private var quotaWarningPublisher: QuotaWarningPublisher
     private var predictivePaceWarningPublisher: PredictivePaceWarningPublisher
     private var refreshTask: Task<Void, Never>?
@@ -198,6 +199,10 @@ public actor WindowsUsageRuntime {
         await self.refresh()
     }
 
+    public func setAccountInvalidationPublisher(_ publisher: @escaping @Sendable (ProviderInstanceID) -> Void) {
+        self.accountInvalidationPublisher = publisher
+    }
+
     public func setNotificationPublisher(_ publisher: @escaping NotificationPublisher) {
         self.notificationPublisher = publisher
     }
@@ -317,6 +322,8 @@ public actor WindowsUsageRuntime {
     }
 
     private func invalidateSelectedAccountState(_ providerID: ProviderInstanceID) {
+        // Delivery adapters run synchronously, preserving order with earlier runtime notifications.
+        self.accountInvalidationPublisher(providerID)
         self.dashboardContextCache.removeValue(forKey: providerID)
         // Session transitions are keyed only by provider. The first observation for
         // a newly selected account must establish a baseline, not compare with its predecessor.
@@ -1102,7 +1109,8 @@ public actor WindowsUsageRuntime {
         let providerName = ProviderDescriptorRegistry.descriptor(for: provider).metadata.displayName
         self.notificationPublisher(.init(
             title: "\(providerName) session \(restored ? "restored" : "depleted")",
-            body: restored ? "Session quota is available again." : "0% left. Will notify when it's available again."))
+            body: restored ? "Session quota is available again." : "0% left. Will notify when it's available again.",
+            providerID: provider.instanceID))
     }
 
     private func evaluateQuotaWarnings(
@@ -1161,7 +1169,7 @@ public actor WindowsUsageRuntime {
         if case let .warning(threshold) = evaluation.outcome {
             let providerName = ProviderDescriptorRegistry.descriptor(for: key.provider).metadata.displayName
             self.quotaWarningPublisher(.init(providerName: providerName, window: key.lane, threshold: threshold,
-                currentRemaining: candidate.window.remainingPercent, accountDisplayName: accountDisplayName, windowDisplayLabel: candidate.displayLabel))
+                currentRemaining: candidate.window.remainingPercent, accountDisplayName: accountDisplayName, windowDisplayLabel: candidate.displayLabel, providerID: key.provider.instanceID))
         }
     }
 
@@ -1425,7 +1433,7 @@ public actor WindowsUsageRuntime {
                 window: candidate.window,
                 etaSeconds: eta,
                 accountDisplayName: WindowsUsagePresentationSettings.load().hidePersonalInfo
-                    ? nil : snapshot.accountEmail(for: provider)))
+                    ? nil : snapshot.accountEmail(for: provider), providerID: provider.instanceID))
         }
     }
 

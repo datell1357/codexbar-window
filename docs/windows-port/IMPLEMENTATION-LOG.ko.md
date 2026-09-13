@@ -1522,3 +1522,13 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - 계정 discriminator가 이미 포함된 quota/pace 중복 방지 기록은 보존해 같은 계정으로 돌아왔을 때 경고가 반복되지 않도록 한다. 이름 변경은 이 경로를 호출하지 않는다.
 
 남은 범위: 이미 host mailbox 또는 OS 알림에 전달된 이전 계정 알림의 owner/generation 필터, 실제 switch·historical race·Windows 검증. 이번 변경은 알림 전달 전체의 계정 격리 완료가 아니다.
+
+## IMPL-108 — 계정 전환 후 공급자 알림 mailbox 철회
+
+상태 CODE_WRITTEN_UNVERIFIED. 컴파일/빌드/테스트/알림/실계정/검증 미실시. guidelines/COMMITS.md 부재로 핵심 커밋 규칙을 적용한다.
+
+- runtime의 session/quota/pace 알림에 providerID를 전달한다. 기존 initializer 호출 호환성을 위해 optional 기본값을 유지하지만 runtime 경로는 ID를 지정한다.
+- 계정 변경 성공 시 동기 invalidation publisher로 host mailbox의 해당 공급자 알림만 제거한다. 다른 공급자 알림은 보존한다. 알림 게시와 invalidation 어댑터는 같은 runtime actor에서 순서대로 직접 호출한다.
+- WindowsMain 시작 시 publisher를 연결하고 mailboxLock 안에서 세 알림 대기열을 정리하도록 작성했다.
+
+남은 범위: 이미 mailbox에서 꺼내 렌더링 중인 알림, 표시된 OS balloon/overlay 철회, 외부 config 변경·OAuth 전환 경로의 invalidation, 실제 계정/스레드 race/Windows 검증. 이번 변경은 대기열 단계만 다룬다.

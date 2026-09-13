@@ -172,6 +172,9 @@ private final class WindowsTrayApplication: @unchecked Sendable {
             await runtime.setCombinedPublisher { [weak host] rows, entries in
                 host?.postRows(rows, menuEntries: entries)
             }
+            await runtime.setAccountInvalidationPublisher { [weak host] providerID in
+                host?.invalidateQueuedAccountNotifications(providerID: providerID)
+            }
             await runtime.setNotificationPublisher { [weak host] event in
                 host?.postSessionQuotaNotification(event)
             }

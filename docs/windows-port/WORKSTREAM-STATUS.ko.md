@@ -1,5 +1,7 @@
 # Windows 전용 제품 작업 현황
 
+- IMPL-108: 계정 변경 후 해당 공급자의 대기 중 알림 철회를 작성했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
 - IMPL-107: 선택 계정 변경 시 session baseline·Codex history cache 철회를 작성했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
 
 - IMPL-106: z.ai personal/team 라디오와 조건부 team 입력을 작성했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.

@@ -3,6 +3,7 @@ import CodexBarCore
 import Foundation
 
 public struct WindowsQuotaWarningNotification: Sendable {
+    public let providerID: ProviderInstanceID?
     public let providerName: String
     public let window: QuotaWarningWindow
     public let threshold: Int
@@ -16,8 +17,10 @@ public struct WindowsQuotaWarningNotification: Sendable {
         threshold: Int,
         currentRemaining: Double,
         accountDisplayName: String? = nil,
-        windowDisplayLabel: String? = nil)
+        windowDisplayLabel: String? = nil,
+        providerID: ProviderInstanceID? = nil)
     {
+        self.providerID = providerID
         self.providerName = providerName
         self.window = window
         self.threshold = threshold

@@ -440,6 +440,14 @@ public final class WindowsTrayHost: @unchecked Sendable {
 
     /// Queues a session quota event from any thread. Delivery is bounded and
     /// performed only by the tray UI thread once the icon exists.
+    public func invalidateQueuedAccountNotifications(providerID: ProviderInstanceID) {
+        self.mailboxLock.lock()
+        defer { self.mailboxLock.unlock() }
+        self.mailboxSessionQuotaNotifications.removeAll { $0.providerID == providerID }
+        self.mailboxQuotaWarningNotifications.removeAll { $0.providerID == providerID }
+        self.mailboxPredictivePaceWarningNotifications.removeAll { $0.providerID == providerID }
+    }
+
     public func postSessionQuotaNotification(_ notification: WindowsSessionQuotaNotification) {
         self.mailboxLock.lock()
         guard !self.quitInvoked else {
