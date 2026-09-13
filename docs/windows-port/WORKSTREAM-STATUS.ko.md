@@ -1,5 +1,7 @@
 # Windows 전용 제품 작업 현황
 
+- IMPL-165: 공유 미리보기의 중첩 저장/오류 대화상자 반환 뒤 owner 창을 닫도록 연결했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
 - IMPL-164: PNG 저장 대화상자 전후 및 클립보드 교체 직전에 캡처 유효성을 확인하도록 연결했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
 
 - IMPL-163: 열린 상세/비용 차트/공유 미리보기에 계정·비용 설정 무효화 상태를 연결했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.

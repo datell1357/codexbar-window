@@ -2094,3 +2094,13 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - Share preview는 열린 창의 동일 validity closure를 저장/복사에 전달한다. 직접 저장/복사도 host의 캡처 유효성을 전달한다. 기존 호출부는 기본 closure로 호환한다.
 
 남은 범위: 유효성 확인과 OS 게시 사이의 원자적 처리, 수집부터 mailbox까지 동일 소유권 ticket, 중첩 저장 dialog/owner 생명주기, 외부 auth 변경 감지, live ledger/cache parity와 Windows 검증 및 전체 계획 구현. 실제 파일 저장/클립보드 변경은 수행하지 않았다.
+
+## IMPL-165 — 공유 미리보기 중첩 대화상자 종료 순서
+
+상태 CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·실행·검증 미실시. guidelines/COMMITS.md 부재로 핵심 규칙을 적용한다.
+
+- PNG save common dialog와 오류 MessageBox가 owner timer를 처리하는 동안 미리보기 HWND가 먼저 파괴되지 않도록 childDialogOpen/closePending 상태를 추가했다.
+- 계정/개인정보 변경 또는 WM_CLOSE는 창을 숨기고 종료를 예약한다. 자식 대화상자가 반환된 뒤 유효성을 확인하고 owner를 닫는다. 중첩 대화상자 동안 미리보기 명령 재진입을 거절한다.
+- 저장 대화상자 이후의 기존 exporter 유효성 확인은 유지한다. 이미 닫힌 context에 대한 반복 종료도 무시한다.
+
+남은 범위: Windows common dialog의 실제 owner/timer 동작, 종료/취소 메시지 전수 처리, 수집부터 표시까지 소유권 ticket와 원자적 게시, 외부 auth 감지, live ledger/cache 및 전체 계획 구현. 실제 저장 대화상자는 열지 않았다.

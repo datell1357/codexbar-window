@@ -17,6 +17,8 @@ enum WindowsShareStatsPreview {
         var dpi: UINT = 96
         var closed = false
         var failed = false
+        var childDialogOpen = false
+        var closePending = false
         init(image: Image, privacy: Bool, isCurrent: @escaping @Sendable () -> Bool) {
             self.isCurrent = isCurrent
             self.image = image; self.privacy = privacy }
@@ -78,8 +80,14 @@ enum WindowsShareStatsPreview {
     }
 
     private static func closeForPrivacy(_ hwnd: HWND, context: Context) -> Bool {
-        guard !context.isCurrent() || context.privacy != WindowsUsagePresentationSettings.load().hidePersonalInfo else { return false }
-        ShowWindow(hwnd, Int32(SW_HIDE)); DestroyWindow(hwnd)
+        guard !context.closed else { return true }
+        guard context.closePending || !context.isCurrent() ||
+            context.privacy != WindowsUsagePresentationSettings.load().hidePersonalInfo else { return false }
+        context.closePending = true
+        ShowWindow(hwnd, Int32(SW_HIDE))
+        // Common dialogs dispatch owner timers while their nested message loop is active.
+        // Keep the owner handle alive until that dialog has returned.
+        if !context.childDialogOpen { DestroyWindow(hwnd) }
         return true
     }
 
@@ -118,23 +126,34 @@ enum WindowsShareStatsPreview {
             return 0
         case UINT(WM_PAINT): Self.paint(hwnd, context: context); return 0
         case UINT(WM_COMMAND):
+            guard !context.childDialogOpen else { return 0 }
             if Self.closeForPrivacy(hwnd, context: context) { return 0 }
             let error: String?
             switch Int32(wParam & 0xffff) {
             case 2: DestroyWindow(hwnd); return 0
-            case 3: error = WindowsShareStatsExporter.savePNG(context.image.png, filename: context.image.filename,
-                                                             owner: hwnd, hidePersonalInfo: context.privacy, isCurrent: context.isCurrent)
+            case 3:
+                context.childDialogOpen = true
+                error = WindowsShareStatsExporter.savePNG(context.image.png, filename: context.image.filename,
+                    owner: hwnd, hidePersonalInfo: context.privacy, isCurrent: context.isCurrent)
+                context.childDialogOpen = false
+                if Self.closeForPrivacy(hwnd, context: context) { return 0 }
             case 4: error = WindowsClipboard.writeImage(png: context.image.png, dib: context.image.dib, owner: hwnd, isCurrent: context.isCurrent)
             case 5: error = WindowsClipboard.write(context.image.text, owner: hwnd, isCurrent: context.isCurrent)
             default: return 0
             }
             if let error, IsWindow(hwnd) != 0 {
+                context.childDialogOpen = true
                 error.withCString(encodedAs: UTF16.self) { body in
                     "Share Stats".withCString(encodedAs: UTF16.self) { MessageBoxW(hwnd, body, $0, UINT(MB_OK | MB_ICONERROR)) }
                 }
+                context.childDialogOpen = false
+                _ = Self.closeForPrivacy(hwnd, context: context)
             }
             return 0
-        case UINT(WM_CLOSE): DestroyWindow(hwnd); return 0
+        case UINT(WM_CLOSE):
+            context.closePending = true
+            _ = Self.closeForPrivacy(hwnd, context: context)
+            return 0
         case UINT(WM_DESTROY): KillTimer(hwnd, 1); context.closed = true; return 0
         case UINT(WM_NCDESTROY): SetWindowLongPtrW(hwnd, Int32(GWLP_USERDATA), 0)
         default: break
