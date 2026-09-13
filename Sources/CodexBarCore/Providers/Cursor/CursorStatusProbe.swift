@@ -674,6 +674,8 @@ public actor CursorSessionStore {
 
     private var sessionCookies: [HTTPCookie] = []
     private var hasLoadedFromDisk = false
+    /// Generic storage failure only; never contains cookie data or filesystem paths.
+    public private(set) var persistenceFailure: String?
     private let fileURL: URL
 
     init(fileURL: URL? = nil) {
@@ -760,13 +762,37 @@ public actor CursorSessionStore {
         // These are Cursor auth session cookies. Write them owner-only (0600) with the permission
         // established before any bytes land, matching the codex/kimi/antigravity credential stores;
         // a plain Data.write leaves them world-readable (0644).
+        #if os(Windows)
+        do {
+            try WindowsCursorSessionFile.write(data, to: self.fileURL)
+            self.persistenceFailure = nil
+        } catch {
+            self.persistenceFailure = "The Cursor session could not be saved securely."
+        }
+        #else
         try? CredentialFileWriter.writePrivate(data, to: self.fileURL)
+        #endif
     }
 
     private func loadFromDisk() {
-        guard let data = try? Data(contentsOf: self.fileURL),
-              let cookieArray = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]]
-        else { return }
+        let data: Data
+        #if os(Windows)
+        do {
+            guard let stored = try WindowsCursorSessionFile.read(from: self.fileURL) else { return }
+            data = stored
+            self.persistenceFailure = nil
+        } catch {
+            self.persistenceFailure = "The saved Cursor session could not be decrypted or read."
+            return
+        }
+        #else
+        guard let stored = try? Data(contentsOf: self.fileURL) else { return }
+        data = stored
+        #endif
+        guard let cookieArray = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] else {
+            self.persistenceFailure = "The saved Cursor session has an invalid format."
+            return
+        }
 
         self.sessionCookies = cookieArray.compactMap { props in
             // Convert back to HTTPCookiePropertyKey dictionary

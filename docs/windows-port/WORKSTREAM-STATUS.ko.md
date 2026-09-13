@@ -1,5 +1,7 @@
 # Windows 전용 제품 작업 현황
 
+- IMPL-179: Windows Cursor 세션 파일의 DPAPI 보호 저장/제한 읽기와 persistenceFailure 상태를 작성했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
 - IMPL-178: Cursor Windows 비용/snapshot capability 및 수동 cookie CLI 예외를 활성화하고 Windows 설정 안내를 연결했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
 
 - IMPL-177: Cursor 원본 status/quota 모델 및 수동 cookie HTTP 경로를 Windows에 포함했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.

@@ -2237,3 +2237,13 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - Windows 비용 no-data 및 notLoggedIn/noSessionCookie 안내를 선택 계정의 수동 Cookie header 설정/갱신으로 연결했다. macOS 메뉴/Safari 안내나 Linux config 경로를 Windows에 표시하지 않는다.
 
 남은 범위: 실제 CLI→fetch→snapshot 호출 및 API/플랜별 검증, 자동 로그인과 계정 소유권 CSV, 전체 provider capability 전수 및 전체 계획 구현. capability 플래그는 구현 경로 연결이며 검증 완료 인증이 아니다.
+
+## IMPL-179 — Windows Cursor 세션 보호 저장
+
+상태 CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·DPAPI/세션 파일/실행 검증 미실시. guidelines/COMMITS.md 부재로 핵심 규칙을 적용한다.
+
+- CursorSessionStore가 Windows에도 포함되면서 plaintext JSON save 경로가 노출되는 것을 보완했다. CursorSession.v1 전용 DPAPI purpose와 Cursor provider 바인딩으로 암호화하고 기존 private credential writer로 기록한다.
+- 파일 magic/version 확인 및 16 MiB bounded read 뒤 복호화한다. plaintext 또는 다른 형식은 자동 수용/변환하지 않는다. 파일을 삭제하거나 실제 세션을 읽지 않았다.
+- 저장/읽기/JSON 형식 실패는 generic persistenceFailure 상태에 담는다. cookie/path/raw 오류는 이 상태에 포함하지 않는다. 기존 메모리 세션과 자동 로그인 경로는 확장하지 않는다.
+
+남은 범위: persistenceFailure UI 연결 및 저장 실패 rollback/재시도/clear 실패 처리, 계정별 다중 세션 및 로그인→보호 저장→조회 연결, 명시적 legacy import 정책, DPAPI/ACL Windows 검증과 전체 계획 구현. 현재 Windows 수동 쿠키 fetch는 이 store를 자동 조회하지 않는다.
