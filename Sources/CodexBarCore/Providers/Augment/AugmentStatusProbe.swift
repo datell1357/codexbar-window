@@ -244,11 +244,38 @@ public struct AugmentStatusSnapshot: Sendable {
             accountOrganization: nil,
             loginMethod: self.accountPlan)
 
+        #if os(Windows)
+        func creditValue(_ value: Double?) -> String {
+            guard let value, value.isFinite, value >= 0 else { return "Unknown" }
+            return value.formatted(.number.precision(.fractionLength(0...2)))
+        }
+        var rows: [ProviderDetailSection.Row] = [
+            .makeRow(label: "Credits remaining", value: creditValue(self.creditsRemaining)),
+            .makeRow(label: "Credits used", value: creditValue(self.creditsUsed)),
+            .makeRow(label: "Credit limit", value: creditValue(self.creditsLimit)),
+        ]
+        if let billingCycleEnd = self.billingCycleEnd {
+            rows.append(.makeRow(label: "Billing cycle ends", value: Self.formatResetDate(billingCycleEnd)))
+        }
+        if primary == nil {
+            rows.append(.makeRow(label: "Usage percentage", value: "Unknown",
+                secondaryValue: "A valid credit limit and usage amount are required."))
+        }
+        if self.subscriptionAvailable == false {
+            rows.append(.makeRow(label: "Subscription details", value: "Unavailable",
+                secondaryValue: "Credit usage loaded; account and billing details could not be retrieved."))
+        }
+        let details: [ProviderDetailSection] = [.makeSection(title: "Augment credits", rows: rows)]
+        #else
+        let details: [ProviderDetailSection] = []
+        #endif
+
         return UsageSnapshot(
             primary: primary,
             secondary: nil,
             tertiary: nil,
             providerCost: nil,
+            details: details,
             updatedAt: Date(),
             identity: identity)
     }

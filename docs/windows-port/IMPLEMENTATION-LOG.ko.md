@@ -2641,3 +2641,11 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - 구독 조회 가용성을 snapshot에 보존하고 Windows 웹 결과에 구독 정보 누락/비율 미확인 진단을 전달한다. Windows 날짜 표시는 Foundation DateFormatter로 분기한다.
 - 남은 소요: 원시 크레딧 잔액 표시 확장, 실제 전체 가져오기 검증, Chromium/Windsurf 지원 및 전체 계획 나머지.
 - CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·UI·API 검증 미실행.
+
+## IMPL-227 — Augment 원시 크레딧 상세
+
+- Windows Augment snapshot의 details에 잔여 크레딧, 사용 크레딧, 한도와 결제 주기 종료를 추가한다. 기존 WindowsUsagePresentation의 generic detail 렌더링으로 전달하며 CLI/수동 웹/가져온 세션 조회에 공통 적용한다.
+- 누락/음수/비유한 값은 Unknown으로 표시한다. 비율을 계산하지 못해 primary가 없어도 확인된 크레딧 금액은 상세에서 보존한다.
+- 구독 조회가 실패한 경우 credit 조회와 구분해 안내하며 서버가 제공하지 않은 한도를 역산하지 않는다. macOS details는 기존 빈 배열을 유지한다.
+- 남은 소요: 실제 Windows 렌더링 및 전체 가져오기 검증, Chromium/Windsurf 지원과 전체 계획 나머지.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·UI·API 검증 미실행.
