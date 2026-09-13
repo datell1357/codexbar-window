@@ -2657,3 +2657,12 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - Windows 응답 user ID가 입력 ID와 일치해야 snapshot을 반환한다. 요청 15초/수신 후 4MiB/취소 확인을 추가하고 브라우저 없이 auto/api 사용이 가능하도록 CLI 지원 예외를 연결한다.
 - 원본 Keychain 경로는 macOS에 유지한다. 편집기 자격증명 자동 가져오기, 사용자 서버 설정 및 입력 저장 전 validation UI는 남아 있다.
 - CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·API·저장 계정 검증 미실행.
+
+## IMPL-229 — Zed 저장 전 입력 형식
+
+- ZedManualCredentialInput에서 user ID/토큰 구문과 64KiB 제한을 처리하고 credential reader가 같은 파서를 사용한다. user ID 범위는 응답 모델의 Int와 맞춘다.
+- Windows 계정 추가/credential 교체 dialog의 기존 credentialIssue 경로에 Zed를 연결한다. 오류 시 입력을 유지하고 비밀값 없는 형식 안내를 표시한다.
+- runtime 저장 API도 공통 credentialIssue를 거쳐 우회 호출의 잘못된 입력을 거부한다. 이름/메타데이터만 변경할 때는 기존 토큰을 재검사하지 않는다. Windsurf의 기존 검사도 동일한 runtime 진입점을 사용한다.
+- 구조 검사는 인증 성공을 뜻하지 않으며 실제 ID 일치 확인은 원본 API 조회 경로에 남아 있다.
+- 남은 소요: Zed 편집기 자동 인증/서버 설정, Chromium/Windsurf 가져오기 및 전체 계획 나머지.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 파서 실행·빌드·테스트·lint·UI·API 검증 미실행.

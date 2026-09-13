@@ -55,6 +55,12 @@ public struct WindowsTokenAccountAddRequest: Sendable {
 
 enum WindowsAccountInputRules {
     static func credentialIssue(provider: UsageProvider?, token: String) -> String? {
+        if provider == .zed {
+            do { try ZedManualCredentialInput.validate(token); return nil }
+            catch {
+                return "Enter a positive numeric Zed user ID, one space, and its access token. The token must use printable ASCII without spaces; the complete input must fit within 64 KiB."
+            }
+        }
         guard provider == .windsurf else { return nil }
         do { try WindsurfWebFetcher.validateManualSessionInput(token); return nil }
         catch {

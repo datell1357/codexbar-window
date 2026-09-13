@@ -11,14 +11,25 @@ struct WindowsZedCredentialsReader: ZedCredentialsReading, Sendable {
             throw ZedStatusProbeError.untrustedServerConfiguration
         }
         guard let raw = CodexBarPlatformPaths.environmentValue(Self.environmentKey, environment: self.environment) else {
-            throw Failure.invalidBundle
+            throw ZedManualCredentialInput.Failure.invalidBundle
         }
+        return try ZedManualCredentialInput.parse(raw)
+    }
+}
+
+/// Structural validation only; does not read credentials or contact the service.
+public enum ZedManualCredentialInput {
+    public static func validate(_ raw: String) throws {
+        _ = try self.parse(raw)
+    }
+
+    static func parse(_ raw: String) throws -> ZedCredentials {
         guard raw.utf8.count <= 65536 else { throw Failure.invalidBundle }
         let fields = raw.trimmingCharacters(in: .whitespacesAndNewlines)
             .split(separator: " ", omittingEmptySubsequences: false)
         guard fields.count == 2, !fields[0].isEmpty, !fields[1].isEmpty,
               fields[0].utf8.allSatisfy({ (48...57).contains($0) }),
-              let userID = UInt64(fields[0]), userID > 0,
+              let userID = Int(fields[0]), userID > 0,
               fields[1].utf8.allSatisfy({ (0x21...0x7E).contains($0) }) else { throw Failure.invalidBundle }
         return ZedCredentials(userID: String(userID), accessToken: String(fields[1]))
     }

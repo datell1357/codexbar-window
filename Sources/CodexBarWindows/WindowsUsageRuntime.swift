@@ -964,9 +964,8 @@ public actor WindowsUsageRuntime {
             guard WindowsAccountInputRules.providerIssue(provider: provider, support: support, scope: scope,
                                                          organization: organization, workspace: workspace) == nil
             else { return .invalidInput }
-            if provider == .windsurf {
-                do { try WindsurfWebFetcher.validateManualSessionInput(token) }
-                catch { return .invalidInput }
+            if WindowsAccountInputRules.credentialIssue(provider: provider, token: token) != nil {
+                return .invalidInput
             }
             let data = entry.tokenAccounts
             let accounts = data?.accounts ?? []
@@ -1295,9 +1294,9 @@ public actor WindowsUsageRuntime {
             }
             let existing = data.accounts[index]
             let token = replacementToken ?? existing.token
-            if provider == .windsurf, replacementToken != nil {
-                do { try WindsurfWebFetcher.validateManualSessionInput(token) }
-                catch { return .invalidInput }
+            if replacementToken != nil,
+               WindowsAccountInputRules.credentialIssue(provider: provider, token: token) != nil {
+                return .invalidInput
             }
             func applying(_ patch: WindowsTokenAccountFieldPatch?, to current: String?) -> String? {
                 guard let patch, case let .replace(value) = patch else { return current }

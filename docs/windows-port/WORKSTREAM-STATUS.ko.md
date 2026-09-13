@@ -1,5 +1,7 @@
 # Windows 전용 제품 작업 현황
 
+- IMPL-229: Zed 수동 계정의 저장 전 형식 검사와 입력 유지 안내를 연결하고 조회 파서를 공유한다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
 - IMPL-228: Zed Windows 수동 저장 계정(user ID/token)과 원본 API 조회·응답 계정 일치를 연결했다. 편집기 자동 인증은 미구현. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
 
 - IMPL-227: Augment 상세에 잔여/사용/한도 크레딧과 결제 주기·구독 정보 미확인 상태를 연결했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
