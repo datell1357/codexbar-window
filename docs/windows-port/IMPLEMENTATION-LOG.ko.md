@@ -2949,3 +2949,12 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - operation 성공/오류/취소 시 unlock 및 CloseHandle을 정리하고 정상 경로의 unlock 실패를 숨기지 않는다. 브라우저 종료나 강제 잠금 해제는 수행하지 않는다.
 - 남은 소요: 잠금 내부에서 CURRENT/manifest/table/log 확보 및 통합, Chromium/Windsurf 연결과 전체 계획 나머지.
 - CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·실제 LOCK/브라우저 파일 조회 미실행.
+
+## IMPL-263 — Windows LevelDB 파일 읽기
+
+- 기존 Windows native ReadFile 패턴을 사용해 OPEN_EXISTING/GENERIC_READ/FILE_SHARE_READ로 한 핸들을 유지한다. 최종 reparse point와 디렉터리를 거부하고 실제 disk file인지 확인한다.
+- 파일별 최대 64MiB 이내의 caller 상한을 적용하며 64KiB chunk마다 취소/deadline을 확인한다. 예상 길이와 정확한 EOF, 읽기 전후 volume/file ID·크기·수정 시간을 검사한다.
+- 여러 파일의 DB 일관성은 별도 LOCK 범위 안에서 호출해야 하며 이 reader 하나로 보장하지 않는다. 파일을 생성하거나 수정하지 않는다.
+- 다음 통합을 위해 원본 https://github.com/google/leveldb/blob/main/db/db_impl.cc의 Recover를 읽었다. log number 이상 또는 previous log인 로그를 번호순 복구하고 manifest의 last sequence보다 큰 WAL sequence를 반영하는 계약이다.
+- 남은 소요: LOCK/CURRENT/manifest/table/log orchestration, Chromium/Windsurf 연결 및 전체 계획 나머지.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·실제 파일/LOCK 조회 미실행.
