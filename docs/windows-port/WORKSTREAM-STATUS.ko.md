@@ -1,5 +1,7 @@
 # Windows 전용 제품 작업 현황
 
+- IMPL-174: macOS에만 포함되던 Cursor usage-events 수집기를 Windows에 포함하고 명시적 cookie 비용 수집을 연결했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
 - IMPL-173: 비-Codex 비용 캐시 경로에 선택 계정/설정/환경/쿠키/시간대 소유권 지문을 연결했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
 
 - IMPL-172: 비용/토큰 부분 합계 표식과 알려진 구독 수, 모델 순위·빈 이력 표시를 원본에 맞춰 연결했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.

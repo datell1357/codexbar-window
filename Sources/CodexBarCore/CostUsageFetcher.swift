@@ -1747,6 +1747,21 @@ extension CostUsageFetcher {
                 costProvenance: .vendorMetered)
         }
 
+        #if os(Windows)
+        if provider == .cursor {
+            guard let cookie = CookieHeaderNormalizer.normalize(cursorCookieHeaderOverride) else {
+                throw CursorStatusProbeError.notLoggedIn
+            }
+            let report = try await CursorUsageEventsFetcher().fetchUsage(
+                cookieHeader: cookie, since: Self.cursorWindowStart(since), until: now)
+            try Task.checkCancellation()
+            return Self.tokenSnapshot(
+                from: report.daily, now: now, historyDays: historyDays,
+                useCurrentLocalDayForSession: true, meteredCostUSD: report.meteredCostUSD,
+                costProvenance: Self.cursorCostProvenance(meteredCostUSD: report.meteredCostUSD, daily: report.daily.data),
+                credentialScopeFingerprint: CookieHeaderCache.credentialFingerprint(cookie))
+        }
+        #endif
         #if os(macOS)
         if provider == .cursor {
             return try await self.loadCursorTokenSnapshot(

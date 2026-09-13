@@ -3,7 +3,7 @@ import Foundation
 import FoundationNetworking
 #endif
 
-#if os(macOS)
+#if os(macOS) || os(Windows)
 
 // MARK: - Cursor Usage Event Models
 

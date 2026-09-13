@@ -2186,3 +2186,13 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - 사용자 filter source ID는 그대로 유지하고 cacheRoot에 scope digest 하위 경로를 추가한다. 같은 UUID의 인증 정보 변경이나 scope 변경은 이전 캐시를 재사용하지 않는다. 기존 캐시 파일은 삭제/이동하지 않는다.
 
 남은 범위: OS/파일에 있는 ambient 인증 변경 감지, provider별 token snapshot publication scope, 비-Codex stale 재사용 정책, 기존 캐시 정리 정책 및 Windows 검증과 전체 계획 구현. 실제 캐시/인증 파일을 읽거나 삭제하지 않았다.
+
+## IMPL-174 — Windows Cursor 원격 비용 이벤트 수집
+
+상태 CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·HTTP/API·쿠키/실행 검증 미실시. guidelines/COMMITS.md 부재로 핵심 규칙을 적용한다.
+
+- CursorUsageEventsFetcher의 HTTP/JSON/페이지 집계 코드가 macOS 조건에 갇혀 있고 loadRemoteTokenSnapshot의 Cursor 분기도 macOS에만 있음을 발견했다. Windows source가 쿠키를 전달해도 이 경로가 동작하지 않는 누락이었다.
+- 이벤트 수집기와 모델을 Windows에도 포함하고, Windows remote cost 경로에서 명시적 normalized cookie를 사용해 fetchUsage를 호출한다. 기존 페이지 완결성/중복 검사, token/metered 비용 집계와 오류 처리를 재사용한다.
+- 일 시작 경계/기간/오늘 session, metered/list-price provenance, credential fingerprint를 기존 token snapshot 변환에 연결한다. 반환 뒤 취소를 확인한다. 쿠키가 없으면 notLoggedIn이며 기존 Cursor local CSV fallback 정책을 유지한다.
+
+남은 범위: Windows Cursor status/quota 전체 구현, 앱/브라우저/OAuth 로그인 경로, bucket calendar parity와 local CSV fallback 소유권, 실제 API/페이지네이션 검증 및 전체 계획 구현. 수동 쿠키 경로 연결을 자동 로그인 또는 전체 Cursor 완료로 집계하지 않는다.
