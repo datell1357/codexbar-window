@@ -1,5 +1,7 @@
 # Windows 전용 제품 작업 현황
 
+- IMPL-158: visible Codex 계정/프로필별 비용 소스·홈/지문/시간대 캐시 분리·수집 전후 소유권 검사를 작성했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
 - IMPL-157: OpenCodeX 로그 opt-in/공급자 fan-out 병합/독립 캐시/관찰 상태 및 중복 Codex 숨김 메뉴를 연결했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
 
 - IMPL-156: OpenCodeX 증분 로그 parser/store의 Windows 파일 식별자/크기 조회를 작성했다. 실제 비용 소스 연결은 남아 있다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.

@@ -9,20 +9,22 @@ import Crypto
 
 /// Builds native cost sources from one config/account capture. Does not read accounts or scan files.
 enum WindowsSpendSourceResolver {
-    enum Failure: Error { case duplicateProviders, duplicateAccounts, codexContextMissing, codexHomeUnavailable }
+    enum Failure: Error { case duplicateProviders, duplicateAccounts, duplicateCodexHomes, codexContextMissing, codexHomeUnavailable }
 
     static func resolve(config: CodexBarConfig, settings: WindowsSpendSettings,
                         environment: [String: String], cacheRoot: URL,
                         codexContext: CodexAccountContextSnapshot?) throws -> [WindowsSpendSnapshotLoader.Source] {
         try self.resolve(config: config, costEnabledProviders: settings.enabledProviders(config: config),
-                         environment: environment, cacheRoot: cacheRoot, codexContext: codexContext)
+                         environment: environment, cacheRoot: cacheRoot, codexContext: codexContext,
+                         bucketTimeZoneIdentifier: settings.bucketCalendar.timeZone.identifier)
     }
 
     static func resolve(config: CodexBarConfig, costEnabledProviders: Set<UsageProvider>,
                         environment: [String: String], cacheRoot: URL,
                         codexContext: CodexAccountContextSnapshot?,
                         allowVertexClaudeFallback: Bool = false,
-                        includePiSessions: Bool = true) throws -> [WindowsSpendSnapshotLoader.Source] {
+                        includePiSessions: Bool = true,
+                        bucketTimeZoneIdentifier: String = CostUsageBucketTimeZone.pinIdentifier()) throws -> [WindowsSpendSnapshotLoader.Source] {
         guard Set(config.providers.map(\.id)).count == config.providers.count else { throw Failure.duplicateProviders }
         let context = try ProviderAccountContext(selection: .init(), config: config, verbose: false,
                                                   baseEnvironment: environment)
@@ -32,24 +34,14 @@ enum WindowsSpendSourceResolver {
             let entry = config.providerConfig(for: id)
             let accounts = entry?.tokenAccounts?.accounts ?? []
             guard Set(accounts.map(\.id)).count == accounts.count else { throw Failure.duplicateAccounts }
-            let account = try context.resolvedAccounts(for: provider).first
-            let home: String?
             if provider == .codex {
                 guard let codexContext else { throw Failure.codexContextMissing }
-                switch codexContext.resolvedActiveSource.resolvedSource {
-                case .liveSystem:
-                    home = CodexHomeScope.normalizedHomePath(CodexHomeScope.ambientHomeURL(env: environment).path)
-                case let .managedAccount(accountID):
-                    guard !codexContext.reconciliationSnapshot.hasUnreadableAddedAccountStore else { throw Failure.codexHomeUnavailable }
-                    home = codexContext.reconciliationSnapshot.storedAccounts.first { $0.id == accountID }
-                        .flatMap { CodexHomeScope.normalizedHomePath($0.managedHomePath) }
-                case let .profileHome(path):
-                    home = CodexHomeScope.normalizedHomePath(path)
-                }
-                guard home != nil else { throw Failure.codexHomeUnavailable }
-            } else {
-                home = nil
+                sources.append(contentsOf: try self.codexSources(context: codexContext, environment: environment,
+                    cacheRoot: cacheRoot, bucketTimeZoneIdentifier: bucketTimeZoneIdentifier))
+                continue
             }
+            let account = try context.resolvedAccounts(for: provider).first
+            let home: String? = nil
             let scoped = context.environment(base: environment, provider: provider, account: account,
                                              codexAccountContext: provider == .codex ? codexContext : nil)
             let identity = [provider.rawValue, account?.id.uuidString ?? "ambient", home ?? ""]
@@ -66,5 +58,50 @@ enum WindowsSpendSourceResolver {
         }
         return sources
     }
+
+    private static func codexSources(context: CodexAccountContextSnapshot, environment: [String: String],
+                                     cacheRoot: URL, bucketTimeZoneIdentifier: String) throws -> [WindowsSpendSnapshotLoader.Source] {
+        let accounts = context.visibleAccounts.visibleAccounts
+        guard Set(accounts.map(\.id)).count == accounts.count else { throw Failure.duplicateAccounts }
+        var seenHomes: Set<String> = []
+        let providerName = ProviderDescriptorRegistry.descriptor(for: .codex).metadata.displayName
+        return try accounts.enumerated().map { index, account in
+            let home: String?
+            let token: String
+            switch account.selectionSource {
+            case .liveSystem:
+                token = "live"
+                home = CodexHomeScope.normalizedHomePath(CodexHomeScope.ambientHomeURL(env: environment).path)
+            case let .managedAccount(id):
+                token = "managed:" + id.uuidString.lowercased()
+                home = context.reconciliationSnapshot.hasUnreadableAddedAccountStore ? nil :
+                    context.reconciliationSnapshot.storedAccounts.first { $0.id == id }
+                        .flatMap { CodexHomeScope.normalizedHomePath($0.managedHomePath) }
+            case let .profileHome(path):
+                token = "profile:" + path
+                home = CodexHomeScope.normalizedHomePath(path)
+            }
+            if let home {
+                let canonical = URL(fileURLWithPath: home).standardizedFileURL.path.lowercased()
+                guard seenHomes.insert(canonical).inserted else { throw Failure.duplicateCodexHomes }
+            }
+            let id = self.digest([account.id, token])
+            let owner = CodexAuthFingerprint.normalize(account.authFingerprint)
+            let cache = self.digest([account.id, token, home ?? "unavailable-home", owner ?? "missing-auth", bucketTimeZoneIdentifier])
+            let scoped = home.map { CodexHomeScope.scopedEnvironment(base: environment, codexHome: $0) } ?? environment
+            return WindowsSpendSnapshotLoader.Source(id: "codex:" + id, provider: .codex,
+                displayName: accounts.count == 1 ? providerName : providerName + " · #\(index + 1)",
+                modelProviderName: providerName, environment: scoped,
+                cacheRoot: cacheRoot.appendingPathComponent(cache, isDirectory: true), codexHomePath: home,
+                cursorCookieHeader: nil, subscriptionName: nil, allowVertexClaudeFallback: false, includePiSessions: true,
+                verifyCodexOwner: true, expectedCodexAuthFingerprint: owner)
+        }
+    }
+
+    private static func digest(_ fields: [String]) -> String {
+        let value = fields.map { "\($0.utf8.count):\($0)" }.joined()
+        return SHA256.hash(data: Data(value.utf8)).map { String(format: "%02x", $0) }.joined()
+    }
+
 }
 #endif

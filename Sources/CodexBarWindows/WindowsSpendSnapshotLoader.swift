@@ -16,8 +16,10 @@ struct WindowsSpendSnapshotLoader {
         let subscriptionName: WindowsShareStatsSubscriptionName?
         let allowVertexClaudeFallback: Bool
         let includePiSessions: Bool
+        var verifyCodexOwner = false
+        var expectedCodexAuthFingerprint: String? = nil
     }
-    enum Failure: Error { case invalidSources, missingCodexHome }
+    enum Failure: Error { case invalidSources, missingCodexHome, codexOwnerChanged }
 
     static func make(sources: [Source], settings: WindowsSpendSettings, forceRefresh: Bool = false,
                      allowPricingRefresh: Bool = true,
@@ -57,7 +59,21 @@ struct WindowsSpendSnapshotLoader {
                     } else {
                         environment = source.environment
                     }
-                    let fetcher = CostUsageFetcher(cacheRoot: source.cacheRoot, calendar: calendar)
+                    var cacheRoot = source.cacheRoot
+                    let capturedFingerprint: String?
+                    if source.provider == .codex, source.verifyCodexOwner {
+                        guard let home = source.codexHomePath else { throw Failure.missingCodexHome }
+                        var directory: ObjCBool = false
+                        guard FileManager.default.fileExists(atPath: home, isDirectory: &directory), directory.boolValue,
+                              FileManager.default.isReadableFile(atPath: home) else { throw Failure.missingCodexHome }
+                        capturedFingerprint = CodexAuthFingerprint.fingerprint(homePath: home)
+                        if let expected = source.expectedCodexAuthFingerprint, capturedFingerprint != expected {
+                            throw Failure.codexOwnerChanged
+                        }
+                        // A rotated auth file cannot write into the previously captured owner's cache scope.
+                        cacheRoot = cacheRoot?.appendingPathComponent(capturedFingerprint ?? "missing-auth", isDirectory: true)
+                    } else { capturedFingerprint = nil }
+                    let fetcher = CostUsageFetcher(cacheRoot: cacheRoot, calendar: calendar)
                     let snapshot = try await fetcher.loadTokenSnapshot(provider: source.provider,
                         environment: environment, now: now, forceRefresh: forceRefresh,
                         allowVertexClaudeFallback: source.allowVertexClaudeFallback,
@@ -74,6 +90,10 @@ struct WindowsSpendSnapshotLoader {
                         activity = nil
                     }
                     try Task.checkCancellation()
+                    if source.provider == .codex, source.verifyCodexOwner, let home = source.codexHomePath,
+                       CodexAuthFingerprint.fingerprint(homePath: home) != capturedFingerprint {
+                        throw Failure.codexOwnerChanged
+                    }
                     inputs.append(.init(id: source.id, provider: source.provider, displayName: source.displayName,
                         modelProviderName: source.modelProviderName, snapshot: snapshot, tokenActivityCache: activity))
                     if let name = source.subscriptionName { names[source.id] = name }

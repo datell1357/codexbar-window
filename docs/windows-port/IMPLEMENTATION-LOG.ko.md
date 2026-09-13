@@ -2023,3 +2023,13 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - source 포함 메뉴는 OpenCodeX 전체 로그 root 항목을 제공해 숨긴 로그를 다시 포함할 수 있게 했다. root 숨김은 원본처럼 OpenCodeX 전체 supplement 수집을 중지한다.
 
 남은 범위: 여러 Codex visible source/계정 귀속 완전 parity, 원본 token activity cache와 supplement 결합 세부 의미, 로그 rotation/SQLite/권한/부분 실패/가격표 Windows 검증 및 전체 계획 구현. 실제 수집이나 이미지·공유는 실행하지 않았다.
+
+## IMPL-158 — 여러 Codex 계정/프로필 비용 수집
+
+상태 CODE_WRITTEN_UNVERIFIED. 컴파일/빌드/테스트/계정·auth.json·홈·비용 로그/검증 미실시. guidelines/COMMITS.md 부재로 핵심 커밋 규칙을 적용한다.
+
+- 원본 visible-account projection을 따라 live/managed/profile 각각을 Windows 비용 source로 만든다. 계정 ID/source 종류 기반 opaque ID를 사용하고 표시에는 Codex 번호만 사용한다. 중복 visible ID/중복 정규화 Windows 홈은 거절한다.
+- 캐시는 계정/source/home/캡처 지문/bucket timezone으로 구분한다. loader는 실제 수집 전 홈 디렉터리 접근과 auth fingerprint를 확인하고, 예상 지문이 있으면 일치를 요구한다. 실제 지문 하위 캐시를 사용하고 수집/optional activity 이후 지문이 바뀌면 결과를 게시하지 않는다.
+- 홈이 없는 source는 loader의 개별 실패로 처리한다. 여러 Codex 행을 기존 filter/chart/share/OpenCodeX preferred-merge 규칙에 전달하며, Codex 행이 여러 개일 때 OpenCodeX를 임의의 하나에 병합하지 않는 원본 규칙을 따른다.
+
+남은 범위: 원본 live ledger cache ownership/barrier/tombstone 세부 parity, auth 부재/읽기 실패 구분과 원격 managed-home 정책, 별칭/하드링크 홈 중복 방지, 외부 계정 변경 즉시 무효화 및 Windows 실행 검증, 전체 계획 구현. 실제 다중 계정 수집 성공을 주장하지 않는다.
