@@ -1,5 +1,7 @@
 # Windows 전용 제품 작업 현황
 
+IMPL-052: PATH helper 소유권·launch/stop 직렬화·bounded drain과 종료 미확인 재실행 차단을 연결했다. 실행 미검증이다.
+
 IMPL-051: PATH 리소스·트레이 확인·background helper 결과를 연결했다. helper 종료 소유권과 배포/실행 검증은 남아 있다.
 
 IMPL-050: 명시적 Windows 사용자 PATH 등록·제거 스크립트와 사용 문서를 작성했다. 실행/앱 연결/배포 검증은 남아 있다.

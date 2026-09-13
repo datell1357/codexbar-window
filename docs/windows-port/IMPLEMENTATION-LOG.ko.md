@@ -938,3 +938,15 @@
 남은 범위: quit와 child process 소유권/drain 연결, 구조화된 상세 오류, script/배포 서명, 실제 SwiftPM resource 위치, MSIX alias, 환경 broadcast와 Windows 전체 검증이 남아 있다. 현재 parent 종료가 child 완료를 기다리지 않으며 timeout terminate 성공은 미확인이다.
 
 다음 구현: PATH helper의 lifecycle 소유권과 종료 처리를 연결한다.
+
+## IMPL-052 — PATH helper 소유권과 종료
+
+상태: CODE_WRITTEN_UNVERIFIED. 빌드/컴파일/테스트/실행/검증 미실시. 계약 WIN-052.
+
+- host가 PATH operation 인스턴스를 소유하며 condition으로 launch와 shutdown을 직렬화한다. stop 수락 뒤 launch를 차단하고, worker는 실행 중 stop을 관찰한다.
+- timeout/stop 시 terminate 요청 후 최대1.5초 종료를 관찰한다. 여전히 실행 중인 Process를 보유하고 종료 확인 전 추가 mutation을 차단한다. 중단을 registry rollback으로 표현하지 않는다.
+- invokeQuit은 stop을 요청하고 WindowsMain은 정상 종료 시 최대2초 helper drain을 시도한다. system-session 종료는 추가 대기를 하지 않고 미완료이면 stderr에 남긴다. 런타임 cleanup은 기존 경로를 유지한다.
+
+남은 범위: Process.run 자체 지연과 condition 획득은 hard deadline이 아니며 OS 강제 종료 시 child 종료 보장은 없다. Job Object process-tree containment, 실제 프로세스 종료/registry 결과, 구조화 오류와 전체 Windows 검증은 남아 있다.
+
+다음 구현: PATH helper 구조화 결과와 환경 변경 통지를 연결한다.

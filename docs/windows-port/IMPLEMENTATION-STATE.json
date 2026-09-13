@@ -26,8 +26,8 @@
   "static_qa_status": "NOT_RUN_DURING_IMPLEMENTATION",
   "windows_runtime_status": "NOT_VALIDATED",
   "completion_claim": false,
-  "latest_completed_slice": "IMPL-051 code written: Windows PATH operation resource, explicit tray actions and background helper results; unverified",
-  "next": "Integrate PATH helper ownership with application shutdown and structured outcomes; packaging signatures, MSIX aliases and validation remain pending.",
+  "latest_completed_slice": "IMPL-052 code written: owned PATH helper lifecycle, stop/launch serialization and bounded drain; unverified",
+  "next": "Add structured PATH helper outcomes and environment change notification; signatures, MSIX aliases and Windows validation remain pending.",
   "inventory": {
     "baseline_entries": 2844,
     "provider_ids": 69,
@@ -49,7 +49,7 @@
     "widget_provider_choices": 17
   },
   "automation_action_this_revision": "Created active thread heartbeat codexbar-windows-30 at 30-minute intervals",
-  "publication_action_this_revision": "Commit and push IMPL-051; actual publication output is evidence",
+  "publication_action_this_revision": "Commit and push IMPL-052; actual publication output is evidence",
   "historical_state_before_2026_09_12": {
     "phase": "IMPLEMENTING",
     "repository": "/Users/yeoreum/Documents/codexbar-window/fork",
@@ -619,6 +619,14 @@
     },
     {
       "id": "IMPL-051",
+      "contracts": [
+        "WIN-052"
+      ],
+      "status": "CODE_WRITTEN_UNVERIFIED",
+      "validation": "NOT_RUN_BY_USER_INSTRUCTION"
+    },
+    {
+      "id": "IMPL-052",
       "contracts": [
         "WIN-052"
       ],

@@ -171,6 +171,10 @@ private final class WindowsTrayApplication: @unchecked Sendable {
             }
             self.shutdownSignal.signal()
         }
+        if !host.shutdownCLIPathHelper(timeout: host.isSystemSessionEnding ? 0 : 2) {
+            FileHandle.standardError.write(Data(
+                "CodexBar: PATH helper cleanup is incomplete; inspect user PATH before retrying setup.\n".utf8))
+        }
         // WM_CLOSE schedules asynchronous cleanup. Keep the process alive until
         // the runtime has cancelled refresh work and released persistent helpers.
         if host.isSystemSessionEnding {

@@ -26,6 +26,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
     private static let startupRegistrationCommand = UINT_PTR(0x7546)
     private static let cliPathAddCommand = UINT_PTR(0x754B)
     private static let cliPathRemoveCommand = UINT_PTR(0x754C)
+    private let cliPathOperation = WindowsCLIPathOperation()
     private var cliPathOperationRunning = false // Protected by mailboxLock.
     private static let cliSetupTimer = UINT_PTR(0x754A)
     private var cliSetupDialogOpen = false
@@ -1436,6 +1437,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
         self.mailboxQuotaWarningNotifications.removeAll(keepingCapacity: false)
         self.mailboxPredictivePaceWarningNotifications.removeAll(keepingCapacity: false)
         self.mailboxLock.unlock()
+        self.cliPathOperation.requestStop()
         self.onQuit()
         PostQuitMessage(0)
     }
@@ -1988,6 +1990,10 @@ public final class WindowsTrayHost: @unchecked Sendable {
         _ = body.withUnsafeBufferPointer { text in title.withUnsafeBufferPointer { caption in MessageBoxW(hwnd, text.baseAddress, caption.baseAddress, UINT(MB_OK | MB_ICONWARNING)) } }
     }
 
+    public func shutdownCLIPathHelper(timeout: TimeInterval) -> Bool {
+        self.cliPathOperation.drain(timeout: timeout)
+    }
+
     private func beginCLIPathOperation(_ action: WindowsCLIPathOperation.Action) {
         guard let hwnd = self.window, !self.quitInvoked else { return }
         self.mailboxLock.lock()
@@ -2014,7 +2020,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
         _ = SetTimer(hwnd, Self.cliSetupTimer, 250, nil)
         Thread.detachNewThread { [weak self] in
             guard let self else { return }
-            let text = WindowsCLIPathOperation.run(action)
+            let text = self.cliPathOperation.run(action)
             self.mailboxLock.lock()
             self.cliPathOperationRunning = false
             if !self.quitInvoked, let window = self.window {
