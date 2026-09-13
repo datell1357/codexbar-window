@@ -1,4 +1,6 @@
-#if canImport(Darwin)
+#if os(Windows)
+import ucrt
+#elseif canImport(Darwin)
 import Darwin
 #elseif canImport(Glibc)
 import Glibc
@@ -102,12 +104,18 @@ public enum OpenCodexUsageParser {
         }
         defer { try? handle.close() }
 
+        #if os(Windows)
+        let identity = try OpenCodexWindowsLogIdentity.opened(handle)
+        let fileIdentity = identity.fileIdentity
+        let size = identity.size
+        #else
         var status = stat()
         guard fstat(handle.fileDescriptor, &status) == 0 else {
             throw Self.posixError(errno, path: fileURL.path)
         }
         let fileIdentity = "\(status.st_dev):\(status.st_ino)"
         let size = Int64(status.st_size)
+        #endif
         let startOffset = max(0, offset)
         if startOffset > size {
             throw ChangedUnderReadError(path: fileURL.path)

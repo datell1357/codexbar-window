@@ -591,6 +591,10 @@ public struct OpenCodexUsageStore: Sendable {
     }
 
     private static func statLog(at url: URL) throws -> LogIdentity? {
+        #if os(Windows)
+        guard let identity = try OpenCodexWindowsLogIdentity.atURL(url) else { return nil }
+        return LogIdentity(url: url, path: url.path, fileIdentity: identity.fileIdentity, size: identity.size)
+        #else
         try url.withUnsafeFileSystemRepresentation { pointer in
             guard let pointer else {
                 throw POSIXError(.EINVAL)
@@ -609,6 +613,7 @@ public struct OpenCodexUsageStore: Sendable {
                 fileIdentity: "\(status.st_dev):\(status.st_ino)",
                 size: Int64(status.st_size))
         }
+        #endif
     }
 
     /// Covers only the first min(64 KiB, parsedOffset) bytes; see `canReuseCursor` for the threat model.

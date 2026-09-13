@@ -2002,3 +2002,13 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - 시간별 chart series는 calendar의 실제 하루 경계를 따라 시간 구간을 만든다. 원본 시간 sample을 구간에 집계하고 nil/누락을 0으로 채우지 않는다. label에 UTC offset을 포함해 반복 시각을 구분하며 이전/다음 시간·통화 전환을 제공한다.
 
 남은 범위: DST/비정수 오프셋/시간 sample 분포/overflow/반복 키보드/원본 tooltip 시각 parity 검증, 세션·프로젝트 전체 탐색, 추가 공급자/source 이식 및 전체 계획 구현. 시간별 값의 분포나 실제 화면을 검증하지 않았다.
+
+## IMPL-156 — OpenCodeX 로그 Windows 파일 식별자
+
+상태 CODE_WRITTEN_UNVERIFIED. 컴파일/빌드/테스트/OpenCodeX 로그·파일 핸들·캐시/검증 미실시. guidelines/COMMITS.md 부재로 핵심 커밋 규칙을 적용한다.
+
+- 원본 OpenCodexUsageStore.statLog와 Parser의 fstat 경로가 POSIX에 의존하므로 Windows 분기를 작성했다. CreateFileW/GetFileInformationByHandle로 volume serial/file index/size를 같은 핸들에서 얻는다.
+- parser의 이미 열린 FileHandle은 기존 WindowsProcess와 같은 ucrt._get_osfhandle 변환을 사용한다. 소유권은 FileHandle에 유지하며 경로 검사에서 연 핸들만 직접 닫는다.
+- 경로 부재 ERROR_FILE_NOT_FOUND/PATH_NOT_FOUND만 nil로 반환하고 다른 접근/조회 오류는 전파한다. 파일 시스템 파일만 허용하며 디렉터리/크기 변환 실패를 거절한다. POSIX 경로 및 prefix digest/cursor 계약은 유지한다.
+
+남은 범위: Windows OpenCodeX opt-in 설정/원본 subscription fan-out 병합/runtime 연결, 파일 rotation/공유 잠금/캐시·SQLite portability 검증 및 전체 계획 구현. 아직 OpenCodeX 소스가 앱 수집 흐름에 연결된 상태는 아니다.

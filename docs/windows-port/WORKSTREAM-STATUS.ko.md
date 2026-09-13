@@ -1,5 +1,7 @@
 # Windows 전용 제품 작업 현황
 
+- IMPL-156: OpenCodeX 증분 로그 parser/store의 Windows 파일 식별자/크기 조회를 작성했다. 실제 비용 소스 연결은 남아 있다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
 - IMPL-155: 선택 날짜의 시간별 비용 상세와 generation 검사·UTC offset 표시·시간 탐색을 연결했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
 
 - IMPL-154: 비용 요약에 프로젝트/최근 세션 내역과 캡처된 개인정보 표시 상태 확인을 연결했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
