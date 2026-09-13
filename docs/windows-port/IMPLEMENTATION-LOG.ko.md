@@ -2726,3 +2726,11 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - 확인 결과는 user ID, snapshot, service origin과 보호 저장용 secret bundle을 반환한다. 자동 저장이나 계정 선택 변경은 하지 않는다.
 - 남은 소요: runtime의 가져오기 ticket/만료/동시성 처리, 보호 저장 및 명시적 사용자 선택 UI, 편집기 custom server 설정 탐색과 전체 계획 나머지.
 - CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·Credential Manager·API 검증 미실행.
+
+## IMPL-237 — Zed 가져오기 런타임과 계정 저장
+
+- 명시적 discovery 호출은 actor 외부에서 편집기 계정을 확인하고 opaque request ID와 표시용 제목만 UI에 반환한다. secret bundle은 pending runtime state에 둔다.
+- provider 설정 revision, 선택 계정, 개인정보 표시 모드를 캡처한다. 결과와 저장 시점에 변경 여부를 확인하고 5분 후 pending credential을 해제한다. 교체/부모 취소/종료 시 작업 취소를 전달한다.
+- 저장은 기존 addTokenAccount 보호 저장 경로를 사용한다. exact bundle 및 scope가 같은 계정만 재사용하고 서버별 user ID를 전역 externalIdentifier로 오인하지 않는다.
+- 남은 소요: 네이티브 가져오기 메뉴/확인/취소 UI, custom server 편집기 설정 탐색, 실제 Windows 동작 검증 및 전체 계획 나머지.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·저장소·Credential Manager·API 검증 미실행.

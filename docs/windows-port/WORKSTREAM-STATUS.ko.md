@@ -1,5 +1,7 @@
 # Windows 전용 제품 작업 현황
 
+- IMPL-237: Zed 편집기 가져오기 런타임에 설정 revision/선택 계정/개인정보 모드 검사, 5분 ticket, 취소와 보호 계정 저장을 연결했다. 네이티브 UI 미연결. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
 - IMPL-236: Zed 편집기 자격증명을 한 번 읽어 같은 계정으로 API 확인하는 명시적 가져오기 백엔드를 작성했다. 런타임/저장/UI 연결은 남아 있다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
 
 - IMPL-235: Zed 원본 Windows Credential Manager 형식 reader를 작성했다. 기본 조회/UI 미연결. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.

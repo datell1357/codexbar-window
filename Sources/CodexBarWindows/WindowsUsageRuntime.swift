@@ -930,6 +930,126 @@ public actor WindowsUsageRuntime {
         } catch { return .failed }
     }
 
+    public enum ZedEditorImportResult: Sendable {
+        case ready(requestID: UUID, title: String, privacy: Bool, expires: Date)
+        case unavailable(String)
+    }
+    private struct PendingZedEditorImport {
+        let id: UUID
+        let accountID: UUID
+        let expires: Date
+        let revision: Data
+        let selectedID: UUID?
+        let privacy: Bool
+        let account: WindowsZedEditorSessionImporter.ValidatedAccount
+    }
+    private var zedEditorImportRequest: UUID?
+    private var zedEditorImportTask: Task<WindowsZedEditorSessionImporter.ValidatedAccount, Error>?
+    private var zedEditorExpiryTask: Task<Void, Never>?
+    private var pendingZedEditorImport: PendingZedEditorImport?
+
+    private func zedImportRevision() throws -> (Data, UUID?)? {
+        guard let config = try self.configStore.load(), config.enabledProviders().contains(UsageProvider.zed.instanceID),
+              let entry = config.providerConfig(for: UsageProvider.zed.instanceID) else { return nil }
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        let revision = Data(SHA256.hash(data: try encoder.encode(entry)))
+        let selected = entry.tokenAccounts.flatMap { $0.accounts.isEmpty ? nil : $0.accounts[$0.clampedActiveIndex()].id }
+        return (revision, selected)
+    }
+
+    public func discoverZedEditorAccount(requestID: UUID = UUID(),
+                                         serviceURL: String = ZedStatusProbe.defaultKeychainServiceURL) async -> ZedEditorImportResult {
+        guard !Task.isCancelled, !self.shuttingDown else { return .unavailable("The Zed import was cancelled.") }
+        guard self.refreshTask == nil else { return .unavailable("Wait for the current refresh to finish.") }
+        self.cancelZedEditorImport()
+        self.zedEditorImportRequest = requestID
+        defer {
+            if self.pendingZedEditorImport?.id != requestID { self.cancelZedEditorImport(requestID: requestID) }
+        }
+        let privacy = WindowsUsagePresentationSettings.load().hidePersonalInfo
+        do {
+            guard let (revision, selected) = try self.zedImportRevision() else {
+                return .unavailable("Enable Zed before importing an account.")
+            }
+            let task = Task.detached(priority: .utility) {
+                try await WindowsZedEditorSessionImporter().loadAndValidate(serviceURL: serviceURL)
+            }
+            self.zedEditorImportTask = task
+            let account = try await withTaskCancellationHandler {
+                try await task.value
+            } onCancel: { task.cancel() }
+            try Task.checkCancellation()
+            guard !self.shuttingDown, self.zedEditorImportRequest == requestID,
+                  try self.zedImportRevision()?.0 == revision,
+                  WindowsUsagePresentationSettings.load().hidePersonalInfo == privacy else {
+                return .unavailable("Zed accounts or privacy settings changed. Start the import again.")
+            }
+            self.zedEditorImportTask = nil
+            let expires = Date().addingTimeInterval(300)
+            self.pendingZedEditorImport = .init(id: requestID, accountID: UUID(), expires: expires,
+                revision: revision, selectedID: selected, privacy: privacy, account: account)
+            self.zedEditorExpiryTask = Task { [weak self] in
+                do { try await Task.sleep(nanoseconds: 300_000_000_000) }
+                catch { return }
+                guard !Task.isCancelled else { return }
+                await self?.cancelZedEditorImport(requestID: requestID)
+            }
+            return .ready(requestID: requestID, title: privacy ? "Zed editor account" : "Zed user " + account.userID,
+                privacy: privacy, expires: expires)
+        } catch {
+            return .unavailable("The Zed editor account could not be verified. Check the editor sign-in and server, then retry.")
+        }
+    }
+
+    public func cancelZedEditorImport(requestID: UUID? = nil) {
+        if let requestID, self.zedEditorImportRequest != requestID { return }
+        self.zedEditorImportTask?.cancel()
+        self.zedEditorImportTask = nil
+        self.zedEditorExpiryTask?.cancel()
+        self.zedEditorExpiryTask = nil
+        self.zedEditorImportRequest = nil
+        self.pendingZedEditorImport = nil
+    }
+
+    public func importZedEditorAccount(requestID: UUID, label: String) -> WindowsTokenAccountAddResult {
+        guard !self.shuttingDown else { return .shuttingDown }
+        guard self.refreshTask == nil else { return .refreshInProgress }
+        guard let pending = self.pendingZedEditorImport, pending.id == requestID,
+              pending.expires > Date(), pending.privacy == WindowsUsagePresentationSettings.load().hidePersonalInfo else {
+            return .staleSelection
+        }
+        do {
+            guard try self.zedImportRevision()?.0 == pending.revision else { return .staleSelection }
+            let providerID = UsageProvider.zed.instanceID
+            let accounts = try self.configStore.load()?.providerConfig(for: providerID)?.tokenAccounts?.accounts ?? []
+            if let existing = accounts.first(where: {
+                $0.token == pending.account.credentialBundle && $0.externalIdentifier == nil &&
+                    $0.usageScope == nil && $0.organizationID == nil && $0.workspaceID == nil
+            }) {
+                switch self.selectTokenAccount(providerID: providerID, accountID: existing.id,
+                                                expectedSelectedID: pending.selectedID) {
+                case .saved, .unchanged:
+                    self.cancelZedEditorImport(requestID: requestID)
+                    return .alreadyAdded(existing.id)
+                case .staleSelection: return .staleSelection
+                case .refreshInProgress: return .refreshInProgress
+                case .unavailable: return .unavailable
+                case .shuttingDown: return .shuttingDown
+                case .failed: return .failed
+                }
+            }
+            let result = self.addTokenAccount(.init(providerID: providerID, accountID: pending.accountID,
+                label: label, token: pending.account.credentialBundle, usageScope: nil, organizationID: nil,
+                workspaceID: nil, expectedSelectedID: pending.selectedID))
+            switch result {
+            case .saved, .alreadyAdded: self.cancelZedEditorImport(requestID: requestID)
+            default: break
+            }
+            return result
+        } catch { return .failed }
+    }
+
     public func addTokenAccount(_ request: WindowsTokenAccountAddRequest) -> WindowsTokenAccountAddResult {
         self.addTokenAccount(request, verifiedExternalIdentifier: nil)
     }
@@ -2146,6 +2266,7 @@ public actor WindowsUsageRuntime {
         self.shuttingDown = true
         self.cancelCursorBrowserImport()
         self.cancelAugmentBrowserImport()
+        self.cancelZedEditorImport()
         self.queuedSpendRefresh = false
         self.spendGeneration &+= 1
         self.spendSnapshot = nil
