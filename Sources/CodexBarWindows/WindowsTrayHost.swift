@@ -24,6 +24,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
     public typealias QuitHandler = @Sendable () -> Void
 
     private static let startupRegistrationCommand = UINT_PTR(0x7546)
+    private static let cliSetupCommand = UINT_PTR(0x7549)
     private static let startupDetailsCommand = UINT_PTR(0x7548)
     private static let startupSettingsCommand = UINT_PTR(0x7547)
     private var startupRegistrationMessage: String?
@@ -938,6 +939,9 @@ public final class WindowsTrayHost: @unchecked Sendable {
         "Open Windows startup apps settings…".withCString(encodedAs: UTF16.self) {
             _ = AppendMenuW(menu, UINT(MF_STRING), Self.startupSettingsCommand, $0)
         }
+        "Command-line setup…".withCString(encodedAs: UTF16.self) {
+            _ = AppendMenuW(menu, UINT(MF_STRING), Self.cliSetupCommand, $0)
+        }
         self.appendShortcutMenu(to: menu)
         self.appendSessionLabelMenu(to: menu)
         self.appendRefreshFrequencyMenu(to: menu)
@@ -1672,6 +1676,8 @@ public final class WindowsTrayHost: @unchecked Sendable {
             return
         }
         switch command {
+        case Self.cliSetupCommand:
+            self.showCLISetup()
         case Self.startupDetailsCommand:
             self.showStartupDetails()
         case Self.startupSettingsCommand:
@@ -1950,6 +1956,18 @@ public final class WindowsTrayHost: @unchecked Sendable {
         guard let hwnd = self.window else { return }
         let body = Array(message.utf16) + [0]; let title = Array("CodexBar".utf16) + [0]
         _ = body.withUnsafeBufferPointer { text in title.withUnsafeBufferPointer { caption in MessageBoxW(hwnd, text.baseAddress, caption.baseAddress, UINT(MB_OK | MB_ICONWARNING)) } }
+    }
+
+    private func showCLISetup() {
+        guard let hwnd = self.window, !self.quitInvoked else { return }
+        let hidePaths = self.presentationDefaults.object(forKey: "hidePersonalInfo") as? Bool ?? false
+        let body = Array(WindowsCLISetup.guidance(hidePaths: hidePaths).utf16) + [0]
+        let title = Array("CodexBar command-line setup".utf16) + [0]
+        _ = body.withUnsafeBufferPointer { text in
+            title.withUnsafeBufferPointer { caption in
+                MessageBoxW(hwnd, text.baseAddress, caption.baseAddress, UINT(MB_OK | MB_ICONINFORMATION))
+            }
+        }
     }
 
     private func showStartupDetails() {

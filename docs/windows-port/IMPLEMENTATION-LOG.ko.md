@@ -861,3 +861,20 @@
 2. 상세 상태는 선택 시 snapshot이며 dialog가 열린 동안 외부 변경을 관찰하지 않는다. 지역화/접근성·화면 검증도 미실시다.
 
 다음 구현: WIN-052의 Windows CLI 설치 위치 탐색 및 명시적 사용자 설정 안내로 이어간다. 자동 시작의 남은 구현 의무는 유지한다.
+
+## IMPL-046 — Windows CLI 설치 위치·설정 안내
+
+상태: CODE_WRITTEN_UNVERIFIED. 빌드·컴파일·테스트·lint·앱·CLI·실제 설치 경로 조회·검증 스크립트를 실행하지 않았다. 계약: WIN-052.
+
+작성한 코드:
+
+- WindowsCLISetup은 현재 module 폴더의 CodexBarCLI.exe 및 codexbar.exe 두 후보만 속성 조회하도록 작성했다. 없음·조회 실패·directory/reparse point·파일 존재를 구분하며 실행 가능/정품/의존성 충족으로 간주하지 않는다.
+- 트레이 Command-line setup에 안내 dialog를 연결했다. hidePersonalInfo이면 폴더와 절대 경로 명령을 숨긴다. 일반 표시에는 apostrophe를 escape한 선택적 PowerShell --help 명령을 제공하지만 자동 실행/복사하지 않는다.
+- 배포 라이브러리 동반 유지, 사용자 Path 수동 추가와 새 터미널, 다른 설치본 확인을 안내한다. 두 후보가 없으면 전체 Windows 배포물 필요 및 다른 폴더의 CLI 미조회임을 명시한다.
+
+남은 범위:
+
+1. PATH 탐색/중복 설치 탐지, installer/PATH 자동 등록·제거, MSIX execution alias 및 binary/의존성 검증은 미구현이다. file attribute 조회는 identity 검증이 아니며 상위 경로 link와 변경 race도 보장하지 않는다.
+2. 실제 WinSDK/긴 경로/화면 크기/지역화/접근성 및 전체 Windows 실행·배포 검증은 미실시다.
+
+다음 구현: bounded PATH 후보 탐색과 중복 설치 안내를 연결한다. 자동 설치/alias와 자동 시작의 남은 의무는 유지한다.
