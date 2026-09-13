@@ -1105,23 +1105,50 @@ public actor WindowsUsageRuntime {
         self.sleepTask?.cancel()
     }
 
-    /// Refreshes enabled providers once. A second request while a
-    /// refresh is in flight is intentionally coalesced instead of overlapping
-    /// credential and warm-session work.
     public func spendSettingsDidChange() async {
         guard !self.shuttingDown else { return }
+        let settings = WindowsSpendSettings.load()
+        let previousSnapshot = self.spendSnapshot
+        let previousSettings = self.collectedSpendSettings
+        let controller = self.spendController
+        let canReproject = self.refreshTask == nil && self.spendState == .available &&
+            previousSettings?.usesSameCollection(as: settings) == true && previousSnapshot != nil
         self.spendGeneration &+= 1
+        let generation = self.spendGeneration
         self.spendSnapshot = nil
         self.spendState = .idle
+        if canReproject, let controller, let previousSnapshot {
+            self.spendState = .collecting
+            if previousSettings?.preferredCurrencyCode != settings.preferredCurrencyCode {
+                await CurrencyExchange.shared.fetchLatestRatesIfNeeded(preferredCurrencyCode: settings.preferredCurrencyCode)
+            }
+            guard !self.shuttingDown, generation == self.spendGeneration else { return }
+            let result = await controller.setOptions(settings.dashboardOptions)
+            guard !self.shuttingDown, generation == self.spendGeneration else { return }
+            if case .applied = result {
+                // Reprojection keeps the captured data boundary, including across local midnight.
+                let snapshot = await controller.snapshot(now: previousSnapshot.loadedAt ?? Date())
+                guard !self.shuttingDown, generation == self.spendGeneration else { return }
+                if WindowsSpendSettings.load() == settings {
+                    self.collectedSpendSettings = settings
+                    self.spendSnapshot = snapshot
+                    self.spendState = .available
+                    return
+                }
+            }
+        }
+        // Source/calendar changes, missing data, or a stopped controller need a fresh scan.
         let refreshing = self.refreshTask != nil
         if refreshing { self.queuedSpendRefresh = true }
-        let controller = self.spendController
         self.spendController = nil
         if let controller { await controller.stop() }
-        guard !self.shuttingDown else { return }
+        guard !self.shuttingDown, generation == self.spendGeneration else { return }
         if !refreshing { await self.refresh() }
     }
 
+    /// Refreshes enabled providers once. A second request while a
+    /// refresh is in flight is intentionally coalesced instead of overlapping
+    /// credential and warm-session work.
     public func refresh() async {
         guard !self.shuttingDown, self.refreshTask == nil else { return }
         repeat {

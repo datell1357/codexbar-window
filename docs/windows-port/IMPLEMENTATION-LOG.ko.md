@@ -1902,3 +1902,13 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - 요약에 캐시 또는 근사 fallback 환율을 사용할 수 있음을 표시한다. 원본 통화 선택은 서로 다른 통화를 합산하지 않는 기존 그룹 집계를 따른다.
 
 남은 범위: 환율 freshness/출처 상세 표시, 표시 옵션만 재집계하는 경로, 전체 차트·source 필터·이미지 공유 및 Windows 검증. 실제 네트워크 환율 요청은 실행하지 않았다.
+
+## IMPL-146 — 표시 옵션 변경 시 비용 scan 재사용
+
+상태 CODE_WRITTEN_UNVERIFIED. 컴파일/빌드/테스트/옵션·환율·로그 수집/검증 미실시. guidelines/COMMITS.md 부재로 핵심 커밋 규칙을 적용한다.
+
+- 비용 설정에서 수집 활성화/ledger/timezone과 기간/통화/source 표시 옵션을 구분했다. 사용량 refresh가 없고 보관된 비용 snapshot이 있으면 controller.setOptions로 다시 집계한다.
+- 통화 변경에만 원본 환율 갱신을 호출하고 완료 후 최신 generation/설정 일치를 확인한다. 집계 기준 시각은 이전 수집 시각을 유지하며 요약과 share payload를 동일 snapshot에서 교체한다.
+- 재집계 중 기존 공개 snapshot을 비우며 계정 변경·새 refresh·종료가 generation을 바꾸면 결과를 게시하지 않는다. 수집 구성 변경/데이터 없음/controller 중지 시 기존 재수집 흐름을 사용한다.
+
+남은 범위: 외부 계정/설정 파일 변경 즉시 감지, 네이티브 차트/source 필터/이미지 공유, 반복 설정 변경·자정·취소·Windows 검증 및 전체 계획 구현. partial scan 재집계는 partial 상태와 공유 금지를 유지한다.

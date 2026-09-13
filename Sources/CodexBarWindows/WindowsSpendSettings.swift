@@ -53,6 +53,13 @@ struct WindowsSpendSettings: Sendable, Equatable {
         })
     }
 
+    /// Projection preferences do not change which logs were scanned or their day boundaries.
+    func usesSameCollection(as other: Self) -> Bool {
+        self.collectionEnabled == other.collectionEnabled &&
+            self.codexLocalLedgerEnabled == other.codexLocalLedgerEnabled &&
+            self.bucketCalendar.timeZone.identifier == other.bucketCalendar.timeZone.identifier
+    }
+
     var dashboardOptions: WindowsSpendDashboardController.Options {
         var options = WindowsSpendDashboardController.Options()
         options.days = max(1, min(WindowsSpendHistoryPolicy.scanDays, self.historyDays))

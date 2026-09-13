@@ -1,5 +1,7 @@
 # Windows 전용 제품 작업 현황
 
+- IMPL-146: 기간/통화/source 표시 옵션 변경 시 보관된 비용 scan을 재집계하도록 runtime에 연결했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
 - IMPL-145: 비용 표시 통화 메뉴와 원본 환율 갱신 호출을 연결했다. 캐시/근사 환율 사용 가능성을 요약에 표시한다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
 
 - IMPL-144: Copy Share Stats 메뉴와 원본 텍스트 포맷/클립보드 전달을 연결했다. ready 상태/설정 일치 조건을 적용한다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
