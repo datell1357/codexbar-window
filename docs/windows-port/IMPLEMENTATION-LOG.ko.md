@@ -1772,3 +1772,13 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - 복호화 이후 model decoding 오류도 원본 값을 포함할 수 있는 localizedDescription 대신 generic 오류로 전달한다. 다른 플랫폼 load/save 계약은 유지한다.
 
 남은 범위: Windows 실제 오류 mapping·동시 생성/교체·한도 경계 검증, config recovery UX 및 전체 계획 구현.
+
+## IMPL-133 — Usage & Spend / Share Stats 모델 이식
+
+상태 CODE_WRITTEN_UNVERIFIED. 컴파일/빌드/테스트/이력 파일·수집·UI/검증 미실시. guidelines/COMMITS.md 부재로 핵심 커밋 규칙을 적용한다.
+
+- 원본 Foundation 기반 SpendDashboardModel을 WindowsSpendDashboardModel로 이식했다. currency grouping, provider/model 집계, activity coverage, incomplete/overflow 규칙을 유지하기 위해 원본 모델 본문을 사용한다.
+- ShareStats payload/subscription/sanitizer/builder/formatting을 Windows 이름으로 이식했다. 원본의 불완전 토큰·비용 및 모델 계열 집계 의미를 Windows 공유 화면의 입력으로 사용한다.
+- 원본 controller의 365일 scan/activity horizon을 WindowsSpendHistoryPolicy로 분리했다. Mac controller·SwiftUI/AppKit은 Windows 소스에 넣지 않았다. 기존 원본 파일은 보존한다.
+
+남은 범위: Windows cost snapshot/controller 연결, 기간·모델·프로젝트 등 native dashboard, Share Stats 카드 renderer/preview/export/clipboard, 통화·누락 데이터 의미 및 전체 Windows 검증. 이번 모델은 아직 사용자 메뉴에서 사용되지 않는다.

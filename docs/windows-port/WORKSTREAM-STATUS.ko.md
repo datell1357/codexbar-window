@@ -1,5 +1,7 @@
 # Windows 전용 제품 작업 현황
 
+- IMPL-133: 원본 SpendDashboardModel 및 ShareStats payload/builder/formatting을 Windows 모델로 이식했다. 수집·UI 연결은 남아 있다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
 - IMPL-132: Windows config 32 MiB bounded read·암호화 출력 크기 guard·복호화 필드 오류 비노출을 작성했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
 
 - IMPL-131: shared OAuth cache·removal journal을 청크 단위 한도 읽기로 연결했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
