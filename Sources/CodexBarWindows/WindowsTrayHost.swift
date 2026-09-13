@@ -1335,7 +1335,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
                                          caption: "Provider details")
                         return
                     }
-                    self.openStatusPage(url)
+                    self.openProviderPage(url)
                 }
             } else { self.showMessage("Could not open provider details.", caption: "Provider details") }
         }
@@ -1817,15 +1817,15 @@ public final class WindowsTrayHost: @unchecked Sendable {
             return
         }
         if let url = self.popupStatusCommands[command] {
-            self.openStatusPage(url)
+            self.openProviderPage(url)
             return
         }
         if let url = self.popupDashboardCommands[command] {
-            self.openStatusPage(url)
+            self.openProviderPage(url)
             return
         }
         if let url = self.popupChangelogCommands[command] {
-            self.openStatusPage(url)
+            self.openProviderPage(url)
             return
         }
         if let providerID = self.popupProviderQuotaWarningCommands[command] {
@@ -2275,25 +2275,39 @@ public final class WindowsTrayHost: @unchecked Sendable {
         // Shell acceptance does not establish page visibility or startup policy state.
     }
 
-    private func openStatusPage(_ rawURL: String) {
-        guard let url = URL(string: rawURL),
+    private func openProviderPage(_ rawURL: String) {
+        guard !self.quitInvoked, let owner = self.window else { return }
+        guard rawURL.utf16.count <= 16_384, let url = URL(string: rawURL),
               let scheme = url.scheme?.lowercased(), scheme == "http" || scheme == "https",
               let host = url.host, !host.isEmpty,
               url.user == nil, url.password == nil,
               !rawURL.unicodeScalars.contains(where: { $0.value < 0x20 || $0.value == 0x7F })
         else {
-            self.reportStatusOpenFailure(rawURL)
+            self.reportProviderOpenFailure(invalidAddress: true)
             return
         }
         let target = Array(rawURL.utf16) + [0]
         let result = target.withUnsafeBufferPointer { text in
-            ShellExecuteW(nil, nil, text.baseAddress, nil, nil, Int32(SW_SHOWNORMAL))
+            ShellExecuteW(owner, nil, text.baseAddress, nil, nil, Int32(SW_SHOWNORMAL))
         }
-        if Int(bitPattern: result) <= 32 { self.reportStatusOpenFailure(rawURL) }
+        let code = Int(bitPattern: result)
+        if code <= 32 { self.reportProviderOpenFailure(invalidAddress: false, shellCode: code) }
+        // Shell acceptance does not prove the destination loaded or authenticated.
     }
 
-    private func reportStatusOpenFailure(_ rawURL: String) {
-        FileHandle.standardError.write(Data("CodexBar: could not open provider status page \(rawURL)\n".utf8))
+    private func reportProviderOpenFailure(invalidAddress: Bool, shellCode: Int? = nil) {
+        // Provider dashboard paths, queries and fragments may contain account identifiers.
+        // Report the failure category only; never print the attempted URL.
+        let category = invalidAddress ? "invalid address" : "Windows shell rejected the request"
+        let code = shellCode.map { " (shell result \($0))" } ?? ""
+        FileHandle.standardError.write(Data("CodexBar: could not open provider page: \(category)\(code)\n".utf8))
+        let guidance = invalidAddress
+            ? "The provider page address is unavailable or is not a supported HTTP(S) address. " +
+              "Open the provider website manually."
+            : "Windows could not open the provider page" + code + ". " +
+              "Check your default web browser in Windows Settings > Apps > Default apps, then try again. " +
+              "You can also open the provider website manually."
+        self.showMessage(guidance, caption: "Could not open provider page")
     }
 
     private static let windowProc: WNDPROC = { hwnd, message, wParam, lParam in

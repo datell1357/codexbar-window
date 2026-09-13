@@ -1306,3 +1306,13 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winus
 - 상세 창을 연 동안 privacy가 변경되면 링크 실행 대신 재열기 안내를 표시한다. 버튼 행과 Close가 겹치지 않도록 최소 창 크기를 작성했다.
 
 남은 범위: rich card/계정 선택·refresh 통합, 링크 열기 실패의 사용자 표시 개선, DPI별 크기와 접근성/지역화, Windows ABI·실행 검증. WIN-010 완료를 의미하지 않는다.
+
+## IMPL-087 — 공급자 링크 실패 안내와 URL 로그 보호
+
+상태 CODE_WRITTEN_UNVERIFIED. 빌드/컴파일/테스트/UI/ShellExecute/검증 미실시. guidelines/COMMITS.md 부재로 핵심 커밋 규칙을 적용한다.
+
+- status/dashboard/changelog 및 상세 창 링크가 공유하는 열기 함수를 openProviderPage로 정리했다. 종료 중 실행을 막고 owner 창을 전달하며 URL 길이 상한을 기존 HTTP(S)/host/credentials/control-character 검사와 함께 적용했다.
+- 잘못된 주소와 Windows shell 거절을 구분해 사용자 메시지를 작성했다. shell 실패 시 기본 브라우저 설정 확인과 수동 웹사이트 열기를 안내하며 자동 재시도·설정 변경은 하지 않는다.
+- 오류 로그에서 원본 URL을 제거했다. 계정 식별자가 포함될 수 있는 path/query/fragment를 출력하지 않고 실패 종류와 shell 반환값만 기록한다. shell 수락을 웹페이지 로드나 인증 성공으로 판정하지 않는다.
+
+남은 범위: rich card/계정 선택·refresh 통합, DPI·접근성·지역화, Windows 실제 링크 열기/실패 대화상자 검증. WIN-010 완료를 의미하지 않는다.
