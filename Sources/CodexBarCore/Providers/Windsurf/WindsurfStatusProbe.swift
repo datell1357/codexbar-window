@@ -31,9 +31,13 @@ public struct WindsurfCachedPlanInfo: Codable, Sendable {
 
 // MARK: - Errors & Probe
 
-#if os(macOS)
+#if os(macOS) || os(Windows)
 
+#if os(Windows)
+import CSQLite3
+#else
 import SQLite3
+#endif
 
 public enum WindsurfStatusProbeError: LocalizedError, Sendable, Equatable {
     case dbNotFound(String)
@@ -44,7 +48,11 @@ public enum WindsurfStatusProbeError: LocalizedError, Sendable, Equatable {
     public var errorDescription: String? {
         switch self {
         case let .dbNotFound(path):
+            #if os(Windows)
+            "Windsurf local cache was not found. Launch Windsurf and sign in before refreshing local usage."
+            #else
             "Windsurf database not found at \(path). Ensure Windsurf is installed and has been launched at least once."
+            #endif
         case let .sqliteFailed(message):
             "SQLite error reading Windsurf data: \(message)"
         case .noData:
@@ -59,8 +67,14 @@ public enum WindsurfStatusProbeError: LocalizedError, Sendable, Equatable {
 
 public struct WindsurfStatusProbe: Sendable {
     private static let defaultDBPath: String = {
+        #if os(Windows)
+        return CodexBarPlatformPaths.roamingAppDataURL(home: FileManager.default.homeDirectoryForCurrentUser,
+            environment: ProcessInfo.processInfo.environment)
+            .appendingPathComponent("Windsurf/User/globalStorage/state.vscdb").path
+        #else
         let home = NSHomeDirectory()
         return "\(home)/Library/Application Support/Windsurf/User/globalStorage/state.vscdb"
+        #endif
     }()
 
     private static let query = "SELECT value FROM ItemTable WHERE key = 'windsurf.settings.cachedPlanInfo' LIMIT 1;"
@@ -72,33 +86,42 @@ public struct WindsurfStatusProbe: Sendable {
     }
 
     public func fetch() throws -> WindsurfCachedPlanInfo {
+        try Task.checkCancellation()
+        guard !self.dbPath.utf8.contains(0) else { throw WindsurfStatusProbeError.noData }
         guard FileManager.default.fileExists(atPath: self.dbPath) else {
             throw WindsurfStatusProbeError.dbNotFound(self.dbPath)
         }
 
         var db: OpaquePointer?
         guard sqlite3_open_v2(self.dbPath, &db, SQLITE_OPEN_READONLY, nil) == SQLITE_OK else {
-            let message = db.flatMap { String(cString: sqlite3_errmsg($0)) } ?? "unknown error"
+            let message = Self.sqliteMessage(db)
             sqlite3_close(db)
             throw WindsurfStatusProbeError.sqliteFailed(message)
         }
         defer { sqlite3_close(db) }
 
-        sqlite3_busy_timeout(db, 250)
+        #if os(Windows)
+        _ = sqlite3_limit(db, SQLITE_LIMIT_LENGTH, 4 * 1024 * 1024)
+        #endif
+        guard sqlite3_busy_timeout(db, 250) == SQLITE_OK else {
+            throw WindsurfStatusProbeError.sqliteFailed(Self.sqliteMessage(db))
+        }
 
         var stmt: OpaquePointer?
         guard sqlite3_prepare_v2(db, Self.query, -1, &stmt, nil) == SQLITE_OK else {
-            let message = db.flatMap { String(cString: sqlite3_errmsg($0)) } ?? "unknown error"
+            let message = Self.sqliteMessage(db)
             throw WindsurfStatusProbeError.sqliteFailed(message)
         }
         defer { sqlite3_finalize(stmt) }
 
+        try Task.checkCancellation()
         let stepResult = sqlite3_step(stmt)
+        try Task.checkCancellation()
         guard stepResult == SQLITE_ROW else {
             if stepResult == SQLITE_DONE {
                 throw WindsurfStatusProbeError.noData
             }
-            let message = db.flatMap { String(cString: sqlite3_errmsg($0)) } ?? "unknown error"
+            let message = Self.sqliteMessage(db)
             throw WindsurfStatusProbeError.sqliteFailed(message)
         }
 
@@ -112,15 +135,31 @@ public struct WindsurfStatusProbe: Sendable {
         do {
             return try JSONDecoder().decode(WindsurfCachedPlanInfo.self, from: jsonData)
         } catch {
+            #if os(Windows)
+            throw WindsurfStatusProbeError.parseFailed("Invalid cached plan payload")
+            #else
             throw WindsurfStatusProbeError.parseFailed(error.localizedDescription)
+            #endif
         }
     }
 
+    private static func sqliteMessage(_ db: OpaquePointer?) -> String {
+        #if os(Windows)
+        return "Windsurf cache read failed (SQLite code \(sqlite3_errcode(db)))."
+        #else
+        return db.flatMap { String(cString: sqlite3_errmsg($0)) } ?? "unknown error"
+        #endif
+    }
+
     private static func decodeSQLiteValue(stmt: OpaquePointer?, index: Int32) -> String? {
+        let count = Int(sqlite3_column_bytes(stmt, index))
+        #if os(Windows)
+        guard count <= 4 * 1024 * 1024 else { return nil }
+        #endif
         switch sqlite3_column_type(stmt, index) {
         case SQLITE_TEXT:
             guard let c = sqlite3_column_text(stmt, index) else { return nil }
-            return String(cString: c)
+            return String(bytes: UnsafeBufferPointer(start: c, count: count), encoding: .utf8)
         case SQLITE_BLOB:
             guard let bytes = sqlite3_column_blob(stmt, index) else { return nil }
             let data = Data(bytes: bytes, count: Int(sqlite3_column_bytes(stmt, index)))

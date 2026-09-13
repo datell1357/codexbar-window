@@ -2448,3 +2448,11 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - Windows 입력 64KiB/header 문자 확인, 응답 4MiB 해석 제한과 취소 확인을 추가한다. Windows HTTP 오류에는 응답 본문을 포함하지 않는다. 응답 제한은 transport 수신 후 적용되며 스트리밍 메모리 상한은 아니다.
 - 남은 소요: Windows 로컬 Windsurf 캐시 조회, browser localStorage 가져오기/앱 로그인, provider capability/UI 세부 연결 및 전체 계획 나머지 항목.
 - CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·실제 Windsurf API 검증 미실행.
+
+## IMPL-204 — Windsurf Windows 로컬 캐시
+
+- 원본 cachedPlanInfo SQLite/JSON/UTF-16 blob 읽기 및 daily/weekly/legacy quota 변환을 Windows에 포함하고 CSQLite3를 사용한다.
+- 기본 경로는 플랫폼 Roaming AppData/Windsurf/User/globalStorage/state.vscdb이며 기존 dbPath 주입을 유지한다. 읽기 전용으로 열고 busy timeout, 취소 확인 및 Windows 4MiB SQLite/값 제한을 적용한다.
+- Windows 오류에서 사용자 경로와 payload decode 원문을 노출하지 않는다. 선택된 수동 웹 계정은 로컬 편집기 캐시 소유권을 입증할 수 없어 로컬 strategy를 사용하지 않는다.
+- 남은 소요: Windows 설치/프로필별 경로 실증, 로컬 cache freshness/소유권 UX, 브라우저 로그인 및 전체 계획 나머지 항목.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·실제 로컬 캐시/앱 검증 미실행.

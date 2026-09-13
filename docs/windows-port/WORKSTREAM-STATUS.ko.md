@@ -1,5 +1,7 @@
 # Windows 전용 제품 작업 현황
 
+- IMPL-204: Windsurf 로컬 SQLite cachedPlanInfo 조회를 Windows Roaming AppData 경로에 연결했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
 - IMPL-203: Windsurf 원본 수동 Devin 세션/GetPlanStatus/protobuf 사용량 경로를 Windows에 포함했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
 
 - IMPL-202: Cursor 후보 선택에 Firefox 프로필/컨테이너 출처를 추가하고 privacy 모드에서는 세션 번호만 표시한다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.

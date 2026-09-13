@@ -100,7 +100,11 @@ struct WindsurfLocalFetchStrategy: ProviderFetchStrategy {
     let kind: ProviderFetchKind = .localProbe
 
     func isAvailable(_ context: ProviderFetchContext) async -> Bool {
-        context.sourceMode != .web
+        #if os(Windows)
+        // The editor cache cannot establish ownership of a selected manual web account.
+        if context.settings?.windsurf?.cookieSource == .manual { return false }
+        #endif
+        return context.sourceMode != .web
     }
 
     func fetch(_ context: ProviderFetchContext) async throws -> ProviderFetchResult {
