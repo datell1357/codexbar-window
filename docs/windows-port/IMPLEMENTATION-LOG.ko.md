@@ -2440,3 +2440,11 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - 개인정보 숨김 모드에서는 프로필/컨테이너 이름 대신 일반 세션 번호를 사용한다. 기존 개인정보 설정 변경 시 화면 닫기와 만료 처리를 유지한다.
 - 남은 소요: 컨테이너 사용자 지정 이름, 추가 브라우저 지원 및 전체 계획 나머지 항목.
 - CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·실제 Firefox/UI 검증 미실행.
+
+## IMPL-203 — Windsurf Windows 수동 웹 조회
+
+- macOS 조건에 묶인 원본 수동 session bundle 파서와 GetPlanStatus HTTP/protobuf codec을 Windows에 포함한다. 기존 daily/weekly/plan snapshot 변환을 사용한다.
+- Chromium localStorage 자동 importer는 macOS에 유지한다. Windows auto는 수동 계정 설정 안내를 반환하고, 명시적 수동 세션 실패는 다른 로컬 계정으로 fallback하지 않는다.
+- Windows 입력 64KiB/header 문자 확인, 응답 4MiB 해석 제한과 취소 확인을 추가한다. Windows HTTP 오류에는 응답 본문을 포함하지 않는다. 응답 제한은 transport 수신 후 적용되며 스트리밍 메모리 상한은 아니다.
+- 남은 소요: Windows 로컬 Windsurf 캐시 조회, browser localStorage 가져오기/앱 로그인, provider capability/UI 세부 연결 및 전체 계획 나머지 항목.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·실제 Windsurf API 검증 미실행.

@@ -1,5 +1,7 @@
 # Windows 전용 제품 작업 현황
 
+- IMPL-203: Windsurf 원본 수동 Devin 세션/GetPlanStatus/protobuf 사용량 경로를 Windows에 포함했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
 - IMPL-202: Cursor 후보 선택에 Firefox 프로필/컨테이너 출처를 추가하고 privacy 모드에서는 세션 번호만 표시한다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
 
 - IMPL-201: Firefox cookie 조회의 행 수/누적 텍스트/개별 열 크기 상한을 작성했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.

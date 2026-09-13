@@ -1,4 +1,7 @@
 import Foundation
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
 
 // MARK: - API Response Model
 
@@ -101,7 +104,7 @@ extension WindsurfGetPlanStatusResponse {
 
 // MARK: - Session Material
 
-#if os(macOS)
+#if os(macOS) || os(Windows)
 
 struct WindsurfDevinSessionAuth: Codable, Equatable {
     let sessionToken: String
@@ -118,8 +121,12 @@ public enum WindsurfWebFetcherError: LocalizedError, Sendable {
     public var errorDescription: String? {
         switch self {
         case .noSessionData:
+            #if os(Windows)
+            "Add a Windsurf account with a manual Devin session bundle in provider settings, then refresh."
+            #else
             "No Windsurf web session found in Chromium localStorage. " +
                 "Sign in to app.devin.ai or windsurf.com in Chrome first."
+            #endif
         case let .invalidManualSession(message):
             "Invalid Windsurf session payload: \(message)"
         case let .apiCallFailed(message):
@@ -141,6 +148,7 @@ public enum WindsurfWebFetcher {
         logger: ((String) -> Void)? = nil,
         session transport: any ProviderHTTPTransport = ProviderHTTPClient.shared) async throws -> UsageSnapshot
     {
+        try Task.checkCancellation()
         let log: (String) -> Void = { msg in logger?("[windsurf-web] \(msg)") }
 
         if cookieSource == .manual {
@@ -150,8 +158,19 @@ public enum WindsurfWebFetcher {
                 throw WindsurfWebFetcherError.invalidManualSession("empty input")
             }
             log("Using manual Windsurf session bundle")
+            #if os(Windows)
+            guard manualSessionInput.utf8.count <= 65_536 else {
+                throw WindsurfWebFetcherError.invalidManualSession("input exceeds 64 KiB")
+            }
+            #endif
             let auth = try self.parseManualSessionInput(manualSessionInput)
+            #if os(Windows)
+            guard [auth.sessionToken, auth.auth1Token, auth.accountID, auth.primaryOrgID].allSatisfy({
+                !$0.isEmpty && $0.utf8.allSatisfy { $0 >= 0x21 && $0 <= 0x7E }
+            }) else { throw WindsurfWebFetcherError.invalidManualSession("invalid authentication header characters") }
+            #endif
             let response = try await self.fetchPlanStatus(auth: auth, timeout: timeout, transport: transport)
+            try Task.checkCancellation()
             return response.toUsageSnapshot()
         }
 
@@ -159,6 +178,7 @@ public enum WindsurfWebFetcher {
             throw WindsurfWebFetcherError.noSessionData
         }
 
+        #if os(macOS)
         let preferredSessionInfos = WindsurfDevinSessionImporter.importPreferredSessions(
             browserDetection: browserDetection,
             logger: logger)
@@ -195,6 +215,9 @@ public enum WindsurfWebFetcher {
             timeout: timeout,
             logger: log,
             transport: transport)
+        #else
+        throw WindsurfWebFetcherError.noSessionData
+        #endif
     }
 
     static func parseManualSessionInput(_ raw: String) throws -> WindsurfDevinSessionAuth {
@@ -253,6 +276,7 @@ public enum WindsurfWebFetcher {
         return ["HTTP 400", "HTTP 401", "HTTP 403"].contains { message.hasPrefix($0) }
     }
 
+    #if os(macOS)
     private static func fetchUsage(
         sessionInfos: [WindsurfDevinSessionImporter.SessionInfo],
         timeout: TimeInterval,
@@ -279,6 +303,8 @@ public enum WindsurfWebFetcher {
 
         throw lastError ?? WindsurfWebFetcherError.noSessionData
     }
+
+    #endif
 
     private static func sessionAuth(from values: [String: Any]) -> WindsurfDevinSessionAuth? {
         func stringValue(for keys: [String]) -> String? {
@@ -341,7 +367,16 @@ public enum WindsurfWebFetcher {
             throw error
         }
 
+        try Task.checkCancellation()
+        #if os(Windows)
+        guard response.data.count <= 4 * 1024 * 1024 else {
+            throw WindsurfWebFetcherError.apiCallFailed("Response exceeds 4 MiB")
+        }
+        #endif
         guard response.statusCode == 200 else {
+            #if os(Windows)
+            throw WindsurfWebFetcherError.apiCallFailed("HTTP \(response.statusCode)")
+            #else
             let body = String(data: response.data, encoding: .utf8)?
                 .trimmingCharacters(in: .whitespacesAndNewlines)
             let snippet = if let body, !body.isEmpty {
@@ -350,6 +385,7 @@ public enum WindsurfWebFetcher {
                 ": <binary \(response.data.count) bytes>"
             }
             throw WindsurfWebFetcherError.apiCallFailed("HTTP \(response.statusCode)\(snippet)")
+            #endif
         }
 
         do {
