@@ -65,6 +65,19 @@ public actor WindowsUsageRuntime {
         (self.spendState, self.spendSnapshot)
     }
 
+    public func spendSummaryText() -> String {
+        switch self.spendState {
+        case .idle: return "Cost data is not ready. Refresh all to collect enabled sources."
+        case .disabled: return "Cost collection is disabled or no enabled provider supports costs. Use Cost collection to change preferences."
+        case .collecting: return "Cost collection is in progress. Reopen this summary after collection finishes."
+        case .stopped: return "Cost collection has stopped."
+        case .failed: return "Cost collection failed. Refresh all to retry."
+        case .available: break
+        }
+        guard let snapshot = self.spendSnapshot else { return "Cost data is unavailable." }
+        return WindowsSpendSummary.text(snapshot: snapshot)
+    }
+
     private let configStore: CodexBarConfigStore
     private let browserDetection: BrowserDetection
     private let fetcher: UsageFetcher

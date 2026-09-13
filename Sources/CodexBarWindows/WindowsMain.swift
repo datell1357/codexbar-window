@@ -78,6 +78,13 @@ private final class WindowsTrayApplication: @unchecked Sendable {
             guard let self else { return }
             Task { await self.runtime.optionalUsageSettingsDidChange() }
         },
+        onSpendSummaryRequested: { [weak self] requestID in
+            guard let self else { return }
+            Task {
+                let text = await self.runtime.spendSummaryText()
+                self.host.postSpendSummary(requestID: requestID, text: text)
+            }
+        },
         onSpendSettingsChanged: { [weak self] in
             guard let self else { return }
             Task { await self.runtime.spendSettingsDidChange() }

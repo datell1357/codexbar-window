@@ -1872,3 +1872,13 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - shutdown은 비용 설정 재갱신 플래그를 지운다. 비용 수집과 ledger 기본값 off는 유지한다.
 
 남은 범위: 비용 대시보드/차트/공유 화면, 통화/시간대/source 세부 설정, 기간 변경 시 보관 scan 재집계 최적화, provider/account/OpenCodeX 완전 집계 및 Windows 검증. 기간 메뉴는 표시 기간을 선택하며 scan 정책은 기존 365일이다.
+
+## IMPL-143 — 비용 요약 화면 연결
+
+상태 CODE_WRITTEN_UNVERIFIED. 컴파일/빌드/테스트/UI·수집/검증 미실시. guidelines/COMMITS.md 부재로 핵심 커밋 규칙을 적용한다.
+
+- Cost collection 메뉴의 Open cost summary 요청을 Main/runtime으로 전달하고 UUID mailbox로 응답을 UI thread의 기존 읽기 전용 상세 창에 연결했다. 새 요청은 이전 대기 응답을 대체한다.
+- 통화별 합계·토큰·공급자·모델·covered days·bucket 시간대를 표시하는 projection을 작성했다. 부분 수집 실패와 모델 이력 불완전을 명시하며 nil은 Unknown으로 구분한다. 모델 100개 초과는 생략 수를 표시한다.
+- 수집 비활성/진행/실패/종료 상태는 각각 안내하며 이름은 redaction 및 제어문자 제거를 적용한다. 프로젝트 경로나 세션 내용은 요약에 포함하지 않는다.
+
+남은 범위: 전체 차트/토큰 heatmap/프로젝트/세션 탐색 및 필터, native share preview/export, 표시 중 계정 변경에 따른 snapshot 갱신·요청 취소, Windows 검증. 기존 상세 창을 재사용한 요약이며 완전한 비용 대시보드 구현 완료를 의미하지 않는다.

@@ -95,6 +95,10 @@ public final class WindowsTrayHost: @unchecked Sendable {
     private static let agentSessionsRefreshCommand = UINT_PTR(0x7501)
     private static let agentSessionCommandBase = UINT_PTR(0x7600)
     private static let wakeMessage = UINT(WM_APP) + 1
+    private static let spendSummaryCommand = UINT_PTR(0x7032)
+    private let onSpendSummaryRequested: @Sendable (UUID) -> Void
+    private var spendSummaryRequest: UUID? // Protected by mailboxLock.
+    private var spendSummaryMailbox: String? // Protected by mailboxLock.
     private static let spendCollectionCommand = UINT_PTR(0x7030)
     private static let spendLedgerCommand = UINT_PTR(0x7031)
     private static let spendPeriodCommandBase = UINT_PTR(0x7040)
@@ -277,6 +281,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
         onRemoteSessionPage: @escaping @Sendable (WindowsSessionPageRequest) -> Void = { _ in },
         onPresentationSettingsChanged: @escaping PresentationSettingsChangedHandler = {},
         onOptionalUsageSettingsChanged: @escaping OptionalUsageSettingsChangedHandler = {},
+        onSpendSummaryRequested: @escaping @Sendable (UUID) -> Void = { _ in },
         onSpendSettingsChanged: @escaping @Sendable () -> Void = {},
         onRefreshSettingsChanged: @escaping RefreshSettingsChangedHandler = {},
         onSessionQuotaNotificationSettingsChanged: @escaping SessionQuotaNotificationSettingsChangedHandler = {},
@@ -312,6 +317,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
         self.onMenuOpen = onMenuOpen
         self.onPresentationSettingsChanged = onPresentationSettingsChanged
         self.onOptionalUsageSettingsChanged = onOptionalUsageSettingsChanged
+        self.onSpendSummaryRequested = onSpendSummaryRequested
         self.onSpendSettingsChanged = onSpendSettingsChanged
         self.onRefreshSettingsChanged = onRefreshSettingsChanged
         self.onSessionQuotaNotificationSettingsChanged = onSessionQuotaNotificationSettingsChanged
@@ -434,6 +440,26 @@ public final class WindowsTrayHost: @unchecked Sendable {
     }
 
     /// Replaces the rows displayed by the next tray popup and wakes the UI thread.
+    public func postSpendSummary(requestID: UUID, text: String) {
+        self.mailboxLock.lock()
+        guard !self.quitInvoked, self.spendSummaryRequest == requestID else { self.mailboxLock.unlock(); return }
+        self.spendSummaryMailbox = text
+        let window = self.window
+        self.mailboxLock.unlock()
+        if let window { PostMessageW(window, Self.wakeMessage, 0, 0) }
+    }
+
+    private func drainSpendSummary() {
+        guard !self.remoteEditorOpen, !self.quitInvoked,
+              case .idle = self.providerEditorPhase, case .idle = self.codexWebSettingsEditorPhase else { return }
+        self.mailboxLock.lock()
+        let text = self.spendSummaryMailbox
+        self.spendSummaryMailbox = nil
+        if text != nil { self.spendSummaryRequest = nil }
+        self.mailboxLock.unlock()
+        if let text { self.showProviderDetails(text, title: "Cost summary", links: []) }
+    }
+
     public func postRows(_ rows: [String]) {
         self.postRows(rows, menuEntries: [])
     }
@@ -2278,6 +2304,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
         guard let submenu = CreatePopupMenu() else { return }
         let settings = WindowsSpendSettings.load()
         var items: [(UINT_PTR, String, Bool)] = [
+            (Self.spendSummaryCommand, "Open cost summary…", false),
             (Self.spendCollectionCommand, "Collect supported provider costs", settings.collectionEnabled),
             (Self.spendLedgerCommand, "Keep Codex local cost ledger", settings.codexLocalLedgerEnabled)
         ]
@@ -2702,6 +2729,13 @@ public final class WindowsTrayHost: @unchecked Sendable {
             self.presentationDefaults.set(!enabled, forKey: "agentSessionsEnabled")
             self.onAgentSessionsSettingsChanged()
         case Self.agentSessionsRefreshCommand: self.onAgentSessionsRefresh()
+        case Self.spendSummaryCommand:
+            let requestID = UUID()
+            self.mailboxLock.lock()
+            self.spendSummaryRequest = requestID
+            self.spendSummaryMailbox = nil
+            self.mailboxLock.unlock()
+            self.onSpendSummaryRequested(requestID)
         case Self.spendCollectionCommand, Self.spendLedgerCommand:
             self.changeSpendSetting(command: command)
         case Self.spendPeriodCommandBase..<(Self.spendPeriodCommandBase + UINT_PTR(Self.spendPeriods.count)):
@@ -3123,6 +3157,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
             host.drainTokenAccountSelection()
             host.drainProviderQuotaWarningEditor()
             host.drainCodexWebSettingsEditor()
+            host.drainSpendSummary()
             host.drainSessionQuotaNotifications()
             if case .editing = host.providerEditorPhase {} else if case .saving = host.providerEditorPhase {}
             else if case .editing = host.codexWebSettingsEditorPhase {} else if case .saving = host.codexWebSettingsEditorPhase {} else {
