@@ -2287,3 +2287,11 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - 선택 ticket은 5분 유효하고 provider config SHA256 revision/선택 계정/개인정보 상태를 캡처한다. commit에서 재확인하고 기존 addTokenAccount의 DPAPI config 저장 및 계정 무효화 경로를 사용한다. 재조회/취소/새 요청은 pending state를 교체한다.
 
 남은 범위: 실제 트레이 후보 선택 UI/취소/진행 표시 연결, 동기 브라우저 읽기를 actor 밖으로 이동, 만료 후보 즉시 메모리 정리, API 오류 상세 분류와 Windows 실행 검증, 전체 계획 구현. 이번 단계에서 UI로 import를 실행할 수 있다고 주장하지 않는다.
+
+## IMPL-184 — Cursor Firefox 가져오기 UI
+
+- Add saved account 메뉴에 명시적인 Firefox Cursor 가져오기 액션과 진행 중 중복 실행 차단을 추가했다.
+- 검증 후보 선택, 가져온 계정 전용 이름 대화상자, 보호 저장 결과 안내를 runtime에 연결했다. 쿠키는 UI로 전달하지 않는다.
+- 취소 API에 선택 ticket을 적용해 이전 UI의 취소가 새 요청을 취소하지 않도록 했다. 저장 후 사용자가 Refresh로 사용량을 갱신한다.
+- 남은 소요: Chrome/Edge/WebView2, 동일 계정 후보 중복 병합, 후보 탐색 actor 분리, 진행 취소/시간 초과 UX, 열린 네이티브 후보 메뉴의 외부 privacy 변경 즉시 닫기. 현재 privacy는 메뉴 열기 전과 선택/저장 시 다시 확인한다.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·실제 브라우저/계정/API 검증은 사용자 요청으로 실행하지 않았다.

@@ -99,6 +99,25 @@ private final class WindowsTrayApplication: @unchecked Sendable {
                 self.host.postShareStatsCopy(requestID: requestID, result: result)
             }
         },
+        onCursorBrowserImportRequested: { [weak self] requestID in
+            guard let self else { return }
+            Task {
+                let result = await self.runtime.discoverCursorBrowserAccounts()
+                self.host.postCursorBrowserImport(requestID: requestID, result: result)
+            }
+        },
+        onCursorBrowserImportSave: { [weak self] hostID, ticket, candidate, label in
+            guard let self else { return }
+            Task {
+                let result = await self.runtime.importCursorBrowserAccount(requestID: ticket, candidateID: candidate, label: label)
+                await self.runtime.cancelCursorBrowserImport(requestID: ticket)
+                self.host.postCursorBrowserImportSave(requestID: hostID, result: result)
+            }
+        },
+        onCursorBrowserImportCancel: { [weak self] ticket in
+            guard let self else { return }
+            Task { await self.runtime.cancelCursorBrowserImport(requestID: ticket) }
+        },
         onSpendJSONRequested: { [weak self] requestID, copy in
             guard let self else { return }
             Task {

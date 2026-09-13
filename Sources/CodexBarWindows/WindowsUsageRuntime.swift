@@ -605,7 +605,8 @@ public actor WindowsUsageRuntime {
         }
     }
 
-    public func cancelCursorBrowserImport() {
+    public func cancelCursorBrowserImport(requestID: UUID? = nil) {
+        if let requestID, self.cursorBrowserImportRequest != requestID { return }
         self.cursorBrowserImportRequest = nil
         self.pendingCursorBrowserImport = nil
     }

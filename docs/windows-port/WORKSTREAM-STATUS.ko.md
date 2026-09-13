@@ -1,5 +1,7 @@
 # Windows 전용 제품 작업 현황
 
+- IMPL-184: 트레이의 Firefox Cursor 가져오기 시작/후보 선택/이름 입력/보호 저장 결과를 연결했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
 - IMPL-183: Cursor 후보 검증 runtime과 5분 선택 ticket, 기존 보호 계정 추가 API를 연결했다. UI 미연결. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
 
 - IMPL-182: Firefox 프로필별 Cursor 세션 후보 수집 및 API 계정 ID 확인 backend를 작성했다. UI/저장 미연결. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.

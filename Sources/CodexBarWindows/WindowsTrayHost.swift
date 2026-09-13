@@ -102,6 +102,14 @@ public final class WindowsTrayHost: @unchecked Sendable {
     private static let spendHistoryCommand = UINT_PTR(0x7038)
     private let onSpendHoursRequested: @Sendable (UUID, UInt64, Date, String) -> Void
     private let onSpendHistoryRequested: @Sendable (UUID) -> Void
+    private static let cursorBrowserImportCommand = UINT_PTR(0x703E)
+    private let onCursorBrowserImportRequested: @Sendable (UUID) -> Void
+    private let onCursorBrowserImportSave: @Sendable (UUID, UUID, UUID, String) -> Void
+    private let onCursorBrowserImportCancel: @Sendable (UUID) -> Void
+    // Request and mailboxes are protected by mailboxLock.
+    private var cursorImportRequest: UUID?
+    private var cursorImportMailbox: WindowsUsageRuntime.CursorBrowserImportResult?
+    private var cursorImportSaveMailbox: WindowsTokenAccountAddResult?
     private static let spendJSONCopyCommand = UINT_PTR(0x703C)
     private static let spendJSONSaveCommand = UINT_PTR(0x703D)
     private let onSpendJSONRequested: @Sendable (UUID, Bool) -> Void
@@ -311,6 +319,9 @@ public final class WindowsTrayHost: @unchecked Sendable {
         onTokenActivityRequested: @escaping @Sendable (UUID) -> Void = { _ in },
         onSpendHoursRequested: @escaping @Sendable (UUID, UInt64, Date, String) -> Void = { _, _, _, _ in },
         onSpendHistoryRequested: @escaping @Sendable (UUID) -> Void = { _ in },
+        onCursorBrowserImportRequested: @escaping @Sendable (UUID) -> Void = { _ in },
+        onCursorBrowserImportSave: @escaping @Sendable (UUID, UUID, UUID, String) -> Void = { _, _, _, _ in },
+        onCursorBrowserImportCancel: @escaping @Sendable (UUID) -> Void = { _ in },
         onSpendJSONRequested: @escaping @Sendable (UUID, Bool) -> Void = { _, _ in },
         onShareStatsPreviewRequested: @escaping @Sendable (UUID) -> Void = { _ in },
         onShareStatsImageCopyRequested: @escaping @Sendable (UUID) -> Void = { _ in },
@@ -357,6 +368,9 @@ public final class WindowsTrayHost: @unchecked Sendable {
         self.onTokenActivityRequested = onTokenActivityRequested
         self.onSpendHoursRequested = onSpendHoursRequested
         self.onSpendHistoryRequested = onSpendHistoryRequested
+        self.onCursorBrowserImportRequested = onCursorBrowserImportRequested
+        self.onCursorBrowserImportSave = onCursorBrowserImportSave
+        self.onCursorBrowserImportCancel = onCursorBrowserImportCancel
         self.onSpendJSONRequested = onSpendJSONRequested
         self.onShareStatsPreviewRequested = onShareStatsPreviewRequested
         self.onShareStatsImageCopyRequested = onShareStatsImageCopyRequested
@@ -494,6 +508,85 @@ public final class WindowsTrayHost: @unchecked Sendable {
         let window = self.window
         self.mailboxLock.unlock()
         if let window { PostMessageW(window, Self.wakeMessage, 0, 0) }
+    }
+
+    public func postCursorBrowserImport(requestID: UUID, result: WindowsUsageRuntime.CursorBrowserImportResult) {
+        self.mailboxLock.lock()
+        guard !self.quitInvoked, self.cursorImportRequest == requestID else { self.mailboxLock.unlock(); return }
+        self.cursorImportMailbox = result
+        let window = self.window
+        self.mailboxLock.unlock()
+        if let window { PostMessageW(window, Self.wakeMessage, 0, 0) }
+    }
+
+    public func postCursorBrowserImportSave(requestID: UUID, result: WindowsTokenAccountAddResult) {
+        self.mailboxLock.lock()
+        guard !self.quitInvoked, self.cursorImportRequest == requestID else { self.mailboxLock.unlock(); return }
+        self.cursorImportSaveMailbox = result
+        let window = self.window
+        self.mailboxLock.unlock()
+        if let window { PostMessageW(window, Self.wakeMessage, 0, 0) }
+    }
+
+    private func drainCursorBrowserImport() {
+        guard !self.remoteEditorOpen, !self.quitInvoked, let window = self.window,
+              case .idle = self.providerEditorPhase, case .idle = self.codexWebSettingsEditorPhase else { return }
+        self.mailboxLock.lock()
+        let hostID = self.cursorImportRequest
+        let discovery = self.cursorImportMailbox
+        let saved = self.cursorImportSaveMailbox
+        self.cursorImportMailbox = nil
+        self.cursorImportSaveMailbox = nil
+        self.mailboxLock.unlock()
+        guard let hostID, discovery != nil || saved != nil else { return }
+        if let saved {
+            self.mailboxLock.lock()
+            if self.cursorImportRequest == hostID { self.cursorImportRequest = nil }
+            self.mailboxLock.unlock()
+            let message: String
+            switch saved {
+            case .saved, .alreadyAdded: message = "Cursor account saved and selected. Refresh usage to load the imported account."
+            case .refreshInProgress: message = "Usage is refreshing. Wait for it to finish, then import again."
+            case .staleSelection: message = "The import expired or account settings changed. Import again."
+            case .invalidInput: message = "The account name or session could not be accepted. Import again."
+            case .unavailable: message = "Enable Cursor before importing an account."
+            case .shuttingDown: return
+            case .failed: message = "The account could not be protected or saved. Check configuration access and import again."
+            }
+            self.showMessage(message, caption: "Import Cursor account")
+            return
+        }
+        guard let discovery else { return }
+        switch discovery {
+        case let .unavailable(message): self.showMessage(message, caption: "Import Cursor account")
+        case let .choices(ticket, rows, failed, omitted, privacy):
+            guard privacy == WindowsUsagePresentationSettings.load().hidePersonalInfo else {
+                self.onCursorBrowserImportCancel(ticket)
+                self.mailboxLock.lock(); self.cursorImportRequest = nil; self.mailboxLock.unlock()
+                return
+            }
+            self.remoteEditorOpen = true
+            let candidate = WindowsCursorBrowserAccountMenu.choose(owner: window, rows: rows,
+                failedCount: failed, omittedCount: omitted)
+            let input: WindowsAccountNameDialog.Result
+            if candidate != nil, !self.quitInvoked,
+               privacy == WindowsUsagePresentationSettings.load().hidePersonalInfo {
+                input = WindowsAccountNameDialog.showImportedAccount(owner: window)
+            } else { input = .cancelled }
+            self.remoteEditorOpen = false
+            PostMessageW(window, Self.wakeMessage, 0, 0)
+            if let candidate, case let .saved(label) = input, !self.quitInvoked,
+               privacy == WindowsUsagePresentationSettings.load().hidePersonalInfo {
+                self.cancelPendingShareStatsCopy()
+                self.onCursorBrowserImportSave(hostID, ticket, candidate, label)
+                return
+            }
+            self.onCursorBrowserImportCancel(ticket)
+            if case .failed = input { self.showMessage("The account name dialog could not be opened.", caption: "Import Cursor account") }
+        }
+        self.mailboxLock.lock()
+        if self.cursorImportRequest == hostID { self.cursorImportRequest = nil }
+        self.mailboxLock.unlock()
     }
 
     private func drainSpendSources() {
@@ -1471,6 +1564,15 @@ public final class WindowsTrayHost: @unchecked Sendable {
                     .replacingOccurrences(of: "&", with: "&&")
                 if title.withCString(encodedAs: UTF16.self, { AppendMenuW(addMenu, UINT(MF_STRING), command, $0) }) != 0 {
                     commands[command] = (provider, entry.tokenAccountSelection?.selectedID)
+                }
+            }
+            if menuEntries.contains(where: { $0.providerID == UsageProvider.cursor.rawValue }) {
+                self.mailboxLock.lock()
+                let importing = self.cursorImportRequest != nil
+                self.mailboxLock.unlock()
+                let title = importing ? "Importing Cursor account…" : "Import Cursor from Firefox…"
+                title.withCString(encodedAs: UTF16.self) {
+                    _ = AppendMenuW(addMenu, UINT(MF_STRING) | (importing ? UINT(MF_GRAYED) : 0), Self.cursorBrowserImportCommand, $0)
                 }
             }
             let attached = !commands.isEmpty && "Add saved account…".withCString(encodedAs: UTF16.self) {
@@ -2672,6 +2774,17 @@ public final class WindowsTrayHost: @unchecked Sendable {
     }
 
     private func dispatchCommand(_ command: UINT_PTR) {
+        if command == Self.cursorBrowserImportCommand {
+            guard !self.quitInvoked, !self.remoteEditorOpen,
+                  case .idle = self.providerEditorPhase, case .idle = self.codexWebSettingsEditorPhase else { return }
+            self.mailboxLock.lock()
+            guard self.cursorImportRequest == nil else { self.mailboxLock.unlock(); return }
+            let requestID = UUID()
+            self.cursorImportRequest = requestID
+            self.mailboxLock.unlock()
+            self.onCursorBrowserImportRequested(requestID)
+            return
+        }
         if let (provider, expectedSelectedID) = self.popupTokenAccountAdds[command] {
             guard !self.quitInvoked, !self.remoteEditorOpen, let window = self.window,
                   let support = TokenAccountSupportCatalog.support(for: provider),
@@ -3427,6 +3540,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
             host.drainTokenAccountSelection()
             host.drainProviderQuotaWarningEditor()
             host.drainCodexWebSettingsEditor()
+            host.drainCursorBrowserImport()
             host.drainSpendSources()
             host.drainSpendSummary()
             host.drainShareStatsCopy()
