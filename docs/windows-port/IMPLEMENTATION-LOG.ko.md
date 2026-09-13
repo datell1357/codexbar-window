@@ -616,3 +616,21 @@
 2. source별 attempt/error code metrics, 증분 parsing, SQLite ownership 및 전체 Windows 기능·배포 검증은 남아 있다.
 
 다음 구현: session 기능 작업 기록을 정리하고 전체 계획의 다음 미구현 Windows 플랫폼 계약으로 넘어간다. 기존 세션의 미검증/미구현 경계는 그대로 추적한다.
+
+## IMPL-032 — 전역 트레이 메뉴 단축키
+
+상태: CODE_WRITTEN_UNVERIFIED. 빌드·컴파일·테스트·lint·앱·실제 키 등록/키 입력·검증 스크립트를 실행하지 않았다. 계약: WIN-011.
+
+작성한 코드:
+
+- Windows tray에 기본 off인 Ctrl+Alt+C 메뉴 단축키 설정을 추가했다. native RegisterHotKey/MOD_NOREPEAT와 WM_HOTKEY를 연결하고 앱 시작 시 저장 설정을 복원한다. 등록 실패는 체크 표시를 하지 않고 재시도 caption으로 표시한다.
+- 새 활성화 설정은 등록 성공 후에만 저장한다. 비활성화는 unregister 성공 후 저장하고 종료 정리에서 등록된 hotkey를 해제한다. 다른 앱의 hotkey를 빼앗거나 대체 키를 자동 등록하지 않는다.
+- popupIsOpen으로 재진입을 막고 hotkey가 열린 메뉴에 다시 전달되면 EndMenu를 요청한다. modal editor/quit 상태에서는 처리하지 않는다. 기존 popup의 메뉴 snapshot·focus/refresh 동작을 재사용한다.
+
+남은 범위:
+
+1. 사용자 지정 shortcut editor, 키 충돌 원인 상세·해제 실패 안내, 다중 모니터/DPI anchor, keyboard/scroll/focus 복원은 미구현 또는 미검증이다. 현재 popup 위치는 기존 커서 위치를 따른다.
+2. native menu loop에서 WM_HOTKEY 전달과 EndMenu 동작, Register/Unregister 실패·종료 수명·AltGr/키보드 layout은 Windows 실행 검증이 필요하다. 전체 WIN-011 완료로 표시하지 않는다.
+3. 기존 session cache/SQLite/ownership 및 전체 Windows 기능·배포 검증은 계속 남아 있다.
+
+다음 구현: 전역 단축키 설정을 저장 가능한 modifier/key 모델과 사용자 선택 메뉴로 확장하며 등록 변경 실패 시 이전 등록을 보존한다.

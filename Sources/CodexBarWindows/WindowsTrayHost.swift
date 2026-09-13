@@ -23,6 +23,11 @@ public final class WindowsTrayHost: @unchecked Sendable {
     public typealias CodexWebSettingsSaveHandler = @Sendable (UInt64, WindowsCodexWebSettingsPatch) -> Void
     public typealias QuitHandler = @Sendable () -> Void
 
+    private static let menuHotkeyCommand = UINT_PTR(0x7533)
+    private static let menuHotkeyID: Int32 = 0x4342
+    private var menuHotkeyRegistered = false
+    private var menuHotkeyFailed = false
+    private var popupIsOpen = false
     private static let chooseTitleDatabaseCommand = UINT_PTR(0x7530)
     private static let clearTitleDatabaseCommand = UINT_PTR(0x7531)
     private static let disableTitleDatabaseCommand = UINT_PTR(0x7532)
@@ -281,6 +286,10 @@ public final class WindowsTrayHost: @unchecked Sendable {
             self.quotaWarningOverlay?.dismiss()
             self.quotaWarningOverlay = nil
             self.quotaWarningOverlayOwner = nil
+            if self.menuHotkeyRegistered {
+                _ = UnregisterHotKey(hwnd, Self.menuHotkeyID)
+                self.menuHotkeyRegistered = false
+            }
             self.removeIcon(hwnd)
             if let powerNotification {
                 if UnregisterPowerSettingNotification(powerNotification) == 0 {
@@ -307,6 +316,9 @@ public final class WindowsTrayHost: @unchecked Sendable {
         }
 
         try self.installIcon(hwnd)
+        if self.presentationDefaults.object(forKey: "windowsMenuHotkeyEnabled") as? Bool ?? false {
+            self.registerMenuHotkey(hwnd)
+        }
         var message = MSG()
         while true {
             let result = GetMessageW(&message, nil, 0, 0)
@@ -499,8 +511,19 @@ public final class WindowsTrayHost: @unchecked Sendable {
         self.iconInstalled = false
     }
 
+    @discardableResult
+    private func registerMenuHotkey(_ window: HWND) -> Bool {
+        if self.menuHotkeyRegistered { return true }
+        let success = RegisterHotKey(window, Self.menuHotkeyID, UINT(MOD_CONTROL | MOD_ALT | MOD_NOREPEAT), UINT(0x43)) != 0
+        self.menuHotkeyRegistered = success
+        self.menuHotkeyFailed = !success
+        return success
+    }
+
     private func popup(notifyMenuOpen: Bool = true) {
-        guard !self.remoteEditorOpen else { return }
+        guard !self.remoteEditorOpen, !self.popupIsOpen, !self.quitInvoked else { return }
+        self.popupIsOpen = true
+        defer { self.popupIsOpen = false }
         guard let hwnd = self.window, let menu = CreatePopupMenu() else { return }
         if notifyMenuOpen { self.onMenuOpen() }
         self.mailboxLock.lock()
@@ -694,6 +717,10 @@ public final class WindowsTrayHost: @unchecked Sendable {
         }
         self.appendAgentSessionsMenu(to: menu, snapshot: agentSessions)
         self.appendRemoteSessionsMenu(to: menu, snapshot: remoteSessions)
+        let hotkeyTitle = self.menuHotkeyFailed ? "Retry menu shortcut Ctrl+Alt+C (registration failed)" : "Menu shortcut Ctrl+Alt+C"
+        hotkeyTitle.withCString(encodedAs: UTF16.self) {
+            _ = AppendMenuW(menu, UINT(MF_STRING) | (self.menuHotkeyRegistered ? UINT(MF_CHECKED) : 0), Self.menuHotkeyCommand, $0)
+        }
         self.appendSessionLabelMenu(to: menu)
         self.appendRefreshFrequencyMenu(to: menu)
         self.appendLowPowerModeMenu(to: menu)
@@ -1400,6 +1427,17 @@ public final class WindowsTrayHost: @unchecked Sendable {
             return
         }
         switch command {
+        case Self.menuHotkeyCommand:
+            guard let window = self.window else { return }
+            if self.menuHotkeyRegistered {
+                if UnregisterHotKey(window, Self.menuHotkeyID) != 0 {
+                    self.menuHotkeyRegistered = false
+                    self.menuHotkeyFailed = false
+                    self.presentationDefaults.set(false, forKey: "windowsMenuHotkeyEnabled")
+                }
+            } else if self.registerMenuHotkey(window) {
+                self.presentationDefaults.set(true, forKey: "windowsMenuHotkeyEnabled")
+            }
         case Self.sessionDetailsCommand: self.showSessionDetails()
         case Self.sessionLabelCommandBase, Self.sessionLabelCommandBase + 1, Self.sessionLabelCommandBase + 2:
             let index = Int(command - Self.sessionLabelCommandBase)
@@ -1674,6 +1712,13 @@ public final class WindowsTrayHost: @unchecked Sendable {
             return DefWindowProcW(hwnd, message, wParam, lParam)
         }
         let host = Unmanaged<WindowsTrayHost>.fromOpaque(UnsafeRawPointer(bitPattern: UInt(pointer))!).takeUnretainedValue()
+        if message == UINT(WM_HOTKEY), wParam == WPARAM(Self.menuHotkeyID) {
+            guard host.menuHotkeyRegistered, !host.quitInvoked, !host.remoteEditorOpen,
+                  case .idle = host.providerEditorPhase, case .idle = host.codexWebSettingsEditorPhase else { return 0 }
+            if host.popupIsOpen { _ = EndMenu() }
+            else { host.popup() }
+            return 0
+        }
         if message == Self.pagePopupMessage {
             guard !host.quitInvoked, !host.remoteEditorOpen,
                   case .idle = host.providerEditorPhase, case .idle = host.codexWebSettingsEditorPhase
