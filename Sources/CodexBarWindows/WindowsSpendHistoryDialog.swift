@@ -65,6 +65,21 @@ enum WindowsSpendHistoryDialog {
                message.hwnd == hwnd || IsChild(hwnd, message.hwnd) != 0 {
                 DestroyWindow(hwnd); continue
             }
+            if message.message == UINT(WM_KEYDOWN), GetFocus() != GetDlgItem(hwnd, 6),
+               message.hwnd == hwnd || IsChild(hwnd, message.hwnd) != 0 {
+                if message.wParam == WPARAM(VK_LEFT) { Self.selectDay(-1, hwnd: hwnd, context: context); continue }
+                if message.wParam == WPARAM(VK_RIGHT) { Self.selectDay(1, hwnd: hwnd, context: context); continue }
+                if message.wParam == WPARAM(VK_HOME), !context.currency.days.isEmpty {
+                    context.selectedDay = 0; Self.updateDetails(hwnd, context: context); continue
+                }
+                if message.wParam == WPARAM(VK_END), !context.currency.days.isEmpty {
+                    context.selectedDay = context.currency.days.count - 1; Self.updateDetails(hwnd, context: context); continue
+                }
+            }
+            if message.message == UINT(WM_KEYDOWN), message.wParam == WPARAM(0x41),
+               GetFocus() == GetDlgItem(hwnd, 6), GetKeyState(Int32(VK_CONTROL)) < 0 {
+                SendMessageW(GetDlgItem(hwnd, 6), UINT(EM_SETSEL), 0, -1); continue
+            }
             if IsDialogMessageW(hwnd, &message) == 0 { TranslateMessage(&message); DispatchMessageW(&message) }
         }
         if IsWindow(hwnd) != 0 { DestroyWindow(hwnd) }
@@ -91,7 +106,7 @@ enum WindowsSpendHistoryDialog {
         switch message {
         case UINT(WM_CREATE):
             let dpi = GetDpiForWindow(hwnd); context.dpi = dpi == 0 ? 96 : dpi
-            for (id, label) in [(Int32(2), "Close"), (Int32(3), "Previous currency"), (Int32(4), "Next currency"), (Int32(5), "Refresh && close")] {
+            for (id, label) in [(Int32(2), "Close"), (Int32(3), "Previous currency"), (Int32(4), "Next currency"), (Int32(5), "Refresh && close"), (Int32(7), "&Previous day"), (Int32(8), "&Next day"), (Int32(9), "&All days")] {
                 guard Self.control(hwnd, kind: "BUTTON", title: label, id: id,
                     style: DWORD(WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON)) != nil else { return -1 }
             }
@@ -120,6 +135,9 @@ enum WindowsSpendHistoryDialog {
             case 3: context.currencyIndex = max(0, context.currencyIndex - 1); context.selectedDay = nil
             case 4: context.currencyIndex = min(context.snapshot.currencies.count - 1, context.currencyIndex + 1); context.selectedDay = nil
             case 5: context.result = .refreshAll; DestroyWindow(hwnd); return 0
+            case 7: Self.selectDay(-1, hwnd: hwnd, context: context); return 0
+            case 8: Self.selectDay(1, hwnd: hwnd, context: context); return 0
+            case 9: context.selectedDay = nil
             default: return 0
             }
             Self.updateDetails(hwnd, context: context)
@@ -152,9 +170,25 @@ enum WindowsSpendHistoryDialog {
             MoveWindow(GetDlgItem(hwnd, Int32(index + 2)), margin + Int32(index) * (width + gap),
                        top, width, button, 1)
         }
-        let textTop = max(margin, top - gap - context.px(110))
-        MoveWindow(GetDlgItem(hwnd, 6), margin, textTop, max(1, rect.right - 2 * margin), max(1, top - gap - textTop), 1)
+        let navigationTop = max(margin, top - button - gap)
+        let navigationWidth = max(1, (rect.right - 2 * margin - 2 * gap) / 3)
+        for index in 0..<3 {
+            MoveWindow(GetDlgItem(hwnd, Int32(index + 7)), margin + Int32(index) * (navigationWidth + gap),
+                       navigationTop, navigationWidth, button, 1)
+        }
+        let textTop = max(margin, navigationTop - gap - context.px(110))
+        MoveWindow(GetDlgItem(hwnd, 6), margin, textTop, max(1, rect.right - 2 * margin), max(1, navigationTop - gap - textTop), 1)
         InvalidateRect(hwnd, nil, 1)
+    }
+
+    private static func selectDay(_ direction: Int, hwnd: HWND, context: Context) {
+        guard !context.currency.days.isEmpty else { return }
+        if let selected = context.selectedDay {
+            context.selectedDay = max(0, min(context.currency.days.count - 1, selected + direction))
+        } else {
+            context.selectedDay = direction < 0 ? context.currency.days.count - 1 : 0
+        }
+        Self.updateDetails(hwnd, context: context)
     }
 
     private static func updateDetails(_ hwnd: HWND, context: Context) {
@@ -162,6 +196,9 @@ enum WindowsSpendHistoryDialog {
         let selected = context.selectedDay.flatMap { currency.days.indices.contains($0) ? currency.days[$0].details : nil }
         let text = currency.summary + "\r\n\r\n" + (selected ?? "Select a day in the chart to inspect its known contributions.")
         text.withCString(encodedAs: UTF16.self) { SetWindowTextW(GetDlgItem(hwnd, 6), $0) }
+        EnableWindow(GetDlgItem(hwnd, 7), !currency.days.isEmpty && context.selectedDay != 0 ? 1 : 0)
+        EnableWindow(GetDlgItem(hwnd, 8), !currency.days.isEmpty && context.selectedDay != currency.days.count - 1 ? 1 : 0)
+        EnableWindow(GetDlgItem(hwnd, 9), context.selectedDay != nil ? 1 : 0)
         EnableWindow(GetDlgItem(hwnd, 3), context.currencyIndex > 0 ? 1 : 0)
         EnableWindow(GetDlgItem(hwnd, 4), context.currencyIndex + 1 < context.snapshot.currencies.count ? 1 : 0)
         InvalidateRect(hwnd, nil, 1)
@@ -169,8 +206,8 @@ enum WindowsSpendHistoryDialog {
 
     private static func plotBounds(_ hwnd: HWND, context: Context) -> RECT {
         var area = RECT(); GetClientRect(hwnd, &area)
-        return RECT(left: context.px(76), top: context.px(42), right: max(context.px(77), area.right - context.px(20)),
-                    bottom: max(context.px(43), area.bottom - context.px(214)))
+        return RECT(left: context.px(76), top: context.px(102), right: max(context.px(77), area.right - context.px(20)),
+                    bottom: max(context.px(103), area.bottom - context.px(254)))
     }
 
     private static func paint(_ hwnd: HWND, context: Context) {
@@ -206,6 +243,17 @@ enum WindowsSpendHistoryDialog {
             var rect = rect
             var value = Array(label.utf16) + [UInt16(0)]
             value.withUnsafeMutableBufferPointer { _ = DrawTextW(dc, $0.baseAddress, -1, &rect, UINT(DT_SINGLELINE | DT_END_ELLIPSIS | DT_NOPREFIX)) }
+        }
+        let columnWidth = max(1, (bounds.right - bounds.left) / 3)
+        for (index, item) in currency.legend.enumerated() {
+            let x = bounds.left + Int32(index % 3) * columnWidth
+            let y = context.px(42 + Int32(index / 3) * 24)
+            if let brush = CreateSolidBrush(palette[item.paletteIndex % palette.count]) {
+                var swatch = RECT(left: x, top: y + 2, right: x + context.px(12), bottom: y + context.px(14))
+                FillRect(dc, &swatch, brush); DeleteObject(brush)
+            }
+            text("[\(item.paletteIndex + 1)] " + item.caption,
+                 RECT(left: x + context.px(18), top: y, right: x + columnWidth - 4, bottom: y + context.px(22)))
         }
         text(currency.code + " · known daily costs", RECT(left: bounds.left, top: context.px(12), right: bounds.right, bottom: bounds.top))
         text(currency.maximumLabel, RECT(left: 0, top: bounds.top, right: bounds.left - 4, bottom: bounds.top + context.px(24)))

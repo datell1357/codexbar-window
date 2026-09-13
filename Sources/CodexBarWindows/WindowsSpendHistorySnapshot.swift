@@ -13,7 +13,12 @@ public struct WindowsSpendHistorySnapshot: Sendable {
         let segments: [Segment]
         let details: String
     }
+    public struct Legend: Sendable {
+        let paletteIndex: Int
+        let caption: String
+    }
     public struct Currency: Sendable {
+        let legend: [Legend]
         let code: String
         let days: [Day]
         let maximum: Double
@@ -27,6 +32,13 @@ public struct WindowsSpendHistorySnapshot: Sendable {
             var calendar = Calendar(identifier: .gregorian)
             calendar.timeZone = group.timeZone
             let indices = Dictionary(uniqueKeysWithValues: group.providers.enumerated().map { ($0.element.id, $0.offset) })
+            let legend = (0..<6).compactMap { color -> Legend? in
+                let names = group.providers.enumerated().filter { $0.offset % 6 == color }.map { entry in
+                    String(LogRedactor.redact(entry.element.displayName).unicodeScalars
+                        .filter { $0.value >= 0x20 && $0.value != 0x7F }.map(String.init).joined().prefix(160))
+                }
+                return names.isEmpty ? nil : Legend(paletteIndex: color, caption: names.joined(separator: ", "))
+            }
             let points = Dictionary(grouping: group.dailyPoints, by: { calendar.startOfDay(for: $0.day) })
             let days = (0..<snapshot.model.requestedDays).compactMap { offset -> Day? in
                 guard let date = calendar.date(byAdding: .day, value: offset, to: group.chartDomain.lowerBound) else { return nil }
@@ -50,10 +62,12 @@ public struct WindowsSpendHistorySnapshot: Sendable {
                            "Period total: " + total,
                            "Covered days: \(group.coveredDayCount) / \(snapshot.model.requestedDays) · " + group.timeZone.identifier,
                            "Bars show known contributions; missing sources can make a daily bar incomplete. Gray ticks indicate no known sample.",
-                           "Click a day to inspect it. Use the currency buttons to switch groups. Refresh closes this captured view."]
+                           "Select a day with the chart or Previous/Next day buttons. All days clears the selection. Use currency buttons to switch groups.",
+                           "Legend colors may group multiple sources; the selected-day text lists exact contributions."]
+            summary.append(contentsOf: legend.map { "Color group \($0.paletteIndex + 1): " + $0.caption })
             if !snapshot.sourceFailures.isEmpty { summary.append("Partial collection: \(snapshot.sourceFailures.count) source(s) failed.") }
             if snapshot.stale { summary.append("Stale collection.") }
-            return Currency(code: group.currencyCode, days: days, maximum: maximum,
+            return Currency(legend: legend, code: group.currencyCode, days: days, maximum: maximum,
                             maximumLabel: WindowsShareStatsFormatting.currency(maximum, code: group.currencyCode),
                             summary: summary.joined(separator: "\r\n"))
         }

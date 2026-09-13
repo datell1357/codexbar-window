@@ -1,5 +1,7 @@
 # Windows 전용 제품 작업 현황
 
+- IMPL-152: 비용 차트 날짜 탐색 버튼/키보드·전체 기간 복귀·색상 범례와 텍스트 대응을 작성했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
 - IMPL-151: native 비용 날짜별 누적 막대/통화 전환/날짜 내역/갱신 연결을 작성했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
 
 - IMPL-150: native Share Stats 미리보기·비율 유지 이미지·읽기 전용 통계·저장/복사 버튼을 연결했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.

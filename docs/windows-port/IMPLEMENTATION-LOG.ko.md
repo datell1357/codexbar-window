@@ -1962,3 +1962,13 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - 비활성/데이터 없음은 안내하고 부분 수집은 실패 source 수와 불완전한 일별 합계 가능성을 표시한다. 개인정보 표시 변경 시 창을 닫는 기존 패턴과 monitor/DPI 위치 처리를 재사용한다.
 
 남은 범위: 시간별 drilldown·키보드 날짜 탐색·색상 legend/접근성·토큰 heatmap·프로젝트/세션 탐색·축과 tooltip 상세 디자인, 실제 GDI/Windows 검증 및 전체 계획 구현. 이 일별 차트가 전체 dashboard parity 완료를 의미하지 않는다.
+
+## IMPL-152 — 비용 차트 날짜 탐색 및 범례
+
+상태 CODE_WRITTEN_UNVERIFIED. 컴파일/빌드/테스트/키보드·차트·UI/검증 미실시. guidelines/COMMITS.md 부재로 핵심 커밋 규칙을 적용한다.
+
+- 이전/다음 날짜·All days 버튼과 Alt mnemonic을 추가하고 날짜 경계에서는 해당 버튼을 비활성화한다. 편집 영역 밖의 Left/Right/Home/End로 날짜를 선택하고 읽기 전용 텍스트의 Ctrl+A는 전체 선택으로 처리한다.
+- 차트에 source palette index와 동일한 색상 범례를 추가했다. 6개 색상 그룹에 포함된 공급자 이름을 대응시키며 긴 이름은 화면에서 말줄임하고 전체 대응은 통계 텍스트에 남긴다. 여러 소스의 색상 공유를 명시한다.
+- 선택 날짜는 강조 테두리와 공급자별 비용 텍스트를 함께 갱신한다. 날짜 탐색 행 및 범례에 맞춰 plot 영역을 조정했다.
+
+남은 범위: DPI font/작은 화면/스크린리더/키보드 실제 검증, 시간별 drilldown·토큰 heatmap·프로젝트/세션 탐색·원본 chart 디자인 parity 및 전체 계획 구현. 동작이나 접근성 완료를 주장하지 않는다.
