@@ -1952,3 +1952,13 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - monitor work area와 DPI 변경에 맞춰 창/컨트롤 위치를 조정하고 Tab/Escape/종료 message loop 및 owner 활성 상태 복원을 작성했다. 개인정보 표시 설정이 바뀌면 timer/message/command 경로에서 창을 숨기고 닫는다.
 
 남은 범위: native preview 렌더링·텍스트 접근성·DPI font·작은 화면·키보드·dialog 중 종료 검증, 계정 변경 시 캡처 취소 정책, 원본 카드 시각 상세 parity, 전체 비용 차트 및 나머지 계획 구현. 미리보기는 실행하지 않았다.
+
+## IMPL-151 — Windows 일별 비용 이력 차트
+
+상태 CODE_WRITTEN_UNVERIFIED. 컴파일/빌드/테스트/차트·UI·수집/검증 미실시. guidelines/COMMITS.md 부재로 핵심 커밋 규칙을 적용한다.
+
+- 기존 SpendDashboardModel의 currency group/daily stack point를 native 화면용 snapshot으로 변환했다. bucket calendar로 모든 기간 날짜를 배치하고 알려진 비용 contribution만 막대로 표시한다. 누락 날짜와 실제 0 값은 구분한다.
+- Open cost history chart 메뉴를 runtime 상태/설정 검사 및 UUID mailbox에 연결했다. GDI로 누적 막대를 그리는 resizable 창, 통화 전환, 클릭 날짜의 공급자별 비용/known subtotal, 읽기 전용 coverage/부분 실패 안내, refresh-and-close를 작성했다.
+- 비활성/데이터 없음은 안내하고 부분 수집은 실패 source 수와 불완전한 일별 합계 가능성을 표시한다. 개인정보 표시 변경 시 창을 닫는 기존 패턴과 monitor/DPI 위치 처리를 재사용한다.
+
+남은 범위: 시간별 drilldown·키보드 날짜 탐색·색상 legend/접근성·토큰 heatmap·프로젝트/세션 탐색·축과 tooltip 상세 디자인, 실제 GDI/Windows 검증 및 전체 계획 구현. 이 일별 차트가 전체 dashboard parity 완료를 의미하지 않는다.
