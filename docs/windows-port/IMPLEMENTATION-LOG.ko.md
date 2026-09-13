@@ -2563,3 +2563,11 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - 활동 기록이 존재하지만 비용/토큰 합계가 모두 미확인인 프로젝트를 목록에서 제외하던 조건을 변경했다. 기간/coverage 안의 기록이 전혀 없는 프로젝트는 계속 제외한다.
 - 남은 소요: 프로젝트별 모델 분석, 대규모 탐색 UX, Windsurf 자동 가져오기 및 전체 계획 나머지.
 - CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·UI·실제 로그 검증 미실행.
+
+## IMPL-218 — 프로젝트별 모델 분석
+
+- 프로젝트의 선택 기간/소스 coverage 조건을 통과한 WindowEntry를 모아 기존 modelSummary와 부분 Codex/미가격 모델 보존 정책으로 모델 내역을 만든다. 제공자 전체 entry나 total을 프로젝트 집계에 사용하지 않는다.
+- 프로젝트 row에 모델 목록/completeness를 보존하고 상세 화면에 모델별 비용·토큰 유형을 표시한다. 불완전 내역에는 Partial과 누락 안내를 표시하며 모델 목록이 없으면 그 사실을 명시한다.
+- 원래 소스의 통화 배수와 모델 집계의 unknown/overflow 규칙을 사용한다. 새 집계 정책을 별도로 도입하지 않는다.
+- 남은 소요: 대규모 항목 탐색 UX, Windsurf 자동 가져오기 및 전체 계획의 다른 Windows parity 항목.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·UI·실제 데이터 검증 미실행.

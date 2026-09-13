@@ -121,6 +121,8 @@ struct WindowsSpendDashboardModel: Equatable, Sendable {
         let totalCost: Double?
 
         var daily: [ProjectDayRow] = []
+        var models: [ModelRow] = []
+        var modelHistoryCompleteness: ModelHistoryCompleteness = .incomplete
 
         var id: String {
             "\(self.sourceID):\(self.projectName)"
@@ -678,6 +680,9 @@ struct WindowsSpendDashboardModel: Equatable, Sendable {
         }
 
         struct Accumulator {
+            let input: ProviderInput
+            let costMultiplier: Double
+            var entries: [WindowEntry] = []
             let provider: UsageProvider
             let providerName: String
             let path: String?
@@ -700,6 +705,8 @@ struct WindowsSpendDashboardModel: Equatable, Sendable {
                 guard !name.isEmpty else { continue }
                 let key = Key(sourceID: input.id, name: name)
                 var aggregate = aggregates[key] ?? Accumulator(
+                    input: input,
+                    costMultiplier: summary.costMultiplier,
                     provider: input.provider,
                     providerName: input.modelProviderName,
                     path: project.path,
@@ -710,6 +717,7 @@ struct WindowsSpendDashboardModel: Equatable, Sendable {
                           bounds.contains(day),
                           summary.coveredInterval?.contains(day) == true
                     else { continue }
+                    aggregate.entries.append(WindowEntry(day: day, entry: entry))
                     var daily = aggregate.daily[day] ?? DayAccumulator()
                     if let tokens = Self.nonnegative(entry.totalTokens) {
                         daily.tokens = Self.add(tokens, to: daily.tokens, overflowed: &daily.overflowedTokens)
@@ -747,24 +755,36 @@ struct WindowsSpendDashboardModel: Equatable, Sendable {
 
         return aggregates
             .map { key, value in
-                ProjectRow(
+                let totalTokens = value.sawTokens && !value.invalidTokens && !value.overflowedTokens
+                    ? value.tokens : nil
+                let totalCost = value.sawCost && !value.invalidCost && !value.overflowedCost
+                    ? value.cost : nil
+                // The source supplies identity and conversion only. Model history is scoped
+                // exclusively to this project's covered entries, never the provider's total.
+                let scoped = InputSummary(input: value.input, costMultiplier: value.costMultiplier,
+                    entries: value.entries, totalTokens: totalTokens, totalCost: totalCost,
+                    coveredInterval: nil, coveredDayCount: value.daily.count,
+                    hasInvalidCostHistory: value.invalidCost || value.overflowedCost)
+                let models = Self.modelSummary(summaries: [scoped])
+                let canDisplay = totalCost != nil
+                    ? (models.completeness == .complete || Self.canRetainPartialCodexModelHistory(scoped))
+                    : Self.canRetainUnpricedModelHistory(scoped)
+                return ProjectRow(
                     rank: 0,
                     provider: value.provider,
                     providerName: value.providerName,
                     sourceID: key.sourceID,
                     projectName: key.name,
                     path: value.path,
-                    totalTokens: value.sawTokens && !value.invalidTokens && !value.overflowedTokens
-                        ? value.tokens
-                        : nil,
-                    totalCost: value.sawCost && !value.invalidCost && !value.overflowedCost
-                        ? value.cost
-                        : nil,
+                    totalTokens: totalTokens,
+                    totalCost: totalCost,
                     daily: value.daily.map { day, daily in
                         ProjectDayRow(day: day,
                             totalTokens: !daily.invalidTokens && !daily.overflowedTokens ? daily.tokens : nil,
                             totalCost: !daily.invalidCost && !daily.overflowedCost ? daily.cost : nil)
-                    }.sorted { $0.day > $1.day })
+                    }.sorted { $0.day > $1.day },
+                    models: canDisplay ? models.rows : [],
+                    modelHistoryCompleteness: canDisplay ? models.completeness : .incomplete)
             }
             .filter { row in
                 // Retain attributed days even when every amount is unknown; missing coverage
@@ -794,7 +814,9 @@ struct WindowsSpendDashboardModel: Equatable, Sendable {
                     path: row.path,
                     totalTokens: row.totalTokens,
                     totalCost: row.totalCost,
-                    daily: row.daily)
+                    daily: row.daily,
+                    models: row.models,
+                    modelHistoryCompleteness: row.modelHistoryCompleteness)
             }
     }
 

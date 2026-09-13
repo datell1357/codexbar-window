@@ -123,6 +123,17 @@ enum WindowsSpendSummary {
                     "Cost: " + cost(project.totalCost, currency: group.currencyCode),
                     "Tokens: " + tokens(project.totalTokens)]
                 if !hidePersonalInfo, let path = project.path { rows.append("Path: " + safe(path)) }
+                rows.append("Models (selected project and period)")
+                if project.modelHistoryCompleteness == .incomplete {
+                    rows.append("Incomplete model coverage: available rows may not explain the project total.")
+                }
+                if project.models.isEmpty { rows.append("No publishable model breakdown is available for this project.") }
+                for model in project.models {
+                    let rank = project.modelHistoryCompleteness == .complete ? "#\(model.rank) " : "Partial · "
+                    rows.append(rank + safe(model.modelName) + " · " + cost(model.totalCost, currency: group.currencyCode)
+                        + " · " + tokens(model.totalTokens) + " tokens")
+                    rows.append(tokenMixDetails(model.tokenMix))
+                }
                 rows.append("Daily history (captured days within source coverage)")
                 rows.append("Missing days are not inferred as zero. Unknown amounts preserve incomplete coverage.")
                 let formatter = DateFormatter()
