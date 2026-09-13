@@ -2852,3 +2852,12 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - 이 모듈은 디렉터리 탐색만 수행한다. LevelDB/cookie/키/credential 파일은 읽지 않으며 실제 인증 가능한 세션을 찾았다는 의미가 아니다.
 - 남은 소요: LevelDB snapshot/log/table 해석과 origin별 최신 상태 복원, Windsurf session 확인/계정 UI, custom root/추가 브라우저 지원 및 전체 계획 나머지.
 - CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·실제 브라우저 파일 조회 검증 미실행.
+
+## IMPL-252 — LevelDB 물리 로그 파서
+
+- 원본 https://github.com/google/leveldb/blob/main/doc/log_format.md 및 util/crc32c.h를 읽고 32KiB block, 7-byte header, FULL/FIRST/MIDDLE/LAST와 masked CRC32C 계약을 구현했다. 원본은 가변 main 참조이다.
+- 입력 64MiB, 논리 record 4MiB, 결과 100000개 상한과 record 경계 취소 확인을 포함한다. checksum, block 경계, fragment 순서, padding을 검사한다.
+- 잘린 로그/미완성 fragment/알 수 없는 type은 전체 실패로 처리한다. 복구된 일부 record를 최신 인증 상태라고 제공하지 않는다.
+- 메모리 Data만 해석하는 모듈이다. 실제 파일 읽기, WriteBatch/manifest/table 처리, origin별 최신 상태와 삭제 복원은 다음 단계이다.
+- 남은 소요: snapshot 및 table/log 상태 통합, Chromium key encoding, Windsurf importer/UI, 실제 Windows 검증 및 전체 계획 나머지.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 파서 실행·빌드·테스트·lint·실제 브라우저 파일 조회 미실행.
