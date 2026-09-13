@@ -7,8 +7,8 @@ public enum ZedProviderDescriptor {
         #if os(Windows)
         ProviderCredentialAdapter(tokenAccountSupport: TokenAccountSupport(
             title: "Zed credentials",
-            subtitle: "Enter the numeric user ID and access token for the same production Zed account, separated by one space.",
-            placeholder: "userID accessToken",
+            subtitle: "Enter the user ID and access token separated by one space. For a custom server, append its HTTPS origin after another space.",
+            placeholder: "userID accessToken [https://server]",
             injection: .environment(key: WindowsZedCredentialsReader.environmentKey),
             requiresManualCookieSource: false, cookieName: nil))
         #else
@@ -83,9 +83,11 @@ struct ZedLocalFetchStrategy: ProviderFetchStrategy {
     func fetch(_ context: ProviderFetchContext) async throws -> ProviderFetchResult {
         _ = context
         #if os(Windows)
+        let reader = WindowsZedCredentialsReader(environment: context.env)
+        let settings = try reader.settings()
         let snapshot = try await ZedStatusProbe(
-            credentialsReader: WindowsZedCredentialsReader(environment: context.env),
-            settingsLoader: { nil }).fetch()
+            credentialsReader: reader,
+            settingsLoader: { settings }).fetch()
         return self.makeResult(usage: snapshot.toUsageSnapshot(), sourceLabel: "manual API")
         #else
         let snapshot = try await ZedStatusProbe().fetch()

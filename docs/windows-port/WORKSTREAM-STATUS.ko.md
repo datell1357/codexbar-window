@@ -1,5 +1,7 @@
 # Windows 전용 제품 작업 현황
 
+- IMPL-231: Zed Windows 자격증명에 선택적 HTTPS 서버 origin을 묶고 사용자 서버 조회를 연결했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
 - IMPL-230: Zed Windows 상세에 예측 횟수/한도/청구 상태를 전달하고 청구 경과율을 수집 시각에 고정한다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
 
 - IMPL-229: Zed 수동 계정의 저장 전 형식 검사와 입력 유지 안내를 연결하고 조회 파서를 공유한다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.

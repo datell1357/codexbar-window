@@ -2674,3 +2674,12 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - Windows 청구 경과율과 reset 문구는 snapshot.updatedAt을 사용한다. 상세에 이 막대가 경과 시간이지 사용량 비율이 아님을 표시한다.
 - 남은 소요: 실제 Windows 렌더링 검증, Zed 자동 인증/서버 설정과 전체 계획 나머지.
 - CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·UI·API 검증 미실행.
+
+## IMPL-231 — Zed 수동 계정의 서버 바인딩
+
+- 기존 `userID accessToken`은 production Zed로 유지하고 `userID accessToken https://server`를 선택적 확장 입력으로 제공한다. 서버와 토큰은 동일 계정의 기존 보호 credential 저장에 포함된다.
+- HTTPS origin만 허용하며 로그인 정보/쿼리/fragment/하위 경로/잘못된 port는 거부한다. scheme/host와 root slash를 정규화한다.
+- reader가 같은 bundle에서 ZedClientSettings(credentialsURL/serverURL)를 만들고 loadCredentials 호출의 서비스 주소와 일치할 때만 토큰을 반환한다. 원본 cloudAPIURL 매핑과 응답 ID 검사를 사용한다.
+- 계정 추가/교체 안내와 공통 구조 검사도 확장 형식을 사용한다. 로컬 편집기 설정이나 별도 서버 환경 변수가 저장된 토큰의 전송 대상을 바꾸지 않는다.
+- 남은 소요: Zed 편집기 자동 인증, 사용자 서버 실제 호환성/전송 동작 검증, Chromium/Windsurf 지원과 전체 계획 나머지.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 파서·빌드·테스트·lint·UI·API 검증 미실행.
