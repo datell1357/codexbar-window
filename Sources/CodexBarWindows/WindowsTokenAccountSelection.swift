@@ -182,12 +182,15 @@ public enum WindowsTokenAccountMetadataLoadResult: Sendable {
     case failed
 }
 
-/// Removal confirmation contains no account name or credential.
+/// Removal confirmation includes a privacy-filtered label, never a credential.
 public struct WindowsTokenAccountRemovalSnapshot: Sendable {
     public let ticketID: UUID
     public let provider: UsageProvider
     public let removesSelectedAccount: Bool
     public let remainingAccountCount: Int
+    public let accountPosition: Int
+    public let accountTitle: String
+    public let hidePersonalInfo: Bool
 }
 
 public enum WindowsTokenAccountRemovalLoadResult: Sendable {

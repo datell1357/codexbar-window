@@ -486,8 +486,16 @@ public actor WindowsUsageRuntime {
                 revision: try Self.credentialEditRevision(account), expiresAt: Date().addingTimeInterval(600))
             let selectedID = data.accounts[data.clampedActiveIndex()].id
             self.accountRemovalTicket = .init(edit: edit, selectedID: selectedID, accountIDs: data.accounts.map(\.id))
+            let position = (data.accounts.firstIndex { $0.id == accountID } ?? 0) + 1
+            let hide = WindowsUsagePresentationSettings.load().hidePersonalInfo
+            let filtered = String(LogRedactor.redact(account.label).unicodeScalars.map { scalar in
+                scalar.value < 0x20 || scalar.value == 0x7F || (0x202A...0x202E).contains(scalar.value) ||
+                    (0x2066...0x2069).contains(scalar.value) ? " " : String(scalar)
+            }.joined().prefix(160)).trimmingCharacters(in: .whitespacesAndNewlines)
+            let title = hide || filtered.isEmpty ? "Account \(position)" : filtered
             return .loaded(.init(ticketID: edit.id, provider: provider,
-                removesSelectedAccount: selectedID == accountID, remainingAccountCount: data.accounts.count - 1))
+                removesSelectedAccount: selectedID == accountID, remainingAccountCount: data.accounts.count - 1,
+                accountPosition: position, accountTitle: title, hidePersonalInfo: hide))
         } catch { return .failed }
     }
 

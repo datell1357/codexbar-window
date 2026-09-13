@@ -1652,3 +1652,13 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - 원격 계정이나 토큰 취소와 로컬 config 제거를 구분한다. 실제 계정 삭제/인증 요청은 실행하지 않았다.
 
 남은 범위: 확인 창의 대상 식별 UX, Antigravity shared OAuth cache 정리, 마지막 계정의 source parity, Windows 클릭/취소/동시 변경/종료 검증 및 전체 기능 구현.
+
+## IMPL-121 — 삭제 대상 식별과 privacy-bound 확인
+
+상태 CODE_WRITTEN_UNVERIFIED. 컴파일/빌드/테스트/UI/실제 삭제/검증 미실시. guidelines/COMMITS.md 부재로 핵심 커밋 규칙을 적용한다.
+
+- 삭제 ticket과 같은 config snapshot에서 계정 위치 및 privacy-filtered label을 캡처한다. 이름은 redactor와 길이 제한을 적용하고 제어 문자/방향 제어 문자를 공백으로 바꾼다. 숨김 모드에서는 Account N으로 표시한다.
+- 확인 창에 공급자·계정 이름·목록 위치를 명시한다. runtime의 기존 account revision 및 목록 순서 비교는 확인 후 대상 변경을 거절한다.
+- snapshot privacy 상태가 확인 창 열기 전 또는 Yes 후 현재 설정과 달라지면 ticket을 취소하며 삭제하지 않는다. 실제 계정 작업은 실행하지 않았다.
+
+남은 범위: 이미 열린 native MessageBox의 외부 privacy 변경 시 즉시 닫기, provider shared credential cleanup, Windows 상호작용 검증 및 전체 계획 구현.

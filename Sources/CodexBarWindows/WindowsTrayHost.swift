@@ -599,6 +599,14 @@ public final class WindowsTrayHost: @unchecked Sendable {
             switch loaded {
             case let .loaded(snapshot):
                 let ticketID = snapshot.ticketID
+                guard snapshot.hidePersonalInfo == WindowsUsagePresentationSettings.load().hidePersonalInfo else {
+                    self.onAccountRemovalCancel(ticketID)
+                    self.mailboxLock.lock()
+                    if self.tokenAccountPendingID == requestID { self.tokenAccountPendingID = nil }
+                    self.mailboxLock.unlock()
+                    self.showMessage("Privacy settings changed. Reopen Saved accounts before removing an account.", caption: "Saved accounts")
+                    return
+                }
                 let providerName = ProviderDescriptorRegistry.descriptor(for: snapshot.provider).metadata.displayName
                 let impact: String
                 if snapshot.remainingAccountCount == 0 {
@@ -608,7 +616,8 @@ public final class WindowsTrayHost: @unchecked Sendable {
                 } else {
                     impact = "The currently selected saved account will stay selected."
                 }
-                let body = "Remove the saved account selected from the " + providerName + " menu?\n\n" + impact +
+                let body = "Remove this saved account from " + providerName + "?\n\nAccount: " + snapshot.accountTitle +
+                    "\nPosition in saved accounts: " + String(snapshot.accountPosition) + "\n\n" + impact +
                     "\nRemaining saved accounts: " + String(snapshot.remainingAccountCount) +
                     "\n\nThis removes its saved credential from CodexBar configuration. It does not revoke the remote account or token. To restore it, add the credential again."
                 self.remoteEditorOpen = true
@@ -619,12 +628,16 @@ public final class WindowsTrayHost: @unchecked Sendable {
                 }
                 self.remoteEditorOpen = false
                 if !self.quitInvoked { PostMessageW(window, Self.wakeMessage, 0, 0) }
-                if !self.quitInvoked, choice == IDYES {
+                if !self.quitInvoked, choice == IDYES,
+                   snapshot.hidePersonalInfo == WindowsUsagePresentationSettings.load().hidePersonalInfo {
                     self.onAccountRemovalSave(requestID, ticketID)
                     return
                 }
                 self.onAccountRemovalCancel(ticketID)
                 if choice == 0 { message = "Could not open the removal confirmation. No removal was requested." }
+                else if choice == IDYES {
+                    message = "Privacy settings changed during confirmation. No removal was requested. Reopen Saved accounts."
+                }
             case .unavailable: message = "The saved account is no longer available. Refresh usage and try again."
             case .refreshInProgress: message = "Usage is refreshing. Try again after it finishes."
             case .shuttingDown: break
