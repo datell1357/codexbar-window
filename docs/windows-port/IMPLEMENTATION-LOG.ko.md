@@ -1672,3 +1672,13 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - 삭제 확인에 일치 Antigravity cache 정리 영향을 추가했다. 실제 파일/계정/캐시는 읽거나 삭제하지 않았다.
 
 남은 범위: 실패 후 재시도 UI, 외부 프로세스 동시 cache 교체, 자동 refresh의 잔여 cache 재사용 정책, shared cache 자체 보호 저장, Windows 실행 검증 및 전체 기능 구현.
+
+## IMPL-123 — cache cleanup 재시도 및 fetch 보류
+
+상태 CODE_WRITTEN_UNVERIFIED. 컴파일/빌드/테스트/캐시 접근·삭제/검증 미실시. guidelines/COMMITS.md 부재로 핵심 커밋 규칙을 적용한다.
+
+- 이미 확인된 Antigravity 삭제의 cache cleanup 실패를 runtime 내부에 보관한다. refresh 시 최신 계정 목록으로 재시도하여 재추가된 동일 계정은 보존한다.
+- 실패가 남아 있으면 해당 refresh에서 Antigravity fetch를 생략하고 generic 오류 행과 copy error를 표시한다. 다른 공급자 수집은 계속한다. 성공하거나 캐시가 이미 없으면 pending을 제거한다.
+- UI 부분 실패 안내에 현재 앱 세션의 수집 보류와 refresh 재시도를 설명한다. pending credential은 출력·영구 저장하지 않고 shutdown에서 비운다.
+
+남은 범위: 재시작 이후의 지속 가능한 차단/복구 기록, 프로세스 간 cache 교체 경합, shared cache 자체 보호 저장, 재시도 UI와 Windows 실행 검증. 현재 보호는 runtime 프로세스 수명에 한정된다.

@@ -140,6 +140,8 @@ public actor WindowsUsageRuntime {
         let accountIDs: [UUID]
     }
     private var accountRemovalTicket: AccountRemovalTicket?
+    // Private, process-local retry state for already-confirmed removals. Never publish these credentials.
+    private var pendingAntigravityRemovals: [UUID: ProviderTokenAccount] = [:]
 
 
     private var quotaWarningGeneration: UInt64 = 0
@@ -541,6 +543,7 @@ public actor WindowsUsageRuntime {
             } catch {
                 // Config removal already succeeded. Report the partial outcome without secrets.
                 cleanupFailed = true
+                if provider == .antigravity { self.pendingAntigravityRemovals[removed.id] = removed }
             }
             self.latestProviderConfigs[ticket.providerID] = entry
             if self.credentialEditTicket?.providerID == ticket.providerID,
@@ -555,6 +558,21 @@ public actor WindowsUsageRuntime {
             self.publishRenderEntries(settings: WindowsUsagePresentationSettings.load())
             return cleanupFailed ? .removedWithCacheCleanupFailure : .removed
         } catch { return .failed }
+    }
+
+    private func retryPendingAntigravityRemovals(config: CodexBarConfig) {
+        guard !self.pendingAntigravityRemovals.isEmpty else { return }
+        let remaining = config.providerConfig(for: UsageProvider.antigravity.instanceID)?.tokenAccounts?.accounts ?? []
+        // A fresh list matters: a user may have re-added the same identity since the failure.
+        for (id, removed) in Array(self.pendingAntigravityRemovals) {
+            do {
+                try WindowsAccountRemovalCleanup.removeSharedCredentialIfNeeded(
+                    provider: .antigravity, removed: removed, remaining: remaining)
+                self.pendingAntigravityRemovals.removeValue(forKey: id)
+            } catch {
+                // Keep the account blocked for this refresh; no credential or filesystem error is logged.
+            }
+        }
     }
 
     public func cancelTokenAccountCredentialEdit(ticketID: UUID) {
@@ -1053,6 +1071,7 @@ public actor WindowsUsageRuntime {
             }
             let config = try self.configStore.loadOrCreateDefault()
             self.reconcileConfiguredAccounts(config)
+            self.retryPendingAntigravityRemovals(config: config)
             let enabledIDs = Set(config.enabledProviders())
             self.latestEnabledProviderIDs = enabledIDs
             self.predictivePaceWarningKeys = self.predictivePaceWarningKeys.filter {
@@ -1109,6 +1128,12 @@ public actor WindowsUsageRuntime {
                         presentationSettings: presentationSettings)
                     if let presentation = self.presentations[instanceID] { entries.append(.presentation(presentation)) }
                     else { entries.append(contentsOf: fetched.map(RenderEntry.row)) }
+                    continue
+                }
+                if provider == .antigravity, !self.pendingAntigravityRemovals.isEmpty {
+                    let message = "Antigravity: shared authentication cache cleanup is pending. Usage collection is paused; refresh retries cleanup."
+                    self.providerCopyErrors[provider.rawValue] = message
+                    entries.append(.row(message))
                     continue
                 }
                 if provider == .codex {
@@ -1353,6 +1378,7 @@ public actor WindowsUsageRuntime {
         self.observedCodexOwner = nil
         self.credentialEditTicket = nil
         self.accountRemovalTicket = nil
+        self.pendingAntigravityRemovals.removeAll()
         await CLIProbeSessionResetter.resetAll()
     }
 
