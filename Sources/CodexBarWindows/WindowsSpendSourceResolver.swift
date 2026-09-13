@@ -11,6 +11,13 @@ import Crypto
 enum WindowsSpendSourceResolver {
     enum Failure: Error { case duplicateProviders, duplicateAccounts, codexContextMissing, codexHomeUnavailable }
 
+    static func resolve(config: CodexBarConfig, settings: WindowsSpendSettings,
+                        environment: [String: String], cacheRoot: URL,
+                        codexContext: CodexAccountContextSnapshot?) throws -> [WindowsSpendSnapshotLoader.Source] {
+        try self.resolve(config: config, costEnabledProviders: settings.enabledProviders(config: config),
+                         environment: environment, cacheRoot: cacheRoot, codexContext: codexContext)
+    }
+
     static func resolve(config: CodexBarConfig, costEnabledProviders: Set<UsageProvider>,
                         environment: [String: String], cacheRoot: URL,
                         codexContext: CodexAccountContextSnapshot?,

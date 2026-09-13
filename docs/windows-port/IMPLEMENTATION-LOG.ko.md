@@ -1822,3 +1822,13 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - provider/account UUID/home의 길이 구분 digest로 opaque source ID와 개별 cache root를 만든다. 표시에는 공급자 이름만 사용하고 구독 이름은 미확정 nil로 둔다.
 
 남은 범위: cost enabled 설정 resolver·Main/controller lifecycle 연결, 여러 visible Codex source 동시 집계 및 ledger/cache ownership parity, OpenCodeX 입력·구독 정보·native dashboard/share UI, Windows 실행 검증. 현재는 공급자별 선택 계정의 native source 구성 단계다.
+
+## IMPL-138 — Windows 비용 설정 및 capability gating
+
+상태 CODE_WRITTEN_UNVERIFIED. 컴파일/빌드/테스트/defaults 접근·수집/검증 미실시. guidelines/COMMITS.md 부재로 핵심 커밋 규칙을 적용한다.
+
+- Windows 전용 suite에 전체 비용 수집 opt-in, Codex local ledger, 기간·통화·source 숨김 옵션을 읽고 쓰는 설정 모델을 작성했다. 원본처럼 수집 기본값은 off이며 지원 여부는 tokenCost.supportsTokenCost를 사용한다.
+- 활성 provider와 비용 수집 설정의 교집합을 source resolver로 전달한다. 대시보드 기간은 1...365로 제한하고 통화/source 식별자 형식을 정리한다. 통화 변환 지원 여부는 기존 집계 모델이 판단한다.
+- 옵션은 controller 입력으로 변환하며 설정을 읽는 것만으로 scan을 실행하지 않는다. 실제 설정 변경은 실행하지 않았다.
+
+남은 범위: native 설정 UI와 Main/host lifecycle 연결, ledger 수집 정책·timezone pinning·OpenCodeX source, 전체 비용/공유 UI와 Windows 검증. UserDefaults save는 OS durable write 검증을 의미하지 않는다.

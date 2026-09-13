@@ -1,5 +1,7 @@
 # Windows 전용 제품 작업 현황
 
+- IMPL-138: Windows 비용 수집 opt-in·Codex ledger 예외·capability gating 및 대시보드 옵션 설정을 작성했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
 - IMPL-137: config/선택 계정/Codex source를 native spend loader 입력으로 변환하는 resolver를 작성했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
 
 - IMPL-136: 비용 수집의 source별 실패와 성공 model을 함께 게시하는 partial 상태를 작성했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
