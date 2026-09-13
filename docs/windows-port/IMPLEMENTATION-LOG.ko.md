@@ -2931,3 +2931,12 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - 복원한 첫/마지막 내부 키는 manifest smallest/largest와 일치해야 한다. 100000 mutation/64MiB 복원 예산과 취소를 적용한다.
 - 남은 소요: CURRENT/manifest/table/log 일관된 확보와 통합, 추가 compression, Chromium origin/Windsurf 연결 및 전체 계획 나머지.
 - CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 파서 실행·빌드·테스트·lint·실제 브라우저 파일 조회 미실행.
+
+## IMPL-261 — LevelDB CURRENT와 파일 이름 해석
+
+- 원본 https://github.com/google/leveldb/blob/main/db/filename.cc를 읽고 MANIFEST-number 및 number.log/ldb/sst 분류를 구현했다.
+- CURRENT는 64byte 이하 ASCII manifest basename과 마지막 newline만 허용한다. 경로/추가 줄/제어 문자/0 또는 overflow 번호를 해석하지 않는다.
+- inventory는 100000개 이름 상한과 취소를 적용하고 경로 성분을 거부한다. 동일 kind/number의 .ldb/.sst 또는 zero-padding alias는 ambiguous 오류로 반환한다.
+- 파일 자체를 읽거나 최신 DB 상태로 사용하지 않는다. 일관된 디렉터리 확보 단계의 입력 해석 모듈이다.
+- 남은 소요: LOCK/CURRENT/manifest 및 선택된 table/log 파일 확보와 통합, Chromium/Windsurf 연결 및 전체 계획 나머지.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 파서 실행·빌드·테스트·lint·실제 브라우저 파일 조회 미실행.

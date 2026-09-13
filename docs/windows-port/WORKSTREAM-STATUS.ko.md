@@ -1,5 +1,7 @@
 # Windows 전용 제품 작업 현황
 
+- IMPL-261: LevelDB CURRENT 및 번호별 파일 inventory 해석을 작성했다. 실제 파일 확보는 남아 있다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
 - IMPL-260: SSTable index/data 순회, 내부 키 정렬, index 및 manifest 경계 검사를 연결했다. 파일 snapshot 통합은 남아 있다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
 
 - IMPL-259: SSTable 블록의 prefix/restart 기반 키·값 복원 파서를 작성했다. index 순회와 정렬 검사는 남아 있다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
