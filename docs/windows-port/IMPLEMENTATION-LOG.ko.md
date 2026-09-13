@@ -1702,3 +1702,13 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - 기존 파일은 다음 성공적인 저장 때 교체되며 이번 작업에서 사용자 파일이나 ACL을 실제 변경하지 않았다.
 
 남은 범위: 이미 존재하는 파일의 read-time ACL 보정 정책, 디렉터리/프로세스 간 동시 쓰기, ACL·교체 실패·강제 종료 Windows 검증 및 전체 구현.
+
+## IMPL-126 — 기존 계정 Personal/Team 선택 UX
+
+상태 CODE_WRITTEN_UNVERIFIED. 컴파일/빌드/테스트/UI/검증 미실시. guidelines/COMMITS.md 부재로 핵심 커밋 규칙을 적용한다.
+
+- z.ai scope 자유 입력을 Personal/Team 라디오로 대체했다. scope를 실제 선택하지 않은 경우 원본 값을 그대로 patch에 사용하며 nil 기본 personal 표시가 불필요한 저장 변경을 만들지 않도록 한다.
+- personal에서는 org/project를 비활성화하고 저장값을 보존한다. team에서 편집/비우기 후 personal로 이동하면 명시적 변경을 반영할 수 있다. team 저장은 기존 필수 값 규칙을 유지한다.
+- 알 수 없는 기존 scope는 선택 없음과 안내로 표시한다. 새 control을 DPI 배치와 font 업데이트에 포함했다.
+
+남은 범위: 실제 라디오 키보드/접근성 동작, 작은 화면·legacy 값 편집 검증과 전체 계획 구현.

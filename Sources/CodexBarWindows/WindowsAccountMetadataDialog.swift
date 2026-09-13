@@ -11,8 +11,12 @@ enum WindowsAccountMetadataDialog {
         let support: TokenAccountSupport
         let provider: UsageProvider
         let snapshot: WindowsTokenAccountMetadataSnapshot
+        var selectedScope: String?
+        var scopeEdited = false
         init(support: TokenAccountSupport, snapshot: WindowsTokenAccountMetadataSnapshot) {
             self.support = support; self.provider = snapshot.provider; self.snapshot = snapshot
+            let scope = snapshot.usageScope?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() ?? "personal"
+            self.selectedScope = ["personal", "team"].contains(scope) ? scope : nil
         }
         var result: Result = .cancelled
         var closed = false
@@ -89,7 +93,9 @@ enum WindowsAccountMetadataDialog {
             return trimmed.isEmpty ? nil : trimmed
         }
         let snapshot = context.snapshot
-        let scope = read(105, original: snapshot.usageScope)
+        let scope = context.provider == .zai
+            ? (context.scopeEdited ? context.selectedScope : snapshot.usageScope)
+            : read(105, original: snapshot.usageScope)
         let organization = read(107, original: snapshot.organizationID)
         let workspace = read(109, original: snapshot.workspaceID)
         let invalid = WindowsAccountInputRules.invalidField(label: "", token: "metadata", scope: scope,
@@ -131,6 +137,12 @@ enum WindowsAccountMetadataDialog {
                 (108, "&Organization ID", 107, context.support.showsOrganizationField || context.support.showsTeamModeControls, context.snapshot.organizationID),
                 (110, context.provider == .zai ? "&Project ID" : "&Workspace ID", 109, context.support.showsTeamModeControls, context.snapshot.workspaceID)]
             for (labelID, title, editID, visible, value) in rows where visible {
+                if editID == 105, context.provider == .zai {
+                    guard Self.control(hwnd, "STATIC", "Usage scope", labelID, 0, 0, 0, 1, 1) != nil,
+                          Self.control(hwnd, "BUTTON", "&Personal", 105, DWORD(WS_TABSTOP | WS_GROUP | BS_AUTORADIOBUTTON), 0, 0, 1, 1) != nil,
+                          Self.control(hwnd, "BUTTON", "&Team", 111, DWORD(WS_TABSTOP | BS_AUTORADIOBUTTON), 0, 0, 1, 1) != nil else { return -1 }
+                    continue
+                }
                 guard Self.control(hwnd, "STATIC", title, labelID, 0, 0, 0, 1, 1) != nil,
                       let edit = Self.control(hwnd, "EDIT", value ?? "", editID,
                           DWORD(WS_TABSTOP | WS_BORDER | ES_AUTOHSCROLL), 0, 0, 1, 1) else { return -1 }
@@ -143,6 +155,7 @@ enum WindowsAccountMetadataDialog {
                   Self.control(hwnd, "BUTTON", "Save", 1, DWORD(WS_TABSTOP | BS_DEFPUSHBUTTON), 0, 0, 1, 1) != nil,
                   Self.control(hwnd, "BUTTON", "Cancel", 2, DWORD(WS_TABSTOP | BS_PUSHBUTTON), 0, 0, 1, 1) != nil else { return -1 }
             Self.updateFont(hwnd, context: context)
+            Self.updateScope(hwnd, context: context)
             Self.layout(hwnd, context: context)
             return 0
         case UINT(WM_SIZE): Self.layout(hwnd, context: context); return 0
@@ -165,6 +178,12 @@ enum WindowsAccountMetadataDialog {
             switch Int32(wParam & 0xffff) {
             case 1: Self.save(hwnd, context: context)
             case 2: DestroyWindow(hwnd)
+            case 105, 111:
+                if context.provider == .zai {
+                    context.selectedScope = Int32(wParam & 0xffff) == 111 ? "team" : "personal"
+                    context.scopeEdited = true
+                    Self.updateScope(hwnd, context: context)
+                }
             default: break
             }
             return 0
@@ -176,6 +195,22 @@ enum WindowsAccountMetadataDialog {
         default: return DefWindowProcW(hwnd, message, wParam, lParam)
         }
     }
+    private static func updateScope(_ hwnd: HWND, context: Context) {
+        guard context.provider == .zai else { return }
+        SendMessageW(GetDlgItem(hwnd, 105), UINT(BM_SETCHECK), WPARAM(context.selectedScope == "personal" ? BST_CHECKED : BST_UNCHECKED), 0)
+        SendMessageW(GetDlgItem(hwnd, 111), UINT(BM_SETCHECK), WPARAM(context.selectedScope == "team" ? BST_CHECKED : BST_UNCHECKED), 0)
+        for id in [Int32(107), 108, 109, 110] {
+            EnableWindow(GetDlgItem(hwnd, id), context.selectedScope == "personal" ? 0 : 1)
+        }
+        let guidance: String
+        switch context.selectedScope {
+        case "personal": guidance = "Personal usage ignores organization and project fields. Stored values are preserved; choose Team to edit or clear them."
+        case "team": guidance = "Team usage requires both Organization ID and Project ID. Your credential and account selection are preserved."
+        default: guidance = "The stored scope is not recognized. Choose Personal or Team before saving."
+        }
+        guidance.withCString(encodedAs: UTF16.self) { SetWindowTextW(GetDlgItem(hwnd, 102), $0) }
+    }
+
     private static func updateFont(_ hwnd: HWND, context: Context) {
         var metrics = NONCLIENTMETRICSW()
         metrics.cbSize = UINT(MemoryLayout<NONCLIENTMETRICSW>.size)
@@ -184,7 +219,7 @@ enum WindowsAccountMetadataDialog {
               let font = CreateFontIndirectW(&metrics.lfMessageFont) else { return }
         let previous = context.font
         context.font = font
-        for id in [Int32(102), 105, 106, 107, 108, 109, 110, 1, 2] {
+        for id in [Int32(102), 105, 106, 107, 108, 109, 110, 111, 1, 2] {
             if let control = GetDlgItem(hwnd, id) {
                 SendMessageW(control, UINT(WM_SETFONT), WPARAM(Int(bitPattern: font)), 1)
             }
@@ -201,7 +236,11 @@ enum WindowsAccountMetadataDialog {
         for (labelID, editID) in [(Int32(106), Int32(105)), (108, 107), (110, 109)] {
             guard let edit = GetDlgItem(hwnd, editID) else { continue }
             MoveWindow(GetDlgItem(hwnd, labelID), px(16), px(y), width, px(22), 1)
-            MoveWindow(edit, px(16), px(y + 24), width, px(26), 1)
+            if editID == 105, context.provider == .zai {
+                let half = max(1, width / 2)
+                MoveWindow(edit, px(16), px(y + 24), half, px(26), 1)
+                MoveWindow(GetDlgItem(hwnd, 111), px(16) + half, px(y + 24), half, px(26), 1)
+            } else { MoveWindow(edit, px(16), px(y + 24), width, px(26), 1) }
             y += 60
         }
         MoveWindow(GetDlgItem(hwnd, 102), px(16), px(y), width, px(60), 1)

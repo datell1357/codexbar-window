@@ -1,5 +1,7 @@
 # Windows 전용 제품 작업 현황
 
+- IMPL-126: 기존 z.ai 계정 scope 편집에 Personal/Team 라디오 및 조건부 필드 활성화를 작성했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
 - IMPL-125: recovery journal·암호화 config를 기존 사용자 전용 DACL writer로 저장하도록 연결했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
 
 - IMPL-124: 삭제 전 DPAPI recovery journal 저장과 재시작 복구·읽기 실패 수집 보류를 작성했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
