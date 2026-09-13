@@ -2844,3 +2844,11 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - 코드상 Windows Chromium localStorage 자동 importer는 아직 없으며 이 변경으로 가져오기 지원을 완료했다고 판단하지 않는다.
 - 남은 소요: Windows 브라우저 저장소 가져오기, 실제 계정 전환/통신 검증 및 전체 계획 나머지.
 - CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·API·UI 검증 미실행.
+
+## IMPL-251 — Windows Chromium localStorage 프로필 탐색
+
+- 기존 WindowsBrowserProfileLocator의 지원 경로를 재사용하여 Local Storage/leveldb 디렉터리를 찾는다. 기본 Chrome만, 호출자가 지정한 브라우저 순서를 유지한다.
+- 중복 경로 제거, 최종 storage 디렉터리 symlink 제외, 최대 64개 결과와 초과 개수, deadline 및 취소 처리를 추가했다. UI 표시 label에는 로컬 경로나 프로필 이름을 넣지 않는다.
+- 이 모듈은 디렉터리 탐색만 수행한다. LevelDB/cookie/키/credential 파일은 읽지 않으며 실제 인증 가능한 세션을 찾았다는 의미가 아니다.
+- 남은 소요: LevelDB snapshot/log/table 해석과 origin별 최신 상태 복원, Windsurf session 확인/계정 UI, custom root/추가 브라우저 지원 및 전체 계획 나머지.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·실제 브라우저 파일 조회 검증 미실행.
