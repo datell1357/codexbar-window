@@ -1010,3 +1010,13 @@
 남은 범위: system/API-set 지원 정책, 미해결 release/staging gate, dynamic imports/forwarders, 파일 경쟁/서명/라이선스와 Windows 실행 검증.
 
 다음 구현: 명시적 시스템 의존성 정책과 미해결 배포 차단을 연결한다.
+
+## IMPL-058 — 명시적 시스템 정책과 미해결 조립 차단
+
+상태: CODE_WRITTEN_UNVERIFIED. 모든 PowerShell/바이너리/빌드/컴파일/테스트/패키징/검증 실행 미실시.
+
+- 아키텍처·Windows minimum·정확한 DLL 이름·분류·이유·HTTPS 근거를 요구하는 공유 정책 schema를 작성했다. wildcard/중복/형식 불일치를 거절하고 declared_system으로만 표시한다. 검증된 기본 정책을 추정해 추가하지 않았다.
+- 생성기는 정책 DLL 검색을 생략하며 정책을 manifest에 보존한다. 조립기는 원본 바이너리 import를 다시 읽어 포함 runtime 또는 정책으로 분류되지 않으면 출력 생성 전에 중단한다.
+- 정책과 import 범위를 배포 인벤토리에 기록한다. dependency 상태 문자열을 통과 증거로 신뢰하지 않는다.
+
+남은 범위: 실제 지원 OS 정책 근거 확정, 복사 바이트와 분석 일치, dynamic imports/forwarders/API symbols, 서명/MSIX 및 Windows 실행 검증.

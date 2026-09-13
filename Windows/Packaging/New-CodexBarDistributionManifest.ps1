@@ -5,6 +5,7 @@ param(
     [Parameter(Mandatory = $true)][ValidateSet('x64', 'arm64')][string] $Architecture,
     [Parameter(Mandatory = $true)][string[]] $RuntimeFiles,
     [string[]] $RuntimeSearchDirectories = @(),
+    [string] $SystemPolicyFile,
     [Parameter(Mandatory = $true)][string[]] $ResourceDirectories,
     [Parameter(Mandatory = $true)][string] $LicenseDirectory,
     [Parameter(Mandatory = $true)][string] $OutputManifest
@@ -12,7 +13,15 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'Read-CodexBarPEImports.ps1')
+. (Join-Path $PSScriptRoot 'Read-CodexBarSystemPolicy.ps1')
 if ([Environment]::OSVersion.Platform -ne [PlatformID]::Win32NT) { throw 'Windows is required.' }
+$systemPolicy = $null
+if (-not [string]::IsNullOrWhiteSpace($SystemPolicyFile)) {
+    $policyFile = Get-Item -LiteralPath $SystemPolicyFile -Force
+    if ($policyFile.PSIsContainer -or $policyFile.Length -gt 1048576) { throw 'Invalid system policy file.' }
+    $systemPolicy = Get-Content -LiteralPath $policyFile.FullName -Raw | ConvertFrom-Json
+}
+$systemLibraries = Read-CodexBarSystemPolicy $systemPolicy $Architecture
 $entries = [Collections.Generic.List[object]]::new()
 $destinations = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
 $expectedMachine = if ($Architecture -eq 'x64') { 0x8664 } else { 0xAA64 }
@@ -108,7 +117,7 @@ while ($queue.Count -gt 0) {
     if ($scanned.Count -gt 1024) { throw 'Imported image limit exceeded.' }
     foreach ($import in @(Read-CodexBarPEImports $file.source)) {
         if ($dependencies.Count -ge 100000) { throw 'Dependency edge limit exceeded.' }
-        if (-not $runtimeNames.Contains($import.name)) {
+        if (-not $runtimeNames.Contains($import.name) -and -not $systemLibraries.ContainsKey($import.name)) {
             if (-not $lookupCache.ContainsKey($import.name)) {
                 $candidates = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
                 foreach ($root in $searchRoots) {
@@ -139,7 +148,8 @@ while ($queue.Count -gt 0) {
             importer = $file.destination
             library = $import.name
             kind = $import.kind
-            resolution = $(if ($runtimeNames.Contains($import.name)) { 'included' } else { 'external_unclassified' })
+            resolution = $(if ($runtimeNames.Contains($import.name)) { 'included' }
+                elseif ($systemLibraries.ContainsKey($import.name)) { 'declared_system' } else { 'external_unclassified' })
         })
     }
 }
@@ -149,6 +159,7 @@ $manifest = [ordered] @{
     schemaVersion = 1
     architecture = $Architecture
     dependencyClosure = 'RECURSIVE_IMPORT_GRAPH_UNVERIFIED'
+    systemPolicy = $systemPolicy
     unresolvedLibraries = $unresolved
     dependencies = @($dependencies.ToArray())
     files = @($entries.ToArray() | Sort-Object destination)

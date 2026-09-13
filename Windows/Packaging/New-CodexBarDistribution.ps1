@@ -6,6 +6,8 @@ param(
 )
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot 'Read-CodexBarPEImports.ps1')
+. (Join-Path $PSScriptRoot 'Read-CodexBarSystemPolicy.ps1')
 if ([Environment]::OSVersion.Platform -ne [PlatformID]::Win32NT) { throw 'Windows is required.' }
 $manifestFile = Get-Item -LiteralPath $InputManifest -Force
 if ($manifestFile.PSIsContainer -or $manifestFile.Length -gt 4194304) { throw 'Invalid input manifest.' }
@@ -52,6 +54,31 @@ if (-not $seen.Contains('CodexBarWindows.exe') -or -not $seen.Contains('CodexBar
     -not $hasRuntime -or -not $hasLicense -or -not $hasOperations) {
     throw 'Manifest must include app, CLI, runtime DLLs, licenses and the operations resource.'
 }
+# Re-read current input images rather than trusting a producer's dependency status string.
+$policy = $null
+if ($null -ne $manifest.PSObject.Properties['systemPolicy']) { $policy = $manifest.systemPolicy }
+$systemLibraries = Read-CodexBarSystemPolicy $policy $manifest.architecture
+$includedDLLs = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+foreach ($file in $prepared) {
+    if ($file.Kind -eq 'runtime' -and [IO.Path]::GetFileName($file.Destination) -eq $file.Destination) {
+        $null = $includedDLLs.Add($file.Destination)
+    }
+}
+$missing = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+$edgeCount = 0
+foreach ($file in $prepared) {
+    if ($file.Kind -notin @('application', 'cli', 'runtime')) { continue }
+    foreach ($import in @(Read-CodexBarPEImports $file.Source)) {
+        $edgeCount++
+        if ($edgeCount -gt 100000) { throw 'Staging dependency edge limit exceeded.' }
+        if (-not $includedDLLs.Contains($import.name) -and -not $systemLibraries.ContainsKey($import.name)) {
+            $null = $missing.Add($import.name)
+        }
+    }
+}
+if ($missing.Count -gt 0) {
+    throw ('Unresolved imported libraries prevent staging: ' + ((@($missing) | Sort-Object) -join ', '))
+}
 # Reject a file that would also need to be a directory before any output is created.
 foreach ($file in $prepared) {
     $parent = [IO.Path]::GetDirectoryName($file.Destination)
@@ -82,6 +109,8 @@ try {
         schemaVersion = 1
         architecture = $manifest.architecture
         status = 'STAGED_UNVERIFIED'
+        dependencyScope = 'STATIC_AND_RVA_DELAY_IMPORT_NAMES'
+        systemPolicy = $policy
         files = @($inventory.ToArray())
     }
     $json = $record | ConvertTo-Json -Depth 6

@@ -36,3 +36,12 @@ Windows에서 사용할 명령 형식:
 `-RuntimeSearchDirectories`에 최대32개의 명시적인 런타임 배포 폴더를 추가할 수 있다. import된 이름이 RuntimeFiles에 없으면 각 폴더의 동일 DLL 이름을 찾아 한 개일 때만 포함하며, 새 DLL의 import도 queue로 탐색한다. 둘 이상이면 임의 우선순위를 정하지 않고 중단한다. 원하는 파일을 RuntimeFiles에 직접 지정하면 명시적 선택을 우선한다. Windows system directory나 process PATH를 자동 검색하지 않는다.
 
 후보 접근 실패·link·architecture 불일치·1024개 PE/100000개 edge 한도 초과는 중단한다. 없는 후보는 unresolvedLibraries에 남고 전체 상태는 RECURSIVE_IMPORT_GRAPH_UNVERIFIED다. 이 목록에는 아직 분류하지 않은 정상 Windows system/API-set DLL도 포함될 수 있다. OS 지원 계약에 따른 분류와 누락 release gate는 후속 작업이다. RuntimeFiles의 DLL은 재귀 탐색 이전부터 명시적으로 선택된 입력이며 중복 설치본을 검색해 자동 교체하지 않는다.
+
+
+## 시스템 의존성 정책과 조립 차단
+
+입력 생성기의 선택적 SystemPolicyFile은 schemaVersion=1, architecture, minimumWindowsVersion(예:10.0.19045), libraries 배열을 갖는다. 각 library 항목에는 정확한 DLL name, kind(system/apiSet), reason, HTTPS reference가 필요하다. 예시 Windows 버전은 지원 확정값이 아니다. wildcard 면제는 없고 중복·아키텍처 불일치·근거 누락을 거절한다. 정책은 타깃 OS 지원 자료에 근거해 작성해야 하며 링크 자체를 실행 검증 증거로 간주하지 않는다. 현재 검증된 정책 목록을 동봉하지 않았다.
+
+정책 항목은 declared_system으로 기록하며 검색 폴더에서 재배포 DLL을 자동 가져오지 않는다. 명시적으로 RuntimeFiles에 포함한 DLL은 기존 입력을 유지한다. 정책 원문은 입력 및 배포 인벤토리에 보존한다.
+
+조립기는 입력 파일의 실제 import를 다시 읽어 root runtime DLL 또는 명시적 정책으로 해결되지 않는 이름이 있으면 출력 생성 전에 중단한다. 입력 JSON의 dependencyClosure 문자열만으로 통과시키지 않는다. 기존 수동 입력도 동일한 조건을 받는다. 동적 로딩·export forwarder·심볼/API 실제 지원은 이 단계의 범위 밖이며 전체 실행 성공은 미검증이다. 검사 후 복사 사이 파일 변경 방지도 아직 남아 있다.
