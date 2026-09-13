@@ -1,5 +1,7 @@
 # Windows 전용 제품 작업 현황
 
+- IMPL-214: 비용 세션의 모델 단계 12개 제한을 제거하고 요약/모든 행 보기에서 최근 12개/전체 전환을 연결했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
 - IMPL-213: Windsurf 수동 세션 JSON의 localStorage JSON 문자열 값을 한 겹 해석하도록 작성했다. 자동 브라우저 가져오기는 미구현. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
 
 - IMPL-212: Windows Windsurf JSON 세션의 중복 root 키를 이스케이프 해석 후 검사하도록 작성했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.

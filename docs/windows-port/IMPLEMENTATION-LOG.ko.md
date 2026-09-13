@@ -2528,3 +2528,11 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - 자동 탐색은 기존 macOS SweetCookieKit reader 의존 때문에 Windows에 아직 연결되지 않았다. 이 변경을 자동 로그인/브라우저 가져오기 완료로 간주하지 않는다.
 - 남은 소요: Windows Chromium localStorage reader 및 프로필/origin별 후보 검증·저장 UI, 앱 로그인, 전체 계획 나머지 항목.
 - CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 파서 실행·빌드·테스트·lint·실제 브라우저/API 검증 미실행.
+
+## IMPL-214 — 비용 세션 전체 행 확장
+
+- Windows 비용 모델은 선택 기간에 마지막 활동이 속하는 수집된 세션을 모두 보존한다. 기존 모델 단계의 12개 절단을 제거하고 기본 요약에서만 최근 12개를 표시한다.
+- 기존 Show all rows 동작은 모델/프로젝트뿐 아니라 전체 세션으로 확장한다. 접힌 화면에서 숨겨진 세션 수와 확장 안내를 표시하며 기존 최신 활동/ID 정렬을 유지한다.
+- 세션 합계는 마지막 활동으로 기간에 포함한 수집 세션의 합계이므로 기간 이전 활동을 포함할 수 있다는 설명을 추가한다. 기간 총액으로 오인하지 않도록 기존 불완전 breakdown 설명도 유지한다.
+- 원본 스캐너가 제공하지 않은 세션을 복원하는 기능은 아니다. 개별 세션/프로젝트 탐색, Windsurf 브라우저 가져오기 및 전체 계획 나머지는 남아 있다.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·UI·실제 비용 로그 검증 미실행.

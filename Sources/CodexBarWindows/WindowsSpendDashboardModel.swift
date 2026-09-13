@@ -1201,7 +1201,8 @@ struct WindowsSpendDashboardModel: Equatable, Sendable {
             }
             return lhs.id < rhs.id
         }
-        return Array(rows.prefix(12))
+        // Keep the captured window complete; each view chooses its own display limit.
+        return rows
     }
 
     private static func hourlyPoints(

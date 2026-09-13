@@ -65,18 +65,22 @@ enum WindowsSpendSummary {
                     + cost(project.totalCost, currency: group.currencyCode) + " · " + tokens(project.totalTokens) + " tokens")
             }
             if !expanded, group.projects.count > 8 { rows.append("  \(group.projects.count - 8) more projects. Choose Show all rows to expand.") }
-            rows.append("Recent sessions (available model window)")
+            rows.append(expanded ? "Sessions (available model window)" : "Recent sessions (available model window)")
             if group.sessions.isEmpty { rows.append("  No session breakdown is available for this period.") }
             let formatter = DateFormatter()
             formatter.dateStyle = .medium
             formatter.timeStyle = .short
             formatter.timeZone = group.timeZone
-            for (index, session) in group.sessions.enumerated() {
+            for (index, session) in group.sessions.prefix(expanded ? group.sessions.count : 12).enumerated() {
                 rows.append("  Session \(index + 1) · " + safe(session.displayName) + " · "
                     + cost(session.totalCost, currency: group.currencyCode) + " · " + tokens(session.totalTokens) + " tokens")
                 rows.append("    Last activity: " + formatter.string(from: session.lastActivity)
                     + (session.modelName.map { " · " + safe($0) } ?? ""))
             }
+            if !expanded, group.sessions.count > 12 {
+                rows.append("  \(group.sessions.count - 12) more sessions. Choose Show all rows to expand.")
+            }
+            rows.append("Session totals describe the captured sessions whose last activity falls in this window; they may include activity before the window.")
             rows.append("Project and session breakdowns can be incomplete and need not sum to the period total.")
         }
         rows.append("")
