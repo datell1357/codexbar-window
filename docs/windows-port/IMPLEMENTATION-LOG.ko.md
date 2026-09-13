@@ -2896,3 +2896,11 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - 최대 table 개수/metadata budget과 취소 처리를 포함한다. comparator 확인은 엄격히 요구하며 일부 manifest 조각만으로 상태를 반환하지 않는다.
 - 남은 소요: CURRENT와 실제 파일의 일관된 확보, table 압축/블록 읽기, key 범위/level overlap 검사, Chromium/Windsurf 연결 및 전체 계획 나머지.
 - CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 파서 실행·빌드·테스트·lint·실제 브라우저 파일 조회 미실행.
+
+## IMPL-257 — LevelDB Snappy 블록 해제
+
+- 원본 https://github.com/google/snappy/blob/main/format_description.txt를 읽고 raw block의 varint 출력 길이, literal 및 1/2/4-byte offset copy를 구현했다. framed stream은 대상이 아니다.
+- 겹치는 copy를 출력 증가에 맞춰 반복 복원한다. offset 0/출력 이전 범위 초과, 잘림, 길이 overflow/불일치와 trailing data를 거부한다.
+- 압축 입력 8MiB/해제 출력 4MiB 상한과 태그 경계 취소 확인을 포함한다. 새 의존성은 추가하지 않았다.
+- 남은 소요: SSTable footer/handle/CRC/index/data block 연결, 일관된 파일 확보 및 Chromium/Windsurf 연결과 전체 계획 나머지.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 파서 실행·빌드·테스트·lint·실제 브라우저 파일 조회 미실행.
