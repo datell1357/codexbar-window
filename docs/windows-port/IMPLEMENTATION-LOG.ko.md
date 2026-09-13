@@ -1276,3 +1276,13 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winus
 - Copy provider usage 하위 메뉴를 추가하고 기존 popup-bound 명령/clipboard 실패/개인정보 변경 guard를 재사용한다. 오류 복사와 별도 명령 범위를 쓰며 메뉴 종료 때 함께 정리한다.
 
 남은 범위: 계정별 동시 상세 선택, rich card/Share Stats 이미지 내보내기, plugin link 계약이 추가되는 경우의 별도 지원, 전체 Windows UI/ABI/redaction 검증. WIN-010 완료로 판정하지 않는다.
+
+## IMPL-084 — 공급자 상세 텍스트 보기
+
+상태 CODE_WRITTEN_UNVERIFIED. Swift 컴파일/빌드/테스트/Win32 메뉴·대화상자/clipboard/검증 실행 미실시. guidelines/COMMITS.md 부재로 핵심 커밋 규칙을 적용한다.
+
+- Provider details 하위 메뉴에서 현재 popup의 redacted 사용량/오류를 분리해 표시하도록 작성했다. 최대 128개 action과 12,000자 표시 상한을 두고 긴 내용은 복사 메뉴 안내를 붙인다.
+- 개인정보 설정이 달라지면 메뉴 재열기를 안내하며 popup 종료 시 detail 사본을 제거한다. 정보 창을 열면서 provider fetch나 계정 변경을 자동 실행하지 않는다.
+- 일반 메시지와 세션 전용 설명을 분리해 clipboard 오류에 세션 새로고침 안내가 붙지 않도록 수정했다.
+
+남은 범위: 스크롤/선택 가능한 full detail card, 계정 선택·그래프·개별 action 통합, 접근성/DPI/localization 및 Windows UI/ABI 검증. 텍스트 대화상자는 전체 상세 카드 완료를 의미하지 않는다.

@@ -1,5 +1,7 @@
 # Windows 전용 제품 작업 현황
 
+IMPL-084: Provider detail snapshot dialogs and context-correct clipboard messages written; full native cards and Windows validation remain pending.
+
 IMPL-083: Provider-instance usage copy with current rendering settings written; native detail UI and Windows validation remain pending.
 
 IMPL-082: Plugin-instance error copy and independent status visibility written; account-specific detail actions and Windows validation remain pending.

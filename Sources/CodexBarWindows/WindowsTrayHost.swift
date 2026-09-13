@@ -24,6 +24,8 @@ public final class WindowsTrayHost: @unchecked Sendable {
     public typealias QuitHandler = @Sendable () -> Void
 
     private static let startupRegistrationCommand = UINT_PTR(0x7546)
+    private static let providerDetailsCommandBase = UINT_PTR(0x7D00)
+    private var popupProviderDetails: [UINT_PTR: (title: String, body: String)] = [:]
     private static let copyUsageCommandBase = UINT_PTR(0x7C00)
     private static let copyErrorCommandBase = UINT_PTR(0x7B00)
     private var popupCopyErrors: [UINT_PTR: String] = [:]
@@ -732,11 +734,13 @@ public final class WindowsTrayHost: @unchecked Sendable {
         self.popupIsOpen = true
         self.popupCopySummary = nil
         self.popupCopyErrors.removeAll(keepingCapacity: true)
+        self.popupProviderDetails.removeAll(keepingCapacity: true)
         var continuingPage = false
         defer {
             self.popupIsOpen = false
             self.popupCopySummary = nil
             self.popupCopyErrors.removeAll(keepingCapacity: true)
+        self.popupProviderDetails.removeAll(keepingCapacity: true)
             self.mailboxLock.lock()
             let cliReady = self.cliSetupResult != nil
             self.mailboxLock.unlock()
@@ -780,6 +784,28 @@ public final class WindowsTrayHost: @unchecked Sendable {
             "Copy &redacted summary".withCString(encodedAs: UTF16.self) {
                 _ = AppendMenuW(menu, UINT(MF_STRING), Self.copySummaryCommand, $0)
             }
+        }
+        let detailEntries = menuEntries.filter { $0.usageCopyText != nil || $0.errorCopyText != nil }
+        if !detailEntries.isEmpty, let detailsMenu = CreatePopupMenu() {
+            var commands: [UINT_PTR: (title: String, body: String)] = [:]
+            for (index, entry) in detailEntries.prefix(128).enumerated() {
+                let title = String(LogRedactor.redact(entry.title).replacingOccurrences(of: "\0", with: "").prefix(160))
+                var sections: [String] = []
+                if let usage = entry.usageCopyText { sections.append("Usage\r\n" + usage) }
+                if let error = entry.errorCopyText { sections.append("Fetch error\r\n" + error) }
+                let body = sections.joined(separator: "\r\n\r\n")
+                let bounded = body.count > 12_000
+                    ? String(body.prefix(12_000)) + "\r\n\r\nDisplay shortened. Use the provider copy menu for the available full text."
+                    : body
+                let command = Self.providerDetailsCommandBase + UINT_PTR(index)
+                if title.replacingOccurrences(of: "&", with: "&&").withCString(encodedAs: UTF16.self, {
+                    AppendMenuW(detailsMenu, UINT(MF_STRING), command, $0)
+                }) != 0 { commands[command] = (title, bounded) }
+            }
+            let attached = !commands.isEmpty && "Provider &details".withCString(encodedAs: UTF16.self) {
+                AppendMenuW(menu, UINT(MF_STRING | MF_POPUP), UINT_PTR(UInt(bitPattern: detailsMenu)), $0) != 0
+            }
+            if attached { self.popupProviderDetails = commands } else { _ = DestroyMenu(detailsMenu) }
         }
         let usageEntries = menuEntries.filter { $0.usageCopyText != nil }
         if !usageEntries.isEmpty, let usageMenu = CreatePopupMenu() {
@@ -1278,6 +1304,11 @@ public final class WindowsTrayHost: @unchecked Sendable {
     }
 
     private func showSessionMessage(_ details: String, caption: String) {
+        self.showMessage("Status captured when the session menu opened. Refresh sessions to update.\n\n" + details,
+                         caption: caption)
+    }
+
+    private func showMessage(_ body: String, caption: String) {
         guard !self.remoteEditorOpen, !self.quitInvoked, let window = self.window,
               case .idle = self.providerEditorPhase, case .idle = self.codexWebSettingsEditorPhase else { return }
         self.remoteEditorOpen = true
@@ -1285,7 +1316,6 @@ public final class WindowsTrayHost: @unchecked Sendable {
             self.remoteEditorOpen = false
             if !self.quitInvoked { PostMessageW(window, Self.wakeMessage, 0, 0) }
         }
-        let body = "Status captured when the session menu opened. Refresh sessions to update.\n\n" + details
         body.withCString(encodedAs: UTF16.self) { text in
             caption.withCString(encodedAs: UTF16.self) { title in
                 _ = MessageBoxW(window, text, title, UINT(MB_OK | MB_ICONINFORMATION))
@@ -1722,13 +1752,22 @@ public final class WindowsTrayHost: @unchecked Sendable {
     }
 
     private func dispatchCommand(_ command: UINT_PTR) {
+        if let details = self.popupProviderDetails[command] {
+            guard self.popupCopyPrivacy == WindowsUsagePresentationSettings.load().hidePersonalInfo else {
+                self.showMessage("Privacy settings changed. Reopen the menu to view current details.", caption: "Provider details")
+                return
+            }
+            self.showMessage("Redacted snapshot from the opened menu. Refresh usage to update.\r\n\r\n" + details.body,
+                             caption: details.title)
+            return
+        }
         if let text = self.popupCopyErrors[command], let owner = self.window {
             guard self.popupCopyPrivacy == WindowsUsagePresentationSettings.load().hidePersonalInfo else {
-                self.showSessionMessage("Privacy settings changed. Reopen the menu before copying.", caption: "Copy provider details")
+                self.showMessage("Privacy settings changed. Reopen the menu before copying.", caption: "Copy provider details")
                 return
             }
             if let error = WindowsClipboard.write(text, owner: owner) {
-                self.showSessionMessage(error, caption: "Copy provider details")
+                self.showMessage(error, caption: "Copy provider details")
             }
             return
         }
@@ -1769,11 +1808,11 @@ public final class WindowsTrayHost: @unchecked Sendable {
         case Self.copySummaryCommand:
             guard let owner = self.window, let text = self.popupCopySummary else { return }
             guard self.popupCopyPrivacy == WindowsUsagePresentationSettings.load().hidePersonalInfo else {
-                self.showSessionMessage("Privacy settings changed. Reopen the menu before copying.", caption: "Copy summary")
+                self.showMessage("Privacy settings changed. Reopen the menu before copying.", caption: "Copy summary")
                 return
             }
             if let error = WindowsClipboard.write(text, owner: owner) {
-                self.showSessionMessage(error, caption: "Copy summary")
+                self.showMessage(error, caption: "Copy summary")
             }
         case Self.cliPathAddCommand: self.beginCLIPathOperation(.add)
         case Self.cliPathRemoveCommand: self.beginCLIPathOperation(.remove)
