@@ -9,6 +9,7 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'Write-CodexBarJournal.ps1')
+. (Join-Path $PSScriptRoot 'Send-CodexBarEnvironmentChange.ps1')
 if ([Environment]::OSVersion.Platform -ne [PlatformID]::Win32NT -or -not $AllowUnvalidatedBuild) { throw 'Windows and development opt-in are required.' }
 $localData = [Environment]::GetFolderPath([Environment+SpecialFolder]::LocalApplicationData)
 $programs = [Environment]::GetFolderPath([Environment+SpecialFolder]::Programs)
@@ -114,11 +115,16 @@ try {
         state = 'PREPARED'; oldPath = $oldPath; newPath = $newPath; pathKind = [string] $pathKind;
         oldRun = $oldRun; newRun = $newRun; changeRun = $changeRun;
         changePath = ($null -ne $oldPath -and $oldPath -cne $newPath);
-        shortcutHash = $shortcutHash; shortcutNewHash = $null }
+        shortcutHash = $shortcutHash; shortcutNewHash = $null; environmentNotification = 'NOT_NEEDED' }
     Write-CodexBarJournal $journalPath $record
     if ($null -ne $oldPath -and $oldPath -cne $newPath) {
         if ($environmentKey.GetValue('Path', $null, $options) -cne $oldPath -or $environmentKey.GetValueKind('Path') -ne $pathKind) { throw 'PATH changed concurrently.' }
         $environmentKey.SetValue('Path', $newPath, $pathKind)
+        $record.environmentNotification = Send-CodexBarEnvironmentChange
+        Write-CodexBarJournal $journalPath $record
+        if ($record.environmentNotification -ne 'SENT_REFRESH_NOT_GUARANTEED') {
+            Write-Warning 'PATH was changed, but environment notification was not confirmed. Sign out and sign in to inherit the change.'
+        }
     }
     if ($changeRun) {
         if ($runKey.GetValue('CodexBarWindows', $null, $options) -cne $oldRun -or

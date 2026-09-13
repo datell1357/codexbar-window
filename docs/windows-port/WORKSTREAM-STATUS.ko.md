@@ -1,5 +1,7 @@
 # Windows 전용 제품 작업 현황
 
+IMPL-075: Environment notification after reference PATH writes and separate outcome recording written; lifecycle recovery handoff and Windows validation remain pending.
+
 IMPL-074: Conflict-aware reference rollback and shortcut hash boundaries written; environment notification and Windows validation remain pending.
 
 IMPL-073: Known user launch reference migration/detachment and uninstall integration written; transition recovery and Windows validation remain pending.

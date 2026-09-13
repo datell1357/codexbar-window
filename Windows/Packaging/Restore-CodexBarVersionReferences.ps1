@@ -7,6 +7,7 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'Write-CodexBarJournal.ps1')
+. (Join-Path $PSScriptRoot 'Send-CodexBarEnvironmentChange.ps1')
 if ([Environment]::OSVersion.Platform -ne [PlatformID]::Win32NT -or -not $AllowUnvalidatedBuild) { throw 'Windows and development opt-in are required.' }
 $localData = [Environment]::GetFolderPath([Environment+SpecialFolder]::LocalApplicationData)
 $programs = [Environment]::GetFolderPath([Environment+SpecialFolder]::Programs)
@@ -92,12 +93,17 @@ try {
     $recoveryID = [Guid]::NewGuid().ToString('N')
     $recoveryPath = Join-Path $root ('references-recovery-' + $recoveryID + '.json')
     $recovery = [ordered] @{ schemaVersion = 1; transactionID = $TransactionID; state = 'PREPARED';
-        restorePath = $restorePath; restoreRun = $restoreRun; restoreShortcut = $restoreShortcut }
+        restorePath = $restorePath; restoreRun = $restoreRun; restoreShortcut = $restoreShortcut; environmentNotification = 'NOT_NEEDED' }
     Write-CodexBarJournal $recoveryPath $recovery
     if ($restorePath) {
         if ($environmentKey.GetValue('Path', $null, $options) -cne $record.newPath -or
             [string] $environmentKey.GetValueKind('Path') -ne $record.pathKind) { throw 'PATH changed during recovery.' }
         $environmentKey.SetValue('Path', $record.oldPath, [Microsoft.Win32.RegistryValueKind] ([Enum]::Parse([Microsoft.Win32.RegistryValueKind], $record.pathKind)))
+        $recovery.environmentNotification = Send-CodexBarEnvironmentChange
+        Write-CodexBarJournal $recoveryPath $recovery
+        if ($recovery.environmentNotification -ne 'SENT_REFRESH_NOT_GUARANTEED') {
+            Write-Warning 'PATH was restored, but environment notification was not confirmed. Sign out and sign in to inherit the change.'
+        }
     }
     if ($restoreRun) {
         if ($runKey.GetValue('CodexBarWindows', $null, $options) -cne $record.newRun) { throw 'Startup changed during recovery.' }

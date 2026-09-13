@@ -1184,3 +1184,13 @@
 - 변경 대상의 현재 값/자료형이 기록된 before 또는 after와 맞는지 전체 사전 대조한다. 이미 before면 유지하며 after에 해당하는 항목만 복원한다. 현재 shortcut과 backup hash를 결합하고 기존 shortcut은 displaced 사본으로 보존한다. 별도 recovery journal을 작성한다.
 
 남은 범위: schema 1 자동 전환 복구, 환경 broadcast 및 프로세스 PATH 처리, journal 진위/동시 변경, 여러 쓰기 atomicity, 제거 실패 자동 복구 orchestrator·보존 파일 정리·전체 Windows 검증. 복구 중 실패해도 앞선 쓰기는 적용됐을 수 있다.
+
+## IMPL-075 — 참조 PATH 변경 통지
+
+상태 CODE_WRITTEN_UNVERIFIED. PowerShell/Add-Type/C# 컴파일/native call/registry/환경 통지/빌드/테스트/검증 실행 미실시. guidelines/COMMITS.md 부재로 제공된 핵심 커밋 규칙을 따른다.
+
+- Send-CodexBarEnvironmentChange helper에 동기 WM_SETTINGCHANGE/Environment broadcast를 작성했다. 100ms per-recipient와 BLOCK/ABORTIFHUNG을 사용하며 string marshalling을 호출 동안 유지한다. Add-Type 및 native call은 코드로만 작성했고 실행하지 않았다.
+- 참조 변경/복구에서 실제 PATH 쓰기 직후 통지하고 environmentNotification을 기록한다. 통지 실패/정책 차단은 이미 성공한 PATH 쓰기의 rollback으로 처리하지 않으며 재로그인 안내를 남긴다.
+- helper도 배포·서명 목록에 포함했다. 필수 tools는 13개, 전체 first-party 서명 대상은 16개다.
+
+남은 범위: 모든 창을 포함한 통지 전체 시간 상한, 사용자 프로세스별 실제 환경 갱신, 통지 직후 기록 실패, lifecycle 실패 ID 인계/UI 안내·보존 파일 정리·Windows 검증. 성공 반환도 모든 앱의 환경 재로드를 보장하지 않는다.

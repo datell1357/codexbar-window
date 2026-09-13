@@ -175,3 +175,11 @@ Restore-CodexBarVersionReferences.ps1은 references 파일명의 TransactionID, 
 PATH·Run 명령·shortcut은 before와 같으면 이미 복원된 것으로 두고 after와 같은 항목만 되돌린다. 값 자료형 변경·외부 수정·backup 누락/해시 불일치 시 쓰기 전 중단한다. 쓰기 직전에도 현재 값을 다시 비교하지만 비교와 쓰기가 단일 원자적 동작은 아니다. 바로가기 복구는 원래 backup을 유지하고 현재 링크를 별도 displaced 파일로 보존한다. PATH는 사용자 영구 값만 복원하며 다른 셸의 상속 환경을 되감지 않는다.
 
 전환 스크립트도 이제 changePath/changeRun과 교체 전 shortcutNewHash를 기록한다. schema 1 기록은 안전한 자동 복구 경계가 부족해 수용하지 않는다. 필수 tools는 12개, 전체 first-party 서명 대상은 15개다. 환경 변경 통지·자동 lifecycle 복구 안내/호출·기록 신뢰 및 동시 변경 대응·보존 파일 정리·Windows 실행 검증은 남아 있다. 이번 작업에서 스크립트나 복구를 실행하지 않았다.
+
+## 환경 변경 통지 및 복구 순서
+
+참조 전환/복구의 사용자 PATH 쓰기 직후 Send-CodexBarEnvironmentChange를 호출하고 environmentNotification 상태를 journal에 저장한다. SENT_REFRESH_NOT_GUARANTEED는 통지 호출 성공, FAILED_OR_TIMED_OUT/UNAVAILABLE_OR_FAILED는 통지 미확인이다. 통지 실패가 PATH 쓰기 실패나 자동 rollback을 뜻하지 않는다. 기존 프로세스의 환경은 그대로일 수 있으며 통지가 확인되지 않으면 로그아웃/로그인 후 새 환경을 상속한다.
+
+구현은 [WM_SETTINGCHANGE의 Environment 안내](https://learn.microsoft.com/en-us/windows/win32/winmsg/wm-settingchange)에 따라 동기 SendMessageTimeoutW를 사용한다. 타임아웃 100ms는 수신 창별 값으로 전체 시간 상한이 아니다. 정책이 Add-Type/native call을 막으면 통지 실패 상태를 반환한다. C# interop 코드의 실제 컴파일/호출은 하지 않았다. 필수 tools 13개와 앱·CLI·PATH resource를 합한 서명 대상은 16개다.
+
+복구 시 어떤 단계가 이미 적용됐는지를 먼저 구분한다. 제거 payload가 일부 이동했다면 removed-ID 사본을 해당 제거 복구 도구로 먼저 복원하고, 이후 references-ID를 참조 복구 도구에 전달한다. 참조 복구는 원래 앱/CLI와 서명자를 요구하므로 순서를 뒤집으면 거절될 수 있다. registry 등록 복구에는 management-ID와 동일 receipt/signer가 필요하다. 각 도구는 기존 충돌 값을 덮어쓰지 않으며 자동 전체 rollback이나 일반 배포 완료를 의미하지 않는다. 현재 작업에서는 어떤 복구/통지/registry 명령도 실행하지 않았다.
