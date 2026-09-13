@@ -8,6 +8,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'Read-CodexBarPEImports.ps1')
 . (Join-Path $PSScriptRoot 'Read-CodexBarSystemPolicy.ps1')
+. (Join-Path $PSScriptRoot 'Read-CodexBarBuildProvenance.ps1')
 if ([Environment]::OSVersion.Platform -ne [PlatformID]::Win32NT) { throw 'Windows is required.' }
 $manifestFile = Get-Item -LiteralPath $InputManifest -Force
 if ($manifestFile.PSIsContainer -or $manifestFile.Length -gt 4194304) { throw 'Invalid input manifest.' }
@@ -15,6 +16,7 @@ $manifest = Get-Content -LiteralPath $manifestFile.FullName -Raw | ConvertFrom-J
 if ($manifest.schemaVersion -ne 1 -or $manifest.architecture -notin @('x64', 'arm64')) {
     throw 'Expected schemaVersion 1 and architecture x64 or arm64.'
 }
+$provenance = Read-CodexBarBuildProvenance $manifest.provenance
 $files = @($manifest.files)
 if ($files.Count -lt 4 -or $files.Count -gt 10000) { throw 'Invalid distribution file count.' }
 $outputRoot = [IO.Path]::GetFullPath($OutputDirectory)
@@ -131,6 +133,7 @@ try {
     $record = [ordered] @{
         schemaVersion = 1
         architecture = $manifest.architecture
+        provenance = $provenance
         status = 'STAGED_UNVERIFIED'
         dependencyScope = 'STATIC_AND_RVA_DELAY_IMPORT_NAMES'
         analysisSource = 'HELD_STAGED_FILES'

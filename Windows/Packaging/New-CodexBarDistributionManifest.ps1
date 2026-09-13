@@ -2,6 +2,8 @@
 [CmdletBinding(SupportsShouldProcess = $true)]
 param(
     [Parameter(Mandatory = $true)][string] $BuildDirectory,
+    [Parameter(Mandatory = $true)][string] $SourceRevision,
+    [Parameter(Mandatory = $true)][string] $ProductVersion,
     [Parameter(Mandatory = $true)][ValidateSet('x64', 'arm64')][string] $Architecture,
     [Parameter(Mandatory = $true)][string[]] $RuntimeFiles,
     [string[]] $RuntimeSearchDirectories = @(),
@@ -14,6 +16,13 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'Read-CodexBarPEImports.ps1')
 . (Join-Path $PSScriptRoot 'Read-CodexBarSystemPolicy.ps1')
+. (Join-Path $PSScriptRoot 'Read-CodexBarBuildProvenance.ps1')
+$provenance = Read-CodexBarBuildProvenance ([pscustomobject] @{
+    repository = 'https://github.com/datell1357/codexbar-window'
+    revision = $SourceRevision
+    version = $ProductVersion
+    status = 'DECLARED_NOT_ATTESTED'
+})
 if ([Environment]::OSVersion.Platform -ne [PlatformID]::Win32NT) { throw 'Windows is required.' }
 $systemPolicy = $null
 if (-not [string]::IsNullOrWhiteSpace($SystemPolicyFile)) {
@@ -158,6 +167,7 @@ $unresolved = @($dependencies | Where-Object { $_.resolution -eq 'external_uncla
 $manifest = [ordered] @{
     schemaVersion = 1
     architecture = $Architecture
+    provenance = $provenance
     dependencyClosure = 'RECURSIVE_IMPORT_GRAPH_UNVERIFIED'
     systemPolicy = $systemPolicy
     unresolvedLibraries = $unresolved

@@ -50,3 +50,12 @@ Windows에서 사용할 명령 형식:
 조립은 복사 후 각 대상 파일을 FileShare.Read 핸들로 열고 모든 핸들을 인벤토리 기록까지 유지하도록 보완했다. 대상 app/CLI/runtime의 PE machine과 import를 다시 읽어 미해결·아키텍처 불일치 시 중단하며 같은 held file에서 해시를 계산한다. analysisSource=HELD_STAGED_FILES와 대상 파일의 dependencies를 인벤토리에 기록한다. 모든 핸들은 성공·실패 모두 finally에서 닫는다.
 
 이 방식은 Windows 파일 공유 규칙에 따른 읽기 시점의 변경/삭제 제한이며 서명 검증이나 악의적인 상위 폴더 교체까지 보장하지 않는다. 복사 전후 원본이 바뀌었어도 최종 대상 바이트를 분석한다. 실제 Win32/.NET 공유 동작은 미검증이고 최종 서명이나 이후 편집으로 파일이 달라지면 이 인벤토리도 갱신해야 한다.
+
+
+## 출처와 서명 인계
+
+입력 생성기의 SourceRevision(40자리 commit)과 ProductVersion은 필수다. 고정 원본 repository와 함께 provenance로 전달하며 DECLARED_NOT_ATTESTED로 표시한다. 이 값은 호출자의 선언이며 git checkout·빌드 재현성이나 실제 바이너리와의 대응을 증명하지 않는다. 수동 입력도 같은 provenance를 포함해야 조립할 수 있다.
+
+New-CodexBarSigningRequest.ps1은 DistributionDirectory와 배포 폴더 밖의 OutputRequest를 받아 인벤토리 크기·해시와 파일 내용을 대조한 다음 앱·CLI·PATH 스크립트3개를 서명 대상으로 기록하도록 작성했다. third-party DLL을 재서명 대상으로 자동 선정하지 않는다. request는 CreateNew로 만들며 경로별 서명 전 해시와 provenance만 담고 인증서·비밀정보를 요구하지 않는다.
+
+실제 서명은 아직 연결하지 않았다. 인계 파일은 SIGNING_REQUEST_ONLY이며 시간 경과/다른 프로세스 변경을 막는 lock이나 서명 요청 인증은 없다. signer가 서명 직전 입력을 다시 대조하고 Authenticode/타임스탬프를 확인해야 한다. 서명 후 인벤토리를 갱신해야 하며 기존 해시로 릴리스하면 안 된다. 현재 작업에서 인계 생성/파일 대조/인증서 접근/서명은 실행하지 않았다.

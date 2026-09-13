@@ -1030,3 +1030,13 @@
 - 원본 preflight만으로 대상 바이트 분석을 대신하지 않는다. 실제 file-sharing 보장/상위 폴더 교체/서명 후 변경과 동적 의존성은 여전히 미검증이다.
 
 다음 구현: Windows 서명 인계와 배포 출처 기록을 연결한다.
+
+## IMPL-060 — 출처 기록과 서명 요청 인계
+
+상태 CODE_WRITTEN_UNVERIFIED. 소스 편집만 수행. PowerShell/파일 대조/빌드/컴파일/테스트/인증서/서명/검증 미실시.
+
+- repository/revision/version 선언을 생성 입력과 조립 인벤토리에 전달한다. 형식만 제한하며 DECLARED_NOT_ATTESTED로 실제 빌드 증명과 구분한다.
+- 인벤토리와 대상 파일 크기/hash를 대조한 후 app/CLI/PATH resource3개만 서명 요청으로 내보내는 스크립트를 작성했다. vendor DLL 재서명·키 접근·실제 서명은 하지 않는다.
+- request 경로는 distribution 밖, CreateNew, status SIGNING_REQUEST_ONLY이며 서명 후 인벤토리 갱신 의무를 기록한다.
+
+남은 범위: 실제 signer 입력 재대조·인증서 명시 선택·timestamp/AuthentiCode 결과·서명 후 인벤토리, provenance attestation 및 모든 Windows 검증.
