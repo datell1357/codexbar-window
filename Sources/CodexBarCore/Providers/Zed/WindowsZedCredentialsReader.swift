@@ -27,6 +27,10 @@ struct WindowsZedCredentialsReader: ZedCredentialsReading, Sendable {
 
 /// Structural validation only; does not read credentials or contact the service.
 public enum ZedManualCredentialInput {
+    public static func normalizedServiceOrigin(_ raw: String) throws -> String {
+        try self.bundle("1 placeholder " + raw.trimmingCharacters(in: .whitespacesAndNewlines)).serviceURL
+    }
+
     public static func validate(_ raw: String) throws {
         _ = try self.bundle(raw)
     }

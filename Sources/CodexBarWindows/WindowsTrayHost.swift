@@ -111,7 +111,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
     private static let cursorBrowserImportCancelCommand = UINT_PTR(0x703F)
     private static let zedEditorImportCancelCommand = UINT_PTR(0x7F20)
     private static let zedEditorImportCommand = UINT_PTR(0x7F21)
-    private let onZedEditorImportRequested: @Sendable (UUID) -> Void
+    private let onZedEditorImportRequested: @Sendable (UUID, String) -> Void
     private let onZedEditorImportSave: @Sendable (UUID, UUID, String) -> Void
     private let onZedEditorImportCancel: @Sendable (UUID) -> Void
     private var zedImportRequest: UUID?
@@ -348,7 +348,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
         onAugmentBrowserImportRequested: @escaping @Sendable (UUID) -> Void = { _ in },
         onAugmentBrowserImportSave: @escaping @Sendable (UUID, UUID, UUID, String) -> Void = { _, _, _, _ in },
         onAugmentBrowserImportCancel: @escaping @Sendable (UUID) -> Void = { _ in },
-        onZedEditorImportRequested: @escaping @Sendable (UUID) -> Void = { _ in },
+        onZedEditorImportRequested: @escaping @Sendable (UUID, String) -> Void = { _, _ in },
         onZedEditorImportSave: @escaping @Sendable (UUID, UUID, String) -> Void = { _, _, _ in },
         onZedEditorImportCancel: @escaping @Sendable (UUID) -> Void = { _ in },
         onSpendJSONRequested: @escaping @Sendable (UUID, Bool) -> Void = { _, _ in },
@@ -3060,14 +3060,26 @@ public final class WindowsTrayHost: @unchecked Sendable {
             return
         }
         if command == Self.zedEditorImportCommand {
-            guard !self.quitInvoked, !self.remoteEditorOpen,
+            guard !self.quitInvoked, !self.remoteEditorOpen, let window = self.window,
                   case .idle = self.providerEditorPhase, case .idle = self.codexWebSettingsEditorPhase else { return }
+            self.mailboxLock.lock()
+            let importing = self.zedImportRequest != nil
+            self.mailboxLock.unlock()
+            guard !importing else { return }
+            let privacy = WindowsUsagePresentationSettings.load().hidePersonalInfo
+            self.remoteEditorOpen = true
+            let input = WindowsAccountNameDialog.showZedServer(owner: window, expectedPrivacy: privacy)
+            self.remoteEditorOpen = false
+            PostMessageW(window, Self.wakeMessage, 0, 0)
+            guard case let .saved(rawOrigin) = input, !self.quitInvoked,
+                  privacy == WindowsUsagePresentationSettings.load().hidePersonalInfo,
+                  let origin = try? ZedManualCredentialInput.normalizedServiceOrigin(rawOrigin) else { return }
             self.mailboxLock.lock()
             guard self.zedImportRequest == nil else { self.mailboxLock.unlock(); return }
             let requestID = UUID()
             self.zedImportRequest = requestID
             self.mailboxLock.unlock()
-            self.onZedEditorImportRequested(requestID)
+            self.onZedEditorImportRequested(requestID, origin)
             return
         }
         if let (provider, expectedSelectedID) = self.popupTokenAccountAdds[command] {

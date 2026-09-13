@@ -1,5 +1,7 @@
 # Windows 전용 제품 작업 현황
 
+- IMPL-239: Zed 편집기 가져오기에 HTTPS 서버 주소 선택 창을 추가하고 선택 origin을 조회·확인에 전달했다. 자동 설정 탐색은 남아 있다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
 - IMPL-238: 트레이 Zed 편집기 가져오기/취소와 계정 확인·이름 입력·보호 저장 콜백을 연결했다. 기본 production 서버 대상이며 custom server 탐색은 남아 있다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
 
 - IMPL-237: Zed 편집기 가져오기 런타임에 설정 revision/선택 계정/개인정보 모드 검사, 5분 ticket, 취소와 보호 계정 저장을 연결했다. 네이티브 UI 미연결. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.

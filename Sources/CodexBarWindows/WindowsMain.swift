@@ -146,11 +146,11 @@ private final class WindowsTrayApplication: @unchecked Sendable {
             self.augmentBrowserImports.cancel(id: ticket)
             Task { await self.runtime.cancelAugmentBrowserImport(requestID: ticket) }
         },
-        onZedEditorImportRequested: { [weak self] requestID in
+        onZedEditorImportRequested: { [weak self] requestID, origin in
             guard let self else { return }
             self.zedEditorImports.start(id: requestID) { [weak self] in
                 guard let self else { return }
-                let result = await self.runtime.discoverZedEditorAccount(requestID: requestID)
+                let result = await self.runtime.discoverZedEditorAccount(requestID: requestID, serviceURL: origin)
                 guard !Task.isCancelled else { return }
                 self.host.postZedEditorImport(requestID: requestID, result: result)
             }

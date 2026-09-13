@@ -2742,3 +2742,11 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - 기존 계정 이름 dialog에 선택적 계정 제목을 추가했다. Zed 확인 제목은 runtime 개인정보 모드를 따르며 기존 dialog의 만료/개인정보 변경 감시를 사용한다. secret bundle은 UI에 전달하지 않는다.
 - 남은 소요: custom server 설정 탐색/선택, 실제 Windows UI·인증·저장 검증 및 전체 계획 나머지.
 - CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·UI·Credential Manager·API 검증 미실행.
+
+## IMPL-239 — Zed 사용자 지정 서버 선택
+
+- 편집기 가져오기 클릭 후 HTTPS origin을 입력하는 창을 제공한다. 기본값은 https://zed.dev이며 Continue를 누른 뒤에만 credential 조회를 시작한다.
+- 서버 입력은 2048 UTF-16 단위로 제한하고 기존 bundle origin 검사/정규화를 공통 public helper로 노출했다. 경로, login 정보, query/fragment 등은 기존 계약에 따라 거부한다.
+- 선택 origin을 Main에서 runtime으로 전달하여 기본 production 외 서버도 exact target reader와 고정 credential API 확인을 사용한다. 서버 입력 도중 개인정보 모드 변경은 기존 dialog 감시로 취소한다.
+- 남은 소요: 편집기 설정 자동 탐색, 실제 Windows UI/사용자 서버 호환성 검증 및 전체 계획 나머지.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·UI·Credential Manager·API 검증 미실행.
