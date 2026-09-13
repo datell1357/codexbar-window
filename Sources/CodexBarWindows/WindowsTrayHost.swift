@@ -24,6 +24,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
     public typealias QuitHandler = @Sendable () -> Void
 
     private static let startupRegistrationCommand = UINT_PTR(0x7546)
+    private static let startupDetailsCommand = UINT_PTR(0x7548)
     private static let startupSettingsCommand = UINT_PTR(0x7547)
     private var startupRegistrationMessage: String?
     private static let menuHotkeyCommand = UINT_PTR(0x7533)
@@ -931,6 +932,9 @@ public final class WindowsTrayHost: @unchecked Sendable {
         if let message = self.startupRegistrationMessage {
             message.withCString(encodedAs: UTF16.self) { _ = AppendMenuW(menu, UINT(MF_STRING | MF_GRAYED), 0, $0) }
         }
+        "Startup registration details…".withCString(encodedAs: UTF16.self) {
+            _ = AppendMenuW(menu, UINT(MF_STRING), Self.startupDetailsCommand, $0)
+        }
         "Open Windows startup apps settings…".withCString(encodedAs: UTF16.self) {
             _ = AppendMenuW(menu, UINT(MF_STRING), Self.startupSettingsCommand, $0)
         }
@@ -1668,6 +1672,8 @@ public final class WindowsTrayHost: @unchecked Sendable {
             return
         }
         switch command {
+        case Self.startupDetailsCommand:
+            self.showStartupDetails()
         case Self.startupSettingsCommand:
             self.openStartupSettings()
         case Self.startupRegistrationCommand:
@@ -1944,6 +1950,22 @@ public final class WindowsTrayHost: @unchecked Sendable {
         guard let hwnd = self.window else { return }
         let body = Array(message.utf16) + [0]; let title = Array("CodexBar".utf16) + [0]
         _ = body.withUnsafeBufferPointer { text in title.withUnsafeBufferPointer { caption in MessageBoxW(hwnd, text.baseAddress, caption.baseAddress, UINT(MB_OK | MB_ICONWARNING)) } }
+    }
+
+    private func showStartupDetails() {
+        guard let hwnd = self.window, !self.quitInvoked else { return }
+        // Read on selection; the menu's earlier state may already be stale.
+        let state = WindowsStartupRegistration.state()
+        let message = state.guidance + "\n\nOpen Windows startup apps settings now?"
+        let body = Array(message.utf16) + [0]
+        let title = Array("CodexBar startup registration".utf16) + [0]
+        let choice = body.withUnsafeBufferPointer { text in
+            title.withUnsafeBufferPointer { caption in
+                MessageBoxW(hwnd, text.baseAddress, caption.baseAddress,
+                            UINT(MB_YESNO | MB_ICONINFORMATION | MB_DEFBUTTON2))
+            }
+        }
+        if choice == IDYES { self.openStartupSettings() }
     }
 
     private func openStartupSettings() {

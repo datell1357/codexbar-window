@@ -844,3 +844,20 @@
 2. 실제 shell 실패/성공·dialog·설정 페이지·접근성·지역화와 전체 Windows 빌드/배포 검증은 미실시다.
 
 다음 구현: startup 상태별 상세 설명과 복구 안내를 연결한다. MSIX 등록과 경로 이동 복구는 별도 미완료로 유지한다.
+
+## IMPL-045 — 자동 시작 상태별 상세·복구 안내
+
+상태: CODE_WRITTEN_UNVERIFIED. 빌드·컴파일·테스트·lint·앱·실제 registry/Settings 접근·검증 스크립트를 실행하지 않았다. 계약: WIN-052.
+
+작성한 코드:
+
+- absent/registered/conflict/unavailable/packaged 각각에 등록 범위와 가능한 다음 행동을 정의했다. 다른 시작 메커니즘 미조회, 정책에 의한 비활성화, 경로 이동 충돌 및 MSIX 미구현을 구분한다. 원시 executable/registry 값은 표시하지 않는다.
+- 트레이 Startup registration details 선택 시 상태를 새로 읽고 전용 제목의 안내 dialog를 표시한다. No 기본값으로 OS 설정 이동 여부를 선택하며 Yes는 기존 고정 URI 경로에 연결한다. 상세 보기는 등록을 변경하지 않는다.
+- 안내 작성 중 발견한 registry 첫 조회 실패의 분류를 보완했다. API 실패는 unavailable, 성공했지만 지원하지 않는 값 형식은 conflict로 구분한다. 접근 실패를 다른 실행 파일 소유라고 단정하지 않는다.
+
+남은 범위:
+
+1. 안내 dialog는 자동 복구가 아니다. MSIX StartupTask, 이전 설치 경로 migration/uninstall, 정책 상태 조회와 실제 Windows 검증은 남아 있다.
+2. 상세 상태는 선택 시 snapshot이며 dialog가 열린 동안 외부 변경을 관찰하지 않는다. 지역화/접근성·화면 검증도 미실시다.
+
+다음 구현: WIN-052의 Windows CLI 설치 위치 탐색 및 명시적 사용자 설정 안내로 이어간다. 자동 시작의 남은 구현 의무는 유지한다.

@@ -4,7 +4,37 @@ import WinSDK
 
 /// Unpackaged per-user registration only. Does not alter StartupApproved or machine policy.
 enum WindowsStartupRegistration {
-    enum State: Equatable { case absent, registered, conflict, unavailable, packaged }
+    enum State: Equatable {
+        case absent, registered, conflict, unavailable, packaged
+
+        var guidance: String {
+            switch self {
+            case .absent:
+                return "This executable is not registered by CodexBar for your Windows sign-in. " +
+                    "Choose Register this app at Windows sign-in in the tray menu to opt in. " +
+                    "Other installers or startup mechanisms are not checked."
+            case .registered:
+                return "The per-user startup entry matches this executable. " +
+                    "This does not confirm that Windows will launch it: check whether CodexBar is enabled " +
+                    "in Windows Settings > Apps > Startup. Your organization may control this setting. " +
+                    "Select the checked registration item in the tray menu to remove this matching entry."
+            case .conflict:
+                return "The existing startup entry differs from this executable or has an unsupported format. " +
+                    "CodexBar will not overwrite or delete it. If you moved the app, use the previous installation " +
+                    "to turn off its registration before registering this copy, or use its installer support. " +
+                    "Disabling an entry in Windows Settings does not repair its command. Automatic repair is not available."
+            case .unavailable:
+                return "CodexBar could not determine a supported startup registration state. " +
+                    "Package identity, executable path constraints, permissions or a registry read failure may be responsible. " +
+                    "The entry must not be assumed absent. Reopen this dialog to retry the read; " +
+                    "contact your administrator if startup settings are managed."
+            case .packaged:
+                return "This app has Windows package identity. Packaged startup integration is not implemented yet. " +
+                    "CodexBar does not use the unpackaged registration path here. " +
+                    "Windows Settings can show existing startup entries, but opening it cannot add the missing integration."
+            }
+        }
+    }
     enum Failure: Error { case unavailable, conflict, packaged }
     private static let runKey = "Software\\Microsoft\\Windows\\CurrentVersion\\Run"
     private static let valueName = "CodexBarWindows"
@@ -42,7 +72,8 @@ enum WindowsStartupRegistration {
             RegQueryValueExW(key, $0, nil, &type, nil, &size)
         }
         if result == ERROR_FILE_NOT_FOUND { return nil }
-        guard result == ERROR_SUCCESS, type == DWORD(REG_SZ), size >= 2, size <= 1024, size % 2 == 0
+        guard result == ERROR_SUCCESS else { throw Failure.unavailable }
+        guard type == DWORD(REG_SZ), size >= 2, size <= 1024, size % 2 == 0
         else { throw Failure.conflict }
         var units = [UInt16](repeating: 0, count: Int(size / 2))
         let fetched = valueName.withCString(encodedAs: UTF16.self) { name in
