@@ -3105,3 +3105,13 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - 첫 quota 관측은 기존 detector 계약대로 기준점만 만든다. refresh 실패/상태 전환은 기존 detector 의미를 유지한다. runtime은 raw credential 대신 최대 64바이트 opaque digest를 제공해야 한다.
 - 남은 소요: runtime row를 observation으로 변환, config/ownership digest 생성 및 shutdown/초과 표시 연결과 전체 계획 나머지.
 - CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·훅 실행 미실행.
+
+## IMPL-281 — Windows 사용량의 hook 관측 변환
+
+- QuotaWarningTransitionCore의 공급자별 lane 선택을 재사용해 HookQuotaLaneObservation으로 변환하는 순수 mapper를 작성했다.
+- 공급자 instance ID와 호출부가 정한 계정 discriminator를 유지하고 quota source가 달라지면 새 기준 상태를 만들도록 source를 구분한다.
+- remaining-percent 알림 threshold를 usage-fraction으로 변환하며 native 알림 활성화 여부로 hook을 끄지 않는다. 개인정보 숨김 시 account 표시값은 전달하지 않는다.
+- 추가 구간 목록의 authoritative 여부를 반환해 이후 runtime reconciliation이 부분 응답을 완전한 목록으로 취급하지 않도록 했다.
+- 실패 변환은 고정 유형만 받으며 원문 오류/응답 본문을 hook payload로 보내지 않는다.
+- 남은 소요: runtime batch 수집/부분 응답 보존/ownership digest/설정·종료·초과 표시 연결 및 전체 계획 나머지.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·외부 명령 실행 미실행.

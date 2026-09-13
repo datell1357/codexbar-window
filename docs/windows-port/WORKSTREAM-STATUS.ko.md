@@ -1,5 +1,7 @@
 # Windows 전용 제품 작업 현황
 
+- IMPL-281: Windows 사용량 lane과 고정 실패 유형을 hook 관측으로 변환하는 mapper를 작성했다. runtime batch 연결은 남아 있다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
 - IMPL-280: Windows hook 전환 관측과 설정/소유권 기준 상태 초기화를 연결했다. runtime row mapping은 남아 있다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
 
 - IMPL-279: Windows hook 직렬 대기열과 설정 변경/종료 취소 소유권을 작성했다. runtime producer 연결은 남아 있다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
