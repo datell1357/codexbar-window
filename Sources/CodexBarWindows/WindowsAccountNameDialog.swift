@@ -29,7 +29,7 @@ enum WindowsAccountNameDialog {
             self.providerName = provider.map { ProviderDescriptorRegistry.descriptor(for: $0).metadata.displayName }
         }
         var guidance: String {
-            if self.mode == .importedAccount { return "Choose a name for the imported Cursor account. Saving protects the session and selects this account." }
+            if self.mode == .importedAccount { return "Choose a name for the imported \(self.providerName ?? "Cursor") account. Saving protects the session and selects this account." }
             guard self.mode == .credential else { return "Only the name changes; credentials and selection stay the same." }
             let description = self.support.map { $0.subtitle + "\r\nInput: " + $0.placeholder }
                 ?? "Enter the complete replacement token or cookie header."
@@ -44,8 +44,8 @@ enum WindowsAccountNameDialog {
     }
     static func show(owner: HWND) -> Result { Self.show(owner: owner, mode: .name) }
 
-    static func showImportedAccount(owner: HWND, expectedPrivacy: Bool, expires: Date) -> Result {
-        Self.show(owner: owner, mode: .importedAccount, expectedPrivacy: expectedPrivacy, expires: expires)
+    static func showImportedAccount(owner: HWND, expectedPrivacy: Bool, expires: Date, provider: UsageProvider = .cursor) -> Result {
+        Self.show(owner: owner, mode: .importedAccount, provider: provider, expectedPrivacy: expectedPrivacy, expires: expires)
     }
 
     /// The returned string contains a secret; pass only to the credential save API.
@@ -68,7 +68,7 @@ enum WindowsAccountNameDialog {
             return RegisterClassExW(&klass)
         }
         guard registered != 0 || GetLastError() == ERROR_CLASS_ALREADY_EXISTS else { return .failed }
-        let caption = Array((mode == .importedAccount ? "Name imported Cursor account" : mode == .name ? "Rename saved account" : "Replace account credential — " + (context.providerName ?? "Saved account")).utf16) + [0]
+        let caption = Array((mode == .importedAccount ? "Name imported " + (context.providerName ?? "Cursor") + " account" : mode == .name ? "Rename saved account" : "Replace account credential — " + (context.providerName ?? "Saved account")).utf16) + [0]
         let hwnd = name.withUnsafeBufferPointer { n in
             caption.withUnsafeBufferPointer { c in
                 CreateWindowExW(DWORD(WS_EX_DLGMODALFRAME), n.baseAddress, c.baseAddress,

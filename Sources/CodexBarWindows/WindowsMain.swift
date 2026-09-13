@@ -11,6 +11,7 @@ struct CodexBarWindowsMain {
 
 private final class WindowsTrayApplication: @unchecked Sendable {
     private let cursorBrowserImports = WindowsCursorBrowserImportTask()
+    private let augmentBrowserImports = WindowsCursorBrowserImportTask()
     private let runtime: WindowsUsageRuntime
     private let sessions: WindowsAgentSessionsRuntime
     private let remoteSessions: WindowsRemoteSessionsRuntime
@@ -121,6 +122,28 @@ private final class WindowsTrayApplication: @unchecked Sendable {
             guard let self else { return }
             self.cursorBrowserImports.cancel(id: ticket)
             Task { await self.runtime.cancelCursorBrowserImport(requestID: ticket) }
+        },
+        onAugmentBrowserImportRequested: { [weak self] requestID in
+            guard let self else { return }
+            self.augmentBrowserImports.start(id: requestID) { [weak self] in
+                guard let self else { return }
+                let result = await self.runtime.discoverAugmentBrowserAccounts(requestID: requestID)
+                guard !Task.isCancelled else { return }
+                self.host.postAugmentBrowserImport(requestID: requestID, result: result)
+            }
+        },
+        onAugmentBrowserImportSave: { [weak self] hostID, ticket, candidate, label in
+            guard let self else { return }
+            Task {
+                let result = await self.runtime.importAugmentBrowserAccount(requestID: ticket, candidateID: candidate, label: label)
+                await self.runtime.cancelAugmentBrowserImport(requestID: ticket)
+                self.host.postAugmentBrowserImportSave(requestID: hostID, result: result)
+            }
+        },
+        onAugmentBrowserImportCancel: { [weak self] ticket in
+            guard let self else { return }
+            self.augmentBrowserImports.cancel(id: ticket)
+            Task { await self.runtime.cancelAugmentBrowserImport(requestID: ticket) }
         },
         onSpendJSONRequested: { [weak self] requestID, copy in
             guard let self else { return }

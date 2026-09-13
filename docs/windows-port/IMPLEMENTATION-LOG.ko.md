@@ -2624,3 +2624,12 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - 이메일을 stable external ID로 저장하지 않는다. 새 계정은 기존 보호 계정 추가 API에 수동 쿠키로 전달한다. 실패한 탐색의 request 상태를 정리하고 종료 시 task와 후보를 철회한다.
 - 남은 소요: 트레이 시작/취소/후보 선택 UI 연결과 실제 동작 확인, Chromium/Windsurf 가져오기 및 전체 계획 나머지.
 - CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·브라우저·API·보호 저장 검증 미실행.
+
+## IMPL-225 — Augment 가져오기 UI 연결
+
+- Add saved account 메뉴에 Augment 활성 상태의 Import from Firefox/Cancel 동작을 추가한다. 독립 요청 ID/메일박스와 기존 취소 가능한 task holder를 사용해 runtime 발견·저장·취소 API를 연결한다.
+- 확인된 후보 선택, 실패/미확인 수 안내, 이름 입력과 보호 저장 결과 표시를 연결한다. 저장 후 사용자가 Refresh로 조회하도록 안내한다.
+- 후보 팝업의 250ms 만료/개인정보 감지 timer 및 이름 입력 dialog의 기존 만료 처리를 사용한다. 이름 입력 문구는 provider 인자를 받아 Cursor/Augment에 맞게 표시한다.
+- 계정 저장 성공/같은 세션 재선택/설정 변경/실패를 구분하며 취소 후 늦게 도착한 결과는 요청 ID로 무시한다.
+- 남은 소요: 실제 Windows 전체 가져오기/보호 저장 검증, Chromium 및 Windsurf 자동 가져오기와 전체 계획 나머지.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·UI·브라우저·API 검증 미실행.
