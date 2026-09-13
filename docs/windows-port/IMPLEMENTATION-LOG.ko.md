@@ -771,3 +771,20 @@
 2. 별도 시작 시 활성화 flag의 외부 변경 적용, 임의 key capture, scroll/focus/accessibility 및 전체 Windows 기능/배포 검증은 남아 있다.
 
 다음 구현: 전역 shortcut 작업의 남은 항목을 추적한 채 다음 Windows 전용 lifecycle/시작 설정 계약으로 넘어간다.
+
+## IMPL-041 — Windows logoff/shutdown lifecycle
+
+상태: CODE_WRITTEN_UNVERIFIED. 빌드·컴파일·테스트·lint·앱·실제 종료/로그오프·검증 스크립트를 실행하지 않았다. 계약: WIN-052.
+
+작성한 코드:
+
+- tray window의 WM_QUERYENDSESSION에 동의 응답만 하고 취소될 수 있는 단계에서 종료 정리를 시작하지 않는다. WM_ENDSESSION FALSE는 계속 실행하며 TRUE에서 system-session 종료 상태를 기록하고 열린 메뉴를 닫은 뒤 기존 invokeQuit 경로를 호출한다.
+- 시스템 종료가 확정되면 keyboard foreground 복원 대상을 제거한다. 일반 quit/WM_CLOSE와 기존 native 자원 정리 경로를 재사용한다.
+- WindowsMain은 동일한 session/remote/runtime helper shutdown을 요청한다. 시스템 종료의 경우 semaphore 대기를2초로 제한하고 초과 시 cleanup 미완료를 stderr에 남긴다. 일반 사용자 종료의 기존 drain 대기는 유지한다.
+
+남은 범위:
+
+1. Windows는 WM_ENDSESSION 처리 전후 프로세스를 강제 종료할 수 있어2초 정리나 persistent flush 완료를 보장하지 않는다. system 종료 중 실제 message 전달/modal loop/actor drain/timeout은 미검증이다.
+2. ENDSESSION_CLOSEAPP 재시작 등록·installer restart manager·launch-at-login/PATH 설치와 전체 WIN-052는 미완료다. 저장 중 종료 복구도 별도 Windows 검증이 필요하다.
+
+다음 구현: Windows 자동 시작 opt-in을 사용자별 설정과 실제 OS 등록 상태로 분리해 연결한다. 설치 방식에 따른 차이와 rollback을 명시한다.

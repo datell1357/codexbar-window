@@ -173,7 +173,15 @@ private final class WindowsTrayApplication: @unchecked Sendable {
         }
         // WM_CLOSE schedules asynchronous cleanup. Keep the process alive until
         // the runtime has cancelled refresh work and released persistent helpers.
-        self.shutdownSignal.wait()
+        if host.isSystemSessionEnding {
+            // Windows can terminate the process at any time during session end. Attempt the same
+            // helper drain, but do not wait indefinitely or claim it finished when time runs out.
+            if self.shutdownSignal.wait(timeout: .now() + 2) == .timedOut {
+                FileHandle.standardError.write(Data("CodexBar: system-session cleanup did not finish within the shutdown budget.\n".utf8))
+            }
+        } else {
+            self.shutdownSignal.wait()
+        }
     }
 }
 #endif

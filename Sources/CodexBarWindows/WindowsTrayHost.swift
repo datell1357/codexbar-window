@@ -28,6 +28,12 @@ public final class WindowsTrayHost: @unchecked Sendable {
     private static let shortcutChoiceBase = UINT_PTR(0x7900)
     private var activeHotkeyID: Int32 = 0x4342
     private var ownedHotkeyIDs: Set<Int32> = []
+    private var systemSessionEnding = false
+    public var isSystemSessionEnding: Bool {
+        self.mailboxLock.lock()
+        defer { self.mailboxLock.unlock() }
+        return self.systemSessionEnding
+    }
     private var activeMenuShortcut: WindowsMenuShortcut?
     private static let applySavedShortcutCommand = UINT_PTR(0x7545)
     private var menuHotkeyRegistered = false
@@ -1992,6 +1998,22 @@ public final class WindowsTrayHost: @unchecked Sendable {
         {
             host.onPowerChanged()
             return 1
+        }
+        if message == UINT(WM_QUERYENDSESSION) {
+            // Do not veto logoff/shutdown or start irreversible cleanup during a cancellable query.
+            return 1
+        }
+        if message == UINT(WM_ENDSESSION) {
+            if wParam != 0 {
+                host.mailboxLock.lock()
+                host.systemSessionEnding = true
+                host.mailboxLock.unlock()
+                host.keyboardReturnTarget = nil
+                if host.popupIsOpen { _ = EndMenu() }
+                host.invokeQuit()
+            }
+            // FALSE means another application/user cancelled shutdown. Keep this app running.
+            return 0
         }
         if message == UINT(WM_CLOSE) { host.invokeQuit(); return 0 }
         if message == UINT(WM_COMMAND) {
