@@ -1,5 +1,7 @@
 # Windows 전용 제품 작업 현황
 
+- IMPL-185: Cursor Firefox 탐색을 runtime actor 밖으로 분리하고 취소/종료 연결, 동일 세션 후보 중복 제거를 작성했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
 - IMPL-184: 트레이의 Firefox Cursor 가져오기 시작/후보 선택/이름 입력/보호 저장 결과를 연결했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
 
 - IMPL-183: Cursor 후보 검증 runtime과 5분 선택 ticket, 기존 보호 계정 추가 API를 연결했다. UI 미연결. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.

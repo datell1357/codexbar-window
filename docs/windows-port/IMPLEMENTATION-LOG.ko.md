@@ -2295,3 +2295,11 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - 취소 API에 선택 ticket을 적용해 이전 UI의 취소가 새 요청을 취소하지 않도록 했다. 저장 후 사용자가 Refresh로 사용량을 갱신한다.
 - 남은 소요: Chrome/Edge/WebView2, 동일 계정 후보 중복 병합, 후보 탐색 actor 분리, 진행 취소/시간 초과 UX, 열린 네이티브 후보 메뉴의 외부 privacy 변경 즉시 닫기. 현재 privacy는 메뉴 열기 전과 선택/저장 시 다시 확인한다.
 - CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·실제 브라우저/계정/API 검증은 사용자 요청으로 실행하지 않았다.
+
+## IMPL-185 — Cursor 후보 탐색 작업 수명
+
+- Firefox 프로필/SQLite 탐색을 utility detached task로 분리해 usage runtime actor를 점유하지 않도록 작성했다. 호출 task 취소, 새 가져오기, ticket 취소 및 shutdown에 탐색 취소를 연결했다.
+- 탐색 후 및 각 HTTP 후보 검증 전에 요청/종료/설정/privacy 상태를 확인한다.
+- 동일 cookie header의 SHA-256 지문으로 중복 세션 후보를 제거한다. 사용자 ID만으로는 팀 컨텍스트를 구분할 수 없어 서로 다른 세션은 같은 사용자여도 유지한다. 지문은 메모리에서만 사용한다.
+- 남은 소요: 동기 브라우저 I/O 내부의 즉시 중단 보장, HTTP 진행 취소/전체 deadline, UI 취소 액션, 계정/팀 식별 기반 병합, Chrome/Edge/WebView2 및 나머지 계획.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·실제 계정/브라우저/API 검증 미실행.

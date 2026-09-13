@@ -543,6 +543,7 @@ public actor WindowsUsageRuntime {
         let candidates: [UUID: WindowsCursorBrowserSessionImporter.ValidatedCandidate]
     }
     private var cursorBrowserImportRequest: UUID?
+    private var cursorBrowserDiscoveryTask: Task<WindowsCursorBrowserSessionImporter.Discovery, Error>?
     private var pendingCursorBrowserImport: PendingCursorBrowserImport?
 
     private func cursorImportRevision() throws -> (Data, UUID?)? {
@@ -558,6 +559,7 @@ public actor WindowsUsageRuntime {
 
     public func discoverCursorBrowserAccounts() async -> CursorBrowserImportResult {
         guard !self.shuttingDown, self.refreshTask == nil else { return .unavailable("Wait for the current refresh to finish.") }
+        self.cancelCursorBrowserImport()
         let requestID = UUID()
         self.cursorBrowserImportRequest = requestID
         self.pendingCursorBrowserImport = nil
@@ -566,15 +568,41 @@ public actor WindowsUsageRuntime {
             guard let (revision, selected) = try self.cursorImportRevision() else { return .unavailable("Enable Cursor before importing an account.") }
             let deadline = Date().addingTimeInterval(60)
             let importer = WindowsCursorBrowserSessionImporter()
-            let discovery = try importer.discover(deadline: deadline)
+            // Profile enumeration and SQLite reads must not occupy the usage runtime actor.
+            let discoveryTask = Task.detached(priority: .utility) {
+                try importer.discover(deadline: deadline)
+            }
+            self.cursorBrowserDiscoveryTask = discoveryTask
+            defer {
+                if self.cursorBrowserImportRequest == requestID { self.cursorBrowserDiscoveryTask = nil }
+            }
+            let discovery = try await withTaskCancellationHandler {
+                try await discoveryTask.value
+            } onCancel: {
+                discoveryTask.cancel()
+            }
+            try Task.checkCancellation()
+            guard !self.shuttingDown, self.cursorBrowserImportRequest == requestID else {
+                return .unavailable("The browser import was cancelled or replaced.")
+            }
             var validated: [UUID: WindowsCursorBrowserSessionImporter.ValidatedCandidate] = [:]
             var rows: [CursorBrowserChoice] = []
             var failures = discovery.failedProfileCount
             var attempted = 0
+            var seenSessions = Set<Data>()
             for candidate in discovery.candidates.prefix(16) {
                 try Task.checkCancellation()
                 guard Date() < deadline else { break }
+                guard !self.shuttingDown, self.cursorBrowserImportRequest == requestID,
+                      try self.cursorImportRevision()?.0 == revision,
+                      WindowsUsagePresentationSettings.load().hidePersonalInfo == privacy else {
+                    return .unavailable("Cursor accounts or privacy settings changed. Start the import again.")
+                }
                 attempted += 1
+                // Only collapse identical session headers. A user ID alone does not identify
+                // a team context, so different sessions for the same user remain selectable.
+                let fingerprint = Data(SHA256.hash(data: Data(candidate.cookieHeader.utf8)))
+                guard seenSessions.insert(fingerprint).inserted else { continue }
                 do {
                     let result = try await importer.validate(candidate)
                     try Task.checkCancellation()
@@ -607,6 +635,8 @@ public actor WindowsUsageRuntime {
 
     public func cancelCursorBrowserImport(requestID: UUID? = nil) {
         if let requestID, self.cursorBrowserImportRequest != requestID { return }
+        self.cursorBrowserDiscoveryTask?.cancel()
+        self.cursorBrowserDiscoveryTask = nil
         self.cursorBrowserImportRequest = nil
         self.pendingCursorBrowserImport = nil
     }
@@ -1822,6 +1852,7 @@ public actor WindowsUsageRuntime {
     public func shutdown() async {
         guard !self.shuttingDown else { return }
         self.shuttingDown = true
+        self.cancelCursorBrowserImport()
         self.queuedSpendRefresh = false
         self.spendGeneration &+= 1
         self.spendSnapshot = nil
