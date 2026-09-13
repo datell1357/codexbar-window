@@ -878,3 +878,15 @@
 2. 실제 WinSDK/긴 경로/화면 크기/지역화/접근성 및 전체 Windows 실행·배포 검증은 미실시다.
 
 다음 구현: bounded PATH 후보 탐색과 중복 설치 안내를 연결한다. 자동 설치/alias와 자동 시작의 남은 의무는 유지한다.
+
+## IMPL-047 — process PATH의 CLI 후보 탐색
+
+상태: CODE_WRITTEN_UNVERIFIED. 모든 빌드·컴파일·테스트·실행·실환경 조회·검증은 사용자 지시로 미실시. 계약: WIN-052.
+
+- 현재 process PATH를 32768 UTF-16 buffer 한도로 읽고 최대64개 항목, 후보당 고정2개 이름을 조회하는 코드를 CLI 안내에 연결했다. 반복 사이200ms 경과 시 나머지를 미조회로 센다.
+- drive-absolute fixed drive만 탐색하며 relative/UNC/device/미해결 변수/네트워크 drive는 제외한다. 대소문자 기준 중복 폴더를 줄이고 최대4개 후보만 경로240자 한도로 표시한다. 개인정보 숨김을 따른다.
+- 후보 수·미조회 항목·접근/형식 실패를 구분하고 여러 후보 시 설치본 확인을 안내한다. shell resolution/실행 가능/전체 설치 탐지 성공으로 표시하지 않는다.
+
+남은 범위: 개별 OS 호출은 중단할 수 없고 fixed drive의 상위 reparse 경로가 network를 가리킬 수도 있어 wall-clock hard limit이 아니다. UI thread 밖 실행·취소·오래된 결과 처리, PATH 설치/제거, MSIX alias 및 Windows 검증은 남아 있다.
+
+다음 구현: CLI 안내 탐색을 tray message thread 밖으로 옮기고 취소/오래된 결과 처리를 연결한다.
