@@ -642,6 +642,8 @@ public enum CursorStatusProbeError: LocalizedError, Sendable {
         case .notLoggedIn:
             #if os(macOS)
             "Not logged in to Cursor. Please log in via the CodexBar menu."
+            #elseif os(Windows)
+            "Cursor rejected the selected session. Update its manual Cookie header in the provider account settings, then refresh."
             #else
             "Not logged in to Cursor. Paste a Cookie header copied from cursor.com into "
                 + "~/.config/codexbar/config.json (legacy: ~/.codexbar/config.json)."
@@ -655,6 +657,8 @@ public enum CursorStatusProbeError: LocalizedError, Sendable {
             "No Cursor session found. \(Self.safariFullDiskAccessHint) "
                 + "Please log in to cursor.com in \(cursorCookieImportOrder.loginHint). "
                 + "You can also sign in to Cursor from the CodexBar menu (Add / switch account)."
+            #elseif os(Windows)
+            "No Cursor session is selected. Add or select a Cursor account with a manual Cookie header in the provider account settings."
             #else
             "No Cursor session found. Paste a Cookie header copied from cursor.com into "
                 + "~/.config/codexbar/config.json (legacy: ~/.codexbar/config.json)."

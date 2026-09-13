@@ -70,7 +70,13 @@ public enum CursorProviderDescriptor {
                 ]),
             tokenCost: ProviderTokenCostConfig(
                 supportsTokenCost: true,
-                noDataMessage: { "No Cursor cost usage found. Sign in to Cursor in your browser or the Cursor app." },
+                noDataMessage: {
+                    #if os(Windows)
+                    "No Cursor cost usage found. Select a Cursor account with a manual Cookie header, then refresh."
+                    #else
+                    "No Cursor cost usage found. Sign in to Cursor in your browser or the Cursor app."
+                    #endif
+                },
                 menuHintLines: [.estimate],
                 supportsTokenSnapshot: self.supportsTokenSnapshot,
                 settingsStatusOrder: 2,
@@ -98,8 +104,8 @@ public enum CursorProviderDescriptor {
                 versionDetector: nil,
                 supportsCostCommand: self.supportsCostCommand,
                 browserSupportExemption: { _, _, settings in
-                    #if os(Linux)
-                    // Linux supports manual cookies; browser and Cursor.app imports remain macOS-only.
+                    #if os(Linux) || os(Windows)
+                    // Manual cookies do not require browser import support on these platforms.
                     settings?.cursor?.cookieSource == .manual &&
                         CookieHeaderNormalizer.normalize(settings?.cursor?.manualCookieHeader) != nil
                     #else
@@ -109,7 +115,7 @@ public enum CursorProviderDescriptor {
     }
 
     private static var supportsCostCommand: Bool {
-        #if os(macOS)
+        #if os(macOS) || os(Windows)
         true
         #else
         false
@@ -137,7 +143,7 @@ public enum CursorProviderDescriptor {
     }
 
     private static var supportsTokenSnapshot: Bool {
-        #if os(macOS)
+        #if os(macOS) || os(Windows)
         true
         #else
         false

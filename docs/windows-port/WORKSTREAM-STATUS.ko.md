@@ -1,5 +1,7 @@
 # Windows 전용 제품 작업 현황
 
+- IMPL-178: Cursor Windows 비용/snapshot capability 및 수동 cookie CLI 예외를 활성화하고 Windows 설정 안내를 연결했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
 - IMPL-177: Cursor 원본 status/quota 모델 및 수동 cookie HTTP 경로를 Windows에 포함했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
 
 - IMPL-176: 명시적 Cursor cookie 수집의 이전 결과 유지와 계정 미확인 ambient CSV fallback 차단을 연결했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.

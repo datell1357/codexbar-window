@@ -2227,3 +2227,13 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - Windows usage-summary decode 오류에는 원본 JSON 조각을 포함하지 않는다. raw data 자체는 기존 snapshot 진단 구조를 따르므로 전체 개인정보 출력 경계는 후속 대상으로 유지한다.
 
 남은 범위: API/필드/플랜별 Windows 동작 검증, 선택적 endpoint 실패/취소 세부 처리, 자동 로그인/브라우저/WebView2/DPAPI 세션 저장, 전체 Cursor 및 전체 계획 구현. 수동 경로 포함을 전체 provider 완료로 주장하지 않는다.
+
+## IMPL-178 — Cursor Windows 공급자 capability 연결
+
+상태 CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·CLI/API/실행 검증 미실시. guidelines/COMMITS.md 부재로 핵심 규칙을 적용한다.
+
+- Cursor supportsTokenSnapshot/supportsCostCommand가 여전히 macOS-only였음을 발견했다. IMPL-174 이후 원격 수집 함수가 있어도 capability 검사에서 차단되는 누락을 Windows 조건 추가로 연결했다.
+- Linux에만 있던 manual cookie browserSupportExemption을 Windows에도 적용했다. cookieSource가 manual이고 normalized cookie가 있을 때만 브라우저 지원 검사 예외를 허용한다. 자동 브라우저 import 지원으로 표시하지 않는다.
+- Windows 비용 no-data 및 notLoggedIn/noSessionCookie 안내를 선택 계정의 수동 Cookie header 설정/갱신으로 연결했다. macOS 메뉴/Safari 안내나 Linux config 경로를 Windows에 표시하지 않는다.
+
+남은 범위: 실제 CLI→fetch→snapshot 호출 및 API/플랜별 검증, 자동 로그인과 계정 소유권 CSV, 전체 provider capability 전수 및 전체 계획 구현. capability 플래그는 구현 경로 연결이며 검증 완료 인증이 아니다.
