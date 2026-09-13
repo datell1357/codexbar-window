@@ -1,5 +1,7 @@
 # Windows 전용 제품 작업 현황
 
+IMPL-053: PATH 결과 프로토콜과 쓰기 성공 후 환경 변경 통지를 연결했다. 실행/전체 broadcast 상한/배포 검증은 남아 있다.
+
 IMPL-052: PATH helper 소유권·launch/stop 직렬화·bounded drain과 종료 미확인 재실행 차단을 연결했다. 실행 미검증이다.
 
 IMPL-051: PATH 리소스·트레이 확인·background helper 결과를 연결했다. helper 종료 소유권과 배포/실행 검증은 남아 있다.

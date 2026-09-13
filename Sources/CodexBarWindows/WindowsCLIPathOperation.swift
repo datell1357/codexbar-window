@@ -74,7 +74,7 @@ final class WindowsCLIPathOperation: @unchecked Sendable {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: shell)
         process.arguments = ["-NoLogo", "-NoProfile", "-NonInteractive", "-File", script.path,
-                             "-Action", action.rawValue, "-Directory", directory]
+                             "-Action", action.rawValue, "-Directory", directory, "-ResultProtocolV1"]
         process.standardInput = FileHandle.nullDevice
         process.standardOutput = FileHandle.nullDevice
         process.standardError = FileHandle.nullDevice
@@ -110,12 +110,32 @@ final class WindowsCLIPathOperation: @unchecked Sendable {
             return "PATH helper stopped after timeout or shutdown; the change may already have occurred. " +
                 "Inspect user PATH before retrying."
         }
-        if process.terminationReason == .exit, process.terminationStatus == 0 {
-            return "PATH helper completed (the entry may already have matched the request). " +
-                "Sign out and sign in again to inherit the environment change. The CLI was not executed."
+        if process.terminationReason == .exit {
+            switch process.terminationStatus {
+            case 20:
+                let notification = self.stopRequested ? "Notification skipped during shutdown." : Self.notifyEnvironmentChange()
+                return "User PATH was changed by the helper. " + notification +
+                    " Existing terminals and this app keep their inherited environment; sign out and sign in if needed."
+            case 21:
+                return "User PATH already matches this request; no entry was changed. The CLI was not executed."
+            case 22:
+                return "The PATH change was declined or previewed; no entry was changed."
+            default: break
+            }
         }
         return "PATH helper failed or was blocked by policy. Inspect user PATH before retrying. " +
             "No automatic rollback was attempted. See the distribution CLI setup instructions."
+    }
+    private static func notifyEnvironmentChange() -> String {
+        // WM_SETTINGCHANGE contains a pointer: keep it alive for the synchronous send.
+        // The timeout is per recipient, not an overall broadcast deadline.
+        let result = "Environment".withCString(encodedAs: UTF16.self) { name in
+            SendMessageTimeoutW(HWND(bitPattern: 0xffff), UINT(WM_SETTINGCHANGE), 0,
+                                LPARAM(Int(bitPattern: name)), UINT(SMTO_ABORTIFHUNG | SMTO_BLOCK), 100, nil)
+        }
+        return result != 0
+            ? "Windows environment change notification was sent; application refresh is not guaranteed."
+            : "Environment notification failed or timed out. Sign out and sign in to inherit the change."
     }
 }
 #endif

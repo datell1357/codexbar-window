@@ -950,3 +950,15 @@
 남은 범위: Process.run 자체 지연과 condition 획득은 hard deadline이 아니며 OS 강제 종료 시 child 종료 보장은 없다. Job Object process-tree containment, 실제 프로세스 종료/registry 결과, 구조화 오류와 전체 Windows 검증은 남아 있다.
 
 다음 구현: PATH helper 구조화 결과와 환경 변경 통지를 연결한다.
+
+## IMPL-053 — PATH 결과 코드와 환경 변경 통지
+
+상태: CODE_WRITTEN_UNVERIFIED. 코드/공식 API 문서 읽기와 편집만 수행했다. PowerShell/registry/앱/빌드/컴파일/테스트/검증 미실시. 계약 WIN-052.
+
+- 내부 ResultProtocolV1에서20=쓰기 성공,21=이미 요청 상태,22=ShouldProcess 거부/미리보기로 반환한다. 일반 수동 호출의 출력은 유지한다. 앱은0/알 수 없는 exit를 성공으로 처리하지 않는다.
+-20에서만 worker가 WM_SETTINGCHANGE/Environment를 synchronous SendMessageTimeoutW로 통지한다. UTF-16 pointer lifetime을 호출 끝까지 유지하며 실패/timeout과 통지 요청 성공을 구분한다. shutdown이면 통지를 생략한다.
+- 기존 프로세스 환경 교체/수신 앱 반영을 보장하지 않고 로그아웃·로그인 복구 안내를 유지한다. 원시 PATH/오류 출력은 수집하지 않는다.
+
+근거: https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-sendmessagetimeoutw 및 WM_SETTINGCHANGE 계약.
+
+남은 범위:100ms는 수신 창별 timeout이므로 전체 broadcast hard limit이 아니다. 상세 실패 코드, child process-tree containment, resource 서명/MSIX 및 Windows 실행·배포 검증은 남아 있다.
