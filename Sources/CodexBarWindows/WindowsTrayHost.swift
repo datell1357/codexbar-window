@@ -146,6 +146,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
     private var popupAgentSessionCommands: [UINT_PTR: WindowsSessionFocusRequest] = [:]
     private let onTokenAccountSelect: @Sendable (WindowsTokenAccountSelectionRequest) -> Void
     private var tokenAccountPage = 0
+    private var tokenAccountPageQueued = false
     private var tokenAccountPageIDs: [UUID] = []
     private var popupTokenAccountPages: [UINT_PTR: Int] = [:]
     private var popupTokenAccountCommands: [UINT_PTR: WindowsTokenAccountSelectionRequest] = [:]
@@ -780,13 +781,16 @@ public final class WindowsTrayHost: @unchecked Sendable {
         self.popupTokenAccountCommands.removeAll(keepingCapacity: true)
         self.popupTokenAccountPages.removeAll(keepingCapacity: true)
         var continuingPage = false
+        let focusSavedAccounts = preserveAnchor && self.tokenAccountPageQueued
+        self.tokenAccountPageQueued = false
+        var savedAccountsMenuPosition: Int32 = -1
         defer {
             self.popupIsOpen = false
             self.popupCopySummary = nil
             self.popupCopyErrors.removeAll(keepingCapacity: true)
-        self.popupProviderDetails.removeAll(keepingCapacity: true)
-        self.popupTokenAccountCommands.removeAll(keepingCapacity: true)
-        self.popupTokenAccountPages.removeAll(keepingCapacity: true)
+            self.popupProviderDetails.removeAll(keepingCapacity: true)
+            self.popupTokenAccountCommands.removeAll(keepingCapacity: true)
+            self.popupTokenAccountPages.removeAll(keepingCapacity: true)
             self.mailboxLock.lock()
             let cliReady = self.cliSetupResult != nil
             self.mailboxLock.unlock()
@@ -882,12 +886,14 @@ public final class WindowsTrayHost: @unchecked Sendable {
                 }
                 if attached { commands.merge(providerCommands) { _, new in new } } else { DestroyMenu(providerMenu) }
             }
+            let menuPosition = GetMenuItemCount(menu)
             let attached = (!commands.isEmpty || !pageCommands.isEmpty) && "Saved &accounts".withCString(encodedAs: UTF16.self) {
                 AppendMenuW(menu, UINT(MF_STRING | MF_POPUP), UINT_PTR(UInt(bitPattern: accountsMenu)), $0) != 0
             }
             if attached {
                 self.popupTokenAccountCommands = commands
                 self.popupTokenAccountPages = pageCommands
+                savedAccountsMenuPosition = menuPosition
             } else { DestroyMenu(accountsMenu) }
         }
         let detailEntries = menuEntries.filter { $0.usageCopyText != nil || $0.errorCopyText != nil }
@@ -1196,7 +1202,11 @@ public final class WindowsTrayHost: @unchecked Sendable {
             }
             flags |= UINT(TPM_RIGHTALIGN | TPM_BOTTOMALIGN)
         }
-        if self.keyboardReturnTarget != nil, localMenuPosition >= 0, GetSubMenu(menu, localMenuPosition) != nil {
+        if focusSavedAccounts, savedAccountsMenuPosition >= 0,
+           GetSubMenu(menu, savedAccountsMenuPosition) != nil {
+            self.keyboardInitialMenu = menu
+            self.keyboardInitialPosition = UINT(savedAccountsMenuPosition)
+        } else if self.keyboardReturnTarget != nil, localMenuPosition >= 0, GetSubMenu(menu, localMenuPosition) != nil {
             self.keyboardInitialMenu = menu
             self.keyboardInitialPosition = UINT(localMenuPosition)
         }
@@ -1205,8 +1215,10 @@ public final class WindowsTrayHost: @unchecked Sendable {
         self.keyboardInitialPosition = nil
         _ = DestroyMenu(menu)
         continuingPage = command != 0 && self.popupPageCommands[UINT_PTR(command)] != nil
-        if command != 0 { self.dispatchCommand(UINT_PTR(command)) }
-        else { self.restoreKeyboardReturnTarget(owner: hwnd) }
+        if command != 0 {
+            self.dispatchCommand(UINT_PTR(command))
+            continuingPage = continuingPage || self.tokenAccountPageQueued
+        } else { self.restoreKeyboardReturnTarget(owner: hwnd) }
         self.popupPageCommands.removeAll(keepingCapacity: true)
         self.popupRemoteCommands.removeAll(keepingCapacity: true)
         self.popupRemoteDetails.removeAll(keepingCapacity: true)
@@ -1895,8 +1907,14 @@ public final class WindowsTrayHost: @unchecked Sendable {
     private func dispatchCommand(_ command: UINT_PTR) {
         if let page = self.popupTokenAccountPages[command] {
             guard !self.quitInvoked, let window = self.window else { return }
+            let previousPage = self.tokenAccountPage
             self.tokenAccountPage = page
-            PostMessageW(window, Self.pagePopupMessage, 0, 0)
+            self.tokenAccountPageQueued = PostMessageW(window, Self.pagePopupMessage, 0, 0) != 0
+            if !self.tokenAccountPageQueued {
+                self.tokenAccountPage = previousPage
+                self.showMessage("Could not open the next account page. Reopen Saved accounts and try again.",
+                                 caption: "Saved accounts")
+            }
             return
         }
         if let request = self.popupTokenAccountCommands[command] {

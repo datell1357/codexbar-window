@@ -1376,3 +1376,13 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/hidpi/wm-dpichanged 
 - 페이지 이동은 기존 popup 재열기 메시지를 사용하며 설정 저장이나 수집을 호출하지 않는다. 계정 UUID 목록/순서가 변경되면 첫 페이지로 돌아간다. 메뉴 종료 시 이동 command를 제거하고 메뉴 생성 실패 때 목적지를 등록하지 않는다.
 
 남은 범위: 페이지 이동 후 Saved accounts 하위 메뉴 자동 포커스, provider/계정 검색, 계정 lifecycle·Codex OAuth·동시 표시, 전체 Windows 검증. 새 페이지를 표시했다는 실행 증거는 없다.
+
+## IMPL-094 — 계정 페이지 키보드 이동 맥락 보존
+
+상태 CODE_WRITTEN_UNVERIFIED. 컴파일/빌드/테스트/UI/키보드/검증 미실시. guidelines/COMMITS.md 부재로 핵심 커밋 규칙을 적용한다.
+
+- 계정 페이지 재열기 시 Saved accounts 항목의 실제 메뉴 위치를 기록하고 기존 WM_INITMENUPOPUP/HiliteMenuItem 경로로 선택 표시하도록 작성했다. 항목 자동 실행이나 키 입력 주입은 하지 않는다.
+- 기존 continuingPage가 세션 페이지에만 적용되어 계정 페이지 이동 때 keyboard return target을 잃던 부분을 연결했다. 계정 페이지 종료 후 취소 시 원래 키보드 호출 대상 복원 경로를 유지한다.
+- PostMessage 실패 시 페이지 번호를 복구하고 사용자 안내를 작성했다. 일반 메뉴 열기에서는 이전 페이지 포커스 요청을 소비·초기화한다.
+
+남은 범위: 하위 메뉴 자체의 자동 펼침·현재 계정 포커스, 키보드/마우스 혼합 및 Windows 실행 검증, 계정 lifecycle·OAuth·동시 표시. 포커스 동작 검증 완료를 주장하지 않는다.
