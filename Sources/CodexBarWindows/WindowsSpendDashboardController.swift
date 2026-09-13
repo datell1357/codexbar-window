@@ -16,6 +16,7 @@ actor WindowsSpendDashboardController {
     }
     struct Options: Sendable {
         var days = 30
+        var bucketTimeZoneIdentifier = CostUsageBucketTimeZone.pinIdentifier()
         var preferredCurrencyCode = "auto"
         var hiddenSourceIDs: Set<String> = []
         var hideNativeCodexWhenOpenCodexPresent = false
@@ -62,6 +63,7 @@ actor WindowsSpendDashboardController {
     func snapshot(now: Date = Date()) -> Snapshot {
         let model = WindowsSpendDashboardModel.build(inputs: self.scan?.inputs ?? [],
             requestedDays: self.options.days, now: now,
+            calendar: CostUsageBucketTimeZone.calendar(identifier: self.options.bucketTimeZoneIdentifier),
             preferredCurrencyCode: self.options.preferredCurrencyCode,
             hiddenSourceIDs: self.options.hiddenSourceIDs,
             hideNativeCodexWhenOpenCodexPresent: self.options.hideNativeCodexWhenOpenCodexPresent,

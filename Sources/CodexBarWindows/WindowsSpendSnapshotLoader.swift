@@ -19,13 +19,18 @@ struct WindowsSpendSnapshotLoader {
     }
     enum Failure: Error { case invalidSources, missingCodexHome }
 
-    static func make(sources: [Source], forceRefresh: Bool = false,
+    static func make(sources: [Source], settings: WindowsSpendSettings, forceRefresh: Bool = false,
                      allowPricingRefresh: Bool = true) -> WindowsSpendDashboardController.Loader {
+        self.make(sources: sources, forceRefresh: forceRefresh, allowPricingRefresh: allowPricingRefresh,
+                  calendar: settings.bucketCalendar)
+    }
+
+    static func make(sources: [Source], forceRefresh: Bool = false,
+                     allowPricingRefresh: Bool = true, calendar: Calendar = .current) -> WindowsSpendDashboardController.Loader {
         { days in
             guard Set(sources.map(\.id)).count == sources.count,
                   sources.allSatisfy({ !$0.id.isEmpty }) else { throw Failure.invalidSources }
             let now = Date()
-            let calendar = Calendar.current
             let historyDays = max(1, min(WindowsSpendHistoryPolicy.scanDays, days))
             var inputs: [WindowsSpendDashboardModel.ProviderInput] = []
             var names: [String: WindowsShareStatsSubscriptionName] = [:]

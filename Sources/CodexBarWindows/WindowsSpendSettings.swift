@@ -7,6 +7,7 @@ struct WindowsSpendSettings: Sendable, Equatable {
     var collectionEnabled = false
     var codexLocalLedgerEnabled = false
     var historyDays = 30
+    var bucketTimeZoneIdentifier = ""
     var preferredCurrencyCode = "USD"
     var hiddenSourceIDs: Set<String> = []
     var hideNativeCodexWhenOpenCodexPresent = false
@@ -18,6 +19,9 @@ struct WindowsSpendSettings: Sendable, Equatable {
         value.codexLocalLedgerEnabled = defaults.object(forKey: "codexLocalSessionCostLedgerEnabled") as? Bool ?? false
         value.historyDays = max(1, min(WindowsSpendHistoryPolicy.scanDays,
             defaults.object(forKey: "costUsageHistoryDays") as? Int ?? 30))
+        let storedZone = defaults.string(forKey: "tokenCostUsageBucketTimeZone") ?? ""
+        value.bucketTimeZoneIdentifier = CostUsageBucketTimeZone.isValidIdentifier(storedZone)
+            ? storedZone : CostUsageBucketTimeZone.pinIdentifier()
         value.preferredCurrencyCode = Self.currency(defaults.string(forKey: "preferredCurrencyCode") ?? "USD")
         value.hiddenSourceIDs = Set((defaults.stringArray(forKey: "spendHiddenSourceIDs") ?? []).filter(Self.validSourceID))
         value.hideNativeCodexWhenOpenCodexPresent = defaults.object(forKey: "spendHideNativeCodexWithOpenCodex") as? Bool ?? false
@@ -28,6 +32,10 @@ struct WindowsSpendSettings: Sendable, Equatable {
         guard let defaults = userDefaults ?? UserDefaults(suiteName: WindowsRefreshSettings.suiteName) else {
             throw CocoaError(.fileWriteUnknown)
         }
+        let zone = CostUsageBucketTimeZone.isValidIdentifier(self.bucketTimeZoneIdentifier)
+            ? self.bucketTimeZoneIdentifier : CostUsageBucketTimeZone.pinIdentifier()
+        // Persist the bucket boundary before enabling future collection.
+        defaults.set(zone, forKey: "tokenCostUsageBucketTimeZone")
         defaults.set(self.collectionEnabled, forKey: "tokenCostUsageEnabled")
         defaults.set(self.codexLocalLedgerEnabled, forKey: "codexLocalSessionCostLedgerEnabled")
         defaults.set(max(1, min(WindowsSpendHistoryPolicy.scanDays, self.historyDays)), forKey: "costUsageHistoryDays")
@@ -48,10 +56,15 @@ struct WindowsSpendSettings: Sendable, Equatable {
     var dashboardOptions: WindowsSpendDashboardController.Options {
         var options = WindowsSpendDashboardController.Options()
         options.days = max(1, min(WindowsSpendHistoryPolicy.scanDays, self.historyDays))
+        options.bucketTimeZoneIdentifier = self.bucketTimeZoneIdentifier
         options.preferredCurrencyCode = Self.currency(self.preferredCurrencyCode)
         options.hiddenSourceIDs = self.hiddenSourceIDs
         options.hideNativeCodexWhenOpenCodexPresent = self.hideNativeCodexWhenOpenCodexPresent
         return options
+    }
+
+    var bucketCalendar: Calendar {
+        CostUsageBucketTimeZone.calendar(identifier: self.bucketTimeZoneIdentifier)
     }
 
     private static func currency(_ raw: String) -> String {

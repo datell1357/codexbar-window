@@ -1832,3 +1832,13 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - 옵션은 controller 입력으로 변환하며 설정을 읽는 것만으로 scan을 실행하지 않는다. 실제 설정 변경은 실행하지 않았다.
 
 남은 범위: native 설정 UI와 Main/host lifecycle 연결, ledger 수집 정책·timezone pinning·OpenCodeX source, 전체 비용/공유 UI와 Windows 검증. UserDefaults save는 OS durable write 검증을 의미하지 않는다.
+
+## IMPL-139 — 비용 이력 bucket timezone
+
+상태 CODE_WRITTEN_UNVERIFIED. 컴파일/빌드/테스트/설정·scan/검증 미실시. guidelines/COMMITS.md 부재로 핵심 커밋 규칙을 적용한다.
+
+- Core CostUsageBucketTimeZone 규칙으로 Windows 설정의 시간대 식별자를 읽고 설정 save 시 수집 활성화보다 먼저 저장한다. 설정 load 자체는 저장하지 않는다.
+- 동일 설정의 bucketCalendar를 loader factory에 전달하는 overload와 dashboard Options 시간대 필드를 추가했다. 집계 build에서도 해당 Gregorian calendar를 사용한다.
+- 잘못된/없는 저장 식별자는 현재 시간대로 대체한다. 아직 Main에서 설정을 저장·loader 생성하는 흐름을 연결하지 않았으므로 초기 pin의 실제 지속성은 그 연결이 필요하다.
+
+남은 범위: Main/설정 UI 연결, 시간대 변경 시 기존 scan 무효화와 재수집 정책, DST·경계·Windows 검증 및 전체 계획 구현.
