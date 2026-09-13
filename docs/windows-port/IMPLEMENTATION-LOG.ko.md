@@ -2392,3 +2392,11 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - 같은 사용자 ID라도 cookie가 다르면 팀 컨텍스트를 단정할 수 없어 별도 후보로 유지한다. ID 없는 수동 계정 자동 병합도 수행하지 않는다.
 - 남은 소요: 로그인 갱신 시 동일 계정 교체 UX, 팀 컨텍스트 모델, 추가 브라우저 지원 및 전체 계획 나머지 항목.
 - CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·실제 저장/API/UI 검증 미실행.
+
+## IMPL-197 — Cursor ticket 만료 수명
+
+- 후보 발급 후 5분 task를 예약해 해당 request가 아직 유효하면 후보/세션 참조를 해제한다. 새 요청·취소·저장·shutdown 시 만료 task도 취소하며 이전 task가 새 후보를 지우지 않도록 ticket을 비교한다.
+- 결과에 만료 시각을 전달하고 후보 popup timer와 이름 대화상자의 열기/저장/timer 조건에 반영한다. runtime 저장 시 만료 확인도 유지한다.
+- 해제는 Swift 객체 참조 해제이며 메모리 zeroization 보장이 아니다. 앱 suspend/actor 점유 및 timer 전달 지연으로 물리적 정리 시각은 늦어질 수 있지만 만료 ticket 저장은 거부한다.
+- 남은 소요: 계정 교체 UX, 팀 컨텍스트, 추가 브라우저 지원 및 전체 계획 나머지 항목.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·실제 UI/시간 경과 검증 미실행.

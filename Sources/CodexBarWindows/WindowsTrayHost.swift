@@ -36,6 +36,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
     private static let cliPathRemoveCommand = UINT_PTR(0x754C)
     private let cliPathOperation = WindowsCLIPathOperation()
     private var cliPathOperationRunning = false // Protected by mailboxLock.
+    private var cursorImportMenuExpires: Date? // UI thread only.
     private var cursorImportMenuPrivacy: Bool? // UI thread only.
     private static let cursorImportPrivacyTimer = UINT_PTR(0x754B)
     private static let cliSetupTimer = UINT_PTR(0x754A)
@@ -563,14 +564,16 @@ public final class WindowsTrayHost: @unchecked Sendable {
         guard let discovery else { return }
         switch discovery {
         case let .unavailable(message): self.showMessage(message, caption: "Import Cursor account")
-        case let .choices(ticket, rows, failed, omitted, privacy):
-            guard privacy == WindowsUsagePresentationSettings.load().hidePersonalInfo else {
+        case let .choices(ticket, rows, failed, omitted, privacy, expires):
+            guard expires > Date(), privacy == WindowsUsagePresentationSettings.load().hidePersonalInfo else {
                 self.onCursorBrowserImportCancel(ticket)
                 self.mailboxLock.lock(); self.cursorImportRequest = nil; self.mailboxLock.unlock()
                 return
             }
+            self.cursorImportMenuExpires = expires
             self.cursorImportMenuPrivacy = privacy
             guard SetTimer(window, Self.cursorImportPrivacyTimer, 250, nil) != 0 else {
+                self.cursorImportMenuExpires = nil
                 self.cursorImportMenuPrivacy = nil
                 self.onCursorBrowserImportCancel(ticket)
                 self.mailboxLock.lock(); self.cursorImportRequest = nil; self.mailboxLock.unlock()
@@ -581,11 +584,12 @@ public final class WindowsTrayHost: @unchecked Sendable {
             let candidate = WindowsCursorBrowserAccountMenu.choose(owner: window, rows: rows,
                 failedCount: failed, omittedCount: omitted)
             KillTimer(window, Self.cursorImportPrivacyTimer)
+            self.cursorImportMenuExpires = nil
             self.cursorImportMenuPrivacy = nil
             let input: WindowsAccountNameDialog.Result
             if candidate != nil, !self.quitInvoked,
                privacy == WindowsUsagePresentationSettings.load().hidePersonalInfo {
-                input = WindowsAccountNameDialog.showImportedAccount(owner: window, expectedPrivacy: privacy)
+                input = WindowsAccountNameDialog.showImportedAccount(owner: window, expectedPrivacy: privacy, expires: expires)
             } else { input = .cancelled }
             self.remoteEditorOpen = false
             PostMessageW(window, Self.wakeMessage, 0, 0)
@@ -3551,9 +3555,9 @@ public final class WindowsTrayHost: @unchecked Sendable {
             return 0
         }
         if message == UINT(WM_TIMER), wParam == WPARAM(Self.cursorImportPrivacyTimer) {
-            if let privacy = host.cursorImportMenuPrivacy,
-               privacy != WindowsUsagePresentationSettings.load().hidePersonalInfo {
-                EndMenu()
+            if let privacy = host.cursorImportMenuPrivacy {
+                let expired = host.cursorImportMenuExpires.map { $0 <= Date() } ?? true
+                if expired || privacy != WindowsUsagePresentationSettings.load().hidePersonalInfo { EndMenu() }
             }
             return 0
         }

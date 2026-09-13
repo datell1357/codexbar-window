@@ -534,7 +534,7 @@ public actor WindowsUsageRuntime {
         public let title: String
     }
     public enum CursorBrowserImportResult: Sendable {
-        case choices(requestID: UUID, rows: [CursorBrowserChoice], failedCount: Int, omittedCount: Int, privacy: Bool)
+        case choices(requestID: UUID, rows: [CursorBrowserChoice], failedCount: Int, omittedCount: Int, privacy: Bool, expires: Date)
         case unavailable(String)
     }
     private struct PendingCursorBrowserImport {
@@ -545,6 +545,7 @@ public actor WindowsUsageRuntime {
         let privacy: Bool
         let candidates: [UUID: WindowsCursorBrowserSessionImporter.ValidatedCandidate]
     }
+    private var cursorBrowserExpiryTask: Task<Void, Never>?
     private var cursorBrowserValidationTask: Task<WindowsCursorBrowserSessionImporter.ValidatedCandidate, Error>?
     private var cursorBrowserImportRequest: UUID?
     private var cursorBrowserDiscoveryTask: Task<WindowsCursorBrowserSessionImporter.Discovery, Error>?
@@ -649,10 +650,18 @@ public actor WindowsUsageRuntime {
                 }
                 return .unavailable("No Firefox Cursor session could be verified. Sign in to cursor.com in Firefox and retry.")
             }
-            self.pendingCursorBrowserImport = .init(id: requestID, expires: Date().addingTimeInterval(300),
+            let expires = Date().addingTimeInterval(300)
+            self.pendingCursorBrowserImport = .init(id: requestID, expires: expires,
                 revision: revision, selectedID: selected, privacy: privacy, candidates: validated)
+            self.cursorBrowserExpiryTask?.cancel()
+            self.cursorBrowserExpiryTask = Task { [weak self] in
+                do { try await Task.sleep(nanoseconds: 300_000_000_000) }
+                catch { return }
+                guard !Task.isCancelled else { return }
+                await self?.cancelCursorBrowserImport(requestID: requestID)
+            }
             return .choices(requestID: requestID, rows: rows, failedCount: failures,
-                            omittedCount: discovery.candidates.count - attempted, privacy: privacy)
+                            omittedCount: discovery.candidates.count - attempted, privacy: privacy, expires: expires)
         } catch {
             return .unavailable("Cursor browser import did not complete. Retry after checking Firefox access.")
         }
@@ -660,6 +669,8 @@ public actor WindowsUsageRuntime {
 
     public func cancelCursorBrowserImport(requestID: UUID? = nil) {
         if let requestID, self.cursorBrowserImportRequest != requestID { return }
+        self.cursorBrowserExpiryTask?.cancel()
+        self.cursorBrowserExpiryTask = nil
         self.cursorBrowserValidationTask?.cancel()
         self.cursorBrowserValidationTask = nil
         self.cursorBrowserDiscoveryTask?.cancel()
