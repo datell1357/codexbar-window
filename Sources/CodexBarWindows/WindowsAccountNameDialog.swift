@@ -18,8 +18,10 @@ enum WindowsAccountNameDialog {
         }
         let mode: Mode
         let support: TokenAccountSupport?
+        let provider: UsageProvider?
         let providerName: String?
         init(mode: Mode, provider: UsageProvider?, expectedPrivacy: Bool?, expires: Date?) {
+            self.provider = provider
             self.expires = expires
             self.expectedPrivacy = expectedPrivacy
             self.mode = mode
@@ -123,6 +125,11 @@ enum WindowsAccountNameDialog {
             guidance.withCString(encodedAs: UTF16.self) {
                 SetWindowTextW(GetDlgItem(hwnd, 102), $0)
             }
+            SetFocus(GetDlgItem(hwnd, 101)); return
+        }
+        if context.mode == .credential,
+           let message = WindowsAccountInputRules.credentialIssue(provider: context.provider, token: label) {
+            message.withCString(encodedAs: UTF16.self) { SetWindowTextW(GetDlgItem(hwnd, 102), $0) }
             SetFocus(GetDlgItem(hwnd, 101)); return
         }
         context.result = .saved(label)

@@ -54,6 +54,15 @@ public struct WindowsTokenAccountAddRequest: Sendable {
 }
 
 enum WindowsAccountInputRules {
+    static func credentialIssue(provider: UsageProvider?, token: String) -> String? {
+        guard provider == .windsurf else { return nil }
+        do { try WindsurfWebFetcher.validateManualSessionInput(token); return nil }
+        catch {
+            // Deliberately omit parser details and user input from native controls.
+            return "Enter a complete Windsurf session bundle with sessionToken, auth1Token, accountID and primaryOrgID. Values must contain printable ASCII without spaces; the bundle must fit within 64 KiB."
+        }
+    }
+
     enum Field { case label, token, scope, organization, workspace }
     static func providerIssue(provider: UsageProvider, support: TokenAccountSupport,
                               scope: String?, organization: String?, workspace: String?) -> (Field, String)? {

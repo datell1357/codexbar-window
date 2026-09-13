@@ -1,5 +1,7 @@
 # Windows 전용 제품 작업 현황
 
+- IMPL-209: Windsurf 계정 추가/교체 대화상자에 비밀값 없는 형식 오류 안내와 입력 유지 처리를 작성했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
 - IMPL-208: Windows Windsurf 계정 추가/credential 교체 전에 수동 세션 구조를 확인하도록 작성했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
 
 - IMPL-207: Windows Windsurf 캐시 최신성 미확인 표시와 만료 결제/리셋 구간 제외를 작성했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.

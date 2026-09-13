@@ -2488,3 +2488,11 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - 형식 확인은 로그인 성공이나 세션 유효성 확인이 아니다. 기존 잘못된 계정의 이름/metadata 수정까지 막지 않도록 credential을 실제 교체하는 경우에만 재확인한다.
 - 남은 소요: 구체적 입력 오류 UI, 브라우저 로그인 및 전체 계획 나머지 항목.
 - CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 실제 형식 확인 API 호출·빌드·테스트·lint·저장/API 검증 미실행.
+
+## IMPL-209 — Windsurf 입력 오류 UI
+
+- 계정 추가 및 credential 교체 대화상자는 수동 Windsurf 세션 형식을 확인한 뒤 제출한다. 실패 시 대화상자를 닫지 않고 credential 입력으로 focus를 돌린다.
+- 고정된 필수 필드/문자/크기 안내만 표시하고 파서 원문 오류나 입력 세션은 안내에 포함하지 않는다. runtime의 저장 전 재확인도 유지한다.
+- 형식 확인은 네트워크 없는 순수 파싱이다. 다른 제공자 및 이름 변경 동작은 유지한다.
+- 남은 소요: 실제 Windows 대화상자 안내 레이아웃, 브라우저 로그인 및 전체 계획 나머지 항목.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·실제 UI/API 검증 미실행.

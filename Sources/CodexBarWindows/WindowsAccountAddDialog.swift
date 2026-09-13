@@ -112,6 +112,10 @@ enum WindowsAccountAddDialog {
             }
             SetFocus(GetDlgItem(hwnd, control)); return
         }
+        if let message = WindowsAccountInputRules.credentialIssue(provider: context.provider, token: token) {
+            message.withCString(encodedAs: UTF16.self) { SetWindowTextW(GetDlgItem(hwnd, 102), $0) }
+            SetFocus(GetDlgItem(hwnd, 103)); return
+        }
         context.result = .saved(.init(label: label, token: token, scope: scope, organization: organization, workspace: workspace))
         DestroyWindow(hwnd)
     }
