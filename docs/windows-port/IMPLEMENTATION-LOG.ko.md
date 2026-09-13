@@ -2904,3 +2904,12 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - 압축 입력 8MiB/해제 출력 4MiB 상한과 태그 경계 취소 확인을 포함한다. 새 의존성은 추가하지 않았다.
 - 남은 소요: SSTable footer/handle/CRC/index/data block 연결, 일관된 파일 확보 및 Chromium/Windsurf 연결과 전체 계획 나머지.
 - CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 파서 실행·빌드·테스트·lint·실제 브라우저 파일 조회 미실행.
+
+## IMPL-258 — SSTable container와 블록 읽기
+
+- 원본 https://github.com/google/leveldb/blob/main/table/format.cc 및 format.h를 읽고 48-byte footer, magic, metaindex/index handle, block trailer 계약을 구현했다.
+- UInt64 handle의 범위를 변환 전에 검사하고 footer 침범/overflow/잘못된 varint/padding을 거부한다. 64MiB table image, 8MiB 압축 블록, 4MiB 해제 출력 제한을 적용한다.
+- CRC 구현을 WindowsLevelDBChecksum으로 공유하고 table payload+compression byte를 검증한 뒤 비압축 또는 Snappy 해제를 수행한다. 로그의 type+payload checksum 동작은 유지한다.
+- 현재 Zstd 등 다른 compression은 명시적으로 unsupported이다. 새 의존성은 추가하지 않았다.
+- 남은 소요: block prefix/restart entry 및 index traversal, 추가 compression 지원, manifest와 파일 일관성 및 Chromium/Windsurf 연결과 전체 계획 나머지.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 파서 실행·빌드·테스트·lint·실제 브라우저 파일 조회 미실행.

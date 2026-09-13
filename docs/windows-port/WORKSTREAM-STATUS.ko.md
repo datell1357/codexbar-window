@@ -1,5 +1,7 @@
 # Windows 전용 제품 작업 현황
 
+- IMPL-258: SSTable footer/handle/CRC와 비압축·Snappy 블록 읽기를 연결했다. entry/index 해석은 남아 있다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
 - IMPL-257: LevelDB table용 raw Snappy 블록 해제 파서를 작성했다. SSTable 연결은 남아 있다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
 
 - IMPL-256: manifest 로그/VersionEdit를 연결해 유효한 table 및 log 메타데이터를 복원하도록 작성했다. 파일 확보와 table 읽기는 남아 있다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
