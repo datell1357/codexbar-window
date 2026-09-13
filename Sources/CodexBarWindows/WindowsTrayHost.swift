@@ -28,6 +28,8 @@ public final class WindowsTrayHost: @unchecked Sendable {
     private static let shortcutChoiceBase = UINT_PTR(0x7900)
     private var activeHotkeyID: Int32 = 0x4342
     private var ownedHotkeyIDs: Set<Int32> = []
+    private var activeMenuShortcut: WindowsMenuShortcut?
+    private static let applySavedShortcutCommand = UINT_PTR(0x7545)
     private var menuHotkeyRegistered = false
     private var menuHotkeyFailed = false
     private var menuHotkeyFailureMessage: String?
@@ -298,6 +300,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
             for id in self.ownedHotkeyIDs { _ = UnregisterHotKey(hwnd, id) }
             self.ownedHotkeyIDs.removeAll()
             self.menuHotkeyRegistered = false
+            self.activeMenuShortcut = nil
             self.removeIcon(hwnd)
             if let powerNotification {
                 if UnregisterPowerSettingNotification(powerNotification) == 0 {
@@ -533,6 +536,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
         let success = RegisterHotKey(window, self.activeHotkeyID, shortcut.modifiers, shortcut.key) != 0
         if success { self.ownedHotkeyIDs.insert(self.activeHotkeyID) }
         self.menuHotkeyRegistered = success
+        self.activeMenuShortcut = success ? shortcut : nil
         self.menuHotkeyFailed = !success
         self.menuHotkeyFailureMessage = success ? nil : "Shortcut registration failed (Win32 \(GetLastError())). Choose another combination or retry."
         return success
@@ -556,8 +560,9 @@ public final class WindowsTrayHost: @unchecked Sendable {
 
     private func selectMenuShortcut(_ shortcut: WindowsMenuShortcut) {
         guard let window = self.window, !self.quitInvoked else { return }
-        guard shortcut != WindowsMenuShortcut.load(self.presentationDefaults) else { return }
-        if self.menuHotkeyRegistered {
+        let saved = WindowsMenuShortcut.load(self.presentationDefaults)
+        guard shortcut != saved || (self.menuHotkeyRegistered && shortcut != self.activeMenuShortcut) else { return }
+        if self.menuHotkeyRegistered, shortcut != self.activeMenuShortcut {
             self.cleanupInactiveHotkeys(window)
             guard let candidate = [Self.menuHotkeyID, Self.menuHotkeyID + 1].first(where: { !self.ownedHotkeyIDs.contains($0) }) else { return }
             guard RegisterHotKey(window, candidate, shortcut.modifiers, shortcut.key) != 0 else {
@@ -577,6 +582,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
             }
             self.ownedHotkeyIDs.remove(self.activeHotkeyID)
             self.activeHotkeyID = candidate
+            self.activeMenuShortcut = shortcut
         }
         if !self.menuHotkeyRegistered {
             self.cleanupInactiveHotkeys(window)
@@ -597,6 +603,18 @@ public final class WindowsTrayHost: @unchecked Sendable {
             (selected == nil && !self.menuHotkeyRegistered ? UINT(MF_GRAYED) : 0)
         var succeeded = "Enable menu shortcut".withCString(encodedAs: UTF16.self) {
             AppendMenuW(child, enableFlags, Self.menuHotkeyCommand, $0) != 0
+        }
+        let activeLabel = self.menuHotkeyRegistered ? (self.activeMenuShortcut?.title ?? "Unknown registration") : "Off"
+        let savedLabel = selected?.title ?? "Invalid value"
+        for label in ["Active now: \(activeLabel)", "Saved selection: \(savedLabel)"] {
+            succeeded = succeeded && label.withCString(encodedAs: UTF16.self) {
+                AppendMenuW(child, UINT(MF_STRING | MF_GRAYED), 0, $0) != 0
+            }
+        }
+        if self.menuHotkeyRegistered, let selected, selected != self.activeMenuShortcut {
+            succeeded = succeeded && "Apply saved selection to active shortcut".withCString(encodedAs: UTF16.self) {
+                AppendMenuW(child, UINT(MF_STRING), Self.applySavedShortcutCommand, $0) != 0
+            }
         }
         if selected == nil {
             let explanation = self.menuHotkeyRegistered ?
@@ -1621,6 +1639,10 @@ public final class WindowsTrayHost: @unchecked Sendable {
             return
         }
         switch command {
+        case Self.applySavedShortcutCommand:
+            if self.menuHotkeyRegistered, let saved = WindowsMenuShortcut.load(self.presentationDefaults) {
+                self.selectMenuShortcut(saved)
+            }
         case Self.cleanupHotkeyCommand:
             if let window = self.window, !self.quitInvoked { self.cleanupInactiveHotkeys(window) }
         case Self.menuHotkeyCommand:
@@ -1629,6 +1651,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
                 if UnregisterHotKey(window, self.activeHotkeyID) != 0 {
                     self.ownedHotkeyIDs.remove(self.activeHotkeyID)
                     self.menuHotkeyRegistered = false
+                    self.activeMenuShortcut = nil
                     self.menuHotkeyFailed = false
                     self.presentationDefaults.set(false, forKey: "windowsMenuHotkeyEnabled")
                     self.menuHotkeyFailureMessage = nil

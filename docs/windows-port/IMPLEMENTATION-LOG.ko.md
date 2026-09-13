@@ -754,3 +754,20 @@
 2. 잘못된 설정 복구·legacy parsing·메뉴 선택/등록과 Windows 동작은 미검증이다. 임의 key capture·전체 기능/배포 검증은 남아 있다.
 
 다음 구현: 단축키 활성 등록과 저장된 선택값을 분리해 표시하고 외부 설정 변경 시 적용 요청 경로를 명시한다.
+
+## IMPL-040 — active shortcut과 saved selection 분리
+
+상태: CODE_WRITTEN_UNVERIFIED. 빌드·컴파일·테스트·lint·앱·실제 hotkey/설정 조회·검증 스크립트를 실행하지 않았다. 계약: WIN-011/012/013.
+
+작성한 코드:
+
+- native 등록 성공 시 activeMenuShortcut을 별도로 보관하고 성공한 교체/해제/종료 시 갱신한다. 메뉴에 Active now와 Saved selection을 따로 표시해 외부 저장값 변경을 실제 적용 상태로 오인하지 않도록 했다.
+- 활성 조합과 저장된 유효 조합이 다르면 Apply saved selection 명령을 제공한다. 기존 staged register/old unregister/rollback 경로를 재사용하며 실제 등록 변경을 사용자 선택에 연결한다.
+- 선택 처리의 비교 기준을 보완했다. 저장값만 같고 실제 등록이 다르면 적용을 생략하지 않는다. 반대로 이미 활성 조합을 선택해 저장값만 맞출 때 동일 키를 중복 등록하지 않는다. 활성화 flag의 별도 의미는 유지한다.
+
+남은 범위:
+
+1. 외부 defaults 변경 즉시 감지와 OS 등록 전체 조회를 구현한 것은 아니다. Active now는 이 인스턴스에서 성공한 API 호출의 추적 상태다. 실제 OS/메뉴/재시작 동작은 미검증이다.
+2. 별도 시작 시 활성화 flag의 외부 변경 적용, 임의 key capture, scroll/focus/accessibility 및 전체 Windows 기능/배포 검증은 남아 있다.
+
+다음 구현: 전역 shortcut 작업의 남은 항목을 추적한 채 다음 Windows 전용 lifecycle/시작 설정 계약으로 넘어간다.
