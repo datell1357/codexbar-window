@@ -1,5 +1,7 @@
 # Windows 전용 제품 작업 현황
 
+- IMPL-273: Windsurf 가져오기에 이번 요청만 사용하는 선택적 프로필 경로 입력 창을 연결했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
 - IMPL-272: Windsurf 개별 브라우저 프로필 경로 환경 변수와 실패 시 기본 탐색 금지를 추가했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
 
 - IMPL-271: Windsurf 가져오기에 지원 Chromium 브라우저 선택을 연결했다. Chrome 기본값과 단일 브라우저 접근 범위를 유지한다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.

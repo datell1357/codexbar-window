@@ -128,7 +128,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
     private static let windsurfBrowserImportCommand = UINT_PTR(0x7F31)
     private let onCursorBrowserImportRequested: @Sendable (UUID) -> Void
     private let onAugmentBrowserImportRequested: @Sendable (UUID) -> Void
-    private let onWindsurfBrowserImportRequested: @Sendable (UUID, Browser) -> Void
+    private let onWindsurfBrowserImportRequested: @Sendable (UUID, Browser, String?) -> Void
     private let onCursorBrowserImportSave: @Sendable (UUID, UUID, UUID, String) -> Void
     private let onAugmentBrowserImportSave: @Sendable (UUID, UUID, UUID, String) -> Void
     private let onWindsurfBrowserImportSave: @Sendable (UUID, UUID, UUID, String) -> Void
@@ -360,7 +360,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
         onAugmentBrowserImportRequested: @escaping @Sendable (UUID) -> Void = { _ in },
         onAugmentBrowserImportSave: @escaping @Sendable (UUID, UUID, UUID, String) -> Void = { _, _, _, _ in },
         onAugmentBrowserImportCancel: @escaping @Sendable (UUID) -> Void = { _ in },
-        onWindsurfBrowserImportRequested: @escaping @Sendable (UUID, Browser) -> Void = { _, _ in },
+        onWindsurfBrowserImportRequested: @escaping @Sendable (UUID, Browser, String?) -> Void = { _, _, _ in },
         onWindsurfBrowserImportSave: @escaping @Sendable (UUID, UUID, UUID, String) -> Void = { _, _, _, _ in },
         onWindsurfBrowserImportCancel: @escaping @Sendable (UUID) -> Void = { _ in },
         onZedEditorServerRequested: @escaping @Sendable (UUID) -> Void = { _ in },
@@ -3221,16 +3221,22 @@ public final class WindowsTrayHost: @unchecked Sendable {
                   case .idle = self.providerEditorPhase, case .idle = self.codexWebSettingsEditorPhase else { return }
             guard let window = self.window else { return }
             self.remoteEditorOpen = true
+            let privacy = WindowsUsagePresentationSettings.load().hidePersonalInfo
             let browser = WindowsWindsurfBrowserAccountMenu.chooseBrowser(owner: window)
+            let profileInput: WindowsAccountNameDialog.Result
+            if browser != nil, !self.quitInvoked {
+                profileInput = WindowsAccountNameDialog.showBrowserProfile(owner: window, expectedPrivacy: privacy)
+            } else { profileInput = .cancelled }
             self.remoteEditorOpen = false
             PostMessageW(window, Self.wakeMessage, 0, 0)
-            guard let browser, !self.quitInvoked else { return }
+            guard let browser, case let .saved(path) = profileInput, !self.quitInvoked,
+                  privacy == WindowsUsagePresentationSettings.load().hidePersonalInfo else { return }
             self.mailboxLock.lock()
             guard self.windsurfImportRequest == nil else { self.mailboxLock.unlock(); return }
             let requestID = UUID()
             self.windsurfImportRequest = requestID
             self.mailboxLock.unlock()
-            self.onWindsurfBrowserImportRequested(requestID, browser)
+            self.onWindsurfBrowserImportRequested(requestID, browser, path.isEmpty ? nil : path)
             return
         }
         if command == Self.zedEditorImportCancelCommand {

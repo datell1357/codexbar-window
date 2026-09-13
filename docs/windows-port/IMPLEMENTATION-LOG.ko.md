@@ -3038,3 +3038,11 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - 사용 방법: Windows에서 CODEXBAR_WINDSURF_BROWSER_PROFILE_DIRECTORY를 개별 프로필 폴더(예: D:\\BrowserData\\Default)로 지정하고 CodexBar를 다시 시작한다. User Data 루트나 leveldb 폴더를 직접 지정하지 않는다. 원래 경로 탐색으로 돌아가려면 환경 변수를 제거하고 다시 시작한다.
 - 남은 소요: GUI 경로 선택, 추가 브라우저/압축 및 전체 계획 나머지.
 - CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·실제 파일/브라우저/UI 실행 미실행.
+
+## IMPL-273 — Windsurf 프로필 경로 입력 UI
+
+- 브라우저 선택 후 개별 프로필 폴더를 선택적으로 입력하는 창을 추가했다. 파일 탐색기 picker가 아닌 텍스트 입력 방식이다.
+- 경로는 이번 요청에만 전달한다. 명시 입력은 환경 변수보다 우선하며 빈 입력은 환경 변수/기본 탐색을 따른다. 잘못된 명시 경로는 기존 경로 검사에서 거부한다.
+- 입력 취소 또는 개인정보 숨김 상태 변경 시 가져오기를 시작하지 않는다. 경로를 설정 파일에 저장하거나 자동으로 환경 변수를 변경하지 않는다.
+- 남은 소요: 추가 브라우저/압축 및 전체 계획 나머지. Windows 동작 검증은 보류 상태다.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·UI·파일/브라우저 실행 미실행.

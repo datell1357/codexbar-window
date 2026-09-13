@@ -147,11 +147,11 @@ private final class WindowsTrayApplication: @unchecked Sendable {
             self.augmentBrowserImports.cancel(id: ticket)
             Task { await self.runtime.cancelAugmentBrowserImport(requestID: ticket) }
         },
-        onWindsurfBrowserImportRequested: { [weak self] requestID, browser in
+        onWindsurfBrowserImportRequested: { [weak self] requestID, browser, profileDirectory in
             guard let self else { return }
             self.windsurfBrowserImports.start(id: requestID) { [weak self] in
                 guard let self else { return }
-                let result = await self.runtime.discoverWindsurfBrowserAccounts(requestID: requestID, browser: browser)
+                let result = await self.runtime.discoverWindsurfBrowserAccounts(requestID: requestID, browser: browser, profileDirectory: profileDirectory)
                 guard !Task.isCancelled else { return }
                 self.host.postWindsurfBrowserImport(requestID: requestID, result: result)
             }

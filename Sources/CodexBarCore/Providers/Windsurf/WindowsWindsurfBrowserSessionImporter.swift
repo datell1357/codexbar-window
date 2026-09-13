@@ -31,13 +31,13 @@ public struct WindowsWindsurfBrowserSessionImporter: Sendable {
 
     public init() {}
 
-    public func discover(browser: Browser = .chrome, environment: [String: String] = ProcessInfo.processInfo.environment, deadline: Date = Date().addingTimeInterval(15)) throws -> Discovery {
+    public func discover(browser: Browser = .chrome, profileDirectory: String? = nil, environment: [String: String] = ProcessInfo.processInfo.environment, deadline: Date = Date().addingTimeInterval(15)) throws -> Discovery {
         try Self.check(deadline)
         guard Self.supportedBrowsers.contains(browser), BrowserCookieAccessGate.shouldAttempt(browser) else { throw Failure.browserUnavailable }
         let matches = environment.filter { $0.key.caseInsensitiveCompare(Self.profileDirectoryEnvironmentKey) == .orderedSame }
-        guard matches.count <= 1 else { throw Failure.invalidProfileDirectory }
+        guard profileDirectory != nil || matches.count <= 1 else { throw Failure.invalidProfileDirectory }
         let profiles: WindowsChromiumLocalStorageProfiles.Discovery
-        if let path = matches.first?.value {
+        if let path = profileDirectory ?? matches.first?.value {
             profiles = .init(profiles: [try Self.customProfile(path, browser: browser)], omittedCount: 0)
         } else {
             profiles = try WindowsChromiumLocalStorageProfiles.discover(browsers: [browser], environment: environment, deadline: deadline)

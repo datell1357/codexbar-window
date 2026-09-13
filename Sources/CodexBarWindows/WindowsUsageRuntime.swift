@@ -963,7 +963,7 @@ public actor WindowsUsageRuntime {
         return (revision, selected)
     }
 
-    public func discoverWindsurfBrowserAccounts(requestID: UUID = UUID(), browser: Browser = .chrome) async -> WindsurfBrowserImportResult {
+    public func discoverWindsurfBrowserAccounts(requestID: UUID = UUID(), browser: Browser = .chrome, profileDirectory: String? = nil) async -> WindsurfBrowserImportResult {
         guard !Task.isCancelled else { return .unavailable("The browser import was cancelled.") }
         guard !self.shuttingDown, self.refreshTask == nil else { return .unavailable("Wait for the current refresh to finish.") }
         self.cancelWindsurfBrowserImport()
@@ -981,7 +981,7 @@ public actor WindowsUsageRuntime {
             let importer = WindowsWindsurfBrowserSessionImporter()
             // Profile enumeration and LevelDB reads must not occupy the usage runtime actor.
             let discoveryTask = Task.detached(priority: .utility) {
-                try importer.discover(browser: browser, deadline: deadline)
+                try importer.discover(browser: browser, profileDirectory: profileDirectory, deadline: deadline)
             }
             self.windsurfBrowserDiscoveryTask = discoveryTask
             defer {

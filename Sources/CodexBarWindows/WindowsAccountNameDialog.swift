@@ -8,7 +8,7 @@ enum WindowsAccountNameDialog {
     enum Result { case cancelled, failed, saved(String) }
     private static let privacyTimer = UINT_PTR(1)
     private static let className = "CodexBar.AccountNameDialog"
-    private enum Mode { case name, importedAccount, credential, zedServer }
+    private enum Mode { case name, importedAccount, credential, zedServer, browserProfile }
     private final class Context {
         let expires: Date?
         let expectedPrivacy: Bool?
@@ -35,6 +35,7 @@ enum WindowsAccountNameDialog {
             self.providerName = provider.map { ProviderDescriptorRegistry.descriptor(for: $0).metadata.displayName }
         }
         var guidance: String {
+            if self.mode == .browserProfile { return "Optional: enter the local profile folder containing Local Storage (not User Data or leveldb). Leave empty to use the configured environment path or default profiles. Close the browser first. This path is used only for this import." }
             if self.mode == .zedServer {
                 if self.isCredentialOrigin { return "Confirm the HTTPS address used to store the editor credential. It may differ from the API server. Continue reads this saved credential." }
                 return self.suggestedOrigin == nil
@@ -54,6 +55,10 @@ enum WindowsAccountNameDialog {
         deinit { if let font { DeleteObject(font) } }
         func pixels(_ value: Int32) -> Int32 { MulDiv(value, Int32(self.dpi), 96) }
     }
+    static func showBrowserProfile(owner: HWND, expectedPrivacy: Bool) -> Result {
+        Self.show(owner: owner, mode: .browserProfile, expectedPrivacy: expectedPrivacy)
+    }
+
     static func showZedServer(owner: HWND, expectedPrivacy: Bool, suggestedOrigin: String?, isCredentialOrigin: Bool = false) -> Result {
         Self.show(owner: owner, mode: .zedServer, provider: .zed, expectedPrivacy: expectedPrivacy, suggestedOrigin: suggestedOrigin, isCredentialOrigin: isCredentialOrigin)
     }
@@ -84,7 +89,7 @@ enum WindowsAccountNameDialog {
             return RegisterClassExW(&klass)
         }
         guard registered != 0 || GetLastError() == ERROR_CLASS_ALREADY_EXISTS else { return .failed }
-        let caption = Array((mode == .zedServer ? (isCredentialOrigin ? "Confirm Zed credential address" : "Choose Zed API server") : mode == .importedAccount ? "Name imported " + (context.providerName ?? "Cursor") + " account" : mode == .name ? "Rename saved account" : "Replace account credential — " + (context.providerName ?? "Saved account")).utf16) + [0]
+        let caption = Array((mode == .browserProfile ? "Choose browser profile" : mode == .zedServer ? (isCredentialOrigin ? "Confirm Zed credential address" : "Choose Zed API server") : mode == .importedAccount ? "Name imported " + (context.providerName ?? "Cursor") + " account" : mode == .name ? "Rename saved account" : "Replace account credential — " + (context.providerName ?? "Saved account")).utf16) + [0]
         let hwnd = name.withUnsafeBufferPointer { n in
             caption.withUnsafeBufferPointer { c in
                 CreateWindowExW(DWORD(WS_EX_DLGMODALFRAME), n.baseAddress, c.baseAddress,
@@ -122,7 +127,7 @@ enum WindowsAccountNameDialog {
     }
     private static func save(_ hwnd: HWND, context: Context) {
         guard context.inputContextIsValid else { DestroyWindow(hwnd); return }
-        var buffer = [WCHAR](repeating: 0, count: context.mode == .zedServer ? 2050 : context.mode != .credential ? 162 : 65_538)
+        var buffer = [WCHAR](repeating: 0, count: context.mode == .browserProfile ? 32702 : context.mode == .zedServer ? 2050 : context.mode != .credential ? 162 : 65_538)
         let count = GetWindowTextW(GetDlgItem(hwnd, 101), &buffer, Int32(buffer.count))
         let label = String(decoding: buffer.prefix(Int(max(0, count))), as: UTF16.self)
             .trimmingCharacters(in: .whitespacesAndNewlines)
@@ -133,6 +138,9 @@ enum WindowsAccountNameDialog {
             valid = !label.isEmpty && label.utf16.count <= 160 &&
                 !label.unicodeScalars.contains { $0.value < 0x20 || $0.value == 0x7F }
             guidance = "Enter a nonempty name of at most 160 characters, without control characters."
+        case .browserProfile:
+            valid = label.utf16.count <= 32700 && !label.unicodeScalars.contains { $0.value < 32 || $0.value == 127 }
+            guidance = "Enter a local profile directory, or leave the field empty."
         case .zedServer:
             valid = !label.isEmpty && label.utf16.count <= 2048 && (try? ZedManualCredentialInput.normalizedServiceOrigin(label)) != nil
             guidance = "Enter an HTTPS origin without a path, login information, query or fragment."
@@ -169,14 +177,14 @@ enum WindowsAccountNameDialog {
             if context.expectedPrivacy != nil || context.expires != nil, SetTimer(hwnd, Self.privacyTimer, 250, nil) == 0 { return -1 }
             let dpi = GetDpiForWindow(hwnd)
             context.dpi = dpi == 0 ? 96 : dpi
-            guard Self.control(hwnd, "STATIC", context.mode == .zedServer ? (context.isCredentialOrigin ? "&Credential storage origin" : "&Zed API server origin") : context.mode != .credential ? "&New account name" : "&New " + (context.support?.title ?? "credential").replacingOccurrences(of: "&", with: "&&"), 100, 0, 16, 14, 400, 22) != nil,
+            guard Self.control(hwnd, "STATIC", context.mode == .browserProfile ? "&Profile folder (optional)" : context.mode == .zedServer ? (context.isCredentialOrigin ? "&Credential storage origin" : "&Zed API server origin") : context.mode != .credential ? "&New account name" : "&New " + (context.support?.title ?? "credential").replacingOccurrences(of: "&", with: "&&"), 100, 0, 16, 14, 400, 22) != nil,
                   let edit = Self.control(hwnd, "EDIT", "", 101, DWORD(WS_TABSTOP | WS_BORDER | ES_AUTOHSCROLL) | (context.mode == .credential ? DWORD(ES_PASSWORD) : 0),
                                           16, 40, 410, 26),
                   Self.control(hwnd, "STATIC", context.guidance,
                                102, 0, 16, 76, 410, 40) != nil,
-                  Self.control(hwnd, "BUTTON", context.mode == .zedServer ? "Continue" : "Save", 1, DWORD(WS_TABSTOP | BS_DEFPUSHBUTTON), 246, 126, 80, 28) != nil,
+                  Self.control(hwnd, "BUTTON", context.mode == .zedServer || context.mode == .browserProfile ? "Continue" : "Save", 1, DWORD(WS_TABSTOP | BS_DEFPUSHBUTTON), 246, 126, 80, 28) != nil,
                   Self.control(hwnd, "BUTTON", "Cancel", 2, DWORD(WS_TABSTOP | BS_PUSHBUTTON), 336, 126, 90, 28) != nil else { return -1 }
-            SendMessageW(edit, UINT(EM_SETLIMITTEXT), context.mode == .zedServer ? 2048 : context.mode != .credential ? 160 : 65_536, 0)
+            SendMessageW(edit, UINT(EM_SETLIMITTEXT), context.mode == .browserProfile ? 32700 : context.mode == .zedServer ? 2048 : context.mode != .credential ? 160 : 65_536, 0)
             if context.mode == .zedServer {
                 (context.suggestedOrigin ?? "").withCString(encodedAs: UTF16.self) { SetWindowTextW(edit, $0) }
             }
