@@ -24,6 +24,8 @@ public final class WindowsTrayHost: @unchecked Sendable {
     public typealias QuitHandler = @Sendable () -> Void
 
     private static let startupRegistrationCommand = UINT_PTR(0x7546)
+    private static let cliSetupTimer = UINT_PTR(0x754A)
+    private var cliSetupDialogOpen = false
     private var cliSetupRunning = false // Protected by mailboxLock.
     private var cliSetupCancelled = false
     private var cliSetupResult: (text: String, hidePaths: Bool)?
@@ -323,10 +325,13 @@ public final class WindowsTrayHost: @unchecked Sendable {
                         Data("CodexBar: failed to unregister Battery Saver notification (Win32 error \(error))\n".utf8))
                 }
             }
-            if IsWindow(hwnd) != 0 { DestroyWindow(hwnd) }
+            _ = KillTimer(hwnd, Self.cliSetupTimer)
             self.mailboxLock.lock()
+            self.cliSetupCancelled = true
+            self.cliSetupResult = nil
             self.window = nil
             self.mailboxLock.unlock()
+            if IsWindow(hwnd) != 0 { DestroyWindow(hwnd) }
         }
 
         var powerSetting = Self.powerSavingStatusGUID
@@ -718,6 +723,12 @@ public final class WindowsTrayHost: @unchecked Sendable {
         var continuingPage = false
         defer {
             self.popupIsOpen = false
+            self.mailboxLock.lock()
+            let cliReady = self.cliSetupResult != nil
+            self.mailboxLock.unlock()
+            if cliReady, !self.quitInvoked, let hwnd = self.window {
+                PostMessageW(hwnd, Self.wakeMessage, 0, 0)
+            }
             if !continuingPage { self.keyboardReturnTarget = nil }
         }
         if !preserveAnchor {
@@ -942,7 +953,12 @@ public final class WindowsTrayHost: @unchecked Sendable {
         "Open Windows startup apps settings…".withCString(encodedAs: UTF16.self) {
             _ = AppendMenuW(menu, UINT(MF_STRING), Self.startupSettingsCommand, $0)
         }
-        "Command-line setup…".withCString(encodedAs: UTF16.self) {
+        self.mailboxLock.lock()
+        let cliTitle = self.cliSetupRunning
+            ? (self.cliSetupCancelled ? "CLI discovery cancellation pending…" : "Cancel CLI discovery…")
+            : (self.cliSetupResult != nil ? "Show CLI discovery result…" : "Command-line setup…")
+        self.mailboxLock.unlock()
+        cliTitle.withCString(encodedAs: UTF16.self) {
             _ = AppendMenuW(menu, UINT(MF_STRING), Self.cliSetupCommand, $0)
         }
         self.appendShortcutMenu(to: menu)
@@ -1973,10 +1989,18 @@ public final class WindowsTrayHost: @unchecked Sendable {
             self.showProviderEditorNotice("CLI discovery cancellation requested. Reopen setup after the current file query returns.")
             return
         }
+        if self.cliSetupResult != nil {
+            self.mailboxLock.unlock()
+            if let hwnd = self.window { PostMessageW(hwnd, Self.wakeMessage, 0, 0) }
+            return
+        }
         self.cliSetupRunning = true
         self.cliSetupCancelled = false
         self.cliSetupResult = nil
         self.mailboxLock.unlock()
+        // Timer retries deferred delivery after nested modal loops; a failed timer
+        // still leaves the result available through the menu and wake message.
+        if let hwnd = self.window { _ = SetTimer(hwnd, Self.cliSetupTimer, 250, nil) }
         Thread.detachNewThread { [weak self] in
             guard let self else { return }
             let text = WindowsCLISetup.guidance(hidePaths: hidePaths) {
@@ -1996,17 +2020,22 @@ public final class WindowsTrayHost: @unchecked Sendable {
     }
 
     private func drainCLISetup() {
-        guard !self.popupIsOpen, !self.remoteEditorOpen, !self.quitInvoked,
+        guard !self.cliSetupDialogOpen, !self.popupIsOpen, !self.remoteEditorOpen, !self.quitInvoked,
               case .idle = self.providerEditorPhase, case .idle = self.codexWebSettingsEditorPhase,
               let hwnd = self.window else { return }
         self.mailboxLock.lock()
         let result = self.cliSetupResult
-        self.cliSetupResult = nil
+        let running = self.cliSetupRunning
+        if IsWindowEnabled(hwnd) != 0 { self.cliSetupResult = nil }
         self.mailboxLock.unlock()
+        guard IsWindowEnabled(hwnd) != 0 else { return }
+        if !running { _ = KillTimer(hwnd, Self.cliSetupTimer) }
         guard let result else { return }
         let hidePaths = self.presentationDefaults.object(forKey: "hidePersonalInfo") as? Bool ?? false
         // Never surface previously collected paths after privacy has been enabled.
         guard hidePaths == result.hidePaths else { self.showCLISetup(); return }
+        self.cliSetupDialogOpen = true
+        defer { self.cliSetupDialogOpen = false }
         let body = Array(result.text.utf16) + [0]
         let title = Array("CodexBar command-line setup".utf16) + [0]
         _ = body.withUnsafeBufferPointer { text in
@@ -2104,6 +2133,10 @@ public final class WindowsTrayHost: @unchecked Sendable {
                   case .idle = host.providerEditorPhase, case .idle = host.codexWebSettingsEditorPhase
             else { return 0 }
             host.popup(notifyMenuOpen: false, preserveAnchor: true)
+            return 0
+        }
+        if message == UINT(WM_TIMER), wParam == WPARAM(Self.cliSetupTimer) {
+            host.drainCLISetup()
             return 0
         }
         if message == Self.wakeMessage {

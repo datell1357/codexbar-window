@@ -900,3 +900,15 @@
 - wake message에서 UI thread dialog를 표시하고 privacy 값이 변경됐으면 결과를 버리고 새 설정으로 다시 수집한다. 열린 popup/editor 동안은 결과를 보류한다.
 
 남은 범위: 개별 Win32 조회 중단은 불가하다. 모달 종료 뒤 보류 결과의 확실한 재전달 및 진행/취소 상태 UI 보강이 다음 작업이다. thread/종료/privacy 경쟁과 Windows 실행은 미검증이다. 자동 PATH 설치와 MSIX 등 전체 의무는 남아 있다.
+
+## IMPL-049 — CLI 진행 표시와 모달 뒤 결과 전달
+
+상태: CODE_WRITTEN_UNVERIFIED. 빌드/컴파일/테스트/실행/검증은 사용자 지시로 미실시. 계약 WIN-052.
+
+- 메뉴에 조회 취소·취소 대기·결과 준비 상태를 표시하고 준비된 결과를 선택하면 새 조회로 덮지 않는다. popup 종료 시 보류 결과 wake를 다시 게시한다.
+- 조회 시250ms native timer로 모달 뒤 전달을 재시도하고 idle 결과 소비/취소 종료/host teardown에서 제거한다. disabled owner, popup/editor 및 CLI dialog 재진입을 차단한다. timer 설치 실패 시에도 결과는 menu/wake 경로에 남는다.
+- teardown은 mailbox lock 아래 worker 취소·결과 제거·window nil을 먼저 수행하고 그 뒤 DestroyWindow를 호출해 worker의 이전 HWND 게시 구간을 닫는다.
+
+남은 범위: timer/중첩 모달/취소/privacy/teardown 실제 Windows 동작은 미검증이다. 개별 파일 조회 hard cancellation, PATH 자동 설치/제거, MSIX alias, 전체 기능 구현 및 배포 검증은 남아 있다.
+
+다음 구현: Windows CLI 설치·환경 설정 계약을 계속 연결한다.
