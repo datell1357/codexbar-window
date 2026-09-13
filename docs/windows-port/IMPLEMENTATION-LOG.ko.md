@@ -1592,3 +1592,13 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - 설명 공간과 창 높이를 credential 모드에 맞게 늘리고 이름 편집 크기는 유지한다. 인증 성공 미검증 안내도 유지한다.
 
 남은 범위: 긴 설명·작은 화면·고배율·접근성 동작, 공급자별 실제 credential 적용, scope/org 편집, 전체 Windows 기능 및 실행 검증.
+
+## IMPL-115 — 계정 metadata patch backend
+
+상태 CODE_WRITTEN_UNVERIFIED. 컴파일/빌드/테스트/계정/검증 미실시. guidelines/COMMITS.md 부재로 핵심 커밋 규칙을 적용한다.
+
+- scope/organization/workspace 각각 unchanged와 replace(nil 포함)를 구분하는 patch를 추가했다. 다른 필드를 수정할 때 기존 값을 암묵적으로 지우지 않는다.
+- 기존 credential 편집 ticket·revision·만료·refresh guard·보호 저장 경로를 공통 update 함수로 공유한다. metadata-only 수정은 token을 runtime 내부에서 유지한다.
+- 공급자 지원 필드와 z.ai team 필수 값을 기존 shared rules로 판정하며 선택 계정 변경에는 기존 상태 철회를 적용한다. provider credential 교체 호출 계약도 유지한다.
+
+남은 범위: metadata snapshot·native 편집 UI/host/Main 연결, 공급자별 canonical scope 처리, Windows 입력·동시 저장 검증과 전체 계획 기능. backend만 작성되었으며 UI에는 노출되지 않는다.

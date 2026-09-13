@@ -448,6 +448,17 @@ public actor WindowsUsageRuntime {
     /// The replacement contains a secret and must never be logged or returned to the UI.
     public func replaceTokenAccountCredential(ticketID: UUID,
                                               replacement: String) -> WindowsTokenAccountCredentialSaveResult {
+        self.updateTokenAccount(ticketID: ticketID, replacement: replacement, metadata: nil)
+    }
+
+    /// Reuses the opaque account revision ticket; no credential leaves the runtime.
+    public func updateTokenAccountMetadata(ticketID: UUID,
+                                           patch: WindowsTokenAccountMetadataPatch) -> WindowsTokenAccountCredentialSaveResult {
+        self.updateTokenAccount(ticketID: ticketID, replacement: nil, metadata: patch)
+    }
+
+    private func updateTokenAccount(ticketID: UUID, replacement: String?,
+                                    metadata: WindowsTokenAccountMetadataPatch?) -> WindowsTokenAccountCredentialSaveResult {
         guard !self.shuttingDown else { return .shuttingDown }
         guard self.refreshTask == nil else { return .refreshInProgress }
         guard let ticket = self.credentialEditTicket, ticket.id == ticketID else { return .staleAccount }
@@ -455,8 +466,10 @@ public actor WindowsUsageRuntime {
             self.credentialEditTicket = nil
             return .staleAccount
         }
-        let token = replacement.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !token.isEmpty, token.utf8.count <= 65_536, !token.contains("\0") else { return .invalidInput }
+        let replacementToken = replacement?.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let token = replacementToken {
+            guard !token.isEmpty, token.utf8.count <= 65_536, !token.contains("\0") else { return .invalidInput }
+        }
         do {
             guard let provider = ticket.providerID.firstPartyProvider,
                   let support = TokenAccountSupportCatalog.support(for: provider),
@@ -469,15 +482,33 @@ public actor WindowsUsageRuntime {
                 return .staleAccount
             }
             let existing = data.accounts[index]
-            guard existing.token != token else {
+            let token = replacementToken ?? existing.token
+            func applying(_ patch: WindowsTokenAccountFieldPatch?, to current: String?) -> String? {
+                guard let patch, case let .replace(value) = patch else { return current }
+                guard let value = value?.trimmingCharacters(in: .whitespacesAndNewlines), !value.isEmpty else { return nil }
+                return value
+            }
+            let scope = applying(metadata?.usageScope, to: existing.usageScope)
+            let organization = applying(metadata?.organizationID, to: existing.organizationID)
+            let workspace = applying(metadata?.workspaceID, to: existing.workspaceID)
+            if metadata != nil {
+                // Use a synthetic token only for the metadata bounds helper; do not
+                // reject legacy credential formats during an unrelated metadata edit.
+                guard WindowsAccountInputRules.invalidField(label: "", token: "metadata", scope: scope,
+                    organization: organization, workspace: workspace) == nil,
+                      WindowsAccountInputRules.providerIssue(provider: provider, support: support,
+                    scope: scope, organization: organization, workspace: workspace) == nil else { return .invalidInput }
+            }
+            guard existing.token != token || existing.usageScope != scope ||
+                  existing.organizationID != organization || existing.workspaceID != workspace else {
                 self.credentialEditTicket = nil
                 return .unchanged
             }
             var accounts = data.accounts
             accounts[index] = ProviderTokenAccount(id: existing.id, label: existing.label, token: token,
                 addedAt: existing.addedAt, lastUsed: existing.lastUsed,
-                externalIdentifier: existing.externalIdentifier, usageScope: existing.usageScope,
-                organizationID: existing.organizationID, workspaceID: existing.workspaceID)
+                externalIdentifier: existing.externalIdentifier, usageScope: scope,
+                organizationID: organization, workspaceID: workspace)
             entry.tokenAccounts = ProviderTokenAccountData(version: data.version, accounts: accounts,
                                                            activeIndex: data.activeIndex)
             let isSelected = index == data.clampedActiveIndex()
@@ -493,7 +524,7 @@ public actor WindowsUsageRuntime {
                 self.invalidateSelectedAccountState(ticket.providerID)
                 self.presentations.removeValue(forKey: ticket.providerID)
                 self.providerCopyErrors.removeValue(forKey: ticket.providerID.rawValue)
-                self.renderEntries = [.row("Account credential updated. Refresh usage to load the account.")]
+                self.renderEntries = [.row("Account settings updated. Refresh usage to load the account.")]
                 self.statusMenuEntries.removeAll()
             }
             self.publishRenderEntries(settings: WindowsUsagePresentationSettings.load())

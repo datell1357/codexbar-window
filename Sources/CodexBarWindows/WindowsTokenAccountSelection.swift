@@ -138,4 +138,24 @@ public enum WindowsTokenAccountCredentialSaveResult: Sendable {
     case failed
 }
 
+/// Unchanged and clear are distinct, so editing one field preserves the others.
+public enum WindowsTokenAccountFieldPatch: Sendable {
+    case unchanged
+    case replace(String?)
+}
+
+public struct WindowsTokenAccountMetadataPatch: Sendable {
+    public let usageScope: WindowsTokenAccountFieldPatch
+    public let organizationID: WindowsTokenAccountFieldPatch
+    public let workspaceID: WindowsTokenAccountFieldPatch
+
+    public init(usageScope: WindowsTokenAccountFieldPatch = .unchanged,
+                organizationID: WindowsTokenAccountFieldPatch = .unchanged,
+                workspaceID: WindowsTokenAccountFieldPatch = .unchanged) {
+        self.usageScope = usageScope
+        self.organizationID = organizationID
+        self.workspaceID = workspaceID
+    }
+}
+
 #endif
