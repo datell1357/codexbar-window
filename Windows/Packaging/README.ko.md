@@ -31,3 +31,8 @@ Windows에서 사용할 명령 형식:
 각 app/CLI/runtime의 DLL 이름을 dependencies에 연결하며 포함된 runtime 이름과 맞으면 included, 나머지는 external_unclassified다. Windows 시스템 DLL/API-set이라고 이름만 보고 면제하지 않는다. 이는 import graph이며 전체 dependency closure 판정이 아니다. 정적/지연 import의 모든 선택 DLL을 읽지만 LoadLibrary 동적 이름·forwarded export·OS API-set 실제 매핑은 아직 다루지 않는다.
 
 파서는 파일 범위/중첩 RVA 모호성/section 수/descriptor 수/문자열 길이를 제한하고 null terminator가 없거나 지원하지 않는 VA 기반 delay descriptor면 중단한다. DLL을 로드하거나 실행하지 않는다. 실행 검증은 하지 않았다.
+
+
+`-RuntimeSearchDirectories`에 최대32개의 명시적인 런타임 배포 폴더를 추가할 수 있다. import된 이름이 RuntimeFiles에 없으면 각 폴더의 동일 DLL 이름을 찾아 한 개일 때만 포함하며, 새 DLL의 import도 queue로 탐색한다. 둘 이상이면 임의 우선순위를 정하지 않고 중단한다. 원하는 파일을 RuntimeFiles에 직접 지정하면 명시적 선택을 우선한다. Windows system directory나 process PATH를 자동 검색하지 않는다.
+
+후보 접근 실패·link·architecture 불일치·1024개 PE/100000개 edge 한도 초과는 중단한다. 없는 후보는 unresolvedLibraries에 남고 전체 상태는 RECURSIVE_IMPORT_GRAPH_UNVERIFIED다. 이 목록에는 아직 분류하지 않은 정상 Windows system/API-set DLL도 포함될 수 있다. OS 지원 계약에 따른 분류와 누락 release gate는 후속 작업이다. RuntimeFiles의 DLL은 재귀 탐색 이전부터 명시적으로 선택된 입력이며 중복 설치본을 검색해 자동 교체하지 않는다.

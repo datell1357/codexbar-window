@@ -1,5 +1,7 @@
 # Windows 전용 제품 작업 현황
 
+IMPL-057: 명시적 runtime 폴더 재귀 DLL 탐색·후보 모호성·미해결 목록을 연결했다. OS 정책/배포 gate/실행 검증은 남아 있다.
+
 IMPL-056: PE32+ import/delay-import 그래프를 배포 입력에 연결했다. 외부 DLL 해석과 전체 closure/실행 검증은 남아 있다.
 
 IMPL-055: 지정 runtime/resource 목록 생성과 PE machine 경계 코드를 작성했다. 의존성 closure/실행/패키징 검증은 남아 있다.

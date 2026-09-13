@@ -998,3 +998,15 @@
 근거: https://learn.microsoft.com/en-us/windows/win32/debug/pe-format
 
 남은 범위: 후보 폴더 기반 재귀 DLL 해석·시스템 정책, 서명/리소스 전체 계약 및 모든 Windows 검증.
+
+## IMPL-057 — 지정 runtime 폴더의 재귀 DLL 해석
+
+상태: CODE_WRITTEN_UNVERIFIED. 소스 편집만 수행했다. PowerShell/실제 DLL 조회/빌드/컴파일/테스트/검증 미실시.
+
+- RuntimeSearchDirectories 최대32개를 입력받고 선택되지 않은 import 이름을 해당 폴더에서만 조회한다. 단일 regular candidate를 기존 PE machine gate로 포함한 뒤 queue에서 재귀 처리한다.
+- 명시적 RuntimeFiles 선택을 우선하고 다중 후보는 모호성 오류로 중단한다. 동일 이름 negative lookup을 cache하며1024 PE/100000 edge/file 한도에서 중단한다. 접근 오류와 link를 누락으로 숨기지 않는다.
+- unresolvedLibraries를 기록하고 RECURSIVE_IMPORT_GRAPH_UNVERIFIED 상태를 사용한다. process PATH/system 폴더 검색 및 이름 기반 시스템 면제를 하지 않는다.
+
+남은 범위: system/API-set 지원 정책, 미해결 release/staging gate, dynamic imports/forwarders, 파일 경쟁/서명/라이선스와 Windows 실행 검증.
+
+다음 구현: 명시적 시스템 의존성 정책과 미해결 배포 차단을 연결한다.

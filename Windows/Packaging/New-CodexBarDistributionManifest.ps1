@@ -4,6 +4,7 @@ param(
     [Parameter(Mandatory = $true)][string] $BuildDirectory,
     [Parameter(Mandatory = $true)][ValidateSet('x64', 'arm64')][string] $Architecture,
     [Parameter(Mandatory = $true)][string[]] $RuntimeFiles,
+    [string[]] $RuntimeSearchDirectories = @(),
     [Parameter(Mandatory = $true)][string[]] $ResourceDirectories,
     [Parameter(Mandatory = $true)][string] $LicenseDirectory,
     [Parameter(Mandatory = $true)][string] $OutputManifest
@@ -85,10 +86,55 @@ $runtimeNames = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ord
 foreach ($file in $entries) {
     if ($file.kind -eq 'runtime') { $null = $runtimeNames.Add($file.destination) }
 }
+if ($RuntimeSearchDirectories.Count -gt 32) { throw 'Too many runtime search directories.' }
+$searchRoots = [Collections.Generic.List[string]]::new()
+$rootSet = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+foreach ($directory in $RuntimeSearchDirectories) {
+    $root = Get-Item -LiteralPath $directory -Force
+    if (-not $root.PSIsContainer -or ($root.Attributes -band [IO.FileAttributes]::ReparsePoint)) {
+        throw 'Runtime search roots must be regular directories.'
+    }
+    if ($rootSet.Add($root.FullName)) { $searchRoots.Add($root.FullName) }
+}
+$queue = [Collections.Generic.Queue[object]]::new()
 foreach ($file in $entries) {
-    if ($file.kind -notin @('application', 'cli', 'runtime')) { continue }
+    if ($file.kind -in @('application', 'cli', 'runtime')) { $queue.Enqueue($file) }
+}
+$scanned = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+$lookupCache = @{}
+while ($queue.Count -gt 0) {
+    $file = $queue.Dequeue()
+    if (-not $scanned.Add($file.destination)) { continue }
+    if ($scanned.Count -gt 1024) { throw 'Imported image limit exceeded.' }
     foreach ($import in @(Read-CodexBarPEImports $file.source)) {
         if ($dependencies.Count -ge 100000) { throw 'Dependency edge limit exceeded.' }
+        if (-not $runtimeNames.Contains($import.name)) {
+            if (-not $lookupCache.ContainsKey($import.name)) {
+                $candidates = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+                foreach ($root in $searchRoots) {
+                    $candidate = Join-Path $root $import.name
+                    try { $item = Get-Item -LiteralPath $candidate -Force -ErrorAction Stop }
+                    catch {
+                        if ($_.CategoryInfo.Category -eq [Management.Automation.ErrorCategory]::ObjectNotFound) { continue }
+                        throw
+                    }
+                    if ($item.PSIsContainer -or ($item.Attributes -band [IO.FileAttributes]::ReparsePoint)) {
+                        throw 'Imported DLL candidate is a directory or link.'
+                    }
+                    $null = $candidates.Add($item.FullName)
+                }
+                if ($candidates.Count -gt 1) {
+                    throw 'Ambiguous imported DLL candidates. Select the intended DLL explicitly with RuntimeFiles.'
+                }
+                $lookupCache[$import.name] = @($candidates)
+            }
+            $resolved = @($lookupCache[$import.name])
+            if ($resolved.Count -eq 1) {
+                Add-ManifestFile $resolved[0] $import.name 'runtime'
+                $null = $runtimeNames.Add($import.name)
+                $queue.Enqueue($entries[$entries.Count - 1])
+            }
+        }
         $dependencies.Add([pscustomobject] @{
             importer = $file.destination
             library = $import.name
@@ -97,10 +143,13 @@ foreach ($file in $entries) {
         })
     }
 }
+$unresolved = @($dependencies | Where-Object { $_.resolution -eq 'external_unclassified' } |
+    ForEach-Object { $_.library } | Sort-Object -Unique)
 $manifest = [ordered] @{
     schemaVersion = 1
     architecture = $Architecture
-    dependencyClosure = 'IMPORT_GRAPH_ONLY_UNVERIFIED'
+    dependencyClosure = 'RECURSIVE_IMPORT_GRAPH_UNVERIFIED'
+    unresolvedLibraries = $unresolved
     dependencies = @($dependencies.ToArray())
     files = @($entries.ToArray() | Sort-Object destination)
 }
