@@ -1782,3 +1782,13 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - 원본 controller의 365일 scan/activity horizon을 WindowsSpendHistoryPolicy로 분리했다. Mac controller·SwiftUI/AppKit은 Windows 소스에 넣지 않았다. 기존 원본 파일은 보존한다.
 
 남은 범위: Windows cost snapshot/controller 연결, 기간·모델·프로젝트 등 native dashboard, Share Stats 카드 renderer/preview/export/clipboard, 통화·누락 데이터 의미 및 전체 Windows 검증. 이번 모델은 아직 사용자 메뉴에서 사용되지 않는다.
+
+## IMPL-134 — spend scan lifecycle controller
+
+상태 CODE_WRITTEN_UNVERIFIED. 컴파일/빌드/테스트/scan·이력·UI/검증 미실시. guidelines/COMMITS.md 부재로 핵심 커밋 규칙을 적용한다.
+
+- typed loader/publisher를 받는 actor controller를 작성했다. 365일 scan 요청 결과를 보관하고 기간·통화·source filter·선택 날짜는 보관된 데이터에서 다시 투영한다.
+- refresh 중복 요청을 합치고 generation으로 오래된 결과를 거절한다. 계정/source 변경 invalidate API는 이전 model과 share 데이터를 즉시 비우고 작업을 취소한다.
+- 실패 시 이전 model은 stale로 유지하며 generic 실패 enum을 게시한다. refreshing/failed 상태에는 share payload를 제공하지 않는다. 중복 source ID는 성공 데이터로 받아들이지 않는다.
+
+남은 범위: 실제 비용 snapshot loader·account invalidation·Main/host 연결, native dashboard와 share renderer/export, 통화 데이터 availability·Windows 실행 검증 및 전체 기능 구현. 아직 실행 경로에서 인스턴스화되지 않는다.
