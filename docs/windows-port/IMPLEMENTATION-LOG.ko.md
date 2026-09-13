@@ -2922,3 +2922,12 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - 이미 checksum/압축 해제가 끝난 Data만 받는다. 정렬 규칙은 index/data caller에서 검사해야 한다.
 - 남은 소요: table index traversal 및 key 범위 검사, 일관된 실제 파일 확보, Chromium/Windsurf 연결과 전체 계획 나머지.
 - CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 파서 실행·빌드·테스트·lint·실제 브라우저 파일 조회 미실행.
+
+## IMPL-260 — SSTable 전체 순회
+
+- 원본 https://github.com/google/leveldb/blob/main/table/table_builder.cc의 index separator 및 block 배치를 읽고 container/block entry/version 모듈을 연결했다.
+- manifest 파일 크기를 요구하고 metaindex/index checksum과 구조를 읽는다. filter payload는 전체 순회에 사용하지 않는다.
+- user bytes 오름차순/packed sequence-type 내림차순 comparator를 추가하고 data/index 정렬, separator 경계 및 block 겹침을 검사한다.
+- 복원한 첫/마지막 내부 키는 manifest smallest/largest와 일치해야 한다. 100000 mutation/64MiB 복원 예산과 취소를 적용한다.
+- 남은 소요: CURRENT/manifest/table/log 일관된 확보와 통합, 추가 compression, Chromium origin/Windsurf 연결 및 전체 계획 나머지.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 파서 실행·빌드·테스트·lint·실제 브라우저 파일 조회 미실행.
