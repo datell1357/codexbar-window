@@ -218,7 +218,8 @@ public actor WindowsUsageRuntime {
                 let label = hide ? "Account \(index + 1)" :
                     String(LogRedactor.redact(account.label).replacingOccurrences(of: "\0", with: "").prefix(160))
                 return WindowsTokenAccountSelectionSnapshot.Account(
-                    id: account.id, title: label.isEmpty ? "Account \(index + 1)" : label)
+                    id: account.id, title: label.isEmpty ? "Account \(index + 1)" : label,
+                    labelRevision: Self.accountLabelRevision(account.label))
             }
             return .loaded(.init(providerID: providerID, accounts: accounts,
                                  selectedID: data.accounts[data.clampedActiveIndex()].id,
@@ -260,6 +261,10 @@ public actor WindowsUsageRuntime {
         } catch { return .failed }
     }
 
+    private static func accountLabelRevision(_ label: String) -> String {
+        SHA256.hash(data: Data(label.utf8)).map { String(format: "%02x", $0) }.joined()
+    }
+
     /// Rename only: no credential normalization, account activation or auth-source mutation.
     public func renameTokenAccount(_ request: WindowsTokenAccountRenameRequest) -> WindowsTokenAccountRenameResult {
         guard !self.shuttingDown else { return .shuttingDown }
@@ -276,7 +281,7 @@ public actor WindowsUsageRuntime {
                   var entry = config.providerConfig(for: request.providerID), let data = entry.tokenAccounts,
                   Set(data.accounts.map(\.id)).count == data.accounts.count else { return .unavailable }
             guard let index = data.accounts.firstIndex(where: { $0.id == request.accountID }),
-                  data.accounts[index].label == request.expectedLabel else { return .staleAccount }
+                  Self.accountLabelRevision(data.accounts[index].label) == request.expectedLabelRevision else { return .staleAccount }
             let existing = data.accounts[index]
             guard existing.label != label else { return .unchanged }
             var accounts = data.accounts
@@ -908,7 +913,8 @@ public actor WindowsUsageRuntime {
                     let title = settings.hidePersonalInfo ? fallback :
                         String(LogRedactor.redact(account.label).replacingOccurrences(of: "\0", with: "").prefix(160))
                     return WindowsTokenAccountSelectionSnapshot.Account(id: account.id,
-                                                                          title: title.isEmpty ? fallback : title)
+                                                                          title: title.isEmpty ? fallback : title,
+                                                                          labelRevision: Self.accountLabelRevision(account.label))
                 }
                 updated.tokenAccountSelection = .init(providerID: provider.instanceID, accounts: accounts,
                     selectedID: data.accounts[data.clampedActiveIndex()].id,

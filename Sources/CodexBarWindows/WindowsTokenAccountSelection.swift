@@ -7,6 +7,7 @@ public struct WindowsTokenAccountSelectionSnapshot: Sendable, Equatable {
     public struct Account: Sendable, Equatable {
         public let id: UUID
         public let title: String
+        public let labelRevision: String
     }
     public let providerID: ProviderInstanceID
     public let accounts: [Account]
@@ -21,12 +22,11 @@ public struct WindowsTokenAccountSelectionRequest: Sendable {
     public let expectedSelectedID: UUID?
 }
 
-/// Label editing uses the original value only for optimistic conflict detection.
-/// A redacted menu title is not a valid expectedLabel.
+/// The revision compares the stored label without passing its original text to the UI.
 public struct WindowsTokenAccountRenameRequest: Sendable {
     public let providerID: ProviderInstanceID
     public let accountID: UUID
-    public let expectedLabel: String
+    public let expectedLabelRevision: String
     public let replacementLabel: String
 }
 

@@ -90,6 +90,13 @@ private final class WindowsTrayApplication: @unchecked Sendable {
             guard let self else { return }
             Task { await self.runtime.quotaWarningSettingsDidChange(settings) }
         },
+        onTokenAccountRename: { [weak self] requestID, request in
+            guard let self else { return }
+            Task {
+                let result = await self.runtime.renameTokenAccount(request)
+                self.host.postTokenAccountRename(requestID: requestID, result: result)
+            }
+        },
         onTokenAccountSelect: { [weak self] request in
             guard let self else { return }
             Task {

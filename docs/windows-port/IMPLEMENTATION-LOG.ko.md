@@ -1397,3 +1397,14 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/hidpi/wm-dpichanged 
 - 수집 중에는 저장하지 않으며 성공 후 현재 표시 설정으로 메뉴 이름을 다시 투영한다. 입력이나 예외 내용을 로그에 출력하지 않는다.
 
 남은 범위: 편집 UI와 원래 이름 snapshot 로드/결과 연결(현재 UI 미연결), process 간 config 동시성, 계정 추가·삭제·자격증명 수정, Windows 검증. 이름 수정 UI 완료를 주장하지 않는다.
+
+## IMPL-096 — 계정 이름 입력 UI와 저장 연결
+
+상태 CODE_WRITTEN_UNVERIFIED. 컴파일/빌드/테스트/UI/설정 쓰기 실행/계정/검증 미실시. guidelines/COMMITS.md 부재로 핵심 커밋 규칙을 적용한다.
+
+- Saved accounts의 현재 페이지 각 계정 옆에 Rename 명령을 추가하고 native EDIT 입력·Save/Cancel·Enter/Escape·오류 안내 창을 작성했다. 입력은 빈 값으로 시작해 redacted 메뉴 제목을 원래 이름으로 저장하지 않는다.
+- 기존 원본 label 비교를 SHA256 revision 비교로 변경해 UI에 원본 label을 추가 전달하지 않는다. revision은 충돌 검사용이며 인증용 비밀값으로 취급하지 않는다. 이름 외 계정 정보는 전달하지 않는다.
+- 이름 변경과 계정 선택이 같은 pending request 슬롯을 사용하고 UUID로 결과를 연결한다. 성공·변경 없음·잘못된 입력·stale·진행 중 수집·실패를 구분해 안내한다. 이름 저장 후 메뉴 재투영을 사용하며 인증 수집은 추가로 요청하지 않는다.
+- 창 생성 실패·메시지 루프 오류·WM_QUIT·owner 활성 상태 복원 경로를 작성했다. 취소는 저장 요청을 보내지 않는다.
+
+남은 범위: 이름 창 DPI/작업 영역/접근성·지역화 개선, account 목록의 rename action 배치, 추가·삭제·credential 편집·Codex OAuth·동시 표시, 실제 Windows UI/설정/ABI 검증. 전체 계정 관리 완료가 아니다.
