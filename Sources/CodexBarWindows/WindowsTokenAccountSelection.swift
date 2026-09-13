@@ -55,6 +55,30 @@ public struct WindowsTokenAccountAddRequest: Sendable {
 
 enum WindowsAccountInputRules {
     enum Field { case label, token, scope, organization, workspace }
+    static func providerIssue(provider: UsageProvider, support: TokenAccountSupport,
+                              scope: String?, organization: String?, workspace: String?) -> (Field, String)? {
+        if scope != nil, !support.showsTeamModeControls {
+            return (.scope, "This provider does not support a usage scope.")
+        }
+        if organization != nil, !support.showsOrganizationField && !support.showsTeamModeControls {
+            return (.organization, "This provider does not support an organization ID.")
+        }
+        if workspace != nil, !support.showsTeamModeControls {
+            return (.workspace, "This provider does not support a workspace ID.")
+        }
+        if provider == .zai {
+            let effectiveScope = scope?.lowercased() ?? ZaiUsageScope.personal.rawValue
+            guard let parsed = ZaiUsageScope(rawValue: effectiveScope) else {
+                return (.scope, "Use personal or team for z.ai usage scope, or leave it empty for personal.")
+            }
+            if parsed == .team {
+                if organization == nil { return (.organization, "z.ai team usage requires an Organization ID.") }
+                if workspace == nil { return (.workspace, "z.ai team usage requires a Project ID.") }
+            }
+        }
+        return nil
+    }
+
     static func invalidField(label: String, token: String, scope: String?, organization: String?, workspace: String?) -> Field? {
         func safe(_ text: String, limit: Int) -> Bool {
             text.utf16.count <= limit && !text.unicodeScalars.contains { $0.value < 0x20 || $0.value == 0x7F }

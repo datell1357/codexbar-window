@@ -1492,3 +1492,13 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - 잘못된 필드에 포커스를 옮기고 창과 입력을 유지한다. 오류에 실제 필드 값이나 토큰을 출력하지 않는다. 이는 형식 확인이며 인증 성공 확인은 아니다.
 
 남은 범위: backend 저장 실패 시 draft 재편집, provider별 scope 의미·credential 종류 확인, 접근성/작은 화면·Windows 검증 및 전체 계정 관리 구현.
+
+## IMPL-105 — 공급자별 추가 계정 metadata 규칙
+
+상태 CODE_WRITTEN_UNVERIFIED. 컴파일/빌드/테스트/UI/API/계정/검증 미실시. guidelines/COMMITS.md 부재로 핵심 커밋 규칙을 적용한다.
+
+- provider catalog의 조직/team 입력 지원과 실제 z.ai settings의 personal/team 및 필수 Organization/Project 계약을 shared input rules에 연결했다. UI와 backend 모두 사용한다.
+- z.ai scope는 소문자로 정규화하고 빈 값은 기존 personal 기본값을 따른다. 잘못된 scope나 team의 조직/project 누락은 저장 전에 해당 필드에 안내한다. UI의 workspace 저장 필드를 실제 의미인 Project ID로 표시한다.
+- 지원하지 않는 공급자에 scope/조직/workspace 값이 전달되면 거절한다. credential 유효성이나 조직 존재 여부를 원격 확인하지 않는다.
+
+남은 범위: provider별 credential parsing/OAuth·scope 선택 control 개선·API region 안내·저장 실패 재편집, Windows UI와 실제 계정 검증, 전체 계정 관리 구현.

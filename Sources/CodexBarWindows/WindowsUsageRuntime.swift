@@ -272,7 +272,7 @@ public actor WindowsUsageRuntime {
             guard let text = raw?.trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty else { return nil }
             return text
         }
-        let scope = field(request.usageScope), organization = field(request.organizationID), workspace = field(request.workspaceID)
+        let scope = field(request.usageScope)?.lowercased(), organization = field(request.organizationID), workspace = field(request.workspaceID)
         guard WindowsAccountInputRules.invalidField(label: label, token: token, scope: scope,
                                                     organization: organization, workspace: workspace) == nil
         else { return .invalidInput }
@@ -281,6 +281,9 @@ public actor WindowsUsageRuntime {
                   let support = TokenAccountSupportCatalog.support(for: provider),
                   var config = try self.configStore.load(), config.enabledProviders().contains(request.providerID),
                   var entry = config.providerConfig(for: request.providerID) else { return .unavailable }
+            guard WindowsAccountInputRules.providerIssue(provider: provider, support: support, scope: scope,
+                                                         organization: organization, workspace: workspace) == nil
+            else { return .invalidInput }
             let data = entry.tokenAccounts
             let accounts = data?.accounts ?? []
             guard Set(accounts.map(\.id)).count == accounts.count else { return .unavailable }

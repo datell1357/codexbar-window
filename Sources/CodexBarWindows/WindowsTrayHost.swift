@@ -2021,7 +2021,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
             guard !busy else { self.showMessage("An account change is already being saved. Please wait.", caption: "Saved accounts"); return }
             self.remoteEditorOpen = true
             let result = WindowsAccountAddDialog.show(owner: window,
-                providerName: ProviderDescriptorRegistry.descriptor(for: provider).metadata.displayName, support: support)
+                providerName: ProviderDescriptorRegistry.descriptor(for: provider).metadata.displayName, provider: provider, support: support)
             self.remoteEditorOpen = false
             if !self.quitInvoked { PostMessageW(window, Self.wakeMessage, 0, 0) }
             guard !self.quitInvoked else { return }

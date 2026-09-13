@@ -10,7 +10,8 @@ enum WindowsAccountAddDialog {
     private static let className = "CodexBar.AccountAddDialog"
     private final class Context {
         let support: TokenAccountSupport
-        init(support: TokenAccountSupport) { self.support = support }
+        let provider: UsageProvider
+        init(support: TokenAccountSupport, provider: UsageProvider) { self.support = support; self.provider = provider }
         var result: Result = .cancelled
         var closed = false
         var dpi: UINT = 96
@@ -18,8 +19,8 @@ enum WindowsAccountAddDialog {
         deinit { if let font { DeleteObject(font) } }
         func pixels(_ value: Int32) -> Int32 { MulDiv(value, Int32(self.dpi), 96) }
     }
-    static func show(owner: HWND, providerName: String, support: TokenAccountSupport) -> Result {
-        let context = Context(support: support)
+    static func show(owner: HWND, providerName: String, provider: UsageProvider, support: TokenAccountSupport) -> Result {
+        let context = Context(support: support, provider: provider)
         let instance = GetModuleHandleW(nil)
         var klass = WNDCLASSEXW()
         klass.cbSize = UINT(MemoryLayout<WNDCLASSEXW>.size)
@@ -77,7 +78,7 @@ enum WindowsAccountAddDialog {
         }
         let label = read(101, limit: 160), token = read(103, limit: 65_536)
         func optional(_ id: Int32) -> String? { let text = read(id, limit: 512); return text.isEmpty ? nil : text }
-        let scope = context.support.showsTeamModeControls ? optional(105) : nil
+        let scope = context.support.showsTeamModeControls ? optional(105)?.lowercased() : nil
         let organization = context.support.showsOrganizationField || context.support.showsTeamModeControls ? optional(107) : nil
         let workspace = context.support.showsTeamModeControls ? optional(109) : nil
         if let field = WindowsAccountInputRules.invalidField(label: label, token: token, scope: scope,
@@ -94,6 +95,19 @@ enum WindowsAccountAddDialog {
             message.withCString(encodedAs: UTF16.self) { SetWindowTextW(GetDlgItem(hwnd, 102), $0) }
             SetFocus(GetDlgItem(hwnd, controlID))
             return
+        }
+        if let (field, message) = WindowsAccountInputRules.providerIssue(provider: context.provider,
+            support: context.support, scope: scope, organization: organization, workspace: workspace) {
+            message.withCString(encodedAs: UTF16.self) { SetWindowTextW(GetDlgItem(hwnd, 102), $0) }
+            let control: Int32
+            switch field {
+            case .label: control = 101
+            case .token: control = 103
+            case .scope: control = 105
+            case .organization: control = 107
+            case .workspace: control = 109
+            }
+            SetFocus(GetDlgItem(hwnd, control)); return
         }
         context.result = .saved(.init(label: label, token: token, scope: scope, organization: organization, workspace: workspace))
         DestroyWindow(hwnd)
@@ -117,7 +131,7 @@ enum WindowsAccountAddDialog {
                 (104, "&Credential", 103, true),
                 (106, "Usage scope (personal/team)", 105, context.support.showsTeamModeControls),
                 (108, "Organization ID (optional)", 107, context.support.showsOrganizationField || context.support.showsTeamModeControls),
-                (110, "Workspace ID (optional)", 109, context.support.showsTeamModeControls)]
+                (110, context.provider == .zai ? "Project ID (required for team)" : "Workspace ID (optional)", 109, context.support.showsTeamModeControls)]
             for (labelID, title, editID, visible) in rows where visible {
                 guard Self.control(hwnd, "STATIC", title, labelID, 0, 0, 0, 1, 1) != nil,
                       let edit = Self.control(hwnd, "EDIT", "", editID,
