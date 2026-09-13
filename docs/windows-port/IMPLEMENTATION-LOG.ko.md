@@ -986,3 +986,15 @@
 남은 범위: import/delay-load closure, 서명/라이선스 목록 완전성, 상위 reparse/동시 변경, empty-directory 의무와 Windows 실행·패키징 검증은 남아 있다. dependencyClosure는 NOT_VERIFIED다.
 
 다음 구현: PE import 의존성 closure 계산을 연결한다.
+
+## IMPL-056 — PE import 의존성 그래프
+
+상태: CODE_WRITTEN_UNVERIFIED. 공식 PE 문서 및 소스 읽기/편집만 수행했다. PowerShell/바이너리 읽기/컴파일/빌드/테스트/검증 미실시.
+
+- PE32+ section RVA 매핑과 정적/지연 import DLL 이름 파서를 작성했다. 파일 범위·모호한 매핑·section/descriptor/string 한도 및 null terminator를 요구한다. delay descriptor는 RVA 방식만 지원하고 기타 형식은 중단한다.
+- 입력 생성기가 각 app/CLI/runtime import를 dependencies edge로 기록한다. 포함 DLL은 included, 나머지는 external_unclassified로 남겨 시스템 DLL이라 추측해 면제하지 않는다.
+- 전체 closure로 표시하지 않고 IMPORT_GRAPH_ONLY_UNVERIFIED로 기록한다. 동적 LoadLibrary/forwarded export/API-set 매핑과 외부 DLL 해석은 다음 범위다.
+
+근거: https://learn.microsoft.com/en-us/windows/win32/debug/pe-format
+
+남은 범위: 후보 폴더 기반 재귀 DLL 해석·시스템 정책, 서명/리소스 전체 계약 및 모든 Windows 검증.

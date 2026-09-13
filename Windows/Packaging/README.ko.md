@@ -25,3 +25,9 @@ Windows에서 사용할 명령 형식:
 앱·CLI·지정 DLL의 DOS/PE signature와 machine 필드를 읽어 x64 또는 ARM64 선언과 다르면 중단하도록 작성했다. 이는 PE 전체 유효성이나 서명 확인이 아니다. ARM64EC/혼합 machine은 현재 허용하지 않는다. 리소스 탐색은 link를 거절하고 depth32·tree entry20000·전체 file10000 한도를 넘으면 부분 목록을 성공으로 내보내지 않는다. 비어 있는 디렉터리는 목록에 포함하지 않는다.
 
 출력은 CreateNew로 생성해 기존 파일을 덮지 않는다. 입력 JSON의 source는 로컬 절대 경로이므로 게시용 자료가 아니다. 최종 배포 인벤토리는 source 경로를 포함하지 않는다. 출력 중 실패한 파일은 보존하며 다른 출력 이름으로 재시도한다. 자동 import/delay-load 의존성 closure 계산은 아직 미구현이고 dependencyClosure는 NOT_VERIFIED다. 이 생성기와 PE 읽기 모두 현재 macOS 작업에서 실행하지 않았다.
+
+
+입력 생성기는 Read-CodexBarPEImports.ps1의 PE32+ import/delay-import 파서를 사용한다.
+각 app/CLI/runtime의 DLL 이름을 dependencies에 연결하며 포함된 runtime 이름과 맞으면 included, 나머지는 external_unclassified다. Windows 시스템 DLL/API-set이라고 이름만 보고 면제하지 않는다. 이는 import graph이며 전체 dependency closure 판정이 아니다. 정적/지연 import의 모든 선택 DLL을 읽지만 LoadLibrary 동적 이름·forwarded export·OS API-set 실제 매핑은 아직 다루지 않는다.
+
+파서는 파일 범위/중첩 RVA 모호성/section 수/descriptor 수/문자열 길이를 제한하고 null terminator가 없거나 지원하지 않는 VA 기반 delay descriptor면 중단한다. DLL을 로드하거나 실행하지 않는다. 실행 검증은 하지 않았다.

@@ -10,6 +10,7 @@ param(
 )
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot 'Read-CodexBarPEImports.ps1')
 if ([Environment]::OSVersion.Platform -ne [PlatformID]::Win32NT) { throw 'Windows is required.' }
 $entries = [Collections.Generic.List[object]]::new()
 $destinations = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
@@ -79,10 +80,28 @@ foreach ($directory in $ResourceDirectories) {
     Add-ManifestTree $root.FullName $root.Name 'resource'
 }
 Add-ManifestTree $LicenseDirectory 'licenses' 'license'
+$dependencies = [Collections.Generic.List[object]]::new()
+$runtimeNames = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+foreach ($file in $entries) {
+    if ($file.kind -eq 'runtime') { $null = $runtimeNames.Add($file.destination) }
+}
+foreach ($file in $entries) {
+    if ($file.kind -notin @('application', 'cli', 'runtime')) { continue }
+    foreach ($import in @(Read-CodexBarPEImports $file.source)) {
+        if ($dependencies.Count -ge 100000) { throw 'Dependency edge limit exceeded.' }
+        $dependencies.Add([pscustomobject] @{
+            importer = $file.destination
+            library = $import.name
+            kind = $import.kind
+            resolution = $(if ($runtimeNames.Contains($import.name)) { 'included' } else { 'external_unclassified' })
+        })
+    }
+}
 $manifest = [ordered] @{
     schemaVersion = 1
     architecture = $Architecture
-    dependencyClosure = 'NOT_VERIFIED'
+    dependencyClosure = 'IMPORT_GRAPH_ONLY_UNVERIFIED'
+    dependencies = @($dependencies.ToArray())
     files = @($entries.ToArray() | Sort-Object destination)
 }
 $json = $manifest | ConvertTo-Json -Depth 6
