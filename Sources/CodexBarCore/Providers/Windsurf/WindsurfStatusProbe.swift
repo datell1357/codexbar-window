@@ -43,6 +43,7 @@ public enum WindsurfStatusProbeError: LocalizedError, Sendable, Equatable {
     case dbNotFound(String)
     case sqliteFailed(String)
     case noData
+    case expiredCache
     case parseFailed(String)
 
     public var errorDescription: String? {
@@ -55,6 +56,8 @@ public enum WindsurfStatusProbeError: LocalizedError, Sendable, Equatable {
             #endif
         case let .sqliteFailed(message):
             "SQLite error reading Windsurf data: \(message)"
+        case .expiredCache:
+            "Windsurf cached billing period has expired. Open Windsurf to update its usage, then refresh."
         case .noData:
             "No plan data found in Windsurf database. Sign in to Windsurf first."
         case let .parseFailed(message):
@@ -211,13 +214,13 @@ public struct WindsurfStatusProbe: Sendable {
 // MARK: - Conversion to UsageSnapshot
 
 extension WindsurfCachedPlanInfo {
-    public func toUsageSnapshot() -> UsageSnapshot {
+    public func toUsageSnapshot(now: Date = Date()) -> UsageSnapshot {
         var primary: RateWindow?
         var secondary: RateWindow?
 
         if let quota = self.quotaUsage {
             // Primary: daily usage (usedPercent = 100 - dailyRemainingPercent)
-            if let daily = quota.dailyRemainingPercent {
+            if let daily = quota.dailyRemainingPercent, Self.isCurrentWindow(quota.dailyResetAtUnix, now: now) {
                 let resetDate = quota.dailyResetAtUnix.map {
                     Date(timeIntervalSince1970: TimeInterval($0))
                 }
@@ -229,7 +232,7 @@ extension WindsurfCachedPlanInfo {
             }
 
             // Secondary: weekly usage
-            if let weekly = quota.weeklyRemainingPercent {
+            if let weekly = quota.weeklyRemainingPercent, Self.isCurrentWindow(quota.weeklyResetAtUnix, now: now) {
                 let resetDate = quota.weeklyResetAtUnix.map {
                     Date(timeIntervalSince1970: TimeInterval($0))
                 }
@@ -241,7 +244,7 @@ extension WindsurfCachedPlanInfo {
             }
         }
 
-        if primary == nil, let usage = self.usage {
+        if primary == nil, Self.isCurrentWindow(self.quotaUsage?.dailyResetAtUnix, now: now), let usage = self.usage {
             primary = Self.makeUsageWindow(
                 used: usage.usedMessages,
                 remaining: usage.remainingMessages,
@@ -249,7 +252,7 @@ extension WindsurfCachedPlanInfo {
                 unit: "messages")
         }
 
-        if secondary == nil, let usage = self.usage {
+        if secondary == nil, Self.isCurrentWindow(self.quotaUsage?.weeklyResetAtUnix, now: now), let usage = self.usage {
             secondary = Self.makeUsageWindow(
                 used: usage.usedFlowActions,
                 remaining: usage.remainingFlowActions,
@@ -276,8 +279,17 @@ extension WindsurfCachedPlanInfo {
         return UsageSnapshot(
             primary: primary,
             secondary: secondary,
-            updatedAt: Date(),
+            updatedAt: now,
             identity: identity)
+    }
+
+    private static func isCurrentWindow(_ reset: Int64?, now: Date) -> Bool {
+        #if os(Windows)
+        guard let reset else { return true }
+        return Date(timeIntervalSince1970: TimeInterval(reset)) > now
+        #else
+        return true
+        #endif
     }
 
     private static func makeUsageWindow(

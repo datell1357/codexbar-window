@@ -157,10 +157,20 @@ struct WindsurfLocalFetchStrategy: ProviderFetchStrategy {
     func fetch(_ context: ProviderFetchContext) async throws -> ProviderFetchResult {
         let probe = WindsurfStatusProbe()
         let planInfo = try probe.fetch()
+        #if os(Windows)
+        let now = Date()
+        if let end = planInfo.endTimestamp,
+           Date(timeIntervalSince1970: TimeInterval(end) / 1000) <= now {
+            throw WindsurfStatusProbeError.expiredCache
+        }
+        let usage = planInfo.toUsageSnapshot(now: now)
+        guard usage.primary != nil || usage.secondary != nil else { throw WindsurfStatusProbeError.noData }
+        return self.makeResult(usage: usage, sourceLabel: "local cache (age unknown)",
+            diagnostic: "The editor cache has no usage update timestamp. The read time is not a live server refresh; expired reset windows are excluded.")
+        #else
         let usage = planInfo.toUsageSnapshot()
-        return self.makeResult(
-            usage: usage,
-            sourceLabel: "local")
+        return self.makeResult(usage: usage, sourceLabel: "local")
+        #endif
     }
 
     func shouldFallback(on _: Error, context _: ProviderFetchContext) -> Bool {

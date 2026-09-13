@@ -2472,3 +2472,11 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - macOS settings 변환/전략 선택 동작은 유지한다. 향후 Windows 자동 로그인 구현 때 auto 전략을 확장해야 한다.
 - 남은 소요: 저장 계정/CLI source 조합의 Windows 회귀 검증, 캐시 최신성 표시, 브라우저 로그인 및 전체 계획 나머지 항목.
 - CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·실제 설정/조회 검증 미실행.
+
+## IMPL-207 — Windsurf 로컬 캐시 최신성
+
+- 캐시 레코드에 갱신 시각이 없어 DB 파일 mtime을 사용량 갱신 시각으로 대체하지 않는다. Windows source label/diagnostic에 캐시 최신성 미확인 및 읽기 시각과 서버 갱신 시각의 차이를 명시한다.
+- 만료된 billing endTimestamp는 local 조회 오류로 처리한다. 지난 daily/weekly reset 구간은 Windows snapshot에서 제외하며 같은 캐시의 legacy 필드로 되살리지 않는다. 유효한 사용량 구간이 없으면 noData를 반환한다.
+- reset/billing 시각이 없는 데이터의 최신성은 추정하지 않는다. updatedAt은 읽기 시각으로 유지하며 live 검증으로 간주하지 않는다. macOS 변환 동작은 유지한다.
+- 남은 소요: Windows UI에서 진단 표시/구간 경계 실증, 브라우저 로그인 및 전체 계획 나머지 항목.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·실제 캐시/UI 검증 미실행.
