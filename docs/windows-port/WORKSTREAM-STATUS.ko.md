@@ -1,5 +1,7 @@
 # Windows 전용 제품 작업 현황
 
+- IMPL-129: Antigravity shared OAuth cache의 Windows DPAPI·private ACL 저장을 작성했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
 - IMPL-128: provider 상세 snapshot의 privacy 변경 시 숨김·닫기 및 command 재확인을 작성했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
 
 - IMPL-127: 열린 metadata editor의 privacy 설정 변경 감지·취소 및 저장 직전 재확인을 작성했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.

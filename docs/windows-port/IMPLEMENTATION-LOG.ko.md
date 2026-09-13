@@ -1732,3 +1732,13 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - timer 설치 실패는 창 열기 실패로 처리하고 종료 시 timer를 해제한다. 실제 설정·창·clipboard 접근은 실행하지 않았다.
 
 남은 범위: 메시지 큐 지연 중 표시/clipboard race, 삭제 확인 등 다른 창 대응, Windows DPI/접근성/UI 검증 및 전체 기능 구현.
+
+## IMPL-129 — Antigravity shared OAuth cache 보호
+
+상태 CODE_WRITTEN_UNVERIFIED. 컴파일/빌드/테스트/DPAPI·인증 캐시 접근/검증 미실시. guidelines/COMMITS.md 부재로 핵심 커밋 규칙을 적용한다.
+
+- Windows shared cache 저장을 전용 DPAPI purpose와 current-user private ACL writer로 연결했다. versioned encrypted envelope로 저장하고 plaintext fallback은 하지 않는다.
+- 기존 평문 cache는 읽고 다음 save에 보호 형식으로 교체한다. 보호 envelope의 버전·키·크기를 확인하며 복호화 오류를 호출부로 전달한다. matching delete도 동일 loadUnlocked를 사용한다.
+- 다른 플랫폼에서는 Windows 보호 envelope를 읽거나 save로 덮어쓰지 않도록 오류를 반환한다. token account 값과 환경변수 JSON 형식은 변경하지 않는다.
+
+남은 범위: 구버전 바이너리 호환 안내, store fileExists의 접근 오류 구분, multi-process 갱신/복구 UX, 실제 Windows DPAPI·cache migration·OAuth 검증 및 전체 계획 구현.

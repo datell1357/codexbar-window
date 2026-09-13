@@ -418,6 +418,20 @@ public enum AntigravityOAuthConfig {
 public struct AntigravityOAuthCredentialsStore: @unchecked Sendable {
     public static let environmentCredentialsKey = "ANTIGRAVITY_OAUTH_CREDENTIALS_JSON"
     private static let fileLock = NSLock()
+    private struct WindowsProtectedCache: Codable {
+        let windowsProtectionVersion: Int
+        let encrypted: Data
+    }
+    public enum ProtectionError: LocalizedError {
+        case unsupportedPlatform
+        case invalidEnvelope
+        public var errorDescription: String? {
+            switch self {
+            case .unsupportedPlatform: "This Antigravity cache is protected for its Windows user profile."
+            case .invalidEnvelope: "The protected Antigravity cache format is invalid or unsupported."
+            }
+        }
+    }
 
     public let fileURL: URL
     private let fileManager: FileManager
@@ -436,18 +450,43 @@ public struct AntigravityOAuthCredentialsStore: @unchecked Sendable {
     private func loadUnlocked() throws -> AntigravityOAuthCredentials? {
         guard self.fileManager.fileExists(atPath: self.fileURL.path) else { return nil }
         let data = try Data(contentsOf: self.fileURL)
+        let root = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+        if root?["windowsProtectionVersion"] != nil {
+            #if os(Windows)
+            guard data.count <= 1_048_576, let root,
+                  Set(root.keys) == Set(["windowsProtectionVersion", "encrypted"]) else { throw ProtectionError.invalidEnvelope }
+            let envelope = try JSONDecoder().decode(WindowsProtectedCache.self, from: data)
+            guard envelope.windowsProtectionVersion == 1 else { throw ProtectionError.invalidEnvelope }
+            let plaintext = try WindowsTokenAccountProtection.antigravitySharedCache(envelope.encrypted, protect: false)
+            return try JSONDecoder().decode(AntigravityOAuthCredentials.self, from: plaintext)
+            #else
+            throw ProtectionError.unsupportedPlatform
+            #endif
+        }
+        // Legacy plaintext is read without rewriting it; the next save upgrades protection.
         return try JSONDecoder().decode(AntigravityOAuthCredentials.self, from: data)
     }
 
     public func save(_ credentials: AntigravityOAuthCredentials) throws {
         try Self.fileLock.withLock {
             let data = try JSONEncoder.antigravityCredentials.encode(credentials)
+            #if os(Windows)
+            let encrypted = try WindowsTokenAccountProtection.antigravitySharedCache(data, protect: true)
+            let envelope = try JSONEncoder().encode(WindowsProtectedCache(windowsProtectionVersion: 1, encrypted: encrypted))
+            try WindowsCredentialFileWriter.writePrivate(envelope, to: self.fileURL)
+            #else
+            if self.fileManager.fileExists(atPath: self.fileURL.path) {
+                let existing = try Data(contentsOf: self.fileURL)
+                if let root = try? JSONSerialization.jsonObject(with: existing) as? [String: Any],
+                   root["windowsProtectionVersion"] != nil { throw ProtectionError.unsupportedPlatform }
+            }
             let directory = self.fileURL.deletingLastPathComponent()
             if !self.fileManager.fileExists(atPath: directory.path) {
                 try self.fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
             }
             try data.write(to: self.fileURL, options: [.atomic])
             try self.applySecurePermissionsIfNeeded()
+            #endif
         }
     }
 

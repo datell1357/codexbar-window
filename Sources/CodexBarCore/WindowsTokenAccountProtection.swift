@@ -42,6 +42,12 @@ public enum WindowsTokenAccountProtection {
                            protect: protect, purpose: "AccountRemovalRecovery.v1")
     }
 
+    static func antigravitySharedCache(_ data: Data, protect: Bool) throws -> Data {
+        let scopeID = UUID(uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0))
+        return try Self.transform(data, providerID: UsageProvider.antigravity.instanceID, accountID: scopeID,
+                                  protect: protect, purpose: "AntigravitySharedCache.v1")
+    }
+
     static func providerFields(_ data: Data, providerID: ProviderInstanceID, protect: Bool) throws -> Data {
         // A separate purpose prevents a provider bundle from being substituted for an account token.
         let scopeID = UUID(uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0))
