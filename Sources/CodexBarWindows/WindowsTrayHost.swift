@@ -24,6 +24,9 @@ public final class WindowsTrayHost: @unchecked Sendable {
     public typealias QuitHandler = @Sendable () -> Void
 
     private static let startupRegistrationCommand = UINT_PTR(0x7546)
+    private static let copySummaryCommand = UINT_PTR(0x754D)
+    private var popupCopySummary: String?
+    private var popupCopyPrivacy = false
     private static let cliPathAddCommand = UINT_PTR(0x754B)
     private static let cliPathRemoveCommand = UINT_PTR(0x754C)
     private let cliPathOperation = WindowsCLIPathOperation()
@@ -724,9 +727,11 @@ public final class WindowsTrayHost: @unchecked Sendable {
     private func popup(notifyMenuOpen: Bool = true, keyboardInitiated: Bool = false, preserveAnchor: Bool = false) {
         guard !self.remoteEditorOpen, !self.popupIsOpen, !self.quitInvoked else { return }
         self.popupIsOpen = true
+        self.popupCopySummary = nil
         var continuingPage = false
         defer {
             self.popupIsOpen = false
+            self.popupCopySummary = nil
             self.mailboxLock.lock()
             let cliReady = self.cliSetupResult != nil
             self.mailboxLock.unlock()
@@ -762,6 +767,13 @@ public final class WindowsTrayHost: @unchecked Sendable {
             let title = Array(row.utf16) + [0]
             title.withUnsafeBufferPointer { text in
                 _ = AppendMenuW(menu, UINT(MF_STRING | MF_GRAYED), UINT_PTR(index + 1), text.baseAddress)
+            }
+        }
+        self.popupCopySummary = WindowsClipboard.summary(rows: rows)
+        self.popupCopyPrivacy = WindowsUsagePresentationSettings.load().hidePersonalInfo
+        if self.popupCopySummary != nil {
+            "Copy &redacted summary".withCString(encodedAs: UTF16.self) {
+                _ = AppendMenuW(menu, UINT(MF_STRING), Self.copySummaryCommand, $0)
             }
         }
         if !rows.isEmpty { _ = AppendMenuW(menu, UINT(MF_SEPARATOR), 0, nil) }
@@ -1706,6 +1718,15 @@ public final class WindowsTrayHost: @unchecked Sendable {
             return
         }
         switch command {
+        case Self.copySummaryCommand:
+            guard let owner = self.window, let text = self.popupCopySummary else { return }
+            guard self.popupCopyPrivacy == WindowsUsagePresentationSettings.load().hidePersonalInfo else {
+                self.showSessionMessage("Privacy settings changed. Reopen the menu before copying.", caption: "Copy summary")
+                return
+            }
+            if let error = WindowsClipboard.write(text, owner: owner) {
+                self.showSessionMessage(error, caption: "Copy summary")
+            }
         case Self.cliPathAddCommand: self.beginCLIPathOperation(.add)
         case Self.cliPathRemoveCommand: self.beginCLIPathOperation(.remove)
         case Self.cliSetupCommand:

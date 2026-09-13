@@ -1234,3 +1234,15 @@
 - 앱 등록 시 앱·CLI의 크기/hash/서명/timestamp를 확인하고 읽기 handle을 등록 완료까지 유지한다. 관리 tool만 남은 제거 상태의 재등록을 방지하도록 작성했다.
 
 남은 범위: 전체 단계 통합 잠금, 단계 사이 외부 변경/등록 정책 변경, dependency/resource 전체 설치 신뢰, legacy 등록 복구, UI 통합/보존 파일 정리/전체 Windows 검증. 미지정 시 기존처럼 Apps 등록은 변경하지 않는다.
+
+## IMPL-080 — 트레이 요약 복사
+
+상태 CODE_WRITTEN_UNVERIFIED. Swift 컴파일/빌드/테스트/Win32 clipboard/UI/검증 실행 미실시. guidelines/COMMITS.md 부재로 핵심 커밋 규칙을 적용한다.
+
+- 원본 StatusItemController의 copyError와 WIN-010 복사 action 요구를 참고해 Windows 트레이의 표시 요약 복사 경로를 작성했다. 현재 메뉴 행 snapshot만 사용하고 LogRedactor를 적용하며 NUL을 제거한다. 행/UTF-16 크기 상한을 두고 메뉴 종료 시 사본을 해제한다.
+- Copy redacted summary 메뉴와 개인정보 설정 변경 시 재열기 안내를 연결했다. clipboard 기존 내용을 읽지 않으며 사용자 선택에서만 Unicode text를 쓴다.
+- GMEM_MOVEABLE/GlobalLock/OpenClipboard(owner)/EmptyClipboard/SetClipboardData 소유권 이전 및 실패 경로를 작성했다. 전송 성공 시 시스템 소유 메모리를 해제하지 않으며 실패 시 오류를 표시한다.
+
+남은 범위: 공급자별 상세 오류/카드 선택 복사, Share Stats 이미지/export, redactor의 실제 데이터별 비밀 처리 범위, 접근성/키보드/UI 및 Windows clipboard ABI 검증. 이 변경은 원본 copy action 전체 또는 WIN-010 완료를 의미하지 않는다.
+
+API 참고: https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-setclipboarddata
