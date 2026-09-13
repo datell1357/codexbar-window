@@ -1052,3 +1052,15 @@
 근거: Microsoft Set-AuthenticodeSignature 및 Get-AuthenticodeSignature 공식 문서.
 
 남은 범위: 최종 signed bytes/의존성 재분석 결합, 동시 변경, 실제 cert/timestamp chain, OS 정책/installer/MSIX/릴리스 및 모든 Windows 검증.
+
+## IMPL-062 — 서명된 최종 바이트 분석
+
+상태 CODE_WRITTEN_UNVERIFIED. 소스 편집만 수행. 서명/인증서/파일 공유/PE/PowerShell/빌드/컴파일/테스트/검증 실행 미실시.
+
+- 서명 뒤 파일을 read-sharing handle로 유지한 후 Authenticode/signer/timestamp 확인과 machine/import 분석·hash 계산을 수행하도록 연결했다.
+- 비서명 vendor/resource도 최종 hash를 원본과 대조하고 모든 handle을 인벤토리 기록까지 유지한다. 최종 dependencies를 다시 계산해 이전 pre-sign graph를 대체한다.
+- 실패 시 성공 인벤토리를 작성하지 않고 partial output을 보존한다. SIGNED_RUNTIME_UNVERIFIED/releaseApproved=false 유지.
+
+남은 범위: 실제 공유/AuthentiCode 동작, 상위 경로 경쟁, 동적 import/forwarder, OS 지원 정책 근거, installer/upgrade/MSIX 및 전체 Windows 검증.
+
+다음 구현: Windows 설치·업그레이드·제거 lifecycle을 연결한다.

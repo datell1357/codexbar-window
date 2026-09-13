@@ -10,6 +10,8 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'Read-CodexBarBuildProvenance.ps1')
+. (Join-Path $PSScriptRoot 'Read-CodexBarPEImports.ps1')
+. (Join-Path $PSScriptRoot 'Read-CodexBarSystemPolicy.ps1')
 if ([Environment]::OSVersion.Platform -ne [PlatformID]::Win32NT) { throw 'Windows is required.' }
 $timestamp = $null
 if (-not [Uri]::TryCreate($TimestampServer, [UriKind]::Absolute, [ref] $timestamp) -or
@@ -36,8 +38,8 @@ if ($inventory.schemaVersion -ne 1 -or $inventory.status -ne 'STAGED_UNVERIFIED'
     $inventory.architecture -notin @('x64', 'arm64') -or $request.architecture -ne $inventory.architecture) {
     throw 'Signing request and distribution do not match.'
 }
-$sourceDependencies = $inventory.dependencies
 $sourcePolicy = $inventory.systemPolicy
+$systemLibraries = Read-CodexBarSystemPolicy $sourcePolicy $inventory.architecture
 $provenance = Read-CodexBarBuildProvenance $inventory.provenance
 $requestProvenance = Read-CodexBarBuildProvenance $request.provenance
 if ($requestProvenance.revision -ne $provenance.revision -or $requestProvenance.version -ne $provenance.version) {
@@ -94,6 +96,15 @@ if (-not $certificate.HasPrivateKey -or $codeSigning.Count -eq 0 -or
 }
 $null = New-Item -ItemType Directory -Path $output
 $newFiles = [Collections.Generic.List[object]]::new()
+$heldFiles = [Collections.Generic.List[IO.FileStream]]::new()
+$finalDependencies = [Collections.Generic.List[object]]::new()
+$runtimeNames = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+foreach ($file in $prepared) {
+    if ($file.entry.kind -eq 'runtime' -and [IO.Path]::GetFileName($file.relative) -eq $file.relative) {
+        $null = $runtimeNames.Add($file.relative)
+    }
+}
+$expectedMachine = if ($inventory.architecture -eq 'x64') { 0x8664 } else { 0xAA64 }
 try {
     foreach ($file in $prepared) {
         $destination = Join-Path $output $file.relative
@@ -106,24 +117,46 @@ try {
         if ($file.sign) {
             $null = Set-AuthenticodeSignature -LiteralPath $destination -Certificate $certificate `
                 -HashAlgorithm SHA256 -IncludeChain NotRoot -TimestampServer $TimestampServer -Confirm:$false
+        }
+        # Lock the final bytes after signing, before checking signature/imports/hash.
+        $held = [IO.File]::Open($destination, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::Read)
+        $heldFiles.Add($held)
+        if ($file.sign) {
             $signature = Get-AuthenticodeSignature -LiteralPath $destination
             if ($signature.Status -ne 'Valid' -or $null -eq $signature.SignerCertificate -or
                 $signature.SignerCertificate.Thumbprint -ine $CertificateThumbprint -or
                 $null -eq $signature.TimeStamperCertificate) { throw 'Signature or timestamp was not confirmed.' }
             $signer = $signature.SignerCertificate.Thumbprint
         }
-        $item = Get-Item -LiteralPath $destination
+        if ($file.entry.kind -in @('application', 'cli', 'runtime')) {
+            foreach ($import in @(Read-CodexBarPEImports $destination $expectedMachine)) {
+                if ($finalDependencies.Count -ge 100000) { throw 'Final import graph exceeds its limit.' }
+                $resolution = if ($runtimeNames.Contains($import.name)) { 'included' }
+                    elseif ($systemLibraries.ContainsKey($import.name)) { 'declared_system' }
+                    else { throw 'Signed output contains an unresolved imported DLL.' }
+                $finalDependencies.Add([pscustomobject] @{
+                    importer = $file.entry.path; library = $import.name
+                    kind = $import.kind; resolution = $resolution
+                })
+            }
+        }
+        $held.Position = 0
+        $hasher = [Security.Cryptography.SHA256]::Create()
+        try { $digest = $hasher.ComputeHash($held) } finally { $hasher.Dispose() }
+        $hash = [BitConverter]::ToString($digest).Replace('-', '').ToLowerInvariant()
+        if (-not $file.sign -and $hash -ine $file.entry.sha256) {
+            throw 'A vendor or other unsigned file changed during finalization.'
+        }
         $newFiles.Add([pscustomobject] @{
-            path = $file.entry.path; kind = $file.entry.kind; bytes = $item.Length
-            sha256 = (Get-FileHash -LiteralPath $destination -Algorithm SHA256).Hash.ToLowerInvariant()
-            signerThumbprint = $signer
+            path = $file.entry.path; kind = $file.entry.kind; bytes = $held.Length
+            sha256 = $hash; signerThumbprint = $signer
         })
     }
     $record = [ordered] @{
         schemaVersion = 1; architecture = $inventory.architecture; provenance = $provenance
         status = 'SIGNED_RUNTIME_UNVERIFIED'; files = @($newFiles.ToArray())
-        dependencyAnalysis = 'PRE_SIGN_INVENTORY_ONLY'
-        dependencies = $sourceDependencies; systemPolicy = $sourcePolicy
+        dependencyAnalysis = 'HELD_FINAL_FILES_STATIC_AND_RVA_DELAY_IMPORT_NAMES'
+        dependencies = @($finalDependencies.ToArray()); systemPolicy = $sourcePolicy
         releaseApproved = $false
     }
     $json = $record | ConvertTo-Json -Depth 8
@@ -132,4 +165,6 @@ try {
 } catch {
     Write-Warning 'Signing incomplete. The unsigned source and partial signed output were preserved; use a fresh output on retry.'
     throw
+} finally {
+    foreach ($held in $heldFiles) { $held.Dispose() }
 }

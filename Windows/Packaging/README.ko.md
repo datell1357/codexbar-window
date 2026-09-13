@@ -68,3 +68,8 @@ Sign-CodexBarDistribution.ps1은 DistributionDirectory, SigningRequest, Certific
 원본을 보존하고 새 폴더에 복사한 바이트를 요청의 해시와 대조한 뒤 앱·CLI·스크립트만 SHA256/NotRoot로 서명한다. Valid 상태·지정 signer thumbprint·timestamp certificate를 요구하며 실패한 부분 출력은 보존한다. 타사 파일은 복사 후 원래 해시와 대조하고 재서명하지 않는다. timestamp URL은 사용자가 명시하며 실제 호출 시 네트워크와 키 공급자 UI가 필요할 수 있다.
 
 성공하면 새 크기/해시/signer thumbprint로 인벤토리를 작성하며 SIGNED_RUNTIME_UNVERIFIED와 releaseApproved=false를 유지한다. dependencyAnalysis는 PRE_SIGN_INVENTORY_ONLY다. 현재 Windows 실행·실제 인증서/신뢰 체인/타임스탬프 동작은 미검증이며 서명 뒤 PE 재분석, 파일의 외부 동시 변경, inventory 서명·배포 검증은 남아 있다. 기존의 ‘실제 서명 미연결’ 문구는 이전 단계 기록이며 이 스크립트 추가로 코드 경로만 연결됐다.
+
+
+서명 최종화는 서명된 각 파일의 FileShare.Read handle을 유지한 후 서명 상태·machine·import·해시를 다시 읽도록 보완했다. vendor/비서명 파일의 최종 hash가 원본 인벤토리와 다르면 중단한다. 최종 dependencies는 서명 전 기록을 복사하지 않고 다시 계산하며 dependencyAnalysis=HELD_FINAL_FILES_STATIC_AND_RVA_DELAY_IMPORT_NAMES로 표시한다. 모든 handle은 최종 인벤토리 기록 또는 실패 후 해제한다. 이전 PRE_SIGN_INVENTORY_ONLY 설명은 과거 단계다.
+
+실제 Authenticode/.NET 파일 공유 호환성, 상위 디렉터리 변경과 최종 출력 외부 접근은 미검증이다. 유효한 동일 signer가 별도로 바꾼 파일, 동적 import/forwarder/API symbol 지원까지 확인하는 것은 아니다. SIGNED_RUNTIME_UNVERIFIED 및 releaseApproved=false는 유지한다.
