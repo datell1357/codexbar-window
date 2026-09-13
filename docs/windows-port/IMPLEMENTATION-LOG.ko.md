@@ -2784,3 +2784,12 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - 가져오기 사용법, 환경 변수 범위, 서버 단위 Credential Manager 저장과 데이터 디렉터리의 차이, 미구현 범위를 ZED-EDITOR-IMPORT.ko.md에 기록했다.
 - 남은 소요: 실행 중 편집기 디렉터리 자동 발견, 분리된 credential/API origin 계약, Windows 실제 검증 및 전체 계획 나머지.
 - CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·설정 조회·인증 검증 미실행.
+
+## IMPL-244 — Zed credential origin과 API server 분리
+
+- importer와 runtime discovery에 선택적 credentialServiceURL을 추가했다. 기존 호출은 동일 origin을 유지한다.
+- 공통 ZedClientSettings.cloudAPIURL 신뢰 규칙을 Credential Manager 조회 전에 적용한다. 지원하는 Zed 서버 조합 외 임의의 교차 서버 전송은 기존 규칙대로 거부한다.
+- vault reader 및 고정 reader는 credential origin을 사용하고 API probe는 server origin을 사용한다. 저장 bundle은 확인한 API server를 유지하여 이후 조회가 다른 서버로 바뀌지 않는다. 결과에는 원본 credential origin도 포함한다.
+- 기존 3-field 수동 bundle 계약을 변경하지 않는다. 가져오기 후 조회는 편집기 vault 재조회 없이 보호 저장한 token과 API server를 사용한다.
+- 남은 소요: settings loader의 두 주소 모델/명시적 UI 확인 연결, 편집기 디렉터리 자동 발견, 실제 Windows 검증 및 전체 계획 나머지.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·Credential Manager·API 검증 미실행.

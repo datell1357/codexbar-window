@@ -960,7 +960,8 @@ public actor WindowsUsageRuntime {
     }
 
     public func discoverZedEditorAccount(requestID: UUID = UUID(),
-                                         serviceURL: String = ZedStatusProbe.defaultKeychainServiceURL) async -> ZedEditorImportResult {
+                                         serviceURL: String = ZedStatusProbe.defaultKeychainServiceURL,
+                                         credentialServiceURL: String? = nil) async -> ZedEditorImportResult {
         guard !Task.isCancelled, !self.shuttingDown else { return .unavailable("The Zed import was cancelled.") }
         guard self.refreshTask == nil else { return .unavailable("Wait for the current refresh to finish.") }
         self.cancelZedEditorImport()
@@ -974,7 +975,8 @@ public actor WindowsUsageRuntime {
                 return .unavailable("Enable Zed before importing an account.")
             }
             let task = Task.detached(priority: .utility) {
-                try await WindowsZedEditorSessionImporter().loadAndValidate(serviceURL: serviceURL)
+                try await WindowsZedEditorSessionImporter().loadAndValidate(serviceURL: serviceURL,
+                    credentialServiceURL: credentialServiceURL)
             }
             self.zedEditorImportTask = task
             let account = try await withTaskCancellationHandler {
