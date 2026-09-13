@@ -606,7 +606,7 @@ public actor WindowsUsageRuntime {
                 guard seenSessions.insert(fingerprint).inserted else { continue }
                 do {
                     let validationTask = Task.detached(priority: .utility) {
-                        try await importer.validate(candidate)
+                        try await importer.validate(candidate, deadline: deadline)
                     }
                     self.cursorBrowserValidationTask = validationTask
                     defer {
@@ -628,14 +628,24 @@ public actor WindowsUsageRuntime {
                     let safe = String(LogRedactor.redact(label).unicodeScalars.filter { $0.value >= 32 && $0.value != 127 }.map(String.init).joined().prefix(160))
                     rows.append(.init(id: id, title: safe))
                 } catch is CancellationError { throw CancellationError() }
+                catch let error as URLError where error.code == .timedOut {
+                    failures += 1
+                    break
+                }
                 catch { failures += 1 }
             }
+            try Task.checkCancellation()
             guard !self.shuttingDown, self.cursorBrowserImportRequest == requestID,
                   try self.cursorImportRevision()?.0 == revision,
                   WindowsUsagePresentationSettings.load().hidePersonalInfo == privacy else {
                 return .unavailable("Cursor accounts or privacy settings changed. Start the import again.")
             }
-            guard !rows.isEmpty else { return .unavailable("No Firefox Cursor session could be verified. Sign in to cursor.com in Firefox and retry.") }
+            guard !rows.isEmpty else {
+                if Date() >= deadline {
+                    return .unavailable("Cursor browser import reached its time limit. Check connectivity and retry.")
+                }
+                return .unavailable("No Firefox Cursor session could be verified. Sign in to cursor.com in Firefox and retry.")
+            }
             self.pendingCursorBrowserImport = .init(id: requestID, expires: Date().addingTimeInterval(300),
                 revision: revision, selectedID: selected, privacy: privacy, candidates: validated)
             return .choices(requestID: requestID, rows: rows, failedCount: failures,

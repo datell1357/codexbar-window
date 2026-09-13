@@ -55,6 +55,29 @@ public struct WindowsCursorBrowserSessionImporter: Sendable {
         return Discovery(candidates: candidates, failedProfileCount: failures)
     }
 
+    /// Uses the import's shared deadline, rather than resetting a timeout for each profile.
+    /// Cancellation is cooperative: the transport must finish draining its cancelled requests.
+    public func validate(_ candidate: Candidate, deadline: Date,
+                         transport: any ProviderHTTPTransport = ProviderHTTPClient.shared) async throws -> ValidatedCandidate {
+        try Self.check(deadline)
+        let remaining = min(60, max(0, deadline.timeIntervalSinceNow))
+        let result = try await withThrowingTaskGroup(of: ValidatedCandidate.self) { group in
+            group.addTask {
+                try await self.validate(candidate, transport: transport)
+            }
+            group.addTask {
+                try await Task.sleep(nanoseconds: UInt64(remaining * 1_000_000_000))
+                throw URLError(.timedOut)
+            }
+            defer { group.cancelAll() }
+            guard let first = try await group.next() else { throw CancellationError() }
+            return first
+        }
+        // A response queued near the timer boundary must not create a fresh selection ticket.
+        try Self.check(deadline)
+        return result
+    }
+
     public func validate(_ candidate: Candidate, expectedAccountID: String? = nil,
                          transport: any ProviderHTTPTransport = ProviderHTTPClient.shared) async throws -> ValidatedCandidate {
         try Task.checkCancellation()

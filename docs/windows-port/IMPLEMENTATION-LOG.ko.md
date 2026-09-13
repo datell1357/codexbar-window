@@ -2311,3 +2311,12 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - 후보 HTTP 검증 task를 보관하고 부모 취소, runtime 취소/교체/종료에 cancel을 연결했다. 저장 완료를 되돌리는 취소 기능은 아니다.
 - 남은 소요: 전체 HTTP deadline, 네이티브 I/O 취소 응답성, 열린 후보 메뉴 privacy 변경 대응, Chrome/Edge/WebView2 및 나머지 계획. 실제 transport의 취소 반응은 검증하지 않았다.
 - CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·실행·브라우저/API 검증 미실행.
+
+## IMPL-187 — Cursor 가져오기 전체 deadline
+
+- 후보마다 새 제한 시간을 시작하지 않고 탐색 시작 시 정한 60초 deadline을 HTTP 검증에 전달한다.
+- 검증과 deadline timer를 구조화된 task group으로 실행하고 먼저 끝난 결과 후 다른 작업을 취소한다. deadline 경계 뒤 결과는 선택 후보에 추가하지 않는다.
+- timeout 후보는 실패로 기록하고 이후 후보 검증을 중단한다. 이미 확인한 후보가 있으면 선택 목록을 유지하며 나머지는 미확인 수로 안내한다. 확인 후보가 없고 deadline을 넘겼으면 시간 초과 안내를 표시한다.
+- 취소는 cooperative이며 transport 및 동기 브라우저 I/O가 응답할 때까지 drain될 수 있다. 엄격한 벽시계 60초 반환 보장이나 실측 결과가 아니다.
+- 남은 소요: privacy 변경 중 열린 후보 메뉴 처리, Chrome/Edge/WebView2, 계정/팀 모델 및 전체 계획의 나머지 항목.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·실행·실제 API 검증 미실행.
