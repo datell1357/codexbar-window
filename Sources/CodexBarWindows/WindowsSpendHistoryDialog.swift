@@ -8,13 +8,15 @@ enum WindowsSpendHistoryDialog {
     private final class Context {
         let snapshot: WindowsSpendHistorySnapshot
         let privacy: Bool
+        let isCurrent: @Sendable () -> Bool
         var currencyIndex = 0
         var selectedDay: Int?
         var result: Result = .closed
         var dpi: UINT = 96
         var closed = false
         var failed = false
-        init(snapshot: WindowsSpendHistorySnapshot, privacy: Bool) {
+        init(snapshot: WindowsSpendHistorySnapshot, privacy: Bool, isCurrent: @escaping @Sendable () -> Bool) {
+            self.isCurrent = isCurrent
             self.snapshot = snapshot; self.privacy = privacy
             self.currencyIndex = snapshot.series.firstIndex { $0.code == snapshot.preferredSeriesCode } ?? 0
         }
@@ -23,10 +25,10 @@ enum WindowsSpendHistoryDialog {
     }
     private static let className = "CodexBar.SpendHistoryDialog"
 
-    static func show(owner: HWND, snapshot: WindowsSpendHistorySnapshot, hidePersonalInfo: Bool) -> Result? {
+    static func show(owner: HWND, snapshot: WindowsSpendHistorySnapshot, hidePersonalInfo: Bool, isCurrent: @escaping @Sendable () -> Bool = { true }) -> Result? {
         guard !snapshot.series.isEmpty,
-              hidePersonalInfo == WindowsUsagePresentationSettings.load().hidePersonalInfo else { return nil }
-        let context = Context(snapshot: snapshot, privacy: hidePersonalInfo)
+              isCurrent(), hidePersonalInfo == WindowsUsagePresentationSettings.load().hidePersonalInfo else { return nil }
+        let context = Context(snapshot: snapshot, privacy: hidePersonalInfo, isCurrent: isCurrent)
         var klass = WNDCLASSEXW()
         klass.cbSize = UINT(MemoryLayout<WNDCLASSEXW>.size)
         klass.hInstance = GetModuleHandleW(nil)
@@ -91,7 +93,7 @@ enum WindowsSpendHistoryDialog {
     }
 
     private static func closeForPrivacy(_ hwnd: HWND, context: Context) -> Bool {
-        guard context.privacy != WindowsUsagePresentationSettings.load().hidePersonalInfo else { return false }
+        guard !context.isCurrent() || context.privacy != WindowsUsagePresentationSettings.load().hidePersonalInfo else { return false }
         ShowWindow(hwnd, Int32(SW_HIDE)); DestroyWindow(hwnd)
         return true
     }

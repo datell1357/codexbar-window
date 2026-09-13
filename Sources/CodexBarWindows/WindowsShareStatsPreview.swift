@@ -13,19 +13,22 @@ enum WindowsShareStatsPreview {
     private final class Context {
         let image: Image
         let privacy: Bool
+        let isCurrent: @Sendable () -> Bool
         var dpi: UINT = 96
         var closed = false
         var failed = false
-        init(image: Image, privacy: Bool) { self.image = image; self.privacy = privacy }
+        init(image: Image, privacy: Bool, isCurrent: @escaping @Sendable () -> Bool) {
+            self.isCurrent = isCurrent
+            self.image = image; self.privacy = privacy }
         func px(_ value: Int32) -> Int32 { MulDiv(value, Int32(self.dpi), 96) }
     }
     private static let className = "CodexBar.ShareStatsPreview"
 
-    static func show(owner: HWND, image: Image, hidePersonalInfo: Bool) -> Bool {
+    static func show(owner: HWND, image: Image, hidePersonalInfo: Bool, isCurrent: @escaping @Sendable () -> Bool = { true }) -> Bool {
         guard image.dib.count == 40 + 1200 * 630 * 4, !image.png.isEmpty,
               image.png.count <= 16 * 1024 * 1024, image.text.utf16.count <= 65536,
-              hidePersonalInfo == WindowsUsagePresentationSettings.load().hidePersonalInfo else { return false }
-        let context = Context(image: image, privacy: hidePersonalInfo)
+              isCurrent(), hidePersonalInfo == WindowsUsagePresentationSettings.load().hidePersonalInfo else { return false }
+        let context = Context(image: image, privacy: hidePersonalInfo, isCurrent: isCurrent)
         var klass = WNDCLASSEXW()
         klass.cbSize = UINT(MemoryLayout<WNDCLASSEXW>.size)
         klass.hInstance = GetModuleHandleW(nil)
@@ -75,7 +78,7 @@ enum WindowsShareStatsPreview {
     }
 
     private static func closeForPrivacy(_ hwnd: HWND, context: Context) -> Bool {
-        guard context.privacy != WindowsUsagePresentationSettings.load().hidePersonalInfo else { return false }
+        guard !context.isCurrent() || context.privacy != WindowsUsagePresentationSettings.load().hidePersonalInfo else { return false }
         ShowWindow(hwnd, Int32(SW_HIDE)); DestroyWindow(hwnd)
         return true
     }

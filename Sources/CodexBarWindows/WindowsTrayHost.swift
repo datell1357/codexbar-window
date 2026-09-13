@@ -552,7 +552,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
         case let .unavailable(message): self.showMessage(message, caption: "Share Stats")
         case let .costHistory(snapshot):
             self.remoteEditorOpen = true
-            let result = WindowsSpendHistoryDialog.show(owner: window, snapshot: snapshot, hidePersonalInfo: request.privacy)
+            let result = WindowsSpendHistoryDialog.show(owner: window, snapshot: snapshot, hidePersonalInfo: request.privacy, isCurrent: self.snapshotValidity.capture())
             self.remoteEditorOpen = false
             if !self.quitInvoked {
                 PostMessageW(window, Self.wakeMessage, 0, 0)
@@ -572,7 +572,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
         case let .preview(png, dib, filename, text):
             self.remoteEditorOpen = true
             let succeeded = WindowsShareStatsPreview.show(owner: window,
-                image: .init(png: png, dib: dib, filename: filename, text: text), hidePersonalInfo: request.privacy)
+                image: .init(png: png, dib: dib, filename: filename, text: text), hidePersonalInfo: request.privacy, isCurrent: self.snapshotValidity.capture())
             self.remoteEditorOpen = false
             if !self.quitInvoked {
                 PostMessageW(window, Self.wakeMessage, 0, 0)
@@ -598,7 +598,10 @@ public final class WindowsTrayHost: @unchecked Sendable {
         }
     }
 
+    private let snapshotValidity = WindowsSnapshotValidity()
+
     private func cancelPendingShareStatsCopy() {
+        self.snapshotValidity.invalidate()
         self.mailboxLock.lock()
         self.shareStatsCopyRequest = nil
         self.shareStatsCopyMailbox = nil
@@ -2093,7 +2096,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
         let result = WindowsProviderDetailsDialog.show(
             owner: window, title: title,
             text: "Redacted snapshot from the opened menu. Refresh all closes this window and requests usage and session updates. Reopen details after the update.\r\n\r\n" + body,
-            links: links, hidePersonalInfo: privacy, expandedText: expandedText)
+            links: links, hidePersonalInfo: privacy, expandedText: expandedText, isCurrent: self.snapshotValidity.capture())
         self.remoteEditorOpen = false
         if !self.quitInvoked {
             PostMessageW(window, Self.wakeMessage, 0, 0)

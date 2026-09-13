@@ -2074,3 +2074,13 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - NSString UTF-16 range를 Win32 EDIT 선택 위치에 사용하며 선택 항목으로 스크롤한다. 펼치기 변경 시 검색 위치를 초기화하고 기존 개인정보 변경 차단과 DPI font/layout을 적용한다.
 
 남은 범위: 대용량 가상 목록, 구조화된 정렬/필터, 비교와 전체 dashboard UX, 열린 창의 계정 무효화, live ledger ownership/cache lifecycle, Windows 검증 및 전체 계획 구현. 실제 UI 입력 성공은 미검증이다.
+
+## IMPL-163 — 열린 스냅샷 창 무효화
+
+상태 CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·실행·검증 미실시. guidelines/COMMITS.md 부재로 핵심 규칙을 적용한다.
+
+- NSLock으로 보호하는 UUID 세대의 WindowsSnapshotValidity를 작성했다. 계정 정보 없이 열릴 때의 세대만 캡처하고 기존 계정/비용 설정의 pending-share 취소 경로에서 무효화한다.
+- 공용 상세 창, 비용 차트/heatmap/시간별 창, Share Stats 미리보기에 validity closure를 전달한다. 열기 전 및 기존 modal message/250ms timer/명령 처리 경계에서 확인하고 무효화되면 창을 숨기고 닫는다.
+- 창 수명 동안 상태를 공유하며 타 스레드가 직접 HWND를 파괴하지 않는다. 기존 개인정보 변경 처리와 owner 복원을 유지한다.
+
+남은 범위: 수집부터 mailbox 표시까지 동일 ownership ticket 유지, 별도 파일 저장 대화상자 도중 무효화와 최종 파일/클립보드 게시 경계, 외부 auth 변경 감지, live ledger/cache parity, Windows 검증 및 전체 계획 구현. 모든 계정 변경 경쟁 조건이 해결되었다고 주장하지 않는다.

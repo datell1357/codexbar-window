@@ -29,6 +29,7 @@ enum WindowsProviderDetailsDialog {
 
     private final class Context {
         let hidePersonalInfo: Bool
+        let isCurrent: @Sendable () -> Bool
         let text: String
         let expandedText: String?
         var expanded = false
@@ -41,19 +42,20 @@ enum WindowsProviderDetailsDialog {
         var font: HFONT?
         deinit { if let font { DeleteObject(font) } }
         func pixels(_ value: Int32) -> Int32 { MulDiv(value, Int32(self.dpi), 96) }
-        init(text: String, links: [Link], hidePersonalInfo: Bool, expandedText: String?) {
+        init(text: String, links: [Link], hidePersonalInfo: Bool, expandedText: String?, isCurrent: @escaping @Sendable () -> Bool) {
+            self.isCurrent = isCurrent
             self.expandedText = expandedText
             self.text = text; self.links = Array(links.prefix(3)); self.hidePersonalInfo = hidePersonalInfo
         }
     }
 
-    static func show(owner: HWND, title: String, text: String, links: [Link], hidePersonalInfo: Bool, expandedText: String? = nil) -> Result? {
-        guard hidePersonalInfo == WindowsUsagePresentationSettings.load().hidePersonalInfo else { return .privacyChanged }
+    static func show(owner: HWND, title: String, text: String, links: [Link], hidePersonalInfo: Bool, expandedText: String? = nil, isCurrent: @escaping @Sendable () -> Bool = { true }) -> Result? {
+        guard isCurrent(), hidePersonalInfo == WindowsUsagePresentationSettings.load().hidePersonalInfo else { return .privacyChanged }
         let normalized = text.replacingOccurrences(of: "\r\n", with: "\n")
             .replacingOccurrences(of: "\r", with: "\n").replacingOccurrences(of: "\n", with: "\r\n")
         let expanded = expandedText?.replacingOccurrences(of: "\r\n", with: "\n")
             .replacingOccurrences(of: "\r", with: "\n").replacingOccurrences(of: "\n", with: "\r\n")
-        let context = Context(text: normalized, links: links, hidePersonalInfo: hidePersonalInfo, expandedText: expanded)
+        let context = Context(text: normalized, links: links, hidePersonalInfo: hidePersonalInfo, expandedText: expanded, isCurrent: isCurrent)
         let instance = GetModuleHandleW(nil)
         var klass = WNDCLASSEXW()
         klass.cbSize = UINT(MemoryLayout<WNDCLASSEXW>.size)
@@ -281,8 +283,14 @@ enum WindowsProviderDetailsDialog {
     }
 
     private static func closeForPrivacyIfNeeded(_ hwnd: HWND, context: Context) -> Bool {
-        guard !context.closed,
-              context.hidePersonalInfo != WindowsUsagePresentationSettings.load().hidePersonalInfo else { return false }
+        guard !context.closed else { return false }
+        if !context.isCurrent() {
+            context.result = .closed
+            ShowWindow(hwnd, Int32(SW_HIDE))
+            DestroyWindow(hwnd)
+            return true
+        }
+        guard context.hidePersonalInfo != WindowsUsagePresentationSettings.load().hidePersonalInfo else { return false }
         context.result = .privacyChanged
         ShowWindow(hwnd, Int32(SW_HIDE))
         DestroyWindow(hwnd)

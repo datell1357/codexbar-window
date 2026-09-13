@@ -1,5 +1,7 @@
 # Windows 전용 제품 작업 현황
 
+- IMPL-163: 열린 상세/비용 차트/공유 미리보기에 계정·비용 설정 무효화 상태를 연결했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
 - IMPL-162: 비용/읽기 전용 상세 창에 검색 입력·다음 찾기·Ctrl+F/F3와 순환 검색을 연결했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
 
 - IMPL-161: 비용 요약에서 모델/프로젝트 전체 행 펼치기·접기를 연결했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
