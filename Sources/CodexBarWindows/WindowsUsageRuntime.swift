@@ -60,7 +60,8 @@ public actor WindowsUsageRuntime {
         }
         self.providerStatusGeneration &+= 1
         let generation = self.providerStatusGeneration
-        let task = Task { try await WindowsProviderStatusProbe.collect(sources, deadline: Date().addingTimeInterval(30)) }
+        let requestSources = sources
+        let task = Task { try await WindowsProviderStatusProbe.collect(requestSources, deadline: Date().addingTimeInterval(30)) }
         self.providerStatusTask = task
         defer { if generation == self.providerStatusGeneration { self.providerStatusTask = nil } }
         let statuses: [String: HookProviderStatus]
@@ -407,6 +408,7 @@ public actor WindowsUsageRuntime {
     private var startupConnectivityRetryNeeded = false
     private var queuedSpendRefresh = false
     private var queuedOptionalRefresh = false
+    private var queuedStatusRefresh = false
     private var queuedPredictiveSettingsRefresh = false
     private var queuedCodexWebSettingsRefresh = false
     private var scheduleTask: Task<Void, Never>?
@@ -2054,9 +2056,10 @@ public actor WindowsUsageRuntime {
         self.publishRenderEntries(settings: WindowsUsagePresentationSettings.load())
         let enabled = (UserDefaults(suiteName: WindowsRefreshSettings.suiteName) ?? .standard)
             .object(forKey: "statusChecksEnabled") as? Bool ?? true
+        self.queuedStatusRefresh = false
         guard enabled else { return }
         // Coalesce the requested refresh behind an active provider refresh.
-        if self.refreshTask != nil { self.queuedOptionalRefresh = true }
+        if self.refreshTask != nil { self.queuedStatusRefresh = true }
         else { await self.refresh() }
     }
 
@@ -2232,18 +2235,23 @@ public actor WindowsUsageRuntime {
             self.refreshTask = nil
             let optionalRefreshNeeded = self.queuedOptionalRefresh &&
                 WindowsUsagePresentationSettings.load().showOptionalCreditsAndExtraUsage
+            let statusChecksEnabled = (UserDefaults(suiteName: WindowsRefreshSettings.suiteName) ?? .standard)
+                .object(forKey: "statusChecksEnabled") as? Bool ?? true
+            let statusRefreshNeeded = self.queuedStatusRefresh && statusChecksEnabled
             let predictiveSettingsRefreshNeeded = self.queuedPredictiveSettingsRefresh
             let spendRefreshNeeded = self.queuedSpendRefresh
             let codexWebSettingsRefreshNeeded = self.queuedCodexWebSettingsRefresh
             guard !self.shuttingDown,
-                  optionalRefreshNeeded || predictiveSettingsRefreshNeeded || codexWebSettingsRefreshNeeded || spendRefreshNeeded
+                  statusRefreshNeeded || optionalRefreshNeeded || predictiveSettingsRefreshNeeded || codexWebSettingsRefreshNeeded || spendRefreshNeeded
             else {
+                self.queuedStatusRefresh = false
                 self.queuedSpendRefresh = false
                 self.queuedOptionalRefresh = false
                 self.queuedPredictiveSettingsRefresh = false
                 self.queuedCodexWebSettingsRefresh = false
                 break
             }
+            self.queuedStatusRefresh = false
             self.queuedSpendRefresh = false
             self.queuedOptionalRefresh = false
             self.queuedPredictiveSettingsRefresh = false
@@ -2634,12 +2642,18 @@ public actor WindowsUsageRuntime {
     public func shutdown() async {
         guard !self.shuttingDown else { return }
         self.shuttingDown = true
+        self.queuedStatusRefresh = false
+        self.providerStatusGeneration &+= 1
+        let statusTask = self.providerStatusTask
+        statusTask?.cancel()
+        self.providerStatusTask = nil
         self.pendingHookRefresh = nil
         self.hookRefreshAccounts.removeAll()
         self.hookPreviousKeys.removeAll()
         // Cancel the refresh before draining hooks; authorization callbacks observe shuttingDown.
         self.refreshTask?.cancel()
         await self.hookDispatchQueue.shutdown()
+        if let statusTask { _ = try? await statusTask.value }
         self.cancelCursorBrowserImport()
         self.cancelAugmentBrowserImport()
         self.cancelZedEditorImport()

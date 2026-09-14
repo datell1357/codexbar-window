@@ -3218,3 +3218,11 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - 켜면 refresh를 요청하며 활성 refresh가 있으면 기존 coalescing flag를 사용한다. 끄는 동작은 신규 네트워크 갱신을 요청하지 않는다. 실제 종료 지연과 메뉴 반영은 미검증이다.
 - 남은 소요: 컴포넌트 상세/필터, 다국어 문구, 전체 계획 잔여 기능과 Windows 검증.
 - CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·실제 HTTP/훅/UI 실행 미실행.
+
+## IMPL-294 — 상태 갱신 예약 독립화
+
+- IMPL-293에서 재사용한 queuedOptionalRefresh는 showOptionalCreditsAndExtraUsage가 꺼져 있으면 실행되지 않고 해당 설정 변경으로 지워질 수 있었다. queuedStatusRefresh를 따로 추가하여 상태 설정만으로 후속 갱신 여부를 결정하도록 수정했다.
+- 활성 갱신 중 상태 확인을 켜면 다음 갱신을 예약한다. 끄면 상태 예약만 해제한다. refresh 루프가 요청을 소비하거나 종료할 때 플래그를 초기화한다.
+- shutdown에서 상태 세대를 무효화하고 현재 상태 task를 직접 취소/drain한다. 부모 refresh 취소 전달과 함께 종료 경로를 명시한다. 요청 source는 Task 생성 전에 불변 값으로 캡처한다.
+- 남은 소요: 컴포넌트 상세/필터, 다국어 문구, 전체 계획 잔여 기능 및 Windows 검증.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 회귀 테스트 추가/실행, 빌드·lint·실제 HTTP/훅/UI 실행은 이번 구현 전용 단계에서 미실행.
