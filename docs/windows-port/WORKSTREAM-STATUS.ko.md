@@ -1,5 +1,7 @@
 # Windows 전용 제품 작업 현황
 
+- IMPL-302: 계정 해석 전 상태 전용 훅 관측을 제출하고 사용량 기준과 분리했다. 명령은 기존 직렬 큐를 공유한다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
 - IMPL-301: 공개 상태 조회를 계정 해석보다 먼저 수행하고 사용량 실패 시 상태 메뉴를 유지하도록 연결했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
 
 - IMPL-300: 원본 번역에서 상태 문구를 가져와 Windows 요약/상세/설정 메뉴에 연결했다. 전체 UI 번역은 남아 있다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.

@@ -93,7 +93,7 @@ public actor WindowsUsageRuntime {
         }
     }
 
-    private func dispatchPendingHooks(statuses: [String: HookProviderStatus]) async -> String? {
+    private func dispatchPendingHooks() async -> String? {
         guard let pending = self.pendingHookRefresh else { return nil }
         self.pendingHookRefresh = nil
         guard !Task.isCancelled, self.hookSubmissionIsCurrent(revision: pending.configRevision, privacy: pending.privacy) else {
@@ -111,12 +111,7 @@ public actor WindowsUsageRuntime {
             }
             let batch = try WindowsHookObservationBatch.make(accounts: pending.accounts,
                 previousKeys: self.hookPreviousKeys, now: Date())
-            var observations = Dictionary(uniqueKeysWithValues: batch.observations.map { ($0.provider, $0) })
-            for (provider, status) in statuses {
-                let previous = observations[provider]
-                observations[provider] = HookProviderObservation(provider: provider, lanes: previous?.lanes ?? [],
-                    status: status, unavailableLaneKeys: previous?.unavailableLaneKeys ?? [])
-            }
+            let observations = Dictionary(uniqueKeysWithValues: batch.observations.map { ($0.provider, $0) })
             let result = try await self.hookDispatchQueue.observe(observations.keys.sorted().compactMap { observations[$0] }, config: pending.config,
                 hidePersonalInfo: pending.privacy, contextRevision: revision, failures: batch.failures,
                 authorization: { [weak self] in
@@ -2338,6 +2333,23 @@ public actor WindowsUsageRuntime {
             let statusGeneration = self.providerStatusGeneration
             guard !self.shuttingDown, !Task.isCancelled else { return }
             self.applyProviderStatuses(providerStatuses, config: config)
+            var statusHookNotice: String?
+            if config.hooks?.enabled == true,
+               self.hookSubmissionIsCurrent(revision: statusRevision, privacy: presentationSettings.hidePersonalInfo) {
+                do {
+                    let privacy = presentationSettings.hidePersonalInfo
+                    let submission = try await self.hookDispatchQueue.observeStatuses(
+                        providerStatuses.mapValues(\.indicator), config: config.hooks ?? HooksConfig(),
+                        hidePersonalInfo: privacy, contextRevision: statusRevision,
+                        authorization: { [weak self] in
+                            guard let self else { return false }
+                            return await self.hookSubmissionIsCurrent(revision: statusRevision, privacy: privacy)
+                        })
+                    if submission.omitted > 0 { statusHookNotice = "Hooks: \(submission.omitted) status events omitted" }
+                } catch is CancellationError { throw CancellationError() }
+                catch { statusHookNotice = "Hooks: status observations could not be submitted" }
+            }
+            guard !self.shuttingDown, !Task.isCancelled else { return }
             let accountContext = try TokenAccountCLIContext(
                 selection: TokenAccountCLISelection(label: nil, index: nil, allAccounts: false),
                 config: config,
@@ -2350,6 +2362,7 @@ public actor WindowsUsageRuntime {
             self.reconcileCodexOwner(codexAccountContext)
             let refreshHistoricalTrackingGeneration = self.historicalTrackingGeneration
             var entries: [RenderEntry] = []
+            if let statusHookNotice { entries.append(.row(statusHookNotice)) }
             self.presentations.removeAll(keepingCapacity: true)
             self.providerCopyErrors.removeAll(keepingCapacity: true)
             if let errorCode = self.signalProvider().powerStateError {
@@ -2526,7 +2539,7 @@ public actor WindowsUsageRuntime {
                         presentationSettings.hidePersonalInfo, revision, self.hookUnresolvedAccountCount)
                 }
             }
-            if let hookNotice = await self.dispatchPendingHooks(statuses: currentStatuses.mapValues(\.indicator)) { entries.append(.row(hookNotice)) }
+            if let hookNotice = await self.dispatchPendingHooks() { entries.append(.row(hookNotice)) }
             guard !self.shuttingDown, !Task.isCancelled else { return }
             self.renderEntries = entries
             self.scheduleResetBoundaryRefreshIfNeeded(

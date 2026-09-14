@@ -3284,3 +3284,12 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - 상세 필터/표시 모델 적용을 helper로 모았다. 사용량 처리 후 메뉴 모델 재생성에 다시 적용할 때 상태 세대와 config revision을 확인한다. 처리 중 설정 변경으로 무효화된 결과를 복원하지 않는다.
 - 남은 소요: 계정 해석 조기 실패 시 상태 전용 훅 관측, 독립적인 상태 스케줄/게시, 전체 계획 잔여 기능 및 Windows 검증. 초기 메뉴 생성 이전 config/reconciliation 실패는 여전히 상태 조회에 도달하지 않는다.
 - CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·실제 HTTP/훅/UI 실행 미실행.
+
+## IMPL-302 — 상태 훅 관측 분리
+
+- WindowsHookDispatchQueue에 별도 statusDetector/context를 추가하고 observeStatuses를 작성했다. 계정 lane을 입력하지 않으며 quota detector의 기존 기준을 건드리지 않는다. 최대 공급자/문자열/context 제한을 적용한다.
+- 공개 상태 결과 직후, 계정 해석 전에 상태 관측을 제출한다. config/privacy authorization을 기존과 동일하게 적용하고 전체 명령 실행은 같은 bounded serial queue와 rate limiter를 사용한다.
+- 기존 사용량 dispatch에서 상태를 합치는 코드를 제거해 같은 결과의 이중 전이 평가를 피한다. 첫 상태 샘플은 기준 설정이며 unknown/maintenance는 기존 감지기의 전이 규칙을 따른다.
+- config/privacy 변경과 shutdown 때 상태 감지기를 초기화한다. 상태 context는 config digest이며 계정 ownership digest와 별개다. 사용량 ownership 변경에 따른 기존 큐 취소 정책은 유지한다.
+- 상태 제출 누락/실패 notice는 정상 사용량 게시 경로에 전달한다. 이후 계정 해석 자체가 실패하면 기존 오류 문구가 우선하며 해당 notice의 별도 표시는 남아 있다.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·실제 HTTP/훅/UI 실행 미실행. 전체 계획 잔여 기능과 Windows 검증은 계속 남아 있다.

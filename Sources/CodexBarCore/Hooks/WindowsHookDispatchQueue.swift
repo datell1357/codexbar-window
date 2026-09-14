@@ -14,6 +14,8 @@ public actor WindowsHookDispatchQueue {
     }
     public enum ObservationFailure: Error { case oversized, duplicateProvider, inconsistentLane }
     private var detector = HookTransitionDetector()
+    private var statusDetector = HookTransitionDetector()
+    private var statusContext: Data?
     private var observationContext: Data?
     private var authorization: (@Sendable () async -> Bool)?
     private var config = HooksConfig()
@@ -33,6 +35,8 @@ public actor WindowsHookDispatchQueue {
         guard !self.stopped else { return }
         guard config != self.config || hidePersonalInfo != self.privacy else { return }
         self.detector = HookTransitionDetector()
+        self.statusDetector = HookTransitionDetector()
+        self.statusContext = nil
         self.config = config
         self.privacy = hidePersonalInfo
         self.pending.removeAll()
@@ -89,6 +93,35 @@ public actor WindowsHookDispatchQueue {
         return self.submit(events)
     }
 
+    /// Public provider status has no account lanes and must not prune quota baselines.
+    /// It shares the process queue and rate limiter with quota/failure hooks.
+    public func observeStatuses(
+        _ statuses: [String: HookProviderStatus], config: HooksConfig,
+        hidePersonalInfo: Bool, contextRevision: Data, now: Date = Date(),
+        authorization: (@Sendable () async -> Bool)? = nil) throws -> Submission
+    {
+        try Task.checkCancellation()
+        guard statuses.count <= 256, contextRevision.count <= 64,
+              statuses.keys.allSatisfy({ !$0.isEmpty && $0.utf8.count <= 1024 }) else {
+            throw ObservationFailure.oversized
+        }
+        self.configure(config, hidePersonalInfo: hidePersonalInfo)
+        self.authorization = authorization
+        if self.statusContext != contextRevision {
+            self.statusContext = contextRevision
+            self.statusDetector = HookTransitionDetector()
+        }
+        guard !self.stopped, config.enabled, config.events.count <= HooksConfig.maximumRuleCount else {
+            return Submission(accepted: 0, omitted: 0)
+        }
+        var events: [HookDispatch] = []
+        for provider in statuses.keys.sorted() {
+            let observation = HookProviderObservation(provider: provider, lanes: [], status: statuses[provider] ?? .unknown)
+            events.append(contentsOf: self.statusDetector.evaluate(observation: observation, config: config, now: now))
+        }
+        return self.submit(events)
+    }
+
     /// Coarse failure events produced separately from successful sibling account observations.
     public func submitFailures(_ events: [HookEvent]) -> Submission {
         guard events.count <= 256, events.allSatisfy({ $0.event == .refreshFailed }) else {
@@ -126,6 +159,8 @@ public actor WindowsHookDispatchQueue {
 
     public func shutdown() async {
         self.stopped = true
+        self.statusDetector = HookTransitionDetector()
+        self.statusContext = nil
         self.detector = HookTransitionDetector()
         self.observationContext = nil
         self.pending.removeAll()
