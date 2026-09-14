@@ -3364,3 +3364,11 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - 인수 배열의 추가/수정/삭제에 인덱스와 개수/바이트 제한을 적용한다. 인수를 shell 문장으로 합치거나 공백으로 분해하지 않는다. 빈 인수는 보존하고 NUL은 거부한다.
 - 숫자 입력은 점 소수점과 지수 표기를 받되 단위/그룹 구분은 받지 않는다. 지수 표기는 기존 작은 임계값을 표시 후 다시 편집할 수 있도록 허용한다. form은 이 입력 규칙을 안내해야 한다.
 - 모델만 작성했으며 Win32 필드/목록/저장 dialog 연결은 남아 있다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·실제 설정/HTTP/훅/UI 실행 미실행.
+
+## IMPL-312 — Win32 훅 규칙 form
+
+- 기존 Codex web 설정 창의 Win32 생성/owner disable/메시지 루프/취소/복원 패턴을 바탕으로 WindowsHookRuleDialog를 작성했다. 이벤트 combo, 활성화 checkbox, 공급자/실행 경로/인수/백분율/timeout 입력을 제공한다.
+- 인수는 JSON string array로 받으며 []와 빈 문자열 요소, 공백, escape를 표현할 수 있다. shell splitting은 하지 않는다. multiline 입력의 Enter는 줄바꿈으로 처리하고 Escape는 취소한다.
+- 저장은 WindowsHookRuleDraft.rule의 검증을 거친 HookRule을 반환할 뿐 실제 저장/실행은 하지 않는다. 오류는 고정 설명만 표시한다. quotaLow 외 이벤트에서는 임계값 입력을 비활성화한다.
+- 아직 host 목록/불러오기/저장 callback에서 호출하지 않는다. DPI/접근성/RTL/번역, 설정·개인정보 변경 중 편집 취소 및 실제 렌더링은 후속 소요다.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·실제 설정/HTTP/훅/UI 실행 미실행. 전체 계획 잔여 구현 및 Windows 검증은 남아 있다.
