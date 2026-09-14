@@ -1,5 +1,7 @@
 # Windows 전용 제품 작업 현황
 
+- IMPL-291: 같은 status source의 요청/결과를 갱신 내 공유하고 제출 기한의 진행 중 요청 취소를 연결했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
 - IMPL-290: Workspace 제품 상태 피드를 Windows hook 조회에 연결했다. Gemini/Antigravity metadata의 제품 ID를 사용한다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
 
 - IMPL-289: Windows 상태 조회에 incident.io summary 및 classic fallback을 추가했다. unknown은 복구로 처리하지 않는다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.

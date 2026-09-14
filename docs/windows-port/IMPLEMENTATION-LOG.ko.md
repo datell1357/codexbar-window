@@ -3192,3 +3192,12 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - Source enum을 추가해 Workspace와 Statuspage가 같은 동시성/제출 예산/취소 처리에 참여하게 했다. 기존 URL collect 진입점도 유지한다.
 - 공개 피드만 사용하며 10초 요청 timeout, 1MiB 응답 및 4096개 incident/product/update 제한을 적용했다. 피드 초과/실패는 unknown이다. 동일 제품 요청 공유와 component별 표시/필터 등은 남아 있다.
 - CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·실제 HTTP/훅 실행 미실행.
+
+## IMPL-291 — 상태 요청 공유와 기한 취소
+
+- Source를 Hashable로 만들고 동일 URL 또는 동일 Workspace 제품 ID의 요청을 갱신 내 하나로 묶었다. Gemini/Antigravity처럼 같은 source를 쓰는 공급자는 같은 관측 결과를 받는다. 서로 다른 제품 ID나 URL은 합치지 않는다.
+- 공급자 키 순서로 안정적인 요청 순서를 유지하고 고유 source 기준 최대 4개 요청을 실행한다. 갱신 사이의 캐시는 만들지 않아 이전 결과를 새 정상 상태로 재사용하지 않는다.
+- 제출 기한 타이머를 같은 task group에 연결했다. 만료 시 신규 요청을 중단하고 활성 요청을 취소하며 drain한다. 마지막 요청 완료 시 타이머도 취소한다. 기한 전 수신한 결과는 유지하고 미수신/실패 결과는 unknown으로 남긴다.
+- transport 주입을 collect에 추가해 이후 Windows 검증에서 요청 횟수와 취소를 독립적으로 확인할 수 있게 했다. 실제 취소/drain 지연은 미검증이며 전체 반환 시간 보장은 아니다.
+- 남은 소요: 컴포넌트 표시/필터, plugin 및 외부 계정 훅 관측, 전체 계획의 잔여 기능과 Windows 검증.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·실제 HTTP/훅 실행 미실행.

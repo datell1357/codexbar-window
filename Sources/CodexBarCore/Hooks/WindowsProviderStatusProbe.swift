@@ -6,7 +6,7 @@ import FoundationNetworking
 
 /// Public Statuspage and incident.io summaries; no credentials or account data.
 public enum WindowsProviderStatusProbe {
-    public enum Source: Sendable {
+    public enum Source: Sendable, Hashable {
         case statusPage(URL)
         case workspace(productID: String)
     }
@@ -55,32 +55,73 @@ public enum WindowsProviderStatusProbe {
         try await self.collect(sources.mapValues { Source.statusPage($0) }, deadline: deadline)
     }
 
-    public static func collect(_ sources: [String: Source], deadline: Date) async throws -> [String: HookProviderStatus] {
+    /// Exact source identities share one result within this refresh only. No cross-refresh cache.
+    public static func collect(
+        _ sources: [String: Source],
+        deadline: Date,
+        transport: any ProviderHTTPTransport = WindowsManualAccountHTTPTransport.shared) async throws -> [String: HookProviderStatus]
+    {
         guard sources.count <= 256 else { throw Failure.oversized }
         try Task.checkCancellation()
-        let entries = sources.sorted { $0.key < $1.key }
-        var result = Dictionary(uniqueKeysWithValues: entries.map { ($0.key, HookProviderStatus.unknown) })
-        await withTaskGroup(of: (String, HookProviderStatus).self) { group in
+        var entries: [(source: Source, providers: [String])] = []
+        var indices: [Source: Int] = [:]
+        for (provider, source) in sources.sorted(by: { $0.key < $1.key }) {
+            if let index = indices[source] { entries[index].providers.append(provider) }
+            else {
+                indices[source] = entries.count
+                entries.append((source, [provider]))
+            }
+        }
+        var result = sources.mapValues { _ in HookProviderStatus.unknown }
+        guard !entries.isEmpty, Date() < deadline else { return result }
+        // The timer cancels active requests at the submission deadline. Draining remains required.
+        await withTaskGroup(of: (Int, HookProviderStatus)?.self) { group in
+            group.addTask {
+                let remaining = max(0, deadline.timeIntervalSinceNow)
+                do { try await Task.sleep(for: .seconds(remaining)) }
+                catch { return nil }
+                return nil
+            }
             var next = 0
+            var outstanding = 0
             func enqueue(_ index: Int) {
-                let entry = entries[index]
+                let source = entries[index].source
                 group.addTask {
-                    guard !Task.isCancelled, Date() < deadline else { return (entry.key, .unknown) }
+                    guard !Task.isCancelled, Date() < deadline else { return (index, .unknown) }
                     let status: HookProviderStatus
-                    switch entry.value {
-                    case let .statusPage(url): status = (try? await Self.fetch(baseURL: url)) ?? .unknown
-                    case let .workspace(productID): status = (try? await Self.fetchWorkspace(productID: productID)) ?? .unknown
+                    switch source {
+                    case let .statusPage(url):
+                        status = (try? await Self.fetch(baseURL: url, transport: transport)) ?? .unknown
+                    case let .workspace(productID):
+                        status = (try? await Self.fetchWorkspace(productID: productID, transport: transport)) ?? .unknown
                     }
-                    guard !Task.isCancelled, Date() < deadline else { return (entry.key, .unknown) }
-                    return (entry.key, status)
+                    guard !Task.isCancelled, Date() < deadline else { return (index, .unknown) }
+                    return (index, status)
                 }
             }
-            while next < min(4, entries.count) { enqueue(next); next += 1 }
-            while let (key, status) = await group.next() {
-                result[key] = status
-                if Task.isCancelled || Date() >= deadline { group.cancelAll() }
-                else if next < entries.count { enqueue(next); next += 1 }
+            while next < min(4, entries.count) {
+                enqueue(next)
+                next += 1
+                outstanding += 1
             }
+            while let event = await group.next() {
+                guard let (index, status) = event, !Task.isCancelled, Date() < deadline else {
+                    group.cancelAll()
+                    break
+                }
+                for provider in entries[index].providers { result[provider] = status }
+                outstanding -= 1
+                if next < entries.count {
+                    enqueue(next)
+                    next += 1
+                    outstanding += 1
+                }
+                if outstanding == 0 {
+                    group.cancelAll()
+                    break
+                }
+            }
+            // Task group scope drains both the timer and any cancelled transport tasks.
         }
         try Task.checkCancellation()
         return result
