@@ -10,7 +10,8 @@ public enum WindowsHookSettingsMenu {
         isCurrent: @escaping () -> Bool) -> WindowsHookSettingsMutation?
     {
         let privacy = WindowsUsagePresentationSettings.load().hidePersonalInfo
-        let rightToLeft = WindowsStatusLocalization.isRightToLeft
+        let localization = WindowsStatusLocalization.Snapshot()
+        let rightToLeft = localization.isRightToLeft
         func valid() -> Bool {
             IsWindow(owner) != 0 && isCurrent() &&
                 WindowsUsagePresentationSettings.load().hidePersonalInfo == privacy
@@ -19,24 +20,24 @@ public enum WindowsHookSettingsMenu {
               let menu = CreatePopupMenu() else { return nil }
         defer { _ = DestroyMenu(menu) }
         let config = snapshot.config
-        guard append(config.enabled ? WindowsStatusLocalization.text("Disable all hooks") : WindowsStatusLocalization.text("Enable configured hooks"), command: 1, to: menu),
-              append(WindowsStatusLocalization.text("hooks_add_rule"), command: 2, to: menu, enabled: config.events.count < HooksConfig.maximumRuleCount)
+        guard append(config.enabled ? localization.text("Disable all hooks") : localization.text("Enable configured hooks"), command: 1, to: menu),
+              append(localization.text("hooks_add_rule"), command: 2, to: menu, enabled: config.events.count < HooksConfig.maximumRuleCount)
         else { return nil }
         if config.events.isEmpty {
-            guard append(WindowsStatusLocalization.text("hooks_empty"), command: 0, to: menu, enabled: false) else { return nil }
+            guard append(localization.text("hooks_empty"), command: 0, to: menu, enabled: false) else { return nil }
         }
         for (index, rule) in config.events.enumerated() {
             guard let actions = CreatePopupMenu() else { return nil }
             let base = UINT_PTR(0x100 + index * 8)
-            let complete = append(WindowsStatusLocalization.text("Edit rule…"), command: base, to: actions) &&
-                append(rule.enabled ? WindowsStatusLocalization.text("Disable rule") : WindowsStatusLocalization.text("Enable rule"), command: base + 1, to: actions) &&
-                append(WindowsStatusLocalization.text("Move up"), command: base + 2, to: actions, enabled: index > 0) &&
-                append(WindowsStatusLocalization.text("Move down"), command: base + 3, to: actions, enabled: index + 1 < config.events.count) &&
-                append(WindowsStatusLocalization.text("hooks_delete_rule"), command: base + 4, to: actions)
+            let complete = append(localization.text("Edit rule…"), command: base, to: actions) &&
+                append(rule.enabled ? localization.text("Disable rule") : localization.text("Enable rule"), command: base + 1, to: actions) &&
+                append(localization.text("Move up"), command: base + 2, to: actions, enabled: index > 0) &&
+                append(localization.text("Move down"), command: base + 3, to: actions, enabled: index + 1 < config.events.count) &&
+                append(localization.text("hooks_delete_rule"), command: base + 4, to: actions)
             guard complete else { _ = DestroyMenu(actions); return nil }
             // Do not expose executable paths or argument values in the overview.
-            let title = "\(index + 1). \(rule.event.rawValue) · \(rule.provider ?? WindowsStatusLocalization.text("hooks_any_provider"))" +
-                (rule.enabled ? "" : WindowsStatusLocalization.text(" (disabled)"))
+            let title = "\(index + 1). \(rule.event.rawValue) · \(rule.provider ?? localization.text("hooks_any_provider"))" +
+                (rule.enabled ? "" : localization.text(" (disabled)"))
             let added = safeText(title).withCString(encodedAs: UTF16.self) {
                 AppendMenuW(menu, UINT(MF_STRING | MF_POPUP), UINT_PTR(UInt(bitPattern: actions)), $0)
             }
@@ -50,7 +51,7 @@ public enum WindowsHookSettingsMenu {
         guard valid(), selected != 0 else { return nil }
         let mutation: WindowsHookSettingsMutation
         if selected == 1 {
-            if !config.enabled, !confirm(owner: owner, text: WindowsStatusLocalization.text("Enable configured hooks? Enabled rules can run their configured programs when future usage or service events occur.")) { return nil }
+            if !config.enabled, !confirm(owner: owner, localization: localization, text: localization.text("Enable configured hooks? Enabled rules can run their configured programs when future usage or service events occur.")) { return nil }
             mutation = .setEnabled(!config.enabled)
         } else if selected == 2 {
             guard let rule = WindowsHookRuleDialog.show(owner: owner, draft: WindowsHookRuleDraft(), isCurrent: valid) else { return nil }
@@ -75,7 +76,7 @@ public enum WindowsHookSettingsMenu {
                 guard index + 1 < config.events.count else { return nil }
                 mutation = .move(id: rule.id, to: index + 1)
             case 4:
-                guard confirm(owner: owner, text: WindowsStatusLocalization.text("Delete the selected hook rule? Other rules and provider settings will be kept.")) else { return nil }
+                guard confirm(owner: owner, localization: localization, text: localization.text("Delete the selected hook rule? Other rules and provider settings will be kept.")) else { return nil }
                 mutation = .remove(id: rule.id)
             default: return nil
             }
@@ -92,10 +93,10 @@ public enum WindowsHookSettingsMenu {
     private static func safeText(_ value: String) -> String {
         value.components(separatedBy: .controlCharacters).joined(separator: " ").replacingOccurrences(of: "&", with: "&&")
     }
-    private static func confirm(owner: HWND, text: String) -> Bool {
+    private static func confirm(owner: HWND, localization: WindowsStatusLocalization.Snapshot, text: String) -> Bool {
         text.withCString(encodedAs: UTF16.self) { message in
-            WindowsStatusLocalization.text("tab_hooks").withCString(encodedAs: UTF16.self) { title in
-                MessageBoxW(owner, message, title, UINT(MB_YESNO | MB_DEFBUTTON2 | MB_ICONQUESTION)) == IDYES
+            localization.text("tab_hooks").withCString(encodedAs: UTF16.self) { title in
+                MessageBoxW(owner, message, title, UINT(MB_YESNO | MB_DEFBUTTON2 | MB_ICONQUESTION) | (localization.isRightToLeft ? UINT(MB_RTLREADING | MB_RIGHT) : 0)) == IDYES
             }
         }
     }

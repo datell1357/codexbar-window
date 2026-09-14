@@ -1,5 +1,7 @@
 # Windows 전용 제품 작업 현황
 
+- IMPL-334: 열린 훅 화면의 언어 snapshot을 유지하고 메시지창 RTL 방향을 연결했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
 - IMPL-333: 현재 catalog의 아랍어/페르시아어에 훅 form 좌우 배치와 메뉴 RTL을 연결했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
 
 - IMPL-332: 훅 버튼/체크박스의 여러 줄 문구 높이와 후속 행 배치를 연결했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.

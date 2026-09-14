@@ -18,7 +18,7 @@ public enum WindowsHookRuleDialog {
         let name = Array(Self.className.utf16) + [0]
         let registered = name.withUnsafeBufferPointer { klass.lpszClassName = $0.baseAddress; return RegisterClassExW(&klass) }
         if registered == 0, GetLastError() != ERROR_CLASS_ALREADY_EXISTS { return nil }
-        let title = Array(WindowsStatusLocalization.text("Hook rule").utf16) + [0]
+        let title = Array(context.localization.text("Hook rule").utf16) + [0]
         var frame = RECT(left: 0, top: 0, right: context.pixels(600), bottom: context.pixels(540))
         AdjustWindowRectExForDpi(&frame, DWORD(WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX | WS_HSCROLL | WS_VSCROLL), 0,
                            DWORD(WS_EX_DLGMODALFRAME), context.dpi)
@@ -87,7 +87,8 @@ public enum WindowsHookRuleDialog {
 
     private final class Context {
         let initial: WindowsHookRuleDraft
-        let rightToLeft: Bool
+        let localization = WindowsStatusLocalization.Snapshot()
+        var rightToLeft: Bool { self.localization.isRightToLeft }
         var dpi: UINT
         var font: HFONT?
         var controls: [(handle: HWND, bounds: RECT, isLabel: Bool, isButton: Bool, textInset: Int32)] = []
@@ -111,7 +112,6 @@ public enum WindowsHookRuleDialog {
         init(initial: WindowsHookRuleDraft, owner: HWND, isCurrent: (() -> Bool)?) {
             self.initial = initial; self.owner = owner; self.isCurrent = isCurrent
             self.argumentValues = initial.arguments
-            self.rightToLeft = WindowsStatusLocalization.isRightToLeft
             let dpi = GetDpiForWindow(owner); self.dpi = dpi == 0 ? 96 : dpi
             self.expectedPrivacy = WindowsUsagePresentationSettings.load().hidePersonalInfo
             if self.rightToLeft { self.scrollX = self.pixels(600) }
@@ -126,19 +126,19 @@ public enum WindowsHookRuleDialog {
             let field: Int32
             switch failure {
             case .invalidExecutable:
-                message = WindowsStatusLocalization.text("Choose an absolute executable path without surrounding quotes."); field = executableID
+                message = self.localization.text("Choose an absolute executable path without surrounding quotes."); field = executableID
             case .invalidProvider:
-                message = WindowsStatusLocalization.text("Choose a supported provider or the all-providers option."); field = providerID
+                message = self.localization.text("Choose a supported provider or the all-providers option."); field = providerID
             case .invalidThreshold:
-                message = WindowsStatusLocalization.text("Enter used percent greater than 0 and at most 100, or leave it blank to use provider thresholds. Use a dot decimal separator."); field = thresholdID
+                message = self.localization.text("Enter used percent greater than 0 and at most 100, or leave it blank to use provider thresholds. Use a dot decimal separator."); field = thresholdID
             case .invalidTimeout:
-                message = WindowsStatusLocalization.text("Enter a timeout from 0.1 to 300 seconds using a dot decimal separator."); field = timeoutID
+                message = self.localization.text("Enter a timeout from 0.1 to 300 seconds using a dot decimal separator."); field = timeoutID
             default:
-                message = (argumentIndex.map { "Argument \($0 + 1) is invalid. " } ?? "") + WindowsStatusLocalization.text("Use at most 32 arguments. Each argument may use up to 4096 UTF-8 bytes; the complete command may use up to 32 KiB. NUL characters are not supported."); field = argumentsID
+                message = (argumentIndex.map { "Argument \($0 + 1) is invalid. " } ?? "") + self.localization.text("Use at most 32 arguments. Each argument may use up to 4096 UTF-8 bytes; the complete command may use up to 32 KiB. NUL characters are not supported."); field = argumentsID
             }
             message.withCString(encodedAs: UTF16.self) { text in
-                WindowsStatusLocalization.text("Hook rule").withCString(encodedAs: UTF16.self) { title in
-                    _ = MessageBoxW(window, text, title, UINT(MB_OK | MB_ICONWARNING))
+                self.localization.text("Hook rule").withCString(encodedAs: UTF16.self) { title in
+                    _ = MessageBoxW(window, text, title, UINT(MB_OK | MB_ICONWARNING) | (self.rightToLeft ? UINT(MB_RTLREADING | MB_RIGHT) : 0))
                 }
             }
             if self.inputContextIsValid, IsWindow(window) != 0 {
@@ -167,9 +167,9 @@ public enum WindowsHookRuleDialog {
             guard self.inputContextIsValid else { self.cancel(); return }
             if accepted == 0 {
                 if dialogError != 0 {
-                    WindowsStatusLocalization.text("Windows could not open the executable selection dialog.").withCString(encodedAs: UTF16.self) { text in
-                        WindowsStatusLocalization.text("Hook rule").withCString(encodedAs: UTF16.self) { title in
-                            _ = MessageBoxW(window, text, title, UINT(MB_OK | MB_ICONWARNING))
+                    self.localization.text("Windows could not open the executable selection dialog.").withCString(encodedAs: UTF16.self) { text in
+                        self.localization.text("Hook rule").withCString(encodedAs: UTF16.self) { title in
+                            _ = MessageBoxW(window, text, title, UINT(MB_OK | MB_ICONWARNING) | (self.rightToLeft ? UINT(MB_RTLREADING | MB_RIGHT) : 0))
                         }
                     }
                 }
@@ -386,26 +386,26 @@ public enum WindowsHookRuleDialog {
         guard draft.arguments.count <= HookRule.maximumArgumentCount else { return false }
         context.window = hwnd
         let controls: [HWND?] = [
-            addLabel(hwnd, WindowsStatusLocalization.text("hooks_event"), 18, 16, 100, 22, font),
+            addLabel(hwnd, context.localization.text("hooks_event"), 18, 16, 100, 22, font),
             addControl(hwnd, "COMBOBOX", "", eventID, DWORD(WS_CHILD|WS_VISIBLE|WS_TABSTOP|CBS_DROPDOWNLIST|WS_VSCROLL), 18, 40, 330, 180, font),
-            addControl(hwnd, "BUTTON", WindowsStatusLocalization.text("hooks_rule_enabled"), enabledID, DWORD(WS_CHILD|WS_VISIBLE|WS_TABSTOP|BS_AUTOCHECKBOX|BS_MULTILINE), 400, 40, 150, 24, font),
-            addLabel(hwnd, WindowsStatusLocalization.text("hooks_provider"), 18, 78, 540, 22, font),
+            addControl(hwnd, "BUTTON", context.localization.text("hooks_rule_enabled"), enabledID, DWORD(WS_CHILD|WS_VISIBLE|WS_TABSTOP|BS_AUTOCHECKBOX|BS_MULTILINE), 400, 40, 150, 24, font),
+            addLabel(hwnd, context.localization.text("hooks_provider"), 18, 78, 540, 22, font),
             addControl(hwnd, "COMBOBOX", "", providerID, DWORD(WS_CHILD|WS_VISIBLE|WS_TABSTOP|CBS_DROPDOWNLIST|WS_VSCROLL), 18, 102, 560, 240, font),
-            addLabel(hwnd, WindowsStatusLocalization.text("hooks_executable") + WindowsStatusLocalization.text(" (absolute path, without surrounding quotes)"), 18, 136, 560, 22, font),
+            addLabel(hwnd, context.localization.text("hooks_executable") + context.localization.text(" (absolute path, without surrounding quotes)"), 18, 136, 560, 22, font),
             addEdit(hwnd, draft.executable, executableID, 18, 160, 446, 24, 4096, false, font),
-            addButton(hwnd, WindowsStatusLocalization.text("Browse…"), browseID, 478, 160, 100, 28, font),
-            addLabel(hwnd, WindowsStatusLocalization.text("hooks_arguments_placeholder") + WindowsStatusLocalization.text(" (one value per item; empty values are kept)"), 18, 194, 560, 22, font),
+            addButton(hwnd, context.localization.text("Browse…"), browseID, 478, 160, 100, 28, font),
+            addLabel(hwnd, context.localization.text("hooks_arguments_placeholder") + context.localization.text(" (one value per item; empty values are kept)"), 18, 194, 560, 22, font),
             addControl(hwnd, "COMBOBOX", "", argumentChoiceID, DWORD(WS_CHILD|WS_VISIBLE|WS_TABSTOP|CBS_DROPDOWNLIST|WS_VSCROLL), 18, 218, 200, 180, font),
-            addButton(hwnd, WindowsStatusLocalization.text("Add argument"), addArgumentID, 232, 218, 166, 28, font),
-            addButton(hwnd, WindowsStatusLocalization.text("Remove argument"), removeArgumentID, 410, 218, 168, 28, font),
+            addButton(hwnd, context.localization.text("Add argument"), addArgumentID, 232, 218, 166, 28, font),
+            addButton(hwnd, context.localization.text("Remove argument"), removeArgumentID, 410, 218, 168, 28, font),
             addEdit(hwnd, "", argumentsID, 18, 256, 560, 92, 262144, true, font),
-            addLabel(hwnd, WindowsStatusLocalization.text("hooks_threshold") + WindowsStatusLocalization.text(" % (blank = provider thresholds)"), 18, 362, 355, 22, font),
+            addLabel(hwnd, context.localization.text("hooks_threshold") + context.localization.text(" % (blank = provider thresholds)"), 18, 362, 355, 22, font),
             addEdit(hwnd, draft.usedPercent, thresholdID, 18, 388, 250, 24, 64, false, font),
-            addLabel(hwnd, WindowsStatusLocalization.text("Timeout seconds (0.1–300)"), 318, 362, 260, 22, font),
+            addLabel(hwnd, context.localization.text("Timeout seconds (0.1–300)"), 318, 362, 260, 22, font),
             addEdit(hwnd, draft.timeoutSeconds, timeoutID, 318, 388, 260, 24, 64, false, font),
-            addLabel(hwnd, WindowsStatusLocalization.text("Use dot decimals. Saving this form does not run the command."), 18, 426, 560, 22, font),
-            addButton(hwnd, WindowsStatusLocalization.text("Save"), saveID, 370, 480, 100, 28, font),
-            addButton(hwnd, WindowsStatusLocalization.text("Cancel"), cancelID, 478, 480, 100, 28, font)
+            addLabel(hwnd, context.localization.text("Use dot decimals. Saving this form does not run the command."), 18, 426, 560, 22, font),
+            addButton(hwnd, context.localization.text("Save"), saveID, 370, 480, 100, 28, font),
+            addButton(hwnd, context.localization.text("Cancel"), cancelID, 478, 480, 100, 28, font)
         ]
         guard controls.allSatisfy({ $0 != nil }),
               context.rebuildArguments(select: draft.arguments.isEmpty ? nil : 0) else { return false }
@@ -415,7 +415,7 @@ public enum WindowsHookRuleDialog {
             }
             guard result != LRESULT(CB_ERR), result != LRESULT(CB_ERRSPACE) else { return false }
         }
-        let providerLabels = [WindowsStatusLocalization.text("hooks_any_provider")] + providers.map { ProviderDescriptorRegistry.descriptor(for: $0).metadata.displayName + " (" + $0.rawValue + ")" }
+        let providerLabels = [context.localization.text("hooks_any_provider")] + providers.map { ProviderDescriptorRegistry.descriptor(for: $0).metadata.displayName + " (" + $0.rawValue + ")" }
         for label in providerLabels {
             let result = label.withCString(encodedAs: UTF16.self) {
                 SendMessageW(GetDlgItem(hwnd, providerID), UINT(CB_ADDSTRING), 0, LPARAM(Int(bitPattern: $0)))

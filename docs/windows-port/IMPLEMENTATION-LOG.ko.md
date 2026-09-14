@@ -3533,3 +3533,10 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - 실행 파일, 인자, 숫자와 provider ID 입력 control은 기존 읽기 방향을 유지하며 값 자체를 변환하지 않는다. 초기 가로 스크롤은 RTL 시작 영역에서 제한된다.
 - 훅 popup에는 RTL layout/right alignment를 적용한다. 탭 순서는 기존 생성 순서를 유지하므로 논리 입력 흐름을 따른다.
 - 전체 앱 RTL, native file picker/메시지창 방향, 언어 변경 중 열린 form 처리 및 실제 혼합 방향·접근성 검증은 남아 있다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·UI/훅 실행 미실행.
+
+## IMPL-334 — 훅 편집 언어 일관성
+
+- localization Snapshot이 화면을 열 때 해석된 언어를 보존한다. 기존 text 호출은 최신 언어를 계속 사용하며 훅 menu/form은 화면 수명 동안 snapshot을 공유한다.
+- form의 필드/제목/오류 안내와 RTL 배치는 같은 snapshot을 사용한다. 설정이 바뀌어도 열린 입력란을 재생성하지 않으며 새 화면부터 새 언어를 적용한다.
+- 메뉴 확인창도 같은 언어를 사용하며 form 오류 및 메뉴 확인 MessageBox에 RTLREADING/RIGHT를 연결했다.
+- OS 공용 파일 선택창, 동적 인자 오류 문구, 전체 앱 RTL 및 실제 언어 변경/접근성 검증은 남아 있다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·UI/훅 실행 미실행.

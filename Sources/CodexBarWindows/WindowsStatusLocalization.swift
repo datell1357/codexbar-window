@@ -17,15 +17,17 @@ enum WindowsStatusLocalization {
         return Bundle.preferredLocalizations(from: self.catalog.keys.sorted(), forPreferences: preferences).first ?? "en"
     }
 
-    static var isRightToLeft: Bool {
-        // RTL languages currently present in this catalog.
-        ["ar", "fa"].contains(self.effectiveLanguage)
+    struct Snapshot {
+        let language = WindowsStatusLocalization.effectiveLanguage
+        var isRightToLeft: Bool { ["ar", "fa"].contains(self.language) }
+        func text(_ key: String) -> String {
+            WindowsStatusLocalization.catalog[self.language]?[key] ?? WindowsStatusLocalization.catalog["en"]?[key] ?? key
+        }
     }
 
-    static func text(_ key: String) -> String {
-        let language = self.effectiveLanguage
-        return self.catalog[language]?[key] ?? self.catalog["en"]?[key] ?? key
-    }
+    static var isRightToLeft: Bool { Snapshot().isRightToLeft }
+
+    static func text(_ key: String) -> String { Snapshot().text(key) }
 
     private static let catalog: [String: [String: String]] = [
         "ar": [
