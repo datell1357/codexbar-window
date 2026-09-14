@@ -28,6 +28,7 @@ public struct WindowsTrayMenuEntry: Sendable, Equatable {
     public var usageCopyText: String? = nil
     /// Public provider state for this refresh; never account usage or identity.
     public var serviceStatus: HookProviderStatus? = nil
+    public var serviceComponents: [WindowsProviderStatusComponent]? = nil
 
     public init(
         providerID: String,

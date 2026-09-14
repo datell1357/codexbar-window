@@ -3243,3 +3243,11 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - classic 경로는 proxy/status/components 최대 3개 순차 요청이 가능하다. collect의 기존 기한 취소가 적용되며 상세가 기한을 넘기면 현재 collect는 해당 source를 unknown 처리한다.
 - 남은 소요: collect/runtime에 상세 snapshot 전달, descriptor 필터 적용 및 트레이 하위 메뉴. 현재 legacy collect 호출부는 상세 목록을 아직 사용하지 않는다.
 - CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·실제 HTTP/훅/UI 실행 미실행.
+
+## IMPL-297 — 상세 상태 전달과 표시 필터
+
+- collectSnapshots가 같은 source의 상세 snapshot을 공유하고 기존 동시성/기한 취소 규칙으로 수집한다. 기존 collect는 indicator projection wrapper로 유지한다. Workspace는 components nil인 snapshot으로 감싼다.
+- runtime의 상태 task와 결과를 snapshot으로 변경했다. 각 공급자 descriptor의 이름 allowlist를 상세 목록에 적용해 WindowsTrayMenuEntry.serviceComponents에 저장한다. nil/빈 목록 구분을 보존한다.
+- HookProviderObservation에는 필터되지 않은 snapshot indicator를 전달해 표시 필터가 전체 장애/복구 의미를 바꾸지 않도록 한다. 상태 확인 설정 변경 시 요약과 상세를 모두 비운다.
+- 남은 소요: Win32 하위 메뉴 렌더링, 다국어 및 전체 계획 잔여 기능. 상세 목록은 아직 화면에 그려지지 않는다.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·실제 HTTP/훅/UI 실행 미실행.

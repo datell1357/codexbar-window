@@ -44,7 +44,7 @@ public actor WindowsUsageRuntime {
         } catch { return false }
     }
 
-    private func collectProviderStatuses(config: CodexBarConfig) async throws -> [String: HookProviderStatus] {
+    private func collectProviderStatuses(config: CodexBarConfig) async throws -> [String: WindowsProviderStatusSnapshot] {
         let defaults = UserDefaults(suiteName: WindowsRefreshSettings.suiteName) ?? .standard
         guard defaults.object(forKey: "statusChecksEnabled") as? Bool ?? true else { return [:] }
         let revision = try self.hookConfigRevision(config)
@@ -61,10 +61,10 @@ public actor WindowsUsageRuntime {
         self.providerStatusGeneration &+= 1
         let generation = self.providerStatusGeneration
         let requestSources = sources
-        let task = Task { try await WindowsProviderStatusProbe.collect(requestSources, deadline: Date().addingTimeInterval(30)) }
+        let task = Task { try await WindowsProviderStatusProbe.collectSnapshots(requestSources, deadline: Date().addingTimeInterval(30)) }
         self.providerStatusTask = task
         defer { if generation == self.providerStatusGeneration { self.providerStatusTask = nil } }
-        let statuses: [String: HookProviderStatus]
+        let statuses: [String: WindowsProviderStatusSnapshot]
         do {
             statuses = try await withTaskCancellationHandler(operation: { try await task.value }, onCancel: { task.cancel() })
         } catch is CancellationError {
@@ -400,7 +400,7 @@ public actor WindowsUsageRuntime {
     private var quotaWarningPublisher: QuotaWarningPublisher
     private var predictivePaceWarningPublisher: PredictivePaceWarningPublisher
     private var refreshTask: Task<Void, Never>?
-    private var providerStatusTask: Task<[String: HookProviderStatus], Error>?
+    private var providerStatusTask: Task<[String: WindowsProviderStatusSnapshot], Error>?
     private var providerStatusGeneration: UInt64 = 0
     private var refreshCompletionWaiters: [CheckedContinuation<Void, Never>] = []
     private var startupConnectivityRetryTask: Task<Void, Never>?
@@ -2052,7 +2052,10 @@ public actor WindowsUsageRuntime {
         self.providerStatusTask?.cancel()
         self.providerStatusTask = nil
         self.pendingHookRefresh = nil
-        for index in self.statusMenuEntries.indices { self.statusMenuEntries[index].serviceStatus = nil }
+        for index in self.statusMenuEntries.indices {
+            self.statusMenuEntries[index].serviceStatus = nil
+            self.statusMenuEntries[index].serviceComponents = nil
+        }
         self.publishRenderEntries(settings: WindowsUsagePresentationSettings.load())
         let enabled = (UserDefaults(suiteName: WindowsRefreshSettings.suiteName) ?? .standard)
             .object(forKey: "statusChecksEnabled") as? Bool ?? true
@@ -2484,7 +2487,14 @@ public actor WindowsUsageRuntime {
             }
             let providerStatuses = try await self.collectProviderStatuses(config: config)
             for index in self.statusMenuEntries.indices {
-                self.statusMenuEntries[index].serviceStatus = providerStatuses[self.statusMenuEntries[index].providerID]
+                let id = self.statusMenuEntries[index].providerID
+                let snapshot = providerStatuses[id]
+                self.statusMenuEntries[index].serviceStatus = snapshot?.indicator
+                let provider = config.enabledProviders().first { $0.rawValue == id }?.firstPartyProvider
+                let allowlist = provider.flatMap { ProviderDescriptorRegistry.descriptor(for: $0).metadata.statusComponentAllowlist }
+                self.statusMenuEntries[index].serviceComponents = snapshot?.components.map {
+                    WindowsProviderStatusComponent.filtered($0, allowlist: allowlist)
+                }
             }
             if config.hooks?.enabled == true, !Task.isCancelled {
                 let revision = try self.hookConfigRevision(config)
@@ -2495,7 +2505,7 @@ public actor WindowsUsageRuntime {
                         presentationSettings.hidePersonalInfo, revision, self.hookUnresolvedAccountCount)
                 }
             }
-            if let hookNotice = await self.dispatchPendingHooks(statuses: providerStatuses) { entries.append(.row(hookNotice)) }
+            if let hookNotice = await self.dispatchPendingHooks(statuses: providerStatuses.mapValues(\.indicator)) { entries.append(.row(hookNotice)) }
             guard !self.shuttingDown, !Task.isCancelled else { return }
             self.renderEntries = entries
             self.scheduleResetBoundaryRefreshIfNeeded(

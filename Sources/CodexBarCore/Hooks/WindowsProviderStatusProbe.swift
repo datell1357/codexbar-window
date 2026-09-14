@@ -72,9 +72,16 @@ public enum WindowsProviderStatusProbe {
 
     /// Exact source identities share one result within this refresh only. No cross-refresh cache.
     public static func collect(
+        _ sources: [String: Source], deadline: Date,
+        transport: any ProviderHTTPTransport = WindowsManualAccountHTTPTransport.shared) async throws -> [String: HookProviderStatus]
+    {
+        try await self.collectSnapshots(sources, deadline: deadline, transport: transport).mapValues(\.indicator)
+    }
+
+    public static func collectSnapshots(
         _ sources: [String: Source],
         deadline: Date,
-        transport: any ProviderHTTPTransport = WindowsManualAccountHTTPTransport.shared) async throws -> [String: HookProviderStatus]
+        transport: any ProviderHTTPTransport = WindowsManualAccountHTTPTransport.shared) async throws -> [String: WindowsProviderStatusSnapshot]
     {
         guard sources.count <= 256 else { throw Failure.oversized }
         try Task.checkCancellation()
@@ -87,10 +94,10 @@ public enum WindowsProviderStatusProbe {
                 entries.append((source, [provider]))
             }
         }
-        var result = sources.mapValues { _ in HookProviderStatus.unknown }
+        var result = sources.mapValues { _ in WindowsProviderStatusSnapshot(indicator: .unknown) }
         guard !entries.isEmpty, Date() < deadline else { return result }
         // The timer cancels active requests at the submission deadline. Draining remains required.
-        await withTaskGroup(of: (Int, HookProviderStatus)?.self) { group in
+        await withTaskGroup(of: (Int, WindowsProviderStatusSnapshot)?.self) { group in
             group.addTask {
                 let remaining = max(0, deadline.timeIntervalSinceNow)
                 do { try await Task.sleep(for: .seconds(remaining)) }
@@ -102,15 +109,15 @@ public enum WindowsProviderStatusProbe {
             func enqueue(_ index: Int) {
                 let source = entries[index].source
                 group.addTask {
-                    guard !Task.isCancelled, Date() < deadline else { return (index, .unknown) }
-                    let status: HookProviderStatus
+                    guard !Task.isCancelled, Date() < deadline else { return (index, WindowsProviderStatusSnapshot(indicator: .unknown)) }
+                    let status: WindowsProviderStatusSnapshot
                     switch source {
                     case let .statusPage(url):
-                        status = (try? await Self.fetch(baseURL: url, transport: transport)) ?? .unknown
+                        status = (try? await Self.fetchSnapshot(baseURL: url, transport: transport)) ?? WindowsProviderStatusSnapshot(indicator: .unknown)
                     case let .workspace(productID):
-                        status = (try? await Self.fetchWorkspace(productID: productID, transport: transport)) ?? .unknown
+                        status = WindowsProviderStatusSnapshot(indicator: (try? await Self.fetchWorkspace(productID: productID, transport: transport)) ?? .unknown)
                     }
-                    guard !Task.isCancelled, Date() < deadline else { return (index, .unknown) }
+                    guard !Task.isCancelled, Date() < deadline else { return (index, WindowsProviderStatusSnapshot(indicator: .unknown)) }
                     return (index, status)
                 }
             }
