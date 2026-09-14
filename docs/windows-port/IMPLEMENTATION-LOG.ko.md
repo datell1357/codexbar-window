@@ -3548,3 +3548,11 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - upsert/remove/공용 선택 mutation은 복사본을 검증 후 반환한다. 버전/인스턴스 ID/중복/제공자 범위와 인스턴스 128개·JSON 256KiB 상한을 적용한다. 오류나 비밀 원문을 저장하지 않는다.
 - 설정 파일 저장, runtime snapshot, Windows Widgets API 호스트/manifest/렌더링/갱신은 아직 미연결이다. 모델 작성이 위젯 사용 가능을 뜻하지 않는다.
 - CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·UI/HTTP/위젯 실행 미실행.
+
+## IMPL-336 — Windows 위젯 설정 저장 계층
+
+- 설치별 사용자 settings URL을 주입받는 actor를 추가했다. 기존 bounded file reader로 256KiB 제한 안에서 읽고 파일 없음만 기본 설정으로 처리한다. 손상/읽기 실패는 오류를 반환한다.
+- save는 삭제하지 않는 sidecar lock 파일을 share mode 0으로 열어 협력하는 app/host writer를 직렬화한다. lock 안에서 다시 읽어 화면 snapshot의 원본 bytes와 비교하며 stale/다른 store 변경을 거부한다.
+- 모델 검증 후 atomic write를 사용하고 같은 설정이면 쓰지 않는다. lock은 defer로 닫으며 raw 오류/경로/설정 내용은 오류 메시지에 포함하지 않는다.
+- 저장 URL 결정/ACL, host 호출·재시도 UI, snapshot 전달 및 OS 위젯 등록은 미연결이다. 비협력 외부 writer에 대한 CAS나 crash durability를 보장한다고 주장하지 않는다.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 실제 파일 읽기/쓰기·lock·빌드·테스트·lint·UI/위젯 실행 미실행.
