@@ -47,6 +47,9 @@ public final class WindowsTrayHost: @unchecked Sendable {
     private static let windsurfImportPrivacyTimer = UINT_PTR(0x7F32)
     private static let cliSetupTimer = UINT_PTR(0x754A)
     private var cliSetupDialogOpen = false
+    /// Win32 modal dialogs pump messages. Defer nested editor replies until the outer drain returns.
+    private var drainingEditorReplies = false
+    private var deferredEditorDrain = false
     private var cliSetupRunning = false // Protected by mailboxLock.
     private var cliSetupCancelled = false
     private var cliSetupResult: (text: String, hidePaths: Bool, mutation: Bool)?
@@ -702,7 +705,6 @@ public final class WindowsTrayHost: @unchecked Sendable {
     }
 
     private func drainAugmentBrowserImport() {
-    private func drainWindsurfBrowserImport() {
         guard !self.remoteEditorOpen, !self.quitInvoked, let window = self.window,
               case .idle = self.providerEditorPhase, case .idle = self.codexWebSettingsEditorPhase else { return }
         self.mailboxLock.lock()
@@ -4268,11 +4270,34 @@ public final class WindowsTrayHost: @unchecked Sendable {
             return 0
         }
         if message == UINT(WM_TIMER), wParam == WPARAM(Self.cliSetupTimer) {
+            if host.drainingEditorReplies || host.hookEditorPhase != .idle {
+                host.deferredEditorDrain = true
+                return 0
+            }
+            host.drainingEditorReplies = true
             host.drainCLISetup()
+            host.drainingEditorReplies = false
+            if host.deferredEditorDrain {
+                host.deferredEditorDrain = false
+                PostMessageW(hwnd, Self.wakeMessage, 0, 0)
+            }
             return 0
         }
         if message == Self.wakeMessage {
-            host.drainCLISetup()
+            if host.drainingEditorReplies {
+                host.deferredEditorDrain = true
+                return 0
+            }
+            host.drainingEditorReplies = true
+            defer {
+                host.drainingEditorReplies = false
+                if host.deferredEditorDrain, !host.quitInvoked {
+                    host.deferredEditorDrain = false
+                    PostMessageW(hwnd, Self.wakeMessage, 0, 0)
+                }
+            }
+            // A pending hook edit owns the editor lane until its matching reply is consumed.
+            if host.hookEditorPhase == .idle { host.drainCLISetup() }
             host.drainHookSettings()
             if host.remoteEditorOpen || host.hookEditorPhase != .idle { return 0 }
             host.drainAccountRemoval()

@@ -3404,3 +3404,11 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - 순수 editor 모델의 snapshot 생성은 기존과 호환되지만 privacy 미지정 snapshot은 실제 runtime 저장에 사용할 수 없다. 저장 결과에도 기준 값을 유지한다.
 - 값 비교 방식이므로 외부 설정이 중간에 바뀌었다 원복되는 ABA 변경을 전부 감지하지는 않는다. config 외부 프로세스와 atomic CAS도 아직 보장하지 않는다. 실제 파일/설정 접근은 이번 작업에서 실행하지 않았다.
 - CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·실제 설정/HTTP/훅/UI 실행 미실행. 다른 editor와의 상호 배제 및 전체 잔여 구현/Windows 검증은 남아 있다.
+
+## IMPL-317 — editor 응답 재진입 방지
+
+- wakeMessage에서 editor drain 진행 플래그를 설정한다. modal 창이 메시지를 처리하는 중 새 wake가 오면 mailbox를 소비하지 않고 deferred 플래그만 기록한다. 바깥 처리 종료 후 한 번 재게시한다.
+- CLI setup timer도 같은 재진입 가드를 사용하고 hook phase가 진행 중이면 보류한다. 훅 load/edit/save가 진행 중일 때 일반 wake에서 CLI dialog를 먼저 열지 않도록 순서를 제한했다.
+- 소스 읽기 중 발견한 drainAugmentBrowserImport 직후의 잘못된 중첩 drainWindsurfBrowserImport 선언 한 줄을 제거했다. 실제 Windsurf 함수와 Augment 본문은 유지한다. 컴파일 확인은 하지 않았다.
+- mailbox 결과는 보류 시 유지하며 원래 요청 ID 필터를 그대로 사용한다. 모든 독립 WM_COMMAND 경로의 전역 modal coordinator를 대체하는 것은 아니며 실제 겹침/포커스/종료 흐름은 미검증이다.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·실제 설정/HTTP/훅/UI 실행 미실행. 전체 잔여 구현 및 Windows 검증은 남아 있다.
