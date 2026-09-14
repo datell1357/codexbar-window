@@ -3268,3 +3268,11 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - 이전 갱신을 재사용하는 캐시는 아니다. 부모 취소는 결과 합치기 전후 검사로 전파하며 runtime의 설정 revision/세대 검사도 유지한다. 실제 취소 지연과 동시 실행은 미검증이다.
 - 남은 소요: 다국어, 상태 조회와 사용량 실패 분리, 전체 계획 잔여 기능 및 Windows 검증.
 - CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·실제 HTTP/훅/UI 실행 미실행.
+
+## IMPL-300 — Windows 상태 메뉴 번역
+
+- 기존 Windows 공통 번역 조회기가 없어 상태 전용 WindowsStatusLocalization을 작성했다. 원본 각 언어 Localizable.strings의 상태 6개 문구, check_provider_status_title, Status Page를 Swift catalog에 복사했다. Mac bundle이나 AppKit에 의존하지 않는다.
+- Windows defaults의 appLanguage가 있으면 우선하고 없으면 Locale.preferredLanguages를 사용한다. Foundation 언어 매칭 후 누락 키는 영어로 fallback한다. 메뉴 생성 때 언어를 조회해 상태 재요청 없이 문구를 결정한다.
+- 요약/컴포넌트 상태와 상태 확인 토글, 상태 페이지 메뉴/링크에 연결했다. 이는 상태 메뉴 범위이며 전체 Windows UI 다국어 및 언어 선택 UI는 아직 남아 있다. 원본 번역 변경 시 이 catalog도 갱신해야 한다.
+- 편집 스크립트가 무관한 strings 키의 JSON 비호환 escape에서 처음 중단되어 대상 키만 읽도록 수정 후 파일을 생성했다. 빌드나 검증 실행은 아니다.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·실제 HTTP/훅/UI 실행 미실행.

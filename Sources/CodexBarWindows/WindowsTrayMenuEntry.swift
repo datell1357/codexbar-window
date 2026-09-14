@@ -58,12 +58,12 @@ public struct WindowsTrayMenuEntry: Sendable, Equatable {
 
     public static func serviceStatusLabel(_ status: HookProviderStatus) -> String {
         switch status {
-        case .none: "Operational"
-        case .minor: "Degraded performance"
-        case .major: "Partial outage"
-        case .critical: "Major outage"
-        case .maintenance: "Maintenance"
-        case .unknown: "Status unknown"
+        case .none: WindowsStatusLocalization.text("status_operational")
+        case .minor: WindowsStatusLocalization.text("status_degraded")
+        case .major: WindowsStatusLocalization.text("status_partial_outage")
+        case .critical: WindowsStatusLocalization.text("status_major_outage")
+        case .maintenance: WindowsStatusLocalization.text("status_maintenance")
+        case .unknown: WindowsStatusLocalization.text("status_unknown")
         }
     }
 

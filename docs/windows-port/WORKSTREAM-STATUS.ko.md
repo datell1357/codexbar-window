@@ -1,5 +1,7 @@
 # Windows 전용 제품 작업 현황
 
+- IMPL-300: 원본 번역에서 상태 문구를 가져와 Windows 요약/상세/설정 메뉴에 연결했다. 전체 UI 번역은 남아 있다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
 - IMPL-299: 상세 조회 지연/실패 시 기한 전에 수신한 요약 상태를 갱신 내 보존하도록 연결했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
 
 - IMPL-298: 상세 컴포넌트를 Win32 그룹 하위 메뉴에 연결하고 상태 페이지 열기를 유지했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.

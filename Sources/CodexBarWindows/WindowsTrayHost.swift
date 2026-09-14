@@ -2136,7 +2136,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
         if !rows.isEmpty { _ = AppendMenuW(menu, UINT(MF_SEPARATOR), 0, nil) }
         let statusChecksEnabled = self.presentationDefaults.object(forKey: "statusChecksEnabled") as? Bool ?? true
         let statusFlags = UINT(MF_STRING) | (statusChecksEnabled ? UINT(MF_CHECKED) : 0)
-        _ = "Check provider service status".withCString(encodedAs: UTF16.self) {
+        _ = WindowsStatusLocalization.text("check_provider_status_title").withCString(encodedAs: UTF16.self) {
             AppendMenuW(menu, statusFlags, Self.statusChecksCommand, $0)
         }
         let statusEntries = menuEntries.filter(\.statusVisible)
@@ -2156,7 +2156,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
                 }
                 if appended == 0 { statusItemsAppended = false; break }
             }
-            let title = Array("Provider status".utf16) + [0]
+            let title = Array(WindowsStatusLocalization.text("Status Page").utf16) + [0]
             let attached = statusItemsAppended && AppendMenuW(
                 menu, UINT(MF_STRING | MF_POPUP), UINT_PTR(UInt(bitPattern: statusMenu)), title) != 0
             if !attached {
@@ -3133,7 +3133,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
         guard appendRows(components, to: submenu, depth: 0),
               AppendMenuW(submenu, UINT(MF_SEPARATOR), 0, nil) != 0 else { return false }
         let flags = UINT(MF_STRING) | (entry.isEnabled ? 0 : UINT(MF_GRAYED))
-        let linkAdded = "Open status page".withCString(encodedAs: UTF16.self) {
+        let linkAdded = WindowsStatusLocalization.text("Status Page").withCString(encodedAs: UTF16.self) {
             AppendMenuW(submenu, flags, command, $0)
         }
         guard linkAdded != 0 else { return false }
