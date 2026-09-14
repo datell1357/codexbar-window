@@ -4,6 +4,12 @@ import Foundation
 /// Status-only catalog copied from the original app's Localizable.strings.
 /// Resolved while building menus; language changes require no new status request.
 enum WindowsStatusLocalization {
+    static var supportedLanguages: [String] { self.catalog.keys.sorted() }
+
+    static func nativeName(for language: String) -> String {
+        Locale(identifier: language).localizedString(forIdentifier: language) ?? language
+    }
+
     static func text(_ key: String) -> String {
         let defaults = UserDefaults(suiteName: WindowsRefreshSettings.suiteName) ?? .standard
         let configured = defaults.string(forKey: "appLanguage")?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
@@ -14,6 +20,8 @@ enum WindowsStatusLocalization {
 
     private static let catalog: [String: [String: String]] = [
         "ar": [
+            "language_title": "اللغة",
+            "language_system": "النظام",
             "check_provider_status_title": "تحقق من حالة المزود",
             "status_operational": "التشغيل",
             "status_degraded": "أداء متدهور",
@@ -24,6 +32,8 @@ enum WindowsStatusLocalization {
             "Status Page": "صفحة الحالة",
         ],
         "ca": [
+            "language_title": "Idioma",
+            "language_system": "Sistema",
             "check_provider_status_title": "Comproveu l'estat del proveïdor",
             "status_operational": "Operatiu",
             "status_degraded": "Rendiment degradat",
@@ -34,6 +44,8 @@ enum WindowsStatusLocalization {
             "Status Page": "Pàgina d'estat",
         ],
         "de": [
+            "language_title": "Sprache",
+            "language_system": "System",
             "check_provider_status_title": "Anbieterstatus prüfen",
             "status_operational": "Betriebsbereit",
             "status_degraded": "Eingeschränkte Leistung",
@@ -44,6 +56,8 @@ enum WindowsStatusLocalization {
             "Status Page": "Statusseite",
         ],
         "en": [
+            "language_title": "Language",
+            "language_system": "System",
             "check_provider_status_title": "Check provider status",
             "status_operational": "Operational",
             "status_degraded": "Degraded performance",
@@ -54,6 +68,8 @@ enum WindowsStatusLocalization {
             "Status Page": "Status Page",
         ],
         "es": [
+            "language_title": "Idioma",
+            "language_system": "Sistema",
             "check_provider_status_title": "Comprobar estado del proveedor",
             "status_operational": "Operativo",
             "status_degraded": "Rendimiento degradado",
@@ -64,6 +80,8 @@ enum WindowsStatusLocalization {
             "Status Page": "Página de estado",
         ],
         "fa": [
+            "language_title": "زبان",
+            "language_system": "سیستم",
             "check_provider_status_title": "وضعیت ارائه دهنده را بررسی کنید",
             "status_operational": "عملیاتی",
             "status_degraded": "کارایی کاهش‌یافته",
@@ -74,6 +92,8 @@ enum WindowsStatusLocalization {
             "Status Page": "صفحه وضعیت",
         ],
         "fr": [
+            "language_title": "Langue",
+            "language_system": "Système",
             "check_provider_status_title": "Vérifier l'état des fournisseurs",
             "status_operational": "Opérationnel",
             "status_degraded": "Performances dégradées",
@@ -84,6 +104,8 @@ enum WindowsStatusLocalization {
             "Status Page": "Page d'état",
         ],
         "gl": [
+            "language_title": "Idioma",
+            "language_system": "Sistema",
             "check_provider_status_title": "Comprobar o estado do provedor",
             "status_operational": "Operativo",
             "status_degraded": "Rendemento degradado",
@@ -94,6 +116,8 @@ enum WindowsStatusLocalization {
             "Status Page": "Páxina de estado",
         ],
         "id": [
+            "language_title": "Bahasa",
+            "language_system": "Sistem",
             "check_provider_status_title": "Periksa status penyedia",
             "status_operational": "Operasional",
             "status_degraded": "Performa menurun",
@@ -104,6 +128,8 @@ enum WindowsStatusLocalization {
             "Status Page": "Halaman Status",
         ],
         "it": [
+            "language_title": "Lingua",
+            "language_system": "Sistema",
             "check_provider_status_title": "Controlla stato provider",
             "status_operational": "Operativo",
             "status_degraded": "Prestazioni ridotte",
@@ -114,6 +140,8 @@ enum WindowsStatusLocalization {
             "Status Page": "Pagina di stato",
         ],
         "ja": [
+            "language_title": "言語",
+            "language_system": "システム",
             "check_provider_status_title": "プロバイダのステータスを確認",
             "status_operational": "正常稼働中",
             "status_degraded": "パフォーマンス低下",
@@ -124,6 +152,8 @@ enum WindowsStatusLocalization {
             "Status Page": "ステータスページ",
         ],
         "ko": [
+            "language_title": "언어",
+            "language_system": "시스템",
             "check_provider_status_title": "공급자 상태 확인",
             "status_operational": "정상 작동",
             "status_degraded": "성능 저하",
@@ -134,6 +164,8 @@ enum WindowsStatusLocalization {
             "Status Page": "상태 페이지",
         ],
         "nl": [
+            "language_title": "Taal",
+            "language_system": "Systeem",
             "check_provider_status_title": "Controleer de status van de provider",
             "status_operational": "Operationeel",
             "status_degraded": "Verminderde prestaties",
@@ -144,6 +176,8 @@ enum WindowsStatusLocalization {
             "Status Page": "Statuspagina",
         ],
         "pl": [
+            "language_title": "Język",
+            "language_system": "System",
             "check_provider_status_title": "Sprawdzaj status dostawców",
             "status_operational": "Operacyjne",
             "status_degraded": "Obniżona wydajność",
@@ -154,6 +188,8 @@ enum WindowsStatusLocalization {
             "Status Page": "Strona statusu",
         ],
         "pt-BR": [
+            "language_title": "Idioma",
+            "language_system": "Sistema",
             "check_provider_status_title": "Verificar status dos provedores",
             "status_operational": "Operacional",
             "status_degraded": "Desempenho degradado",
@@ -164,6 +200,8 @@ enum WindowsStatusLocalization {
             "Status Page": "Página de status",
         ],
         "ru": [
+            "language_title": "Язык",
+            "language_system": "Системный",
             "check_provider_status_title": "Проверить статус провайдера",
             "status_operational": "Работает",
             "status_degraded": "Сниженная производительность",
@@ -174,6 +212,8 @@ enum WindowsStatusLocalization {
             "Status Page": "Страница статуса",
         ],
         "sv": [
+            "language_title": "Språk",
+            "language_system": "System",
             "check_provider_status_title": "Kontrollera leverantörsstatus",
             "status_operational": "Fungerar normalt",
             "status_degraded": "Försämrad prestanda",
@@ -184,6 +224,8 @@ enum WindowsStatusLocalization {
             "Status Page": "Statussida",
         ],
         "th": [
+            "language_title": "ภาษา",
+            "language_system": "ระบบ",
             "check_provider_status_title": "ตรวจสอบสถานะผู้ให้บริการ",
             "status_operational": "การดําเนินงาน",
             "status_degraded": "ประสิทธิภาพลดลง",
@@ -194,6 +236,8 @@ enum WindowsStatusLocalization {
             "Status Page": "หน้าสถานะ",
         ],
         "tr": [
+            "language_title": "Dil",
+            "language_system": "Sistem",
             "check_provider_status_title": "Sağlayıcı durumunu denetle",
             "status_operational": "Çalışır durumda",
             "status_degraded": "Düşük performans",
@@ -204,6 +248,8 @@ enum WindowsStatusLocalization {
             "Status Page": "Durum sayfası",
         ],
         "uk": [
+            "language_title": "Мова",
+            "language_system": "Система",
             "check_provider_status_title": "Перевірте статус провайдера",
             "status_operational": "Працює",
             "status_degraded": "Знижена продуктивність",
@@ -214,6 +260,8 @@ enum WindowsStatusLocalization {
             "Status Page": "Сторінка стану",
         ],
         "vi": [
+            "language_title": "Ngôn ngữ",
+            "language_system": "Hệ thống",
             "check_provider_status_title": "Kiểm tra Nhà cung cấp trạng thái",
             "status_operational": "Hoạt động",
             "status_degraded": "Hiệu suất giảm",
@@ -224,6 +272,8 @@ enum WindowsStatusLocalization {
             "Status Page": "Trang trạng thái",
         ],
         "zh-Hans": [
+            "language_title": "语言",
+            "language_system": "跟随系统",
             "check_provider_status_title": "检查提供商状态",
             "status_operational": "正常运行",
             "status_degraded": "性能下降",
@@ -234,6 +284,8 @@ enum WindowsStatusLocalization {
             "Status Page": "状态页",
         ],
         "zh-Hant": [
+            "language_title": "語言",
+            "language_system": "依照系統",
             "check_provider_status_title": "檢查提供者狀態",
             "status_operational": "運作正常",
             "status_degraded": "效能下降",

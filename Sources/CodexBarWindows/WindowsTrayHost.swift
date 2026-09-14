@@ -189,6 +189,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
     private static let codexWebSettingsCommand = UINT_PTR(0x700E)
     private static let weeklyProgressWorkDaysCommandBase = UINT_PTR(0x7060)
     private static let providerQuotaWarningCommandBase = UINT_PTR(0x7400)
+    private static let languageCommandBase = UINT_PTR(0x7F40)
     private static let statusChecksCommand = UINT_PTR(0x7018)
     private static let refreshFrequencyCommandBase = UINT_PTR(0x7010)
     private static let lowPowerModeOffCommand = UINT_PTR(0x7020)
@@ -2351,6 +2352,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
         self.appendShortcutMenu(to: menu)
         self.appendSessionLabelMenu(to: menu)
         self.appendSpendSettingsMenu(to: menu)
+        self.appendLanguageMenu(to: menu)
         self.appendRefreshFrequencyMenu(to: menu)
         self.appendLowPowerModeMenu(to: menu)
         _ = AppendMenuW(menu, UINT(MF_SEPARATOR), 0, nil)
@@ -3143,6 +3145,37 @@ public final class WindowsTrayHost: @unchecked Sendable {
         return attached
     }
 
+    private func appendLanguageMenu(to menu: HMENU) {
+        guard let submenu = CreatePopupMenu() else { return }
+        var attached = false
+        defer { if !attached { _ = DestroyMenu(submenu) } }
+        let selected = self.presentationDefaults.string(forKey: "appLanguage") ?? ""
+        let languages = [""] + WindowsStatusLocalization.supportedLanguages
+        guard languages.count <= 64 else { return }
+        for (index, language) in languages.enumerated() {
+            let label = language.isEmpty ? WindowsStatusLocalization.text("language_system")
+                : WindowsStatusLocalization.nativeName(for: language)
+            let flags = UINT(MF_STRING) | (selected == language ? UINT(MF_CHECKED) : 0)
+            let added = Self.serviceMenuText(label).withCString(encodedAs: UTF16.self) {
+                AppendMenuW(submenu, flags, Self.languageCommandBase + UINT_PTR(index), $0)
+            }
+            guard added != 0 else { return }
+        }
+        // Until the wider Windows UI is migrated, make the current scope visible.
+        let label = WindowsStatusLocalization.text("language_title") + " (status menus)"
+        attached = Self.serviceMenuText(label).withCString(encodedAs: UTF16.self) {
+            AppendMenuW(menu, UINT(MF_STRING | MF_POPUP), UINT_PTR(UInt(bitPattern: submenu)), $0) != 0
+        }
+    }
+
+    private func selectLanguage(command: UINT_PTR) {
+        let languages = [""] + WindowsStatusLocalization.supportedLanguages
+        let index = Int(command - Self.languageCommandBase)
+        guard languages.indices.contains(index) else { return }
+        self.presentationDefaults.set(languages[index], forKey: "appLanguage")
+        self.onPresentationSettingsChanged()
+    }
+
     private func appendRefreshFrequencyMenu(to menu: HMENU) {
         guard let submenu = CreatePopupMenu() else { return }
         let settings = WindowsRefreshSettings.load(userDefaults: self.presentationDefaults)
@@ -3679,6 +3712,8 @@ public final class WindowsTrayHost: @unchecked Sendable {
         case Self.historicalTrackingCommand: self.toggleHistoricalTrackingSetting()
         case Self.quotaWarningSoundCommand: self.toggleQuotaWarningSoundSetting()
         case Self.quotaWarningOnScreenAlertCommand: self.toggleQuotaWarningOnScreenAlertSetting()
+        case let command where command >= Self.languageCommandBase && command < Self.languageCommandBase + 64:
+            self.selectLanguage(command: command)
         case Self.statusChecksCommand:
             let enabled = self.presentationDefaults.object(forKey: "statusChecksEnabled") as? Bool ?? true
             self.presentationDefaults.set(!enabled, forKey: "statusChecksEnabled")

@@ -3301,3 +3301,11 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - 상태 이벤트의 HookRateLimiter를 별도로 두어 계정 context 변경이 상태 반복 실행 제한을 지우지 않게 했다. 같은 직렬 실행 큐를 공유한다. config/privacy 변경은 두 limiter와 detector를 초기화하며 전체 취소한다.
 - 상태 관련 설정/공급자 변경은 기존 authorization revision 확인으로 취소된다. shutdown은 이벤트 종류와 무관하게 중지한다. 실제 프로세스 취소와 순서는 미검증이다.
 - CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·실제 HTTP/훅/UI 실행 미실행. 전체 계획 잔여 기능과 Windows 검증은 남아 있다.
+
+## IMPL-304 — Windows 언어 선택 메뉴
+
+- 번역 catalog의 지원 언어 목록을 노출하고 시스템 언어 옵션과 함께 Win32 언어 메뉴를 구성했다. 언어 이름은 해당 locale의 native name을 사용하고 현재 선택을 체크한다.
+- 선택을 Windows defaults의 appLanguage에 저장하고 기존 presentation callback으로 화면 모델을 재게시한다. 상태 조회나 훅 실행을 새로 요청하지 않는다. 빈 언어 값은 시스템 언어를 의미한다.
+- 원본 번역에서 language_title/language_system을 추가로 가져왔다. 메뉴에는 현재 번역 적용 범위가 상태 메뉴임을 명시했다. 전체 UI 번역 완료를 의미하지 않는다.
+- 최대 64개 command 범위와 index 확인을 적용하고 메뉴 생성 실패 시 아직 연결하지 않은 핸들을 정리한다. 실제 언어 선택/시스템 언어 매칭/RTL 표시는 미검증이다.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·실제 HTTP/훅/UI 실행 미실행. 전체 계획 잔여 기능과 Windows 검증은 남아 있다.
