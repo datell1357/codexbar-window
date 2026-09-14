@@ -3503,3 +3503,10 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - 실제 CB_GETCURSEL과 현재 편집 인덱스가 다를 때만 이전 값을 보존하고 선택된 값을 표시한다. 동일 선택이면 입력란을 다시 쓰지 않아 커서/수정 상태를 유지한다.
 - 기존 선택 변경 알림도 같은 helper를 사용하며 종료/파괴된 창에는 접근하지 않는다.
 - 실행 재현 및 회귀 테스트는 사용자 지시에 따라 미실행이다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 전체 번역/RTL 및 실제 선택·취소/접근성 검증은 남아 있다.
+
+## IMPL-330 — Windows 훅 한국어 안내
+
+- 훅 규칙 제목, 전체/개별 활성화, 편집/이동, 삭제·활성화 확인, 경로/제공자/임계값/시간/인자 오류 및 파일 선택 오류를 기존 언어 catalog로 연결했다.
+- Browse/인자 추가·삭제, 경로/인자/임계값 보조 설명과 저장 안내에 한국어를 추가했다. 새 문구는 영어 fallback을 제공하며 다른 언어의 기존 번역은 유지한다.
+- 이벤트 raw ID, 동적 오류 인자 순번 문장과 파일 선택 filter 설명 등은 아직 원문이다. 전체 다국어 완료가 아니며 긴 문구 reflow/RTL과 실제 화면 검증도 남아 있다.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·실제 설정/HTTP/훅/UI 실행 미실행.

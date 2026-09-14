@@ -18,7 +18,7 @@ public enum WindowsHookRuleDialog {
         let name = Array(Self.className.utf16) + [0]
         let registered = name.withUnsafeBufferPointer { klass.lpszClassName = $0.baseAddress; return RegisterClassExW(&klass) }
         if registered == 0, GetLastError() != ERROR_CLASS_ALREADY_EXISTS { return nil }
-        let title = Array("Hook rule".utf16) + [0]
+        let title = Array(WindowsStatusLocalization.text("Hook rule").utf16) + [0]
         var frame = RECT(left: 0, top: 0, right: context.pixels(600), bottom: context.pixels(540))
         AdjustWindowRectExForDpi(&frame, DWORD(WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX | WS_HSCROLL | WS_VSCROLL), 0,
                            DWORD(WS_EX_DLGMODALFRAME), context.dpi)
@@ -123,18 +123,18 @@ public enum WindowsHookRuleDialog {
             let field: Int32
             switch failure {
             case .invalidExecutable:
-                message = "Choose an absolute executable path without surrounding quotes."; field = executableID
+                message = WindowsStatusLocalization.text("Choose an absolute executable path without surrounding quotes."); field = executableID
             case .invalidProvider:
-                message = "Choose a supported provider or the all-providers option."; field = providerID
+                message = WindowsStatusLocalization.text("Choose a supported provider or the all-providers option."); field = providerID
             case .invalidThreshold:
-                message = "Enter used percent greater than 0 and at most 100, or leave it blank to use provider thresholds. Use a dot decimal separator."; field = thresholdID
+                message = WindowsStatusLocalization.text("Enter used percent greater than 0 and at most 100, or leave it blank to use provider thresholds. Use a dot decimal separator."); field = thresholdID
             case .invalidTimeout:
-                message = "Enter a timeout from 0.1 to 300 seconds using a dot decimal separator."; field = timeoutID
+                message = WindowsStatusLocalization.text("Enter a timeout from 0.1 to 300 seconds using a dot decimal separator."); field = timeoutID
             default:
-                message = (argumentIndex.map { "Argument \($0 + 1) is invalid. " } ?? "") + "Use at most 32 arguments. Each argument may use up to 4096 UTF-8 bytes; the complete command may use up to 32 KiB. NUL characters are not supported."; field = argumentsID
+                message = (argumentIndex.map { "Argument \($0 + 1) is invalid. " } ?? "") + WindowsStatusLocalization.text("Use at most 32 arguments. Each argument may use up to 4096 UTF-8 bytes; the complete command may use up to 32 KiB. NUL characters are not supported."); field = argumentsID
             }
             message.withCString(encodedAs: UTF16.self) { text in
-                "Hook rule".withCString(encodedAs: UTF16.self) { title in
+                WindowsStatusLocalization.text("Hook rule").withCString(encodedAs: UTF16.self) { title in
                     _ = MessageBoxW(window, text, title, UINT(MB_OK | MB_ICONWARNING))
                 }
             }
@@ -164,8 +164,8 @@ public enum WindowsHookRuleDialog {
             guard self.inputContextIsValid else { self.cancel(); return }
             if accepted == 0 {
                 if dialogError != 0 {
-                    "Windows could not open the executable selection dialog.".withCString(encodedAs: UTF16.self) { text in
-                        "Hook rule".withCString(encodedAs: UTF16.self) { title in
+                    WindowsStatusLocalization.text("Windows could not open the executable selection dialog.").withCString(encodedAs: UTF16.self) { text in
+                        WindowsStatusLocalization.text("Hook rule").withCString(encodedAs: UTF16.self) { title in
                             _ = MessageBoxW(window, text, title, UINT(MB_OK | MB_ICONWARNING))
                         }
                     }
@@ -388,19 +388,19 @@ public enum WindowsHookRuleDialog {
             addControl(hwnd, "BUTTON", WindowsStatusLocalization.text("hooks_rule_enabled"), enabledID, DWORD(WS_CHILD|WS_VISIBLE|WS_TABSTOP|BS_AUTOCHECKBOX), 400, 40, 150, 24, font),
             addLabel(hwnd, WindowsStatusLocalization.text("hooks_provider"), 18, 78, 540, 22, font),
             addControl(hwnd, "COMBOBOX", "", providerID, DWORD(WS_CHILD|WS_VISIBLE|WS_TABSTOP|CBS_DROPDOWNLIST|WS_VSCROLL), 18, 102, 560, 240, font),
-            addLabel(hwnd, WindowsStatusLocalization.text("hooks_executable") + " (absolute path, without surrounding quotes)", 18, 136, 560, 22, font),
+            addLabel(hwnd, WindowsStatusLocalization.text("hooks_executable") + WindowsStatusLocalization.text(" (absolute path, without surrounding quotes)"), 18, 136, 560, 22, font),
             addEdit(hwnd, draft.executable, executableID, 18, 160, 446, 24, 4096, false, font),
-            addButton(hwnd, "Browse…", browseID, 478, 158, 100, 28, font),
-            addLabel(hwnd, WindowsStatusLocalization.text("hooks_arguments_placeholder") + " (one value per item; empty values are kept)", 18, 194, 560, 22, font),
+            addButton(hwnd, WindowsStatusLocalization.text("Browse…"), browseID, 478, 158, 100, 28, font),
+            addLabel(hwnd, WindowsStatusLocalization.text("hooks_arguments_placeholder") + WindowsStatusLocalization.text(" (one value per item; empty values are kept)"), 18, 194, 560, 22, font),
             addControl(hwnd, "COMBOBOX", "", argumentChoiceID, DWORD(WS_CHILD|WS_VISIBLE|WS_TABSTOP|CBS_DROPDOWNLIST|WS_VSCROLL), 18, 218, 200, 180, font),
-            addButton(hwnd, "Add argument", addArgumentID, 232, 218, 166, 28, font),
-            addButton(hwnd, "Remove argument", removeArgumentID, 410, 218, 168, 28, font),
+            addButton(hwnd, WindowsStatusLocalization.text("Add argument"), addArgumentID, 232, 218, 166, 28, font),
+            addButton(hwnd, WindowsStatusLocalization.text("Remove argument"), removeArgumentID, 410, 218, 168, 28, font),
             addEdit(hwnd, "", argumentsID, 18, 256, 560, 92, 262144, true, font),
-            addLabel(hwnd, WindowsStatusLocalization.text("hooks_threshold") + " % (blank = provider thresholds)", 18, 362, 355, 22, font),
+            addLabel(hwnd, WindowsStatusLocalization.text("hooks_threshold") + WindowsStatusLocalization.text(" % (blank = provider thresholds)"), 18, 362, 355, 22, font),
             addEdit(hwnd, draft.usedPercent, thresholdID, 18, 388, 250, 24, 64, false, font),
-            addLabel(hwnd, "Timeout seconds (0.1–300)", 318, 362, 260, 22, font),
+            addLabel(hwnd, WindowsStatusLocalization.text("Timeout seconds (0.1–300)"), 318, 362, 260, 22, font),
             addEdit(hwnd, draft.timeoutSeconds, timeoutID, 318, 388, 260, 24, 64, false, font),
-            addLabel(hwnd, "Use dot decimals. Saving this form does not run the command.", 18, 426, 560, 22, font),
+            addLabel(hwnd, WindowsStatusLocalization.text("Use dot decimals. Saving this form does not run the command."), 18, 426, 560, 22, font),
             addButton(hwnd, WindowsStatusLocalization.text("Save"), saveID, 370, 480, 100, 28, font),
             addButton(hwnd, WindowsStatusLocalization.text("Cancel"), cancelID, 478, 480, 100, 28, font)
         ]
