@@ -22,7 +22,7 @@ public enum WindowsHookSettingsMenu {
               append("Add rule…", command: 2, to: menu, enabled: config.events.count < HooksConfig.maximumRuleCount)
         else { return nil }
         if config.events.isEmpty {
-            guard append("No hook rules", command: 0, to: menu, enabled: false) else { return nil }
+            guard append(WindowsStatusLocalization.text("hooks_empty"), command: 0, to: menu, enabled: false) else { return nil }
         }
         for (index, rule) in config.events.enumerated() {
             guard let actions = CreatePopupMenu() else { return nil }
@@ -34,7 +34,7 @@ public enum WindowsHookSettingsMenu {
                 append("Delete rule…", command: base + 4, to: actions)
             guard complete else { _ = DestroyMenu(actions); return nil }
             // Do not expose executable paths or argument values in the overview.
-            let title = "\(index + 1). \(rule.event.rawValue) · \(rule.provider ?? "all providers")" +
+            let title = "\(index + 1). \(rule.event.rawValue) · \(rule.provider ?? WindowsStatusLocalization.text("hooks_any_provider"))" +
                 (rule.enabled ? "" : " (disabled)")
             let added = safeText(title).withCString(encodedAs: UTF16.self) {
                 AppendMenuW(menu, UINT(MF_STRING | MF_POPUP), UINT_PTR(UInt(bitPattern: actions)), $0)

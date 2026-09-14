@@ -87,6 +87,31 @@ public enum WindowsHookRuleDialog {
             self.result = nil; self.closed = true
             if let window { DestroyWindow(window) }
         }
+        func report(_ failure: WindowsHookSettingsFailure) {
+            guard let window else { return }
+            let message: String
+            let field: Int32
+            switch failure {
+            case .invalidExecutable:
+                message = "Choose an absolute executable path without surrounding quotes."; field = executableID
+            case .invalidProvider:
+                message = "Enter a supported provider ID, or leave the field blank for all providers."; field = providerID
+            case .invalidThreshold:
+                message = "Enter used percent greater than 0 and at most 100, or leave it blank to use provider thresholds. Use a dot decimal separator."; field = thresholdID
+            case .invalidTimeout:
+                message = "Enter a timeout from 0.1 to 300 seconds using a dot decimal separator."; field = timeoutID
+            default:
+                message = "Enter a JSON array of at most 32 strings. Each argument may use up to 4096 UTF-8 bytes; the complete command may use up to 32 KiB. NUL characters are not supported."; field = argumentsID
+            }
+            message.withCString(encodedAs: UTF16.self) { text in
+                "Hook rule".withCString(encodedAs: UTF16.self) { title in
+                    _ = MessageBoxW(window, text, title, UINT(MB_OK | MB_ICONWARNING))
+                }
+            }
+            if self.inputContextIsValid, IsWindow(window) != 0 { SetFocus(GetDlgItem(window, field)) }
+            else { self.cancel() }
+        }
+
         func save() {
             guard self.inputContextIsValid else { self.cancel(); return }
             guard let window else { return }
@@ -107,14 +132,12 @@ public enum WindowsHookRuleDialog {
                 let rule = try draft.rule()
                 guard self.inputContextIsValid else { self.cancel(); return }
                 self.result = rule; self.closed = true; DestroyWindow(window)
+            } catch let failure as WindowsHookSettingsFailure {
+                self.report(failure)
             } catch {
-                let message = "Check the absolute executable path, provider ID, JSON argument array, used percent (0 < value <= 100), and timeout (0.1–300 seconds). Use a dot for decimals."
-                message.withCString(encodedAs: UTF16.self) { text in
-                    "Hook rule".withCString(encodedAs: UTF16.self) { title in
-                        _ = MessageBoxW(window, text, title, UINT(MB_OK | MB_ICONWARNING))
-                    }
-                }
+                self.report(.invalidCommand)
             }
+
         }
     }
 
@@ -158,9 +181,9 @@ public enum WindowsHookRuleDialog {
         let encoder = JSONEncoder(); encoder.outputFormatting = [.prettyPrinted, .withoutEscapingSlashes]
         guard let encoded = try? encoder.encode(draft.arguments), let arguments = String(data: encoded, encoding: .utf8) else { return false }
         let controls: [HWND?] = [
-            addLabel(hwnd, "Event", 18, 16, 100, 22, font),
+            addLabel(hwnd, WindowsStatusLocalization.text("hooks_event"), 18, 16, 100, 22, font),
             addControl(hwnd, "COMBOBOX", "", eventID, DWORD(WS_CHILD|WS_VISIBLE|WS_TABSTOP|CBS_DROPDOWNLIST|WS_VSCROLL), 18, 40, 330, 180, font),
-            addControl(hwnd, "BUTTON", "Enabled", enabledID, DWORD(WS_CHILD|WS_VISIBLE|WS_TABSTOP|BS_AUTOCHECKBOX), 400, 40, 150, 24, font),
+            addControl(hwnd, "BUTTON", WindowsStatusLocalization.text("hooks_rule_enabled"), enabledID, DWORD(WS_CHILD|WS_VISIBLE|WS_TABSTOP|BS_AUTOCHECKBOX), 400, 40, 150, 24, font),
             addLabel(hwnd, "Provider ID (blank = all providers)", 18, 78, 540, 22, font),
             addEdit(hwnd, draft.provider ?? "", providerID, 18, 102, 560, 24, 128, false, font),
             addLabel(hwnd, "Executable (absolute path, without surrounding quotes)", 18, 136, 560, 22, font),
@@ -172,8 +195,8 @@ public enum WindowsHookRuleDialog {
             addLabel(hwnd, "Timeout seconds (0.1–300)", 318, 362, 260, 22, font),
             addEdit(hwnd, draft.timeoutSeconds, timeoutID, 318, 388, 260, 24, 64, false, font),
             addLabel(hwnd, "Use dot decimals. Saving this form does not run the command.", 18, 426, 560, 22, font),
-            addButton(hwnd, "Save rule", saveID, 370, 480, 100, 28, font),
-            addButton(hwnd, "Cancel", cancelID, 478, 480, 100, 28, font)
+            addButton(hwnd, WindowsStatusLocalization.text("Save"), saveID, 370, 480, 100, 28, font),
+            addButton(hwnd, WindowsStatusLocalization.text("Cancel"), cancelID, 478, 480, 100, 28, font)
         ]
         guard controls.allSatisfy({ $0 != nil }) else { return false }
         for event in events {

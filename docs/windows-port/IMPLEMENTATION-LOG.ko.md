@@ -3412,3 +3412,10 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - 소스 읽기 중 발견한 drainAugmentBrowserImport 직후의 잘못된 중첩 drainWindsurfBrowserImport 선언 한 줄을 제거했다. 실제 Windsurf 함수와 Augment 본문은 유지한다. 컴파일 확인은 하지 않았다.
 - mailbox 결과는 보류 시 유지하며 원래 요청 ID 필터를 그대로 사용한다. 모든 독립 WM_COMMAND 경로의 전역 modal coordinator를 대체하는 것은 아니며 실제 겹침/포커스/종료 흐름은 미검증이다.
 - CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·실제 설정/HTTP/훅/UI 실행 미실행. 전체 잔여 구현 및 Windows 검증은 남아 있다.
+
+## IMPL-318 — 훅 편집 문구와 입력 오류
+
+- 원본 번역의 hooks_empty/add/delete/enabled/event/any_provider와 Save/Cancel을 Windows catalog에 추가하고 목록/form에 연결했다. Mac 실행 경고 및 Unix 경로 placeholder는 가져오지 않았다.
+- form의 기존 단일 오류 문구를 executable/provider/threshold/timeout/arguments로 구분했다. 사용자 입력 원문 없이 고정 설명을 표시하고 해당 control로 초점을 이동한다.
+- JSON 디코딩 실패는 인수 안내로 처리하며 인수 개수/바이트/전체 command 제한 및 NUL 불허를 설명한다. 오류 dialog 반환 후 context가 무효화됐으면 편집을 취소한다.
+- 신규 상세 오류 문구/나머지 폼 안내의 번역과 자동 DPI 레이아웃은 남아 있다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·실제 설정/HTTP/훅/UI 실행 미실행. 전체 잔여 구현 및 Windows 검증은 남아 있다.

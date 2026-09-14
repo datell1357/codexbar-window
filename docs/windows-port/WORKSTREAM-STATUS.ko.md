@@ -1,5 +1,7 @@
 # Windows 전용 제품 작업 현황
 
+- IMPL-318: 훅 편집 공통 문구 번역과 필드별 입력 오류/초점 이동을 연결했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
 - IMPL-317: modal 메시지 루프의 editor drain 재진입을 보류하고 잘못 삽입된 import 함수 선언을 정리했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
 
 - IMPL-316: 훅 편집 snapshot을 privacy 값에 연결하고 load/edit/save의 경계마다 변경을 확인하도록 작성했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
