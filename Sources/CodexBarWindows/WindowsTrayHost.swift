@@ -72,6 +72,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
     private var menuHotkeyFailureMessage: String?
     private static let cleanupHotkeyCommand = UINT_PTR(0x7544)
     private var popupIsOpen = false
+    private var refreshOnOpenDeadline: ContinuousClock.Instant?
     private var keyboardInitialMenu: HMENU?
     private var keyboardInitialPosition: UINT?
     private var keyboardPopupAnchor: POINT?
@@ -1867,6 +1868,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
         var savedAccountsMenuPosition: Int32 = -1
         defer {
             if let window = self.window { _ = KillTimer(window, Self.refreshOnOpenTimer) }
+            self.refreshOnOpenDeadline = nil
             self.popupIsOpen = false
             self.popupCopySummary = nil
             self.popupCopyErrors.removeAll(keepingCapacity: true)
@@ -1892,13 +1894,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
             self.keyboardPopupAnchor = keyboardInitiated ? self.keyboardMenuPoint() : nil
         }
         guard let hwnd = self.window, let menu = CreatePopupMenu() else { return }
-        if notifyMenuOpen {
-            self.onMenuOpen()
-            if self.presentationDefaults.object(forKey: "refreshAllProvidersOnMenuOpen") as? Bool ?? false,
-               let window = self.window {
-                _ = SetTimer(window, Self.refreshOnOpenTimer, 250, nil)
-            }
-        }
+        if notifyMenuOpen { self.onMenuOpen() }
         self.mailboxLock.lock()
         let rows = self.mailboxRows
         let menuEntries = self.mailboxMenuEntries
@@ -2410,7 +2406,17 @@ public final class WindowsTrayHost: @unchecked Sendable {
             self.keyboardInitialMenu = menu
             self.keyboardInitialPosition = UINT(localMenuPosition)
         }
+        // Start the delay only after menu construction, immediately before entering tracking.
+        if notifyMenuOpen,
+           self.presentationDefaults.object(forKey: "refreshAllProvidersOnMenuOpen") as? Bool ?? false {
+            self.refreshOnOpenDeadline = ContinuousClock.now + .milliseconds(250)
+            if SetTimer(hwnd, Self.refreshOnOpenTimer, 250, nil) == 0 {
+                self.refreshOnOpenDeadline = nil
+            }
+        }
         let command = TrackPopupMenu(menu, flags, point.x, point.y, 0, hwnd, nil)
+        _ = KillTimer(hwnd, Self.refreshOnOpenTimer)
+        self.refreshOnOpenDeadline = nil
         self.keyboardInitialMenu = nil
         self.keyboardInitialPosition = nil
         _ = DestroyMenu(menu)
@@ -4125,7 +4131,15 @@ public final class WindowsTrayHost: @unchecked Sendable {
             return 0
         }
         if message == UINT(WM_TIMER), wParam == WPARAM(Self.refreshOnOpenTimer) {
+            guard let deadline = host.refreshOnOpenDeadline else {
+                _ = KillTimer(hwnd, Self.refreshOnOpenTimer)
+                return 0
+            }
+            // KillTimer does not remove a timer message already queued by a previous popup.
+            // Leave the current timer armed when that stale message arrives too early.
+            guard ContinuousClock.now >= deadline else { return 0 }
             _ = KillTimer(hwnd, Self.refreshOnOpenTimer)
+            host.refreshOnOpenDeadline = nil
             if host.popupIsOpen, !host.quitInvoked,
                host.presentationDefaults.object(forKey: "refreshAllProvidersOnMenuOpen") as? Bool ?? false {
                 host.onRefresh()

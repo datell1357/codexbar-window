@@ -1,5 +1,7 @@
 # Windows 전용 제품 작업 현황
 
+- IMPL-307: 메뉴 표시 직전에 지연 타이머를 시작하고 빠른 재열기의 이전 타이머 메시지를 기한으로 걸러내도록 수정했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
 - IMPL-306: 메뉴 열기 후 지연 갱신 옵션을 원본 기본값/설정 키로 Windows에 연결했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
 
 - IMPL-305: 새로고침/종료와 갱신 주기 선택에 원본 번역을 연결했다. 전체 UI 번역은 진행 중이다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.

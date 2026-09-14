@@ -3324,3 +3324,10 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - WM_TIMER에서 타이머를 해제하고 popup/종료/설정 상태를 다시 확인한 뒤 기존 onRefresh callback을 호출한다. 이미 runtime refresh가 있으면 기존 중복 방지 규칙에 따라 추가 작업은 시작하지 않는다. 주기 설정은 바꾸지 않는다.
 - 실제 TrackPopupMenu 중 타이머 전달, 짧게 열고 닫기, 갱신 결과의 메뉴 반영은 미검증이다. 전체 계획 잔여 기능과 Windows 검증은 남아 있다.
 - CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·실제 HTTP/훅/UI 실행 미실행.
+
+## IMPL-307 — 메뉴 열기 갱신 타이밍
+
+- IMPL-306의 타이머는 메뉴 구성 전에 등록되어 구성 비용도 250ms에 포함될 수 있었다. TrackPopupMenu 직전으로 옮기고 ContinuousClock 기한을 기록한다.
+- 현재 기한보다 이른 WM_TIMER는 무시하고 타이머를 유지한다. 이전 popup에서 이미 대기 중이던 메시지가 재열기 직후 도착해 갱신을 앞당기는 것을 방지한다. 현재 기한이 없으면 타이머를 해제하고 아무 요청도 하지 않는다.
+- TrackPopupMenu 반환 직후 기한/타이머를 비워 선택 명령의 dialog/message loop에서 갱신이 뒤늦게 시작되지 않게 한다. 기존 defer 정리는 조기 반환에도 남겨둔다. 타이머 등록 실패 시 기한을 비워 수동 갱신 경로를 유지한다.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 회귀 동작과 실제 Win32 메시지 순서, 빌드·테스트·lint·HTTP/훅/UI 실행 모두 미실행. 전체 계획 잔여 구현 및 Windows 검증은 남아 있다.
