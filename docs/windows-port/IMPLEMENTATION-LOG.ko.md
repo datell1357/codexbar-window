@@ -3525,3 +3525,11 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - 설명문과 동일한 행 증가분 계산에 포함해 이후 항목과 세로 스크롤 범위를 확장한다. Browse 버튼과 경로 입력의 행 시작을 맞춰 버튼 증가가 경로 입력을 아래로 밀지 않도록 한다.
 - 버튼은 접근키 처리를 유지하고 설명문은 NOPREFIX를 유지한다. 실제 테마별 여백/체크박스/접근키/고배율 동작은 미검증이다.
 - RTL 및 화면 폭에 따른 전체 배치 전환은 남아 있다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·실제 설정/HTTP/훅/UI 실행 미실행.
+
+## IMPL-333 — 훅 RTL 배치
+
+- 기존 언어 선택을 effectiveLanguage로 공유하고 현재 catalog에 포함된 RTL 언어인 ar/fa를 판정한다.
+- 훅 form의 생성/후속 layout 좌표를 같은 논리 폭에서 좌우 반전한다. 설명/버튼에 RTL reading을 적용하고 설명 우측 정렬 및 체크박스의 체크 표시 위치를 반전한다.
+- 실행 파일, 인자, 숫자와 provider ID 입력 control은 기존 읽기 방향을 유지하며 값 자체를 변환하지 않는다. 초기 가로 스크롤은 RTL 시작 영역에서 제한된다.
+- 훅 popup에는 RTL layout/right alignment를 적용한다. 탭 순서는 기존 생성 순서를 유지하므로 논리 입력 흐름을 따른다.
+- 전체 앱 RTL, native file picker/메시지창 방향, 언어 변경 중 열린 form 처리 및 실제 혼합 방향·접근성 검증은 남아 있다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·UI/훅 실행 미실행.

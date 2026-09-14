@@ -10,6 +10,7 @@ public enum WindowsHookSettingsMenu {
         isCurrent: @escaping () -> Bool) -> WindowsHookSettingsMutation?
     {
         let privacy = WindowsUsagePresentationSettings.load().hidePersonalInfo
+        let rightToLeft = WindowsStatusLocalization.isRightToLeft
         func valid() -> Bool {
             IsWindow(owner) != 0 && isCurrent() &&
                 WindowsUsagePresentationSettings.load().hidePersonalInfo == privacy
@@ -44,7 +45,7 @@ public enum WindowsHookSettingsMenu {
         var point = POINT()
         guard GetCursorPos(&point) != 0 else { return nil }
         SetForegroundWindow(owner)
-        let selected = UINT_PTR(TrackPopupMenu(menu, UINT(TPM_RETURNCMD | TPM_NONOTIFY | TPM_RIGHTBUTTON),
+        let selected = UINT_PTR(TrackPopupMenu(menu, UINT(TPM_RETURNCMD | TPM_NONOTIFY | TPM_RIGHTBUTTON) | (rightToLeft ? UINT(TPM_LAYOUTRTL | TPM_RIGHTALIGN) : 0),
             point.x, point.y, 0, owner, nil))
         guard valid(), selected != 0 else { return nil }
         let mutation: WindowsHookSettingsMutation

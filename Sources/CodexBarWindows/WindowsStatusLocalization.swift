@@ -10,11 +10,20 @@ enum WindowsStatusLocalization {
         Locale(identifier: language).localizedString(forIdentifier: language) ?? language
     }
 
-    static func text(_ key: String) -> String {
+    static var effectiveLanguage: String {
         let defaults = UserDefaults(suiteName: WindowsRefreshSettings.suiteName) ?? .standard
         let configured = defaults.string(forKey: "appLanguage")?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         let preferences = configured.isEmpty ? Locale.preferredLanguages : [configured]
-        let language = Bundle.preferredLocalizations(from: self.catalog.keys.sorted(), forPreferences: preferences).first ?? "en"
+        return Bundle.preferredLocalizations(from: self.catalog.keys.sorted(), forPreferences: preferences).first ?? "en"
+    }
+
+    static var isRightToLeft: Bool {
+        // RTL languages currently present in this catalog.
+        ["ar", "fa"].contains(self.effectiveLanguage)
+    }
+
+    static func text(_ key: String) -> String {
+        let language = self.effectiveLanguage
         return self.catalog[language]?[key] ?? self.catalog["en"]?[key] ?? key
     }
 

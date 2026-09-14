@@ -87,6 +87,7 @@ public enum WindowsHookRuleDialog {
 
     private final class Context {
         let initial: WindowsHookRuleDraft
+        let rightToLeft: Bool
         var dpi: UINT
         var font: HFONT?
         var controls: [(handle: HWND, bounds: RECT, isLabel: Bool, isButton: Bool, textInset: Int32)] = []
@@ -110,8 +111,10 @@ public enum WindowsHookRuleDialog {
         init(initial: WindowsHookRuleDraft, owner: HWND, isCurrent: (() -> Bool)?) {
             self.initial = initial; self.owner = owner; self.isCurrent = isCurrent
             self.argumentValues = initial.arguments
+            self.rightToLeft = WindowsStatusLocalization.isRightToLeft
             let dpi = GetDpiForWindow(owner); self.dpi = dpi == 0 ? 96 : dpi
             self.expectedPrivacy = WindowsUsagePresentationSettings.load().hidePersonalInfo
+            if self.rightToLeft { self.scrollX = self.pixels(600) }
         }
         func cancel() {
             self.result = nil; self.closed = true
@@ -452,9 +455,14 @@ public enum WindowsHookRuleDialog {
         let pointer = GetWindowLongPtrW(parent, Int32(GWLP_USERDATA))
         guard pointer != 0, let raw = UnsafeRawPointer(bitPattern: UInt(pointer)) else { return nil }
         let context = Unmanaged<Context>.fromOpaque(raw).takeUnretainedValue()
+        let readingRTL = context.rightToLeft && (kind == "STATIC" || kind == "BUTTON")
+        var controlStyle = style
+        if readingRTL, kind == "STATIC" { controlStyle |= DWORD(SS_RIGHT) }
+        if readingRTL, id == enabledID { controlStyle |= DWORD(BS_RIGHT | BS_LEFTTEXT) }
+        let controlX = context.rightToLeft ? 600 - x - width : x
         let handle = kind.withCString(encodedAs: UTF16.self) { klass in
             text.withCString(encodedAs: UTF16.self) { title in
-                CreateWindowExW(0, klass, title, style, context.pixels(x), context.pixels(y),
+                CreateWindowExW(readingRTL ? DWORD(WS_EX_RTLREADING) : 0, klass, title, controlStyle, context.pixels(controlX), context.pixels(y),
                     context.pixels(width), context.pixels(height), parent, HMENU(bitPattern: Int(id)), GetModuleHandleW(nil), nil)
             }
         }
@@ -506,7 +514,7 @@ public enum WindowsHookRuleDialog {
                 total + (row.key < r.top ? row.value : 0)
             }
             let height = context.pixels(r.bottom - r.top) + ((control.isLabel || control.isButton) ? (rowGrowth[r.top] ?? 0) : 0)
-            SetWindowPos(control.handle, nil, context.pixels(r.left) - context.scrollX,
+            SetWindowPos(control.handle, nil, context.pixels(context.rightToLeft ? 600 - r.right : r.left) - context.scrollX,
                 context.pixels(r.top) + precedingGrowth - context.scrollY, context.pixels(r.right - r.left),
                 height, UINT(SWP_NOZORDER | SWP_NOACTIVATE))
         }
