@@ -3427,3 +3427,10 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - SystemParametersInfoForDpi의 message font를 생성해 모든 control에 적용하고 교체한 이전 font를 삭제한다. WM_SETTINGCHANGE 때 font를 갱신하고 창 파괴 때 소유 font를 정리한다.
 - 고정 논리 크기 form이므로 아주 작은 작업 영역의 scrolling/reflow, 긴 번역 문구와 RTL은 아직 남아 있다. 실제 DPI 이동/문자 크기/접근성은 미검증이다.
 - CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·실제 설정/HTTP/훅/UI 실행 미실행. 전체 잔여 구현 및 Windows 검증은 남아 있다.
+
+## IMPL-320 — 작은 화면의 훅 form 스크롤
+
+- 초기 owner 모니터 작업 영역 안에 창 크기를 제한하고 가운데 배치한다. 폼 내용은 기존 600x540 논리 좌표를 유지하며 DPI 크기로 변환한다.
+- 가로/세로 스크롤바와 client 크기 기반 range/page/position 계산을 추가했다. WM_SIZE 및 DPI layout에서 위치를 유효 범위로 제한하고 control 좌표에 스크롤 offset을 적용한다.
+- 줄/페이지/처음/끝/thumb 조작과 세로 wheel을 연결한다. 스크롤이 필요 없을 때도 비활성 바를 유지해 bar 표시 변경에 따른 layout 재진입을 피한다.
+- 키보드 focus 자동 노출, DPI 이동 후 작업 영역 재제한, 긴 번역 reflow/RTL은 후속 소요다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·실제 설정/HTTP/훅/UI 실행 미실행. 전체 잔여 구현 및 Windows 검증은 남아 있다.

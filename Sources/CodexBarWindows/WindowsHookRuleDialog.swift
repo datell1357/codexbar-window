@@ -20,12 +20,12 @@ public enum WindowsHookRuleDialog {
         if registered == 0, GetLastError() != ERROR_CLASS_ALREADY_EXISTS { return nil }
         let title = Array("Hook rule".utf16) + [0]
         var frame = RECT(left: 0, top: 0, right: context.pixels(600), bottom: context.pixels(540))
-        AdjustWindowRectExForDpi(&frame, DWORD(WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX), 0,
+        AdjustWindowRectExForDpi(&frame, DWORD(WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX | WS_HSCROLL | WS_VSCROLL), 0,
                            DWORD(WS_EX_DLGMODALFRAME), context.dpi)
         let hwnd: HWND? = name.withUnsafeBufferPointer { n in
             title.withUnsafeBufferPointer { t in
                 CreateWindowExW(DWORD(WS_EX_DLGMODALFRAME), n.baseAddress, t.baseAddress,
-                                DWORD(WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX),
+                                DWORD(WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX | WS_HSCROLL | WS_VSCROLL),
                                 0, 0, frame.right - frame.left, frame.bottom - frame.top, owner, nil,
                                 instance, Unmanaged.passUnretained(context).toOpaque())
             }
@@ -73,6 +73,8 @@ public enum WindowsHookRuleDialog {
         var dpi: UINT
         var font: HFONT?
         var controls: [(handle: HWND, bounds: RECT)] = []
+        var scrollX: Int32 = 0
+        var scrollY: Int32 = 0
         func pixels(_ value: Int32) -> Int32 { Int32((Int64(value) * Int64(self.dpi) + 48) / 96) }
         let owner: HWND
         let expectedPrivacy: Bool
@@ -159,6 +161,15 @@ public enum WindowsHookRuleDialog {
             guard context.inputContextIsValid, createControls(hwnd, context: context),
                   SetTimer(hwnd, contextTimer, 250, nil) != 0 else { return -1 }
             updateFont(context: context)
+            return 0
+        case UINT(WM_SIZE): layout(context: context); return 0
+        case UINT(WM_HSCROLL), UINT(WM_VSCROLL):
+            scroll(hwnd, context: context, horizontal: message == UINT(WM_HSCROLL), action: UINT(wParam & 0xffff))
+            return 0
+        case UINT(WM_MOUSEWHEEL):
+            let delta = Int32(Int16(truncatingIfNeeded: wParam >> 16))
+            context.scrollY -= delta * context.pixels(48) / 120
+            layout(context: context)
             return 0
         case UINT(WM_DPICHANGED):
             let dpi = UINT(wParam & 0xffff)
@@ -269,11 +280,45 @@ public enum WindowsHookRuleDialog {
     }
 
     private static func layout(context: Context) {
+        guard let window = context.window else { return }
+        var client = RECT()
+        guard GetClientRect(window, &client) != 0 else { return }
+        func update(_ bar: Int32, extent: Int32, page: Int32, position: inout Int32) {
+            position = max(0, min(position, max(0, extent - page)))
+            var info = SCROLLINFO()
+            info.cbSize = UINT(MemoryLayout<SCROLLINFO>.size)
+            info.fMask = UINT(SIF_RANGE | SIF_PAGE | SIF_POS | SIF_DISABLENOSCROLL)
+            info.nMin = 0; info.nMax = max(0, extent - 1)
+            info.nPage = UINT(max(1, page)); info.nPos = position
+            SetScrollInfo(window, bar, &info, 1)
+        }
+        update(Int32(SB_HORZ), extent: context.pixels(600), page: client.right, position: &context.scrollX)
+        update(Int32(SB_VERT), extent: context.pixels(540), page: client.bottom, position: &context.scrollY)
         for control in context.controls {
             let r = control.bounds
-            SetWindowPos(control.handle, nil, context.pixels(r.left), context.pixels(r.top),
-                context.pixels(r.right - r.left), context.pixels(r.bottom - r.top), UINT(SWP_NOZORDER | SWP_NOACTIVATE))
+            SetWindowPos(control.handle, nil, context.pixels(r.left) - context.scrollX,
+                context.pixels(r.top) - context.scrollY, context.pixels(r.right - r.left),
+                context.pixels(r.bottom - r.top), UINT(SWP_NOZORDER | SWP_NOACTIVATE))
         }
+    }
+
+    private static func scroll(_ window: HWND, context: Context, horizontal: Bool, action: UINT) {
+        var info = SCROLLINFO()
+        info.cbSize = UINT(MemoryLayout<SCROLLINFO>.size); info.fMask = UINT(SIF_ALL)
+        guard GetScrollInfo(window, horizontal ? Int32(SB_HORZ) : Int32(SB_VERT), &info) != 0 else { return }
+        var position = horizontal ? context.scrollX : context.scrollY
+        switch action {
+        case UINT(SB_LINEUP): position -= context.pixels(24)
+        case UINT(SB_LINEDOWN): position += context.pixels(24)
+        case UINT(SB_PAGEUP): position -= Int32(info.nPage)
+        case UINT(SB_PAGEDOWN): position += Int32(info.nPage)
+        case UINT(SB_THUMBPOSITION), UINT(SB_THUMBTRACK): position = info.nTrackPos
+        case UINT(SB_TOP): position = 0
+        case UINT(SB_BOTTOM): position = info.nMax
+        default: return
+        }
+        if horizontal { context.scrollX = position } else { context.scrollY = position }
+        layout(context: context)
     }
 
     private static func updateFont(context: Context) {
@@ -288,6 +333,19 @@ public enum WindowsHookRuleDialog {
         }
         if let previous { DeleteObject(previous) }
     }
-    private static func center(_ hwnd: HWND, owner: HWND) { var r=RECT(); GetWindowRect(hwnd,&r); var a=RECT(); let m=MonitorFromWindow(owner,UINT(MONITOR_DEFAULTTONEAREST)); var i=MONITORINFO(); i.cbSize=DWORD(MemoryLayout<MONITORINFO>.size); if m == nil || GetMonitorInfoW(m,&i)==0 { SystemParametersInfoW(UINT(SPI_GETWORKAREA),0,&a,0); i.rcWork=a }; let w=r.right-r.left,h=r.bottom-r.top; SetWindowPos(hwnd,nil,i.rcWork.left+(i.rcWork.right-i.rcWork.left-w)/2,i.rcWork.top+(i.rcWork.bottom-i.rcWork.top-h)/2,0,0,UINT(SWP_NOSIZE|SWP_NOZORDER|SWP_NOACTIVATE)) }
+    private static func center(_ hwnd: HWND, owner: HWND) {
+        var rect = RECT()
+        guard GetWindowRect(hwnd, &rect) != 0 else { return }
+        var monitor = MONITORINFO(); monitor.cbSize = DWORD(MemoryLayout<MONITORINFO>.size)
+        let handle = MonitorFromWindow(owner, UINT(MONITOR_DEFAULTTONEAREST))
+        if handle == nil || GetMonitorInfoW(handle, &monitor) == 0 {
+            guard SystemParametersInfoW(UINT(SPI_GETWORKAREA), 0, &monitor.rcWork, 0) != 0 else { return }
+        }
+        let work = monitor.rcWork
+        let width = min(rect.right - rect.left, max(1, work.right - work.left))
+        let height = min(rect.bottom - rect.top, max(1, work.bottom - work.top))
+        SetWindowPos(hwnd, nil, work.left + (work.right - work.left - width) / 2,
+            work.top + (work.bottom - work.top - height) / 2, width, height, UINT(SWP_NOZORDER | SWP_NOACTIVATE))
+    }
 }
 #endif
