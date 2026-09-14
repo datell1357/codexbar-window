@@ -3466,3 +3466,10 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - 열린 이벤트/제공자 드롭다운의 Enter/Escape를 control에 전달해 선택 확정/닫기 후 폼 저장/취소가 적용되도록 한다.
 - 목록은 core가 허용하는 ID 범위이며 모든 제공자의 Windows 훅 관측 구현 완료를 뜻하지 않는다. 플러그인 ID 계약, 전체 번역/RTL, 실행 파일 선택 및 실제 UI 검증은 남아 있다.
 - CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·실제 설정/HTTP/훅/UI 실행 미실행.
+
+## IMPL-325 — 훅 실행 파일 선택
+
+- 기존 Windows 공용 파일 대화상자 패턴으로 Browse 버튼을 추가했다. exe/com 및 모든 파일 필터, 단일 파일 선택, 존재하는 경로/파일 조건과 NOCHANGEDIR를 사용한다.
+- 선택 취소는 기존 입력을 보존하며 대화상자 오류는 고정된 메시지로 표시한다. 선택 결과의 절대 경로/UTF-8 길이를 확인하고 실행 파일 입력에만 적용한다. 파일을 실행하거나 훅 설정을 저장하지 않는다.
+- 대화상자 반환 시 owner 생존과 privacy/edit context를 다시 확인한다. Browse에 초점이 있는 Enter도 파일 선택을 열도록 연결한다.
+- 전체 번역/RTL 및 실제 파일 선택·중첩 modal 취소 검증은 남아 있다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·실제 설정/HTTP/훅/UI 실행 미실행.

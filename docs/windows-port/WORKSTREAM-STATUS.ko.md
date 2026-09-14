@@ -1,5 +1,7 @@
 # Windows 전용 제품 작업 현황
 
+- IMPL-325: 훅 실행 파일 Browse 선택과 경로 입력 연결을 추가했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
 - IMPL-324: 훅 제공자 입력을 지원 ID 선택 목록으로 바꾸고 드롭다운 Enter/Escape 처리를 연결했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
 
 - IMPL-323: 훅 form 최소화 중 배치를 보류하고 복원 시 현재 작업 영역에 맞추도록 연결했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.

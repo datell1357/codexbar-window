@@ -59,7 +59,10 @@ public enum WindowsHookRuleDialog {
                     if GetFocus() == GetDlgItem(hwnd, argumentsID) {
                         TranslateMessage(&message); DispatchMessageW(&message); continue
                     }
-                    if GetFocus() == GetDlgItem(hwnd, cancelID) { context.cancel() } else { context.save() }; continue
+                    if GetFocus() == GetDlgItem(hwnd, browseID) { context.browseExecutable() }
+                    else if GetFocus() == GetDlgItem(hwnd, cancelID) { context.cancel() }
+                    else { context.save() }
+                    continue
                 }
                 if IsDialogMessageW(hwnd, &message) == 0 { TranslateMessage(&message); DispatchMessageW(&message) }
             }
@@ -73,7 +76,7 @@ public enum WindowsHookRuleDialog {
     private static let className = "CodexBar.HookRuleDialog"
     private static let eventID: Int32 = 101, providerID: Int32 = 102, executableID: Int32 = 103
     private static let argumentsID: Int32 = 104, thresholdID: Int32 = 105, timeoutID: Int32 = 106
-    private static let enabledID: Int32 = 107, saveID: Int32 = 1, cancelID: Int32 = 2
+    private static let enabledID: Int32 = 107, browseID: Int32 = 108, saveID: Int32 = 1, cancelID: Int32 = 2
     private static let events = HookEventType.allCases
     private static let providers = UsageProvider.allCases.sorted { $0.rawValue < $1.rawValue }
 
@@ -129,6 +132,41 @@ public enum WindowsHookRuleDialog {
                 SetFocus(GetDlgItem(window, field)); revealFocus(context: self)
             }
             else { self.cancel() }
+        }
+
+        func browseExecutable() {
+            guard self.inputContextIsValid, !self.closed, let window else { return }
+            var path = [WCHAR](repeating: 0, count: 32768)
+            let filter = Array("Programs (*.exe;*.com)\0*.exe;*.com\0All files (*.*)\0*.*\0\0".utf16)
+            var options = OPENFILENAMEW()
+            options.lStructSize = DWORD(MemoryLayout<OPENFILENAMEW>.size)
+            options.hwndOwner = window; options.nFilterIndex = 1
+            options.Flags = DWORD(OFN_EXPLORER | OFN_NOCHANGEDIR | OFN_PATHMUSTEXIST | OFN_FILEMUSTEXIST)
+            let accepted = path.withUnsafeMutableBufferPointer { buffer in
+                filter.withUnsafeBufferPointer { filters in
+                    options.lpstrFile = buffer.baseAddress; options.nMaxFile = DWORD(buffer.count)
+                    options.lpstrFilter = filters.baseAddress
+                    return GetOpenFileNameW(&options)
+                }
+            }
+            let dialogError = accepted == 0 ? CommDlgExtendedError() : 0
+            guard !self.closed, IsWindow(window) != 0 else { return }
+            guard self.inputContextIsValid else { self.cancel(); return }
+            if accepted == 0 {
+                if dialogError != 0 {
+                    "Windows could not open the executable selection dialog.".withCString(encodedAs: UTF16.self) { text in
+                        "Hook rule".withCString(encodedAs: UTF16.self) { title in
+                            _ = MessageBoxW(window, text, title, UINT(MB_OK | MB_ICONWARNING))
+                        }
+                    }
+                }
+                return
+            }
+            let selected = String(decoding: path.prefix { $0 != 0 }, as: UTF16.self)
+            guard !selected.isEmpty, selected.utf8.count <= HookRule.maximumStringBytes,
+                  (selected as NSString).isAbsolutePath else { self.report(.invalidExecutable); return }
+            selected.withCString(encodedAs: UTF16.self) { _ = SetWindowTextW(GetDlgItem(window, executableID), $0) }
+            SetFocus(GetDlgItem(window, executableID)); revealFocus(context: self)
         }
 
         func save() {
@@ -238,6 +276,7 @@ public enum WindowsHookRuleDialog {
             switch Int32(wParam & 0xffff) {
             case saveID: context.save()
             case cancelID: context.cancel()
+            case browseID: context.browseExecutable()
             case eventID:
                 let index = Int(SendMessageW(GetDlgItem(hwnd, eventID), UINT(CB_GETCURSEL), 0, 0))
                 EnableWindow(GetDlgItem(hwnd, thresholdID), events.indices.contains(index) && events[index] == .quotaLow ? 1 : 0)
@@ -266,7 +305,8 @@ public enum WindowsHookRuleDialog {
             addLabel(hwnd, "Provider", 18, 78, 540, 22, font),
             addControl(hwnd, "COMBOBOX", "", providerID, DWORD(WS_CHILD|WS_VISIBLE|WS_TABSTOP|CBS_DROPDOWNLIST|WS_VSCROLL), 18, 102, 560, 240, font),
             addLabel(hwnd, "Executable (absolute path, without surrounding quotes)", 18, 136, 560, 22, font),
-            addEdit(hwnd, draft.executable, executableID, 18, 160, 560, 24, 4096, false, font),
+            addEdit(hwnd, draft.executable, executableID, 18, 160, 446, 24, 4096, false, font),
+            addButton(hwnd, "Browse…", browseID, 478, 158, 100, 28, font),
             addLabel(hwnd, "Arguments (JSON string array; [] for none; no shell splitting)", 18, 194, 560, 22, font),
             addEdit(hwnd, arguments, argumentsID, 18, 218, 560, 130, 262144, true, font),
             addLabel(hwnd, "Used percent (blank = provider thresholds)", 18, 362, 355, 22, font),
