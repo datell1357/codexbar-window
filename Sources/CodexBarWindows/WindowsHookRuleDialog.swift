@@ -89,7 +89,7 @@ public enum WindowsHookRuleDialog {
         let initial: WindowsHookRuleDraft
         var dpi: UINT
         var font: HFONT?
-        var controls: [(handle: HWND, bounds: RECT, isLabel: Bool)] = []
+        var controls: [(handle: HWND, bounds: RECT, isLabel: Bool, isButton: Bool, textInset: Int32)] = []
         var scrollX: Int32 = 0
         var scrollY: Int32 = 0
         var needsRestorePlacement = false
@@ -385,12 +385,12 @@ public enum WindowsHookRuleDialog {
         let controls: [HWND?] = [
             addLabel(hwnd, WindowsStatusLocalization.text("hooks_event"), 18, 16, 100, 22, font),
             addControl(hwnd, "COMBOBOX", "", eventID, DWORD(WS_CHILD|WS_VISIBLE|WS_TABSTOP|CBS_DROPDOWNLIST|WS_VSCROLL), 18, 40, 330, 180, font),
-            addControl(hwnd, "BUTTON", WindowsStatusLocalization.text("hooks_rule_enabled"), enabledID, DWORD(WS_CHILD|WS_VISIBLE|WS_TABSTOP|BS_AUTOCHECKBOX), 400, 40, 150, 24, font),
+            addControl(hwnd, "BUTTON", WindowsStatusLocalization.text("hooks_rule_enabled"), enabledID, DWORD(WS_CHILD|WS_VISIBLE|WS_TABSTOP|BS_AUTOCHECKBOX|BS_MULTILINE), 400, 40, 150, 24, font),
             addLabel(hwnd, WindowsStatusLocalization.text("hooks_provider"), 18, 78, 540, 22, font),
             addControl(hwnd, "COMBOBOX", "", providerID, DWORD(WS_CHILD|WS_VISIBLE|WS_TABSTOP|CBS_DROPDOWNLIST|WS_VSCROLL), 18, 102, 560, 240, font),
             addLabel(hwnd, WindowsStatusLocalization.text("hooks_executable") + WindowsStatusLocalization.text(" (absolute path, without surrounding quotes)"), 18, 136, 560, 22, font),
             addEdit(hwnd, draft.executable, executableID, 18, 160, 446, 24, 4096, false, font),
-            addButton(hwnd, WindowsStatusLocalization.text("Browse…"), browseID, 478, 158, 100, 28, font),
+            addButton(hwnd, WindowsStatusLocalization.text("Browse…"), browseID, 478, 160, 100, 28, font),
             addLabel(hwnd, WindowsStatusLocalization.text("hooks_arguments_placeholder") + WindowsStatusLocalization.text(" (one value per item; empty values are kept)"), 18, 194, 560, 22, font),
             addControl(hwnd, "COMBOBOX", "", argumentChoiceID, DWORD(WS_CHILD|WS_VISIBLE|WS_TABSTOP|CBS_DROPDOWNLIST|WS_VSCROLL), 18, 218, 200, 180, font),
             addButton(hwnd, WindowsStatusLocalization.text("Add argument"), addArgumentID, 232, 218, 166, 28, font),
@@ -445,7 +445,7 @@ public enum WindowsHookRuleDialog {
         return handle
     }
     private static func addLabel(_ p: HWND,_ t:String,_ x:Int32,_ y:Int32,_ w:Int32,_ h:Int32,_ f:HGDIOBJ?)->HWND? { addControl(p,"STATIC",t,0,DWORD(WS_CHILD|WS_VISIBLE|SS_NOPREFIX),x,y,w,h,f) }
-    private static func addButton(_ p: HWND,_ t:String,_ id:Int32,_ x:Int32,_ y:Int32,_ w:Int32,_ h:Int32,_ f:HGDIOBJ?)->HWND? { addControl(p,"BUTTON",t,id,DWORD(WS_CHILD|WS_VISIBLE|WS_TABSTOP|(id == saveID ? BS_DEFPUSHBUTTON : BS_PUSHBUTTON)),x,y,w,h,f) }
+    private static func addButton(_ p: HWND,_ t:String,_ id:Int32,_ x:Int32,_ y:Int32,_ w:Int32,_ h:Int32,_ f:HGDIOBJ?)->HWND? { addControl(p,"BUTTON",t,id,DWORD(WS_CHILD|WS_VISIBLE|WS_TABSTOP|BS_MULTILINE|(id == saveID ? BS_DEFPUSHBUTTON : BS_PUSHBUTTON)),x,y,w,h,f) }
     private static func addControl(_ parent: HWND, _ kind: String, _ text: String, _ id: Int32,
                                    _ style: DWORD, _ x: Int32, _ y: Int32, _ width: Int32, _ height: Int32,
                                    _ fallbackFont: HGDIOBJ?) -> HWND? {
@@ -459,7 +459,7 @@ public enum WindowsHookRuleDialog {
             }
         }
         if let handle {
-            context.controls.append((handle, RECT(left: x, top: y, right: x + width, bottom: y + height), kind == "STATIC"))
+            context.controls.append((handle, RECT(left: x, top: y, right: x + width, bottom: y + height), kind == "STATIC", kind == "BUTTON", kind == "BUTTON" ? (id == enabledID ? 28 : 16) : 0))
             if let fallbackFont { SendMessageW(handle, UINT(WM_SETFONT), WPARAM(Int(bitPattern: fallbackFont)), 1) }
         }
         return handle
@@ -469,20 +469,20 @@ public enum WindowsHookRuleDialog {
         guard let window = context.window, IsIconic(window) == 0 else { return }
         var client = RECT()
         guard GetClientRect(window, &client) != 0 else { return }
-        // Labels sharing a row reserve the largest measured height, keeping their fields aligned.
+        // Wrapping controls share row growth so labels, actions, and subsequent fields stay aligned.
         var rowGrowth: [Int32: Int32] = [:]
         if let dc = GetDC(window) {
             let font = context.font ?? GetStockObject(DEFAULT_GUI_FONT)
             let previous = font.map { SelectObject(dc, $0) }
-            for control in context.controls where control.isLabel {
+            for control in context.controls where control.isLabel || control.isButton {
                 let r = control.bounds
-                var measured = RECT(left: 0, top: 0, right: context.pixels(r.right - r.left), bottom: 0)
+                var measured = RECT(left: 0, top: 0, right: max(1, context.pixels(r.right - r.left - control.textInset)), bottom: 0)
                 var text = Array(readText(control.handle).utf16) + [WCHAR(0)]
                 let height = text.withUnsafeMutableBufferPointer {
-                    DrawTextW(dc, $0.baseAddress, -1, &measured, UINT(DT_CALCRECT | DT_WORDBREAK | DT_NOPREFIX))
+                    DrawTextW(dc, $0.baseAddress, -1, &measured, UINT(DT_CALCRECT | DT_WORDBREAK) | (control.isLabel ? UINT(DT_NOPREFIX) : 0))
                 }
                 if height > 0 {
-                    let growth = max(0, measured.bottom - measured.top + context.pixels(2) - context.pixels(r.bottom - r.top))
+                    let growth = max(0, measured.bottom - measured.top + context.pixels(control.isButton ? 12 : 2) - context.pixels(r.bottom - r.top))
                     rowGrowth[r.top] = max(rowGrowth[r.top] ?? 0, growth)
                 }
             }
@@ -505,7 +505,7 @@ public enum WindowsHookRuleDialog {
             let precedingGrowth = rowGrowth.reduce(Int32(0)) { total, row in
                 total + (row.key < r.top ? row.value : 0)
             }
-            let height = context.pixels(r.bottom - r.top) + (control.isLabel ? (rowGrowth[r.top] ?? 0) : 0)
+            let height = context.pixels(r.bottom - r.top) + ((control.isLabel || control.isButton) ? (rowGrowth[r.top] ?? 0) : 0)
             SetWindowPos(control.handle, nil, context.pixels(r.left) - context.scrollX,
                 context.pixels(r.top) + precedingGrowth - context.scrollY, context.pixels(r.right - r.left),
                 height, UINT(SWP_NOZORDER | SWP_NOACTIVATE))

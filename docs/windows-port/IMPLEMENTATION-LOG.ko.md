@@ -3518,3 +3518,10 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - 설명문의 ampersand가 접근키로 소실되지 않도록 표시와 측정 모두 NOPREFIX를 사용한다. DC와 선택한 font object는 측정 이후 복구/반환한다.
 - 버튼/체크박스의 긴 문구 자동 확장, RTL과 폭에 따른 전체 form reflow는 남아 있다. 실제 줄바꿈/글꼴/DPI/스크롤 검증도 미실행이다.
 - CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·실제 설정/HTTP/훅/UI 실행 미실행.
+
+## IMPL-332 — 훅 버튼과 체크박스 문구 배치
+
+- 버튼/체크박스에 BS_MULTILINE을 적용하고 현재 글꼴로 내용 높이를 계산한다. 버튼 내부 여백과 체크 표시 공간을 제외한 폭으로 측정한다.
+- 설명문과 동일한 행 증가분 계산에 포함해 이후 항목과 세로 스크롤 범위를 확장한다. Browse 버튼과 경로 입력의 행 시작을 맞춰 버튼 증가가 경로 입력을 아래로 밀지 않도록 한다.
+- 버튼은 접근키 처리를 유지하고 설명문은 NOPREFIX를 유지한다. 실제 테마별 여백/체크박스/접근키/고배율 동작은 미검증이다.
+- RTL 및 화면 폭에 따른 전체 배치 전환은 남아 있다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·실제 설정/HTTP/훅/UI 실행 미실행.
