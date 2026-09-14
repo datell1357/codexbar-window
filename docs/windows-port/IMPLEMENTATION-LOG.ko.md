@@ -3259,3 +3259,12 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - 외부 이름의 제어문자와 Win32 mnemonic ampersand를 표시용으로 처리한다. 최대 4096행과 깊이 제한을 두며 일부만 성공한 메뉴는 게시하지 않는다. 상태 문구는 요약/상세가 같은 함수를 사용한다.
 - 남은 소요: 다국어, 피드 상세 지연 시 요약 보존 개선, 전체 계획 잔여 기능과 Windows 검증. 메뉴 렌더링/키보드/접근성/클릭은 미검증이다.
 - CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·실제 HTTP/훅/UI 실행 미실행.
+
+## IMPL-299 — 상세 지연 시 요약 보존
+
+- fetchSnapshot에 요약 수신 callback을 추가했다. classic status.json 파싱 후 components.json을 요청하기 전에 요약을 전달한다.
+- collectSnapshots는 갱신 내부 actor에 기한 전 수신 snapshot만 기록한다. 완료된 상세 snapshot은 같은 source의 요약을 대체한다. 조회 실패/취소는 기존 기록을 unknown으로 덮어쓰지 않는다.
+- task group drain 후 기한 전 기록을 결과에 합친다. 상세 요청이 기한을 소진해도 앞서 기록된 요약은 components nil로 반환된다. incident.io/Workspace의 완료 snapshot도 같은 기록을 거친다.
+- 이전 갱신을 재사용하는 캐시는 아니다. 부모 취소는 결과 합치기 전후 검사로 전파하며 runtime의 설정 revision/세대 검사도 유지한다. 실제 취소 지연과 동시 실행은 미검증이다.
+- 남은 소요: 다국어, 상태 조회와 사용량 실패 분리, 전체 계획 잔여 기능 및 Windows 검증.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·실제 HTTP/훅/UI 실행 미실행.

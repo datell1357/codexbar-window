@@ -22,7 +22,8 @@ public enum WindowsProviderStatusProbe {
 
     public static func fetchSnapshot(
         baseURL: URL,
-        transport: any ProviderHTTPTransport = WindowsManualAccountHTTPTransport.shared) async throws -> WindowsProviderStatusSnapshot
+        transport: any ProviderHTTPTransport = WindowsManualAccountHTTPTransport.shared,
+        onSummary: (@Sendable (HookProviderStatus) async -> Void)? = nil) async throws -> WindowsProviderStatusSnapshot
     {
         try Task.checkCancellation()
         guard let components = URLComponents(url: baseURL, resolvingAgainstBaseURL: false),
@@ -39,6 +40,8 @@ public enum WindowsProviderStatusProbe {
         try Task.checkCancellation()
         let indicator = try self.decode(await self.read(
             url: baseURL.appendingPathComponent("api/v2/status.json"), transport: transport))
+        if let onSummary { await onSummary(indicator) }
+        try Task.checkCancellation()
         let components: [WindowsProviderStatusComponent]?
         do {
             components = try self.decodeStatuspageComponents(await self.read(
@@ -96,6 +99,7 @@ public enum WindowsProviderStatusProbe {
         }
         var result = sources.mapValues { _ in WindowsProviderStatusSnapshot(indicator: .unknown) }
         guard !entries.isEmpty, Date() < deadline else { return result }
+        let received = ReceivedStatusSnapshots(deadline: deadline)
         // The timer cancels active requests at the submission deadline. Draining remains required.
         await withTaskGroup(of: (Int, WindowsProviderStatusSnapshot)?.self) { group in
             group.addTask {
@@ -111,13 +115,24 @@ public enum WindowsProviderStatusProbe {
                 group.addTask {
                     guard !Task.isCancelled, Date() < deadline else { return (index, WindowsProviderStatusSnapshot(indicator: .unknown)) }
                     let status: WindowsProviderStatusSnapshot
-                    switch source {
-                    case let .statusPage(url):
-                        status = (try? await Self.fetchSnapshot(baseURL: url, transport: transport)) ?? WindowsProviderStatusSnapshot(indicator: .unknown)
-                    case let .workspace(productID):
-                        status = WindowsProviderStatusSnapshot(indicator: (try? await Self.fetchWorkspace(productID: productID, transport: transport)) ?? .unknown)
+                    do {
+                        switch source {
+                        case let .statusPage(url):
+                            status = try await Self.fetchSnapshot(baseURL: url, transport: transport,
+                                onSummary: { indicator in
+                                    await received.record(WindowsProviderStatusSnapshot(indicator: indicator), at: index)
+                                })
+                        case let .workspace(productID):
+                            status = WindowsProviderStatusSnapshot(indicator:
+                                try await Self.fetchWorkspace(productID: productID, transport: transport))
+                        }
+                        await received.record(status, at: index)
+                    } catch {
+                        return (index, WindowsProviderStatusSnapshot(indicator: .unknown))
                     }
-                    guard !Task.isCancelled, Date() < deadline else { return (index, WindowsProviderStatusSnapshot(indicator: .unknown)) }
+                    guard !Task.isCancelled, Date() < deadline else {
+                        return (index, WindowsProviderStatusSnapshot(indicator: .unknown))
+                    }
                     return (index, status)
                 }
             }
@@ -144,6 +159,12 @@ public enum WindowsProviderStatusProbe {
                 }
             }
             // Task group scope drains both the timer and any cancelled transport tasks.
+        }
+        try Task.checkCancellation()
+        // Only observations received before the deadline survive. A completed detail response
+        // replaces its earlier summary; cancellation/failure never overwrites that summary.
+        for (index, snapshot) in await received.values() {
+            for provider in entries[index].providers { result[provider] = snapshot }
         }
         try Task.checkCancellation()
         return result
@@ -336,5 +357,20 @@ public enum WindowsProviderStatusProbe {
         // Unknown and maintenance are deliberately non-transitions in HookTransitionDetector.
         return HookProviderStatus(rawValue: response.status.indicator) ?? .unknown
     }
+}
+
+/// Refresh-local storage; never retains observations across refreshes or account changes.
+private actor ReceivedStatusSnapshots {
+    private let deadline: Date
+    private var snapshots: [Int: WindowsProviderStatusSnapshot] = [:]
+
+    init(deadline: Date) { self.deadline = deadline }
+
+    func record(_ snapshot: WindowsProviderStatusSnapshot, at index: Int) {
+        guard !Task.isCancelled, Date() < self.deadline, (0..<256).contains(index) else { return }
+        self.snapshots[index] = snapshot
+    }
+
+    func values() -> [Int: WindowsProviderStatusSnapshot] { self.snapshots }
 }
 #endif
