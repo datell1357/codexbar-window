@@ -115,7 +115,7 @@ public enum WindowsHookRuleDialog {
             self.result = nil; self.closed = true
             if let window { DestroyWindow(window) }
         }
-        func report(_ failure: WindowsHookSettingsFailure) {
+        func report(_ failure: WindowsHookSettingsFailure, argumentIndex: Int? = nil) {
             guard let window else { return }
             let message: String
             let field: Int32
@@ -129,7 +129,7 @@ public enum WindowsHookRuleDialog {
             case .invalidTimeout:
                 message = "Enter a timeout from 0.1 to 300 seconds using a dot decimal separator."; field = timeoutID
             default:
-                message = "Use at most 32 arguments. Each argument may use up to 4096 UTF-8 bytes; the complete command may use up to 32 KiB. NUL characters are not supported."; field = argumentsID
+                message = (argumentIndex.map { "Argument \($0 + 1) is invalid. " } ?? "") + "Use at most 32 arguments. Each argument may use up to 4096 UTF-8 bytes; the complete command may use up to 32 KiB. NUL characters are not supported."; field = argumentsID
             }
             message.withCString(encodedAs: UTF16.self) { text in
                 "Hook rule".withCString(encodedAs: UTF16.self) { title in
@@ -251,7 +251,12 @@ public enum WindowsHookRuleDialog {
                 guard self.inputContextIsValid else { self.cancel(); return }
                 self.result = rule; self.closed = true; DestroyWindow(window)
             } catch let failure as WindowsHookSettingsFailure {
-                self.report(failure)
+                if case .invalidCommand = failure, let index = draft.firstInvalidArgumentIndex {
+                    guard self.rebuildArguments(select: index) else { self.cancel(); return }
+                    self.report(failure, argumentIndex: index)
+                } else {
+                    self.report(failure)
+                }
             } catch {
                 self.report(.invalidCommand)
             }

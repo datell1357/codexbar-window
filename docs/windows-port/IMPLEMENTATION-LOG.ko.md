@@ -3489,3 +3489,10 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - 최대 32개에서 추가를 비활성화하고 인자가 없을 때 값 입력/삭제를 비활성화한다. 저장 시 기존 draft의 길이/NUL/명령 전체 크기 검사를 적용한다.
 - 값 입력의 Enter는 줄바꿈이며 추가/삭제 버튼의 Enter는 해당 조작을 수행한다. 인자 선택 dropdown의 Enter/Escape도 연결했다.
 - 전체 번역/RTL, 오류 인자 자동 선택 및 실제 줄바꿈/키보드/접근성 동작 검증은 남아 있다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·실제 설정/HTTP/훅/UI 실행 미실행.
+
+## IMPL-328 — 훅 오류 인자 선택
+
+- draft의 인자 유효성 조건을 공유해 첫 실패 인덱스를 제공한다. UTF-8 길이/NUL 검사와 인덱스 판정이 같은 조건을 사용한다.
+- 저장 실패가 개별 인자 오류이면 해당 순번을 선택한 뒤 입력란으로 초점을 이동한다. 안내에는 순번과 제한만 표시하며 인자 내용은 포함하지 않는다.
+- 전체 명령 크기 초과처럼 개별 인자에 귀속되지 않는 오류에는 임의 인자를 지목하지 않는다. 실행 파일 NUL 오류는 실행 파일 필드 오류로 구분한다.
+- 전체 번역/RTL과 실제 오류 수정/입력 보존/접근성 검증은 남아 있다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·실제 설정/HTTP/훅/UI 실행 미실행.

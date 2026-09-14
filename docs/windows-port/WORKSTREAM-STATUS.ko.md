@@ -1,5 +1,7 @@
 # Windows 전용 제품 작업 현황
 
+- IMPL-328: 훅 인자 오류 시 첫 실패 인자를 선택하고 순번만 안내하도록 연결했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
 - IMPL-327: 훅 인자 JSON 입력을 개별 인자 선택·추가·삭제·값 편집으로 교체했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
 
 - IMPL-326: 원본 훅 필드 번역과 제공자 표시 이름을 Windows 편집에 연결했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.

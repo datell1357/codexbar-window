@@ -45,10 +45,14 @@ public struct WindowsHookRuleDraft: Sendable, Equatable {
         self.arguments.remove(at: index)
     }
 
+    /// Index only: callers can focus a failed argument without exposing its contents in diagnostics.
+    public var firstInvalidArgumentIndex: Int? {
+        self.arguments.firstIndex { !Self.argumentIsValid($0) }
+    }
+
     public func rule() throws -> HookRule {
-        guard !self.executable.contains("\0"), !self.id.contains("\0") else {
-            throw WindowsHookSettingsFailure.invalidCommand
-        }
+        guard !self.executable.contains("\0") else { throw WindowsHookSettingsFailure.invalidExecutable }
+        guard !self.id.contains("\0") else { throw WindowsHookSettingsFailure.invalidCommand }
         for argument in self.arguments { try Self.validateArgument(argument) }
         guard let timeout = Self.number(self.timeoutSeconds) else { throw WindowsHookSettingsFailure.invalidTimeout }
         let threshold: Double?
@@ -70,9 +74,13 @@ public struct WindowsHookRuleDraft: Sendable, Equatable {
     }
 
     private static func validateArgument(_ value: String) throws {
-        guard !value.contains("\0"), value.utf8.count <= HookRule.maximumStringBytes else {
+        guard Self.argumentIsValid(value) else {
             throw WindowsHookSettingsFailure.invalidCommand
         }
+    }
+
+    private static func argumentIsValid(_ value: String) -> Bool {
+        !value.contains("\0") && value.utf8.count <= HookRule.maximumStringBytes
     }
 
     /// Form fields use a dot decimal separator, no grouping or units. Exponents preserve very small existing thresholds.
