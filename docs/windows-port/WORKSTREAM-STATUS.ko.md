@@ -1,5 +1,7 @@
 # Windows 전용 제품 작업 현황
 
+- IMPL-293: Windows 트레이 상태 확인 토글, 표시 초기화, 진행 중 조회 취소 및 재활성화 갱신을 연결했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
 - IMPL-292: 상태 조회를 훅 설정과 분리하고 트레이 공급자 상태 메뉴의 표시 모델에 연결했다. 화면/훅은 같은 결과를 사용한다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
 
 - IMPL-291: 같은 status source의 요청/결과를 갱신 내 공유하고 제출 기한의 진행 중 요청 취소를 연결했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.

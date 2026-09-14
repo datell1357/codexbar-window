@@ -271,6 +271,10 @@ private final class WindowsTrayApplication: @unchecked Sendable {
             guard let self else { return }
             Task { await self.runtime.spendSettingsDidChange() }
         },
+        onStatusChecksChanged: { [weak self] in
+            guard let self else { return }
+            Task { await self.runtime.statusChecksDidChange() }
+        },
         onRefreshSettingsChanged: { [weak self] in
             guard let self else { return }
             Task { await self.runtime.refreshSettingsDidChange() }

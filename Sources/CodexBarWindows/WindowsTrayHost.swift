@@ -189,6 +189,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
     private static let codexWebSettingsCommand = UINT_PTR(0x700E)
     private static let weeklyProgressWorkDaysCommandBase = UINT_PTR(0x7060)
     private static let providerQuotaWarningCommandBase = UINT_PTR(0x7400)
+    private static let statusChecksCommand = UINT_PTR(0x7018)
     private static let refreshFrequencyCommandBase = UINT_PTR(0x7010)
     private static let lowPowerModeOffCommand = UINT_PTR(0x7020)
     private static let lowPowerModeOnCommand = UINT_PTR(0x7021)
@@ -261,6 +262,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
     private let onPresentationSettingsChanged: PresentationSettingsChangedHandler
     private let onOptionalUsageSettingsChanged: OptionalUsageSettingsChangedHandler
     private let onSpendSettingsChanged: @Sendable () -> Void
+    private let onStatusChecksChanged: @Sendable () -> Void
     private let onRefreshSettingsChanged: RefreshSettingsChangedHandler
     private let onSessionQuotaNotificationSettingsChanged: SessionQuotaNotificationSettingsChangedHandler
     private let onQuotaWarningSettingsChanged: QuotaWarningSettingsChangedHandler
@@ -376,6 +378,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
         onShareStatsCopyRequested: @escaping @Sendable (UUID) -> Void = { _ in },
         onSpendSummaryRequested: @escaping @Sendable (UUID) -> Void = { _ in },
         onSpendSettingsChanged: @escaping @Sendable () -> Void = {},
+        onStatusChecksChanged: @escaping @Sendable () -> Void = {},
         onRefreshSettingsChanged: @escaping RefreshSettingsChangedHandler = {},
         onSessionQuotaNotificationSettingsChanged: @escaping SessionQuotaNotificationSettingsChangedHandler = {},
         onQuotaWarningSettingsChanged: @escaping QuotaWarningSettingsChangedHandler = {},
@@ -435,6 +438,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
         self.onShareStatsCopyRequested = onShareStatsCopyRequested
         self.onSpendSummaryRequested = onSpendSummaryRequested
         self.onSpendSettingsChanged = onSpendSettingsChanged
+        self.onStatusChecksChanged = onStatusChecksChanged
         self.onRefreshSettingsChanged = onRefreshSettingsChanged
         self.onSessionQuotaNotificationSettingsChanged = onSessionQuotaNotificationSettingsChanged
         self.onQuotaWarningSettingsChanged = onQuotaWarningSettingsChanged
@@ -2130,6 +2134,11 @@ public final class WindowsTrayHost: @unchecked Sendable {
             if attached { self.popupCopyErrors.merge(commands) { _, new in new } } else { _ = DestroyMenu(errorMenu) }
         }
         if !rows.isEmpty { _ = AppendMenuW(menu, UINT(MF_SEPARATOR), 0, nil) }
+        let statusChecksEnabled = self.presentationDefaults.object(forKey: "statusChecksEnabled") as? Bool ?? true
+        let statusFlags = UINT(MF_STRING) | (statusChecksEnabled ? UINT(MF_CHECKED) : 0)
+        _ = "Check provider service status".withCString(encodedAs: UTF16.self) {
+            AppendMenuW(menu, statusFlags, Self.statusChecksCommand, $0)
+        }
         let statusEntries = menuEntries.filter(\.statusVisible)
         if !statusEntries.isEmpty, let statusMenu = CreatePopupMenu() {
             var statusItemsAppended = true
@@ -3611,6 +3620,10 @@ public final class WindowsTrayHost: @unchecked Sendable {
         case Self.historicalTrackingCommand: self.toggleHistoricalTrackingSetting()
         case Self.quotaWarningSoundCommand: self.toggleQuotaWarningSoundSetting()
         case Self.quotaWarningOnScreenAlertCommand: self.toggleQuotaWarningOnScreenAlertSetting()
+        case Self.statusChecksCommand:
+            let enabled = self.presentationDefaults.object(forKey: "statusChecksEnabled") as? Bool ?? true
+            self.presentationDefaults.set(!enabled, forKey: "statusChecksEnabled")
+            self.onStatusChecksChanged()
         case Self.quotaWarningSettingsCommand: self.editQuotaWarningSettings()
         case Self.codexWebSettingsCommand: self.beginCodexWebSettingsLoad()
         case Self.changelogCommandBase - 1: self.toggleChangelogSetting()

@@ -58,7 +58,19 @@ public actor WindowsUsageRuntime {
                 sources[id.rawValue] = .workspace(productID: productID)
             }
         }
-        let statuses = try await WindowsProviderStatusProbe.collect(sources, deadline: Date().addingTimeInterval(30))
+        self.providerStatusGeneration &+= 1
+        let generation = self.providerStatusGeneration
+        let task = Task { try await WindowsProviderStatusProbe.collect(sources, deadline: Date().addingTimeInterval(30)) }
+        self.providerStatusTask = task
+        defer { if generation == self.providerStatusGeneration { self.providerStatusTask = nil } }
+        let statuses: [String: HookProviderStatus]
+        do {
+            statuses = try await withTaskCancellationHandler(operation: { try await task.value }, onCancel: { task.cancel() })
+        } catch is CancellationError {
+            try Task.checkCancellation()
+            return [:]
+        }
+        guard generation == self.providerStatusGeneration else { return [:] }
         try Task.checkCancellation()
         guard !self.shuttingDown,
               defaults.object(forKey: "statusChecksEnabled") as? Bool ?? true,
@@ -387,6 +399,8 @@ public actor WindowsUsageRuntime {
     private var quotaWarningPublisher: QuotaWarningPublisher
     private var predictivePaceWarningPublisher: PredictivePaceWarningPublisher
     private var refreshTask: Task<Void, Never>?
+    private var providerStatusTask: Task<[String: HookProviderStatus], Error>?
+    private var providerStatusGeneration: UInt64 = 0
     private var refreshCompletionWaiters: [CheckedContinuation<Void, Never>] = []
     private var startupConnectivityRetryTask: Task<Void, Never>?
     private var startupConnectivityRetryActive = false
@@ -2030,6 +2044,22 @@ public actor WindowsUsageRuntime {
 
     /// Re-renders retained snapshots after display-only preferences change.
     /// No provider network request is performed.
+    public func statusChecksDidChange() async {
+        guard !self.shuttingDown else { return }
+        self.providerStatusGeneration &+= 1
+        self.providerStatusTask?.cancel()
+        self.providerStatusTask = nil
+        self.pendingHookRefresh = nil
+        for index in self.statusMenuEntries.indices { self.statusMenuEntries[index].serviceStatus = nil }
+        self.publishRenderEntries(settings: WindowsUsagePresentationSettings.load())
+        let enabled = (UserDefaults(suiteName: WindowsRefreshSettings.suiteName) ?? .standard)
+            .object(forKey: "statusChecksEnabled") as? Bool ?? true
+        guard enabled else { return }
+        // Coalesce the requested refresh behind an active provider refresh.
+        if self.refreshTask != nil { self.queuedOptionalRefresh = true }
+        else { await self.refresh() }
+    }
+
     public func presentationSettingsDidChange() async {
         guard !self.shuttingDown, !self.renderEntries.isEmpty else { return }
         self.publishRenderEntries(settings: WindowsUsagePresentationSettings.load())

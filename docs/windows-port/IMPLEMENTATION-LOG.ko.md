@@ -3209,3 +3209,12 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - 조회 후 취소, 종료, 설정 revision 및 상태 확인 설정을 재확인한다. 설정 변경 결과는 빈 상태로 버리며 새 메뉴 모델에 이전 상태를 보존하지 않는다. 상태 확인을 끄면 새 갱신은 기존 링크 제목만 사용한다.
 - 상태는 공급자 ID로만 대응하고 계정별 사용량이나 이메일은 사용하지 않는다. 현재 component 상세/필터, 다국어 문구, 상태 설정 변경 직후 UI 갱신 및 사용량 처리 조기 실패 시 상태 조회 보장은 남아 있다.
 - CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·실제 HTTP/훅/UI 실행 미실행.
+
+## IMPL-293 — 상태 확인 설정과 취소
+
+- 트레이에 Check provider service status 체크 메뉴를 추가하고 기존 Windows defaults의 statusChecksEnabled(default true)에 연결했다. 전용 host/main/runtime callback을 추가했다.
+- 설정 변경 시 공급자 상태 표시와 pending hook 관측을 지우고 현재 상태 조회 task를 취소한다. 세대 번호를 증가시켜 빠른 off/on 변경 전의 결과가 다시 게시되지 않게 한다.
+- 상태 조회 task는 부모 refresh 취소도 전달받고 value 대기로 drain된다. 설정 변경으로 발생한 취소는 상태 미조회로 처리하고 부모 취소는 전파한다.
+- 켜면 refresh를 요청하며 활성 refresh가 있으면 기존 coalescing flag를 사용한다. 끄는 동작은 신규 네트워크 갱신을 요청하지 않는다. 실제 종료 지연과 메뉴 반영은 미검증이다.
+- 남은 소요: 컴포넌트 상세/필터, 다국어 문구, 전체 계획 잔여 기능과 Windows 검증.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·실제 HTTP/훅/UI 실행 미실행.
