@@ -1,5 +1,7 @@
 # Windows 전용 제품 작업 현황
 
+- IMPL-323: 훅 form 최소화 중 배치를 보류하고 복원 시 현재 작업 영역에 맞추도록 연결했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
 - IMPL-322: 훅 form DPI/화면 구성 변경 시 대상 모니터 작업 영역에 창을 제한하고 초점 노출을 갱신한다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
 
 - IMPL-321: 훅 form 초점 변경과 입력 오류 시 해당 control을 스크롤 영역 안으로 노출하도록 연결했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.

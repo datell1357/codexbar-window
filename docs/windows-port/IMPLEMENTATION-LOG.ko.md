@@ -3450,3 +3450,11 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - WM_SETTINGCHANGE 및 WM_DISPLAYCHANGE에도 현재 창을 작업 영역에 맞춘다. 최소화 상태에는 일반 창 배치를 적용하지 않으며 동일 rectangle에 대한 불필요한 SetWindowPos를 생략한다.
 - 긴 번역 reflow/RTL, 최소화 중 화면 변경 후 복원 배치 및 실제 다중 모니터/DPI/접근성 검증은 남아 있다.
 - CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·실제 설정/HTTP/훅/UI 실행 미실행. 전체 계획 구현은 진행 중이다.
+
+## IMPL-323 — 훅 form 최소화 및 복원 배치
+
+- SIZE_MINIMIZED에서 복원 배치 필요 상태를 기록하고 0 크기 client 기준의 layout을 적용하지 않는다.
+- 복원 WM_SIZE에서 현재 window rectangle로 모니터를 다시 선택해 작업 영역에 제한한다. SetWindowPos 재진입 전에 상태를 해제하고 이후 layout과 초점 노출을 적용한다.
+- 최소화 중 DPI 변경은 글꼴/배율/스크롤 상태만 갱신하고 일반 창 배치는 복원 시점으로 미룬다. 화면 구성/작업 영역 변경도 복원 필요 상태를 기록한다.
+- layout 및 초점 노출 helper도 최소화된 창에는 적용하지 않는다. 입력 control을 재생성하거나 사용자 입력을 변경하지 않는다.
+- 긴 번역 reflow/RTL 및 실제 최소화/모니터 분리/복원/DPI 검증은 남아 있다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·실제 설정/HTTP/훅/UI 실행 미실행. 전체 계획 구현은 진행 중이다.

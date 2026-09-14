@@ -80,6 +80,7 @@ public enum WindowsHookRuleDialog {
         var controls: [(handle: HWND, bounds: RECT)] = []
         var scrollX: Int32 = 0
         var scrollY: Int32 = 0
+        var needsRestorePlacement = false
         func pixels(_ value: Int32) -> Int32 { Int32((Int64(value) * Int64(self.dpi) + 48) / 96) }
         let owner: HWND
         let expectedPrivacy: Bool
@@ -169,7 +170,24 @@ public enum WindowsHookRuleDialog {
                   SetTimer(hwnd, contextTimer, 250, nil) != 0 else { return -1 }
             updateFont(context: context)
             return 0
-        case UINT(WM_SIZE): layout(context: context); return 0
+        case UINT(WM_SIZE):
+            if wParam == WPARAM(SIZE_MINIMIZED) {
+                context.needsRestorePlacement = true
+                return 0
+            }
+            if context.needsRestorePlacement, IsIconic(hwnd) == 0 {
+                var restored = RECT()
+                if GetWindowRect(hwnd, &restored) != 0 {
+                    // Clear before SetWindowPos, which can synchronously send WM_SIZE again.
+                    context.needsRestorePlacement = false
+                    fitToWorkArea(hwnd, proposed: restored)
+                }
+                layout(context: context)
+                revealFocus(context: context)
+            } else {
+                layout(context: context)
+            }
+            return 0
         case UINT(WM_HSCROLL), UINT(WM_VSCROLL):
             scroll(hwnd, context: context, horizontal: message == UINT(WM_HSCROLL), action: UINT(wParam & 0xffff))
             return 0
@@ -187,6 +205,10 @@ public enum WindowsHookRuleDialog {
                 context.dpi = dpi
             }
             updateFont(context: context)
+            if IsIconic(hwnd) != 0 {
+                context.needsRestorePlacement = true
+                return 0
+            }
             if let suggested = UnsafeRawPointer(bitPattern: UInt(lParam))?.assumingMemoryBound(to: RECT.self) {
                 fitToWorkArea(hwnd, proposed: suggested.pointee)
             }
@@ -200,6 +222,8 @@ public enum WindowsHookRuleDialog {
                 if GetWindowRect(hwnd, &current) != 0 { fitToWorkArea(hwnd, proposed: current) }
                 layout(context: context)
                 revealFocus(context: context)
+            } else {
+                context.needsRestorePlacement = true
             }
             return DefWindowProcW(hwnd, message, wParam, lParam)
         case UINT(WM_TIMER):
@@ -297,7 +321,7 @@ public enum WindowsHookRuleDialog {
     }
 
     private static func layout(context: Context) {
-        guard let window = context.window else { return }
+        guard let window = context.window, IsIconic(window) == 0 else { return }
         var client = RECT()
         guard GetClientRect(window, &client) != 0 else { return }
         func update(_ bar: Int32, extent: Int32, page: Int32, position: inout Int32) {
@@ -321,7 +345,7 @@ public enum WindowsHookRuleDialog {
 
     /// Reveal only on focus changes so scrolling does not snap back to the active field.
     private static func revealFocus(context: Context) {
-        guard !context.closed, let window = context.window, IsWindow(window) != 0,
+        guard !context.closed, let window = context.window, IsWindow(window) != 0, IsIconic(window) == 0,
               let focus = GetFocus(), IsChild(window, focus) != 0 else { return }
         var bounds = RECT(), client = RECT()
         guard GetWindowRect(focus, &bounds) != 0, GetClientRect(window, &client) != 0,
