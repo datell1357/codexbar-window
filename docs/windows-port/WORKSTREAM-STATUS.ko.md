@@ -1,5 +1,7 @@
 # Windows 전용 제품 작업 현황
 
+- IMPL-308: 사용량 표시/개인정보/추가 사용량과 알림·기록 토글에 원본 번역을 연결했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
 - IMPL-307: 메뉴 표시 직전에 지연 타이머를 시작하고 빠른 재열기의 이전 타이머 메시지를 기한으로 걸러내도록 수정했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
 
 - IMPL-306: 메뉴 열기 후 지연 갱신 옵션을 원본 기본값/설정 키로 Windows에 연결했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.

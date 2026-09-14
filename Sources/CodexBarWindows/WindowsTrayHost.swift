@@ -2266,39 +2266,39 @@ public final class WindowsTrayHost: @unchecked Sendable {
             | (quotaWarningOnScreenAlertEnabled ? UINT(MF_CHECKED) : 0)
         let predictivePaceWarningNotificationsFlags = UINT(MF_STRING)
             | (predictivePaceWarningNotificationsEnabled ? UINT(MF_CHECKED) : 0)
-        "Show used usage".withCString(encodedAs: UTF16.self) {
+        Self.serviceMenuText(WindowsStatusLocalization.text("Show usage as used")).withCString(encodedAs: UTF16.self) {
             _ = AppendMenuW(menu, showUsedFlags, Self.usageBarsShowUsedCommand, $0)
         }
-        "Show reset times as clock".withCString(encodedAs: UTF16.self) {
+        Self.serviceMenuText(WindowsStatusLocalization.text("Show reset time as clock")).withCString(encodedAs: UTF16.self) {
             _ = AppendMenuW(menu, showAbsoluteFlags, Self.resetTimesShowAbsoluteCommand, $0)
         }
-        "Hide personal info".withCString(encodedAs: UTF16.self) {
+        Self.serviceMenuText(WindowsStatusLocalization.text("hide_personal_info_title")).withCString(encodedAs: UTF16.self) {
             _ = AppendMenuW(menu, hidePersonalInfoFlags, Self.hidePersonalInfoCommand, $0)
         }
-        "Show credits + extra usage".withCString(encodedAs: UTF16.self) {
+        Self.serviceMenuText(WindowsStatusLocalization.text("show_credits_extra_usage_title")).withCString(encodedAs: UTF16.self) {
             _ = AppendMenuW(
                 menu, showOptionalCreditsAndExtraUsageFlags, Self.showOptionalCreditsAndExtraUsageCommand, $0)
         }
-        "Session quota notifications".withCString(encodedAs: UTF16.self) {
+        Self.serviceMenuText(WindowsStatusLocalization.text("quota_depleted_title")).withCString(encodedAs: UTF16.self) {
             _ = AppendMenuW(menu, sessionQuotaNotificationsFlags, Self.sessionQuotaNotificationsCommand, $0)
         }
-        "Quota threshold notifications".withCString(encodedAs: UTF16.self) {
+        Self.serviceMenuText(WindowsStatusLocalization.text("threshold_warnings_title")).withCString(encodedAs: UTF16.self) {
             _ = AppendMenuW(menu, quotaWarningNotificationsFlags, Self.quotaWarningNotificationsCommand, $0)
         }
-        "Predictive pace warning notifications".withCString(encodedAs: UTF16.self) {
+        Self.serviceMenuText(WindowsStatusLocalization.text("predictive_pace_warnings_title")).withCString(encodedAs: UTF16.self) {
             _ = AppendMenuW(
                 menu, predictivePaceWarningNotificationsFlags,
                 Self.predictivePaceWarningNotificationsCommand, $0)
         }
         let historicalTrackingEnabled = self.presentationDefaults
             .object(forKey: "historicalTrackingEnabled") as? Bool ?? false
-        "Historical tracking".withCString(encodedAs: UTF16.self) {
+        Self.serviceMenuText(WindowsStatusLocalization.text("Historical tracking")).withCString(encodedAs: UTF16.self) {
             let flags = UINT(MF_STRING) | (historicalTrackingEnabled ? UINT(MF_CHECKED) : 0)
             _ = AppendMenuW(menu, flags, Self.historicalTrackingCommand, $0)
         }
         self.appendWeeklyProgressWorkDaysMenu(to: menu)
         if quotaWarningNotificationsEnabled || predictivePaceWarningNotificationsEnabled {
-            "Warning notification sound".withCString(encodedAs: UTF16.self) {
+            Self.serviceMenuText(WindowsStatusLocalization.text("quota_warning_sound")).withCString(encodedAs: UTF16.self) {
                 _ = AppendMenuW(menu, quotaWarningSoundFlags, Self.quotaWarningSoundCommand, $0)
             }
             "On-screen warning alerts".withCString(encodedAs: UTF16.self) {

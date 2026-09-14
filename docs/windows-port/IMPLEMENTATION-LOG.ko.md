@@ -3331,3 +3331,11 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - 현재 기한보다 이른 WM_TIMER는 무시하고 타이머를 유지한다. 이전 popup에서 이미 대기 중이던 메시지가 재열기 직후 도착해 갱신을 앞당기는 것을 방지한다. 현재 기한이 없으면 타이머를 해제하고 아무 요청도 하지 않는다.
 - TrackPopupMenu 반환 직후 기한/타이머를 비워 선택 명령의 dialog/message loop에서 갱신이 뒤늦게 시작되지 않게 한다. 기존 defer 정리는 조기 반환에도 남겨둔다. 타이머 등록 실패 시 기한을 비워 수동 갱신 경로를 유지한다.
 - CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 회귀 동작과 실제 Win32 메시지 순서, 빌드·테스트·lint·HTTP/훅/UI 실행 모두 미실행. 전체 계획 잔여 구현 및 Windows 검증은 남아 있다.
+
+## IMPL-308 — 사용량 표시와 알림 설정 번역
+
+- 원본 번역에서 사용량 소진 기준 표시, 초기화 시각, 개인정보 숨기기, credits/extra usage 문구를 Windows catalog와 해당 체크 메뉴에 연결했다.
+- 원본과 의미가 일치하는 quota depleted/restored, threshold warnings, pace warnings, historical tracking, notification sound 문구도 연결했다. 같은 영어 단어만 보고 기능이 다른 항목으로 대응하지 않았다.
+- command ID, defaults key, 체크 상태, 설정 callback은 변경하지 않았다. ampersand를 표시용으로 처리하고 앱/시스템 언어 및 영어 fallback을 사용한다.
+- 온스크린 경고, 상세 설정 dialog, 계정·비용 등 나머지 UI는 번역이 남아 있다. 전체 UI 번역 완료를 의미하지 않는다.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·실제 HTTP/훅/UI 실행 미실행. 전체 계획 잔여 구현 및 Windows 검증은 남아 있다.
