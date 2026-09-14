@@ -3380,3 +3380,11 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - host가 추후 편집 generation/종료 상태를 callback에 연결할 수 있다. runtime 파일 revision 재확인과 별개이며 현재 host 연결 전이다. raw command/argument 내용은 오류에 표시하지 않는다.
 - 이벤트 combo가 펼쳐진 상태의 Enter를 combo에 전달해 항목 선택이 의도치 않은 저장으로 이어지지 않게 했다. multiline 인수 Enter/취소 동작은 유지한다.
 - CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·실제 설정/HTTP/훅/UI 실행 미실행. DPI/접근성/번역 및 실제 host 연결을 포함한 전체 잔여 구현은 남아 있다.
+
+## IMPL-314 — 훅 설정 목록 메뉴
+
+- WindowsHookSettingsMenu가 snapshot으로 Win32 목록을 만들고 한 번의 명시적 변경 mutation을 반환한다. 전체 활성화/비활성화, 추가, 개별 편집/토글, 위아래 이동, 삭제를 제공한다.
+- 개별 편집/추가는 WindowsHookRuleDialog와 연결했다. 목록에는 순번/이벤트/공급자/활성화 상태만 표시한다. 실행 파일 경로나 인수는 목록/확인 메시지에 넣지 않는다.
+- 전체 활성화는 향후 이벤트에서 프로그램이 실행될 수 있음을 확인하고 삭제는 선택 규칙 삭제를 확인한다. 실제 파일 저장은 하지 않는다. 최대 규칙 수/인덱스/메뉴 구성 실패를 처리하고 미부착 핸들을 정리한다.
+- 편집 전후 owner/privacy/isCurrent 조건을 확인하며 개별 form에도 전달한다. 아직 트레이의 async load/save mailbox에서 호출하지 않는다. 키보드 위치/번역/DPI/접근성도 후속 소요다.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·실제 설정/HTTP/훅/UI 실행 미실행. 전체 계획 잔여 구현 및 Windows 검증은 남아 있다.
