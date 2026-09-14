@@ -1,5 +1,7 @@
 # Windows 전용 제품 작업 현황
 
+- IMPL-319: 훅 form의 초기/변경 DPI 크기·배치와 시스템 글꼴 수명을 연결했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
 - IMPL-318: 훅 편집 공통 문구 번역과 필드별 입력 오류/초점 이동을 연결했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
 
 - IMPL-317: modal 메시지 루프의 editor drain 재진입을 보류하고 잘못 삽입된 import 함수 선언을 정리했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.

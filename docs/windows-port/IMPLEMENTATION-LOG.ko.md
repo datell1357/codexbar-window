@@ -3419,3 +3419,11 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - form의 기존 단일 오류 문구를 executable/provider/threshold/timeout/arguments로 구분했다. 사용자 입력 원문 없이 고정 설명을 표시하고 해당 control로 초점을 이동한다.
 - JSON 디코딩 실패는 인수 안내로 처리하며 인수 개수/바이트/전체 command 제한 및 NUL 불허를 설명한다. 오류 dialog 반환 후 context가 무효화됐으면 편집을 취소한다.
 - 신규 상세 오류 문구/나머지 폼 안내의 번역과 자동 DPI 레이아웃은 남아 있다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·실제 설정/HTTP/훅/UI 실행 미실행. 전체 잔여 구현 및 Windows 검증은 남아 있다.
+
+## IMPL-319 — 훅 form DPI 처리
+
+- 기존 WindowsAccountAddDialog의 DPI/font 패턴을 참고해 owner DPI로 초기 client 크기와 AdjustWindowRectExForDpi frame을 계산한다. control 생성은 96-DPI 논리 좌표를 현재 배율로 변환한다.
+- 각 control의 논리 bounds를 보존하고 WM_DPICHANGED에서 새 배율/제안된 창 영역을 적용한 뒤 control을 재배치한다. 입력값을 지우거나 control을 재생성하지 않는다.
+- SystemParametersInfoForDpi의 message font를 생성해 모든 control에 적용하고 교체한 이전 font를 삭제한다. WM_SETTINGCHANGE 때 font를 갱신하고 창 파괴 때 소유 font를 정리한다.
+- 고정 논리 크기 form이므로 아주 작은 작업 영역의 scrolling/reflow, 긴 번역 문구와 RTL은 아직 남아 있다. 실제 DPI 이동/문자 크기/접근성은 미검증이다.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·실제 설정/HTTP/훅/UI 실행 미실행. 전체 잔여 구현 및 Windows 검증은 남아 있다.

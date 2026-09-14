@@ -19,9 +19,9 @@ public enum WindowsHookRuleDialog {
         let registered = name.withUnsafeBufferPointer { klass.lpszClassName = $0.baseAddress; return RegisterClassExW(&klass) }
         if registered == 0, GetLastError() != ERROR_CLASS_ALREADY_EXISTS { return nil }
         let title = Array("Hook rule".utf16) + [0]
-        var frame = RECT(left: 0, top: 0, right: 600, bottom: 540)
-        AdjustWindowRectEx(&frame, DWORD(WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX), 0,
-                           DWORD(WS_EX_DLGMODALFRAME))
+        var frame = RECT(left: 0, top: 0, right: context.pixels(600), bottom: context.pixels(540))
+        AdjustWindowRectExForDpi(&frame, DWORD(WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX), 0,
+                           DWORD(WS_EX_DLGMODALFRAME), context.dpi)
         let hwnd: HWND? = name.withUnsafeBufferPointer { n in
             title.withUnsafeBufferPointer { t in
                 CreateWindowExW(DWORD(WS_EX_DLGMODALFRAME), n.baseAddress, t.baseAddress,
@@ -70,6 +70,10 @@ public enum WindowsHookRuleDialog {
 
     private final class Context {
         let initial: WindowsHookRuleDraft
+        var dpi: UINT
+        var font: HFONT?
+        var controls: [(handle: HWND, bounds: RECT)] = []
+        func pixels(_ value: Int32) -> Int32 { Int32((Int64(value) * Int64(self.dpi) + 48) / 96) }
         let owner: HWND
         let expectedPrivacy: Bool
         let isCurrent: (() -> Bool)?
@@ -81,6 +85,7 @@ public enum WindowsHookRuleDialog {
         var window: HWND?; var result: HookRule?; var closed = false; var ownerWasEnabled = false
         init(initial: WindowsHookRuleDraft, owner: HWND, isCurrent: (() -> Bool)?) {
             self.initial = initial; self.owner = owner; self.isCurrent = isCurrent
+            let dpi = GetDpiForWindow(owner); self.dpi = dpi == 0 ? 96 : dpi
             self.expectedPrivacy = WindowsUsagePresentationSettings.load().hidePersonalInfo
         }
         func cancel() {
@@ -153,7 +158,22 @@ public enum WindowsHookRuleDialog {
         case UINT(WM_CREATE):
             guard context.inputContextIsValid, createControls(hwnd, context: context),
                   SetTimer(hwnd, contextTimer, 250, nil) != 0 else { return -1 }
+            updateFont(context: context)
             return 0
+        case UINT(WM_DPICHANGED):
+            let dpi = UINT(wParam & 0xffff)
+            if dpi != 0 { context.dpi = dpi }
+            updateFont(context: context)
+            if let suggested = UnsafeRawPointer(bitPattern: UInt(lParam))?.assumingMemoryBound(to: RECT.self) {
+                let rect = suggested.pointee
+                SetWindowPos(hwnd, nil, rect.left, rect.top, rect.right - rect.left, rect.bottom - rect.top,
+                    UINT(SWP_NOZORDER | SWP_NOACTIVATE))
+            }
+            layout(context: context)
+            return 0
+        case UINT(WM_SETTINGCHANGE):
+            updateFont(context: context)
+            return DefWindowProcW(hwnd, message, wParam, lParam)
         case UINT(WM_TIMER):
             if wParam == WPARAM(contextTimer), !context.inputContextIsValid { context.cancel() }
             return 0
@@ -170,6 +190,8 @@ public enum WindowsHookRuleDialog {
         case UINT(WM_CLOSE): context.cancel(); return 0
         case UINT(WM_NCDESTROY):
             _ = KillTimer(hwnd, contextTimer)
+            if let font = context.font { DeleteObject(font); context.font = nil }
+            context.controls.removeAll()
             context.closed = true; SetWindowLongPtrW(hwnd, Int32(GWLP_USERDATA), 0); return 0
         default: return DefWindowProcW(hwnd, message, wParam, lParam)
         }
@@ -227,7 +249,45 @@ public enum WindowsHookRuleDialog {
     }
     private static func addLabel(_ p: HWND,_ t:String,_ x:Int32,_ y:Int32,_ w:Int32,_ h:Int32,_ f:HGDIOBJ?)->HWND? { addControl(p,"STATIC",t,0,DWORD(WS_CHILD|WS_VISIBLE),x,y,w,h,f) }
     private static func addButton(_ p: HWND,_ t:String,_ id:Int32,_ x:Int32,_ y:Int32,_ w:Int32,_ h:Int32,_ f:HGDIOBJ?)->HWND? { addControl(p,"BUTTON",t,id,DWORD(WS_CHILD|WS_VISIBLE|WS_TABSTOP|(id == saveID ? BS_DEFPUSHBUTTON : BS_PUSHBUTTON)),x,y,w,h,f) }
-    private static func addControl(_ p: HWND,_ k:String,_ t:String,_ id:Int32,_ s:DWORD,_ x:Int32,_ y:Int32,_ w:Int32,_ h:Int32,_ f:HGDIOBJ?)->HWND? { let n=Array(k.utf16)+[0], c=Array(t.utf16)+[0]; let h=n.withUnsafeBufferPointer { nn in c.withUnsafeBufferPointer { cc in CreateWindowExW(0,nn.baseAddress,cc.baseAddress,s,x,y,w,h,p,HMENU(bitPattern:Int(id)),GetModuleHandleW(nil),nil) } }; if let f { SendMessageW(h,UINT(WM_SETFONT),WPARAM(Int(bitPattern:f)),1) }; return h }
+    private static func addControl(_ parent: HWND, _ kind: String, _ text: String, _ id: Int32,
+                                   _ style: DWORD, _ x: Int32, _ y: Int32, _ width: Int32, _ height: Int32,
+                                   _ fallbackFont: HGDIOBJ?) -> HWND? {
+        let pointer = GetWindowLongPtrW(parent, Int32(GWLP_USERDATA))
+        guard pointer != 0, let raw = UnsafeRawPointer(bitPattern: UInt(pointer)) else { return nil }
+        let context = Unmanaged<Context>.fromOpaque(raw).takeUnretainedValue()
+        let handle = kind.withCString(encodedAs: UTF16.self) { klass in
+            text.withCString(encodedAs: UTF16.self) { title in
+                CreateWindowExW(0, klass, title, style, context.pixels(x), context.pixels(y),
+                    context.pixels(width), context.pixels(height), parent, HMENU(bitPattern: Int(id)), GetModuleHandleW(nil), nil)
+            }
+        }
+        if let handle {
+            context.controls.append((handle, RECT(left: x, top: y, right: x + width, bottom: y + height)))
+            if let fallbackFont { SendMessageW(handle, UINT(WM_SETFONT), WPARAM(Int(bitPattern: fallbackFont)), 1) }
+        }
+        return handle
+    }
+
+    private static func layout(context: Context) {
+        for control in context.controls {
+            let r = control.bounds
+            SetWindowPos(control.handle, nil, context.pixels(r.left), context.pixels(r.top),
+                context.pixels(r.right - r.left), context.pixels(r.bottom - r.top), UINT(SWP_NOZORDER | SWP_NOACTIVATE))
+        }
+    }
+
+    private static func updateFont(context: Context) {
+        var metrics = NONCLIENTMETRICSW()
+        metrics.cbSize = UINT(MemoryLayout<NONCLIENTMETRICSW>.size)
+        guard SystemParametersInfoForDpi(UINT(SPI_GETNONCLIENTMETRICS), metrics.cbSize, &metrics, 0, context.dpi) != 0,
+              let font = CreateFontIndirectW(&metrics.lfMessageFont) else { return }
+        let previous = context.font
+        context.font = font
+        for control in context.controls {
+            SendMessageW(control.handle, UINT(WM_SETFONT), WPARAM(Int(bitPattern: font)), 1)
+        }
+        if let previous { DeleteObject(previous) }
+    }
     private static func center(_ hwnd: HWND, owner: HWND) { var r=RECT(); GetWindowRect(hwnd,&r); var a=RECT(); let m=MonitorFromWindow(owner,UINT(MONITOR_DEFAULTTONEAREST)); var i=MONITORINFO(); i.cbSize=DWORD(MemoryLayout<MONITORINFO>.size); if m == nil || GetMonitorInfoW(m,&i)==0 { SystemParametersInfoW(UINT(SPI_GETWORKAREA),0,&a,0); i.rcWork=a }; let w=r.right-r.left,h=r.bottom-r.top; SetWindowPos(hwnd,nil,i.rcWork.left+(i.rcWork.right-i.rcWork.left-w)/2,i.rcWork.top+(i.rcWork.bottom-i.rcWork.top-h)/2,0,0,UINT(SWP_NOSIZE|SWP_NOZORDER|SWP_NOACTIVATE)) }
 }
 #endif
