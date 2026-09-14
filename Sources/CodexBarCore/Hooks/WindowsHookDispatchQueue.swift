@@ -23,7 +23,9 @@ public actor WindowsHookDispatchQueue {
     private var pending: [Pending] = []
     private var active: Task<Void, Never>?
     private var activeID: UUID?
+    private var activeEventType: HookEventType?
     private var limiter = HookRateLimiter()
+    private var statusLimiter = HookRateLimiter()
     private var stopped = false
     private static let maximumPending = 256
 
@@ -42,6 +44,7 @@ public actor WindowsHookDispatchQueue {
         self.pending.removeAll()
         self.active?.cancel()
         self.limiter = HookRateLimiter()
+        self.statusLimiter = HookRateLimiter()
     }
 
     /// Submit a complete refresh batch, with all account lanes grouped once per provider instance.
@@ -78,8 +81,12 @@ public actor WindowsHookDispatchQueue {
         if self.observationContext != contextRevision {
             self.observationContext = contextRevision
             self.detector = HookTransitionDetector()
-            self.pending.removeAll()
-            self.active?.cancel()
+            // Account ownership does not invalidate public service status transitions.
+            // Preserve their captured authorization and their rate-limit history.
+            self.pending.removeAll { !Self.isServiceStatus($0.event.event) }
+            if let activeEventType = self.activeEventType, !Self.isServiceStatus(activeEventType) {
+                self.active?.cancel()
+            }
             self.limiter = HookRateLimiter()
         }
         guard !self.stopped, config.enabled, config.events.count <= HooksConfig.maximumRuleCount else {
@@ -169,12 +176,17 @@ public actor WindowsHookDispatchQueue {
         await task?.value
     }
 
+    private static func isServiceStatus(_ event: HookEventType) -> Bool {
+        event == .providerUnavailable || event == .providerRecovered
+    }
+
     private func startNext() {
         guard !self.stopped, self.active == nil, !self.pending.isEmpty else { return }
         let next = self.pending.removeFirst()
         let id = UUID()
         self.activeID = id
-        let limiter = self.limiter
+        self.activeEventType = next.event.event
+        let limiter = Self.isServiceStatus(next.event.event) ? self.statusLimiter : self.limiter
         self.active = Task.detached(priority: .utility) { [weak self] in
             if !Task.isCancelled {
                 await HookRunner.dispatch(event: next.event, config: next.config, rateLimiter: limiter, authorization: next.authorization)
@@ -187,6 +199,7 @@ public actor WindowsHookDispatchQueue {
         guard self.activeID == id else { return }
         self.active = nil
         self.activeID = nil
+        self.activeEventType = nil
         self.startNext()
     }
 }

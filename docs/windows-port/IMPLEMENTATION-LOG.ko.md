@@ -3293,3 +3293,11 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - config/privacy 변경과 shutdown 때 상태 감지기를 초기화한다. 상태 context는 config digest이며 계정 ownership digest와 별개다. 사용량 ownership 변경에 따른 기존 큐 취소 정책은 유지한다.
 - 상태 제출 누락/실패 notice는 정상 사용량 게시 경로에 전달한다. 이후 계정 해석 자체가 실패하면 기존 오류 문구가 우선하며 해당 notice의 별도 표시는 남아 있다.
 - CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·실제 HTTP/훅/UI 실행 미실행. 전체 계획 잔여 기능과 Windows 검증은 계속 남아 있다.
+
+## IMPL-303 — 계정 변경과 상태 훅 실행 분리
+
+- IMPL-302의 상태 감지기는 분리되어 있었지만 observe의 account ownership context 변경은 여전히 모든 pending/active 훅을 취소했다. providerUnavailable/providerRecovered는 공개 상태 이벤트로 분류해 해당 변경에서 보존하도록 수정했다.
+- 실행 중 이벤트 유형을 기록해 계정 관련 active 명령만 취소한다. 기존 process drain 후 다음 명령 실행 규칙은 유지한다. 대기 중 상태 이벤트는 기존 authorization callback을 그대로 보존한다.
+- 상태 이벤트의 HookRateLimiter를 별도로 두어 계정 context 변경이 상태 반복 실행 제한을 지우지 않게 했다. 같은 직렬 실행 큐를 공유한다. config/privacy 변경은 두 limiter와 detector를 초기화하며 전체 취소한다.
+- 상태 관련 설정/공급자 변경은 기존 authorization revision 확인으로 취소된다. shutdown은 이벤트 종류와 무관하게 중지한다. 실제 프로세스 취소와 순서는 미검증이다.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·실제 HTTP/훅/UI 실행 미실행. 전체 계획 잔여 기능과 Windows 검증은 남아 있다.

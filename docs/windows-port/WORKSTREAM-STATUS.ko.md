@@ -1,5 +1,7 @@
 # Windows 전용 제품 작업 현황
 
+- IMPL-303: 계정 소유권 변경 시 공개 상태 훅과 rate limit 기록은 유지하고 계정 관련 훅만 무효화하도록 분리했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
 - IMPL-302: 계정 해석 전 상태 전용 훅 관측을 제출하고 사용량 기준과 분리했다. 명령은 기존 직렬 큐를 공유한다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
 
 - IMPL-301: 공개 상태 조회를 계정 해석보다 먼저 수행하고 사용량 실패 시 상태 메뉴를 유지하도록 연결했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
