@@ -1,5 +1,7 @@
 # Windows 전용 제품 작업 현황
 
+- IMPL-313: 훅 form의 소유 창/개인정보/context 변경 취소와 이벤트 combo Enter 처리를 연결했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
 - IMPL-312: Win32 훅 규칙 입력 창을 작성했다. 실제 목록/host/save 연결은 남아 있다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
 
 - IMPL-311: 훅 규칙 form draft, 개별 인수 편집, 사용 비율/시간 입력 변환을 작성했다. dialog 연결은 남아 있다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.

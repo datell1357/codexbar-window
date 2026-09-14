@@ -3372,3 +3372,11 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - 저장은 WindowsHookRuleDraft.rule의 검증을 거친 HookRule을 반환할 뿐 실제 저장/실행은 하지 않는다. 오류는 고정 설명만 표시한다. quotaLow 외 이벤트에서는 임계값 입력을 비활성화한다.
 - 아직 host 목록/불러오기/저장 callback에서 호출하지 않는다. DPI/접근성/RTL/번역, 설정·개인정보 변경 중 편집 취소 및 실제 렌더링은 후속 소요다.
 - CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·실제 설정/HTTP/훅/UI 실행 미실행. 전체 계획 잔여 구현 및 Windows 검증은 남아 있다.
+
+## IMPL-313 — 훅 form 수명과 편집 무효화
+
+- 편집 시작의 hidePersonalInfo 값을 캡처하고 owner HWND 유효성 및 선택적 isCurrent callback을 포함한 input context 조건을 작성했다. 시작/메시지 처리/저장 전후/결과 반환에서 확인한다.
+- 250ms Win32 timer로 편집 중 조건 변경을 감지해 취소한다. 취소는 반환 규칙을 비우며 창 파괴 시 timer를 정리한다. timer를 만들 수 없으면 창 생성을 실패시킨다.
+- host가 추후 편집 generation/종료 상태를 callback에 연결할 수 있다. runtime 파일 revision 재확인과 별개이며 현재 host 연결 전이다. raw command/argument 내용은 오류에 표시하지 않는다.
+- 이벤트 combo가 펼쳐진 상태의 Enter를 combo에 전달해 항목 선택이 의도치 않은 저장으로 이어지지 않게 했다. multiline 인수 Enter/취소 동작은 유지한다.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·실제 설정/HTTP/훅/UI 실행 미실행. DPI/접근성/번역 및 실제 host 연결을 포함한 전체 잔여 구현은 남아 있다.

@@ -5,10 +5,11 @@ import CodexBarCore
 
 /// Native hook rule form. Returns a validated rule; never saves or executes it.
 public enum WindowsHookRuleDialog {
-    public static func show(owner: HWND, draft: WindowsHookRuleDraft)
+    public static func show(owner: HWND, draft: WindowsHookRuleDraft, isCurrent: (() -> Bool)? = nil)
         -> HookRule?
     {
-        let context = Context(initial: draft)
+        let context = Context(initial: draft, owner: owner, isCurrent: isCurrent)
+        guard context.inputContextIsValid else { return nil }
         let instance = GetModuleHandleW(nil)
         var klass = WNDCLASSEXW()
         klass.cbSize = UINT(MemoryLayout<WNDCLASSEXW>.size)
@@ -39,9 +40,14 @@ public enum WindowsHookRuleDialog {
                 let result = GetMessageW(&message, nil, 0, 0)
                 if result == -1 { context.closed = true; break }
                 if result == 0 { PostQuitMessage(Int32(message.wParam)); context.closed = true; break }
+                guard context.inputContextIsValid else { context.cancel(); break }
                 let target = message.hwnd == hwnd || IsChild(hwnd, message.hwnd) != 0
                 if target, message.message == UINT(WM_KEYDOWN), message.wParam == WPARAM(VK_ESCAPE) { context.cancel(); continue }
                 if target, message.message == UINT(WM_KEYDOWN), message.wParam == WPARAM(VK_RETURN) {
+                    if GetFocus() == GetDlgItem(hwnd, eventID),
+                       SendMessageW(GetDlgItem(hwnd, eventID), UINT(CB_GETDROPPEDSTATE), 0, 0) != 0 {
+                        TranslateMessage(&message); DispatchMessageW(&message); continue
+                    }
                     if GetFocus() == GetDlgItem(hwnd, argumentsID) {
                         TranslateMessage(&message); DispatchMessageW(&message); continue
                     }
@@ -52,9 +58,10 @@ public enum WindowsHookRuleDialog {
         }
         if IsWindow(hwnd) != 0 { DestroyWindow(hwnd) }
         if IsWindow(owner) != 0, context.ownerWasEnabled { EnableWindow(owner, 1); SetForegroundWindow(owner) }
-        return context.result
+        return context.inputContextIsValid ? context.result : nil
     }
 
+    private static let contextTimer = UINT_PTR(1)
     private static let className = "CodexBar.HookRuleDialog"
     private static let eventID: Int32 = 101, providerID: Int32 = 102, executableID: Int32 = 103
     private static let argumentsID: Int32 = 104, thresholdID: Int32 = 105, timeoutID: Int32 = 106
@@ -63,10 +70,25 @@ public enum WindowsHookRuleDialog {
 
     private final class Context {
         let initial: WindowsHookRuleDraft
+        let owner: HWND
+        let expectedPrivacy: Bool
+        let isCurrent: (() -> Bool)?
+        var inputContextIsValid: Bool {
+            IsWindow(self.owner) != 0 &&
+                WindowsUsagePresentationSettings.load().hidePersonalInfo == self.expectedPrivacy &&
+                (self.isCurrent?() ?? true)
+        }
         var window: HWND?; var result: HookRule?; var closed = false; var ownerWasEnabled = false
-        init(initial: WindowsHookRuleDraft) { self.initial = initial }
-        func cancel() { self.closed = true; if let window { DestroyWindow(window) } }
+        init(initial: WindowsHookRuleDraft, owner: HWND, isCurrent: (() -> Bool)?) {
+            self.initial = initial; self.owner = owner; self.isCurrent = isCurrent
+            self.expectedPrivacy = WindowsUsagePresentationSettings.load().hidePersonalInfo
+        }
+        func cancel() {
+            self.result = nil; self.closed = true
+            if let window { DestroyWindow(window) }
+        }
         func save() {
+            guard self.inputContextIsValid else { self.cancel(); return }
             guard let window else { return }
             var draft = self.initial
             let index = Int(SendMessageW(GetDlgItem(window, eventID), UINT(CB_GETCURSEL), 0, 0))
@@ -83,6 +105,7 @@ public enum WindowsHookRuleDialog {
                 guard text.utf8.count <= 256 * 1024 else { throw WindowsHookSettingsFailure.invalidCommand }
                 draft.arguments = try JSONDecoder().decode([String].self, from: Data(text.utf8))
                 let rule = try draft.rule()
+                guard self.inputContextIsValid else { self.cancel(); return }
                 self.result = rule; self.closed = true; DestroyWindow(window)
             } catch {
                 let message = "Check the absolute executable path, provider ID, JSON argument array, used percent (0 < value <= 100), and timeout (0.1–300 seconds). Use a dot for decimals."
@@ -104,7 +127,13 @@ public enum WindowsHookRuleDialog {
         guard pointer != 0 else { return DefWindowProcW(hwnd, message, wParam, lParam) }
         let context = Unmanaged<Context>.fromOpaque(UnsafeRawPointer(bitPattern: UInt(pointer))!).takeUnretainedValue()
         switch message {
-        case UINT(WM_CREATE): return createControls(hwnd, context: context) ? 0 : -1
+        case UINT(WM_CREATE):
+            guard context.inputContextIsValid, createControls(hwnd, context: context),
+                  SetTimer(hwnd, contextTimer, 250, nil) != 0 else { return -1 }
+            return 0
+        case UINT(WM_TIMER):
+            if wParam == WPARAM(contextTimer), !context.inputContextIsValid { context.cancel() }
+            return 0
         case UINT(WM_COMMAND):
             switch Int32(wParam & 0xffff) {
             case saveID: context.save()
@@ -116,7 +145,9 @@ public enum WindowsHookRuleDialog {
             }
             return 0
         case UINT(WM_CLOSE): context.cancel(); return 0
-        case UINT(WM_NCDESTROY): context.closed = true; SetWindowLongPtrW(hwnd, Int32(GWLP_USERDATA), 0); return 0
+        case UINT(WM_NCDESTROY):
+            _ = KillTimer(hwnd, contextTimer)
+            context.closed = true; SetWindowLongPtrW(hwnd, Int32(GWLP_USERDATA), 0); return 0
         default: return DefWindowProcW(hwnd, message, wParam, lParam)
         }
     }
