@@ -3481,3 +3481,11 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - 제공자 선택 목록은 descriptor 표시 이름과 고유 ID를 함께 표시하며 저장하는 ID와 선택 순서는 유지한다.
 - 원본에는 개별 인자 행의 추가/삭제가 있으나 Windows는 JSON 입력이다. 인자별 편집 UI, 전체 번역, 긴 문구 reflow/RTL은 후속 구현 소요다.
 - CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·실제 설정/HTTP/훅/UI 실행 미실행. 전체 구현 완료를 주장하지 않는다.
+
+## IMPL-327 — 훅 인자별 편집
+
+- 원본 훅 화면의 개별 인자 추가/삭제에 대응해 순번 선택, 값 편집, 빈 인자 추가 및 선택 인자 삭제를 연결했다. 순번 목록에는 실제 인자 값을 표시하지 않는다.
+- 선택 변경/추가/저장 전에 편집 중 값을 보존한다. 수정되지 않은 인자는 원래 문자열을 그대로 유지하며 빈 문자열, 순서와 중복 값을 보존한다. shell 분할이나 자동 인용을 하지 않는다.
+- 최대 32개에서 추가를 비활성화하고 인자가 없을 때 값 입력/삭제를 비활성화한다. 저장 시 기존 draft의 길이/NUL/명령 전체 크기 검사를 적용한다.
+- 값 입력의 Enter는 줄바꿈이며 추가/삭제 버튼의 Enter는 해당 조작을 수행한다. 인자 선택 dropdown의 Enter/Escape도 연결했다.
+- 전체 번역/RTL, 오류 인자 자동 선택 및 실제 줄바꿈/키보드/접근성 동작 검증은 남아 있다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·실제 설정/HTTP/훅/UI 실행 미실행.

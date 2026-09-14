@@ -1,5 +1,7 @@
 # Windows 전용 제품 작업 현황
 
+- IMPL-327: 훅 인자 JSON 입력을 개별 인자 선택·추가·삭제·값 편집으로 교체했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
 - IMPL-326: 원본 훅 필드 번역과 제공자 표시 이름을 Windows 편집에 연결했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
 
 - IMPL-325: 훅 실행 파일 Browse 선택과 경로 입력 연결을 추가했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.

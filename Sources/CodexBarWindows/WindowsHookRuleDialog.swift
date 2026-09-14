@@ -50,7 +50,7 @@ public enum WindowsHookRuleDialog {
                 if target, message.message == UINT(WM_KEYDOWN),
                    message.wParam == WPARAM(VK_RETURN) || message.wParam == WPARAM(VK_ESCAPE),
                    let focus = GetFocus(),
-                   focus == GetDlgItem(hwnd, eventID) || focus == GetDlgItem(hwnd, providerID),
+                   focus == GetDlgItem(hwnd, eventID) || focus == GetDlgItem(hwnd, providerID) || focus == GetDlgItem(hwnd, argumentChoiceID),
                    SendMessageW(focus, UINT(CB_GETDROPPEDSTATE), 0, 0) != 0 {
                     TranslateMessage(&message); DispatchMessageW(&message); continue
                 }
@@ -60,6 +60,8 @@ public enum WindowsHookRuleDialog {
                         TranslateMessage(&message); DispatchMessageW(&message); continue
                     }
                     if GetFocus() == GetDlgItem(hwnd, browseID) { context.browseExecutable() }
+                    else if GetFocus() == GetDlgItem(hwnd, addArgumentID) { context.addArgument() }
+                    else if GetFocus() == GetDlgItem(hwnd, removeArgumentID) { context.removeArgument() }
                     else if GetFocus() == GetDlgItem(hwnd, cancelID) { context.cancel() }
                     else { context.save() }
                     continue
@@ -77,6 +79,7 @@ public enum WindowsHookRuleDialog {
     private static let eventID: Int32 = 101, providerID: Int32 = 102, executableID: Int32 = 103
     private static let argumentsID: Int32 = 104, thresholdID: Int32 = 105, timeoutID: Int32 = 106
     private static let enabledID: Int32 = 107, browseID: Int32 = 108, saveID: Int32 = 1, cancelID: Int32 = 2
+    private static let argumentChoiceID: Int32 = 109, addArgumentID: Int32 = 110, removeArgumentID: Int32 = 111
     private static let events = HookEventType.allCases
     private static let providers = UsageProvider.allCases.sorted { $0.rawValue < $1.rawValue }
 
@@ -88,6 +91,10 @@ public enum WindowsHookRuleDialog {
         var scrollX: Int32 = 0
         var scrollY: Int32 = 0
         var needsRestorePlacement = false
+        var argumentValues: [String]
+        var selectedArgument: Int?
+        var argumentDirty = false
+        var loadingArgument = false
         func pixels(_ value: Int32) -> Int32 { Int32((Int64(value) * Int64(self.dpi) + 48) / 96) }
         let owner: HWND
         let expectedPrivacy: Bool
@@ -100,6 +107,7 @@ public enum WindowsHookRuleDialog {
         var window: HWND?; var result: HookRule?; var closed = false; var ownerWasEnabled = false
         init(initial: WindowsHookRuleDraft, owner: HWND, isCurrent: (() -> Bool)?) {
             self.initial = initial; self.owner = owner; self.isCurrent = isCurrent
+            self.argumentValues = initial.arguments
             let dpi = GetDpiForWindow(owner); self.dpi = dpi == 0 ? 96 : dpi
             self.expectedPrivacy = WindowsUsagePresentationSettings.load().hidePersonalInfo
         }
@@ -121,7 +129,7 @@ public enum WindowsHookRuleDialog {
             case .invalidTimeout:
                 message = "Enter a timeout from 0.1 to 300 seconds using a dot decimal separator."; field = timeoutID
             default:
-                message = "Enter a JSON array of at most 32 strings. Each argument may use up to 4096 UTF-8 bytes; the complete command may use up to 32 KiB. NUL characters are not supported."; field = argumentsID
+                message = "Use at most 32 arguments. Each argument may use up to 4096 UTF-8 bytes; the complete command may use up to 32 KiB. NUL characters are not supported."; field = argumentsID
             }
             message.withCString(encodedAs: UTF16.self) { text in
                 "Hook rule".withCString(encodedAs: UTF16.self) { title in
@@ -169,6 +177,59 @@ public enum WindowsHookRuleDialog {
             SetFocus(GetDlgItem(window, executableID)); revealFocus(context: self)
         }
 
+        func captureArgument() {
+            guard self.argumentDirty, let window, let index = self.selectedArgument,
+                  self.argumentValues.indices.contains(index) else { return }
+            self.argumentValues[index] = readText(GetDlgItem(window, argumentsID))
+            self.argumentDirty = false
+        }
+
+        func showArgument(_ index: Int?) {
+            guard let window else { return }
+            self.selectedArgument = index.flatMap { self.argumentValues.indices.contains($0) ? $0 : nil }
+            self.loadingArgument = true
+            let value = self.selectedArgument.map { self.argumentValues[$0] } ?? ""
+            value.withCString(encodedAs: UTF16.self) { _ = SetWindowTextW(GetDlgItem(window, argumentsID), $0) }
+            self.loadingArgument = false; self.argumentDirty = false
+            EnableWindow(GetDlgItem(window, argumentsID), self.selectedArgument == nil ? 0 : 1)
+            EnableWindow(GetDlgItem(window, removeArgumentID), self.selectedArgument == nil ? 0 : 1)
+            EnableWindow(GetDlgItem(window, addArgumentID), self.argumentValues.count < HookRule.maximumArgumentCount ? 1 : 0)
+        }
+
+        func rebuildArguments(select index: Int?) -> Bool {
+            guard let window else { return false }
+            let choice = GetDlgItem(window, argumentChoiceID)
+            SendMessageW(choice, UINT(CB_RESETCONTENT), 0, 0)
+            for offset in self.argumentValues.indices {
+                let result = "\(offset + 1)".withCString(encodedAs: UTF16.self) {
+                    SendMessageW(choice, UINT(CB_ADDSTRING), 0, LPARAM(Int(bitPattern: $0)))
+                }
+                guard result != LRESULT(CB_ERR), result != LRESULT(CB_ERRSPACE) else { return false }
+            }
+            if let index, self.argumentValues.indices.contains(index) {
+                SendMessageW(choice, UINT(CB_SETCURSEL), WPARAM(index), 0)
+            }
+            self.showArgument(index)
+            return true
+        }
+
+        func addArgument() {
+            guard self.inputContextIsValid, !self.closed,
+                  self.argumentValues.count < HookRule.maximumArgumentCount else { return }
+            self.captureArgument(); self.argumentValues.append("")
+            guard self.rebuildArguments(select: self.argumentValues.count - 1) else { self.cancel(); return }
+            if let window { SetFocus(GetDlgItem(window, argumentsID)); revealFocus(context: self) }
+        }
+
+        func removeArgument() {
+            guard self.inputContextIsValid, !self.closed, let index = self.selectedArgument,
+                  self.argumentValues.indices.contains(index) else { return }
+            self.argumentValues.remove(at: index); self.argumentDirty = false
+            let next = self.argumentValues.isEmpty ? nil : min(index, self.argumentValues.count - 1)
+            guard self.rebuildArguments(select: next) else { self.cancel(); return }
+            if let window { SetFocus(GetDlgItem(window, next == nil ? addArgumentID : argumentChoiceID)) }
+        }
+
         func save() {
             guard self.inputContextIsValid else { self.cancel(); return }
             guard let window else { return }
@@ -184,9 +245,8 @@ public enum WindowsHookRuleDialog {
             draft.usedPercent = readText(GetDlgItem(window, thresholdID))
             draft.timeoutSeconds = readText(GetDlgItem(window, timeoutID))
             do {
-                let text = readText(GetDlgItem(window, argumentsID))
-                guard text.utf8.count <= 256 * 1024 else { throw WindowsHookSettingsFailure.invalidCommand }
-                draft.arguments = try JSONDecoder().decode([String].self, from: Data(text.utf8))
+                self.captureArgument()
+                draft.arguments = self.argumentValues
                 let rule = try draft.rule()
                 guard self.inputContextIsValid else { self.cancel(); return }
                 self.result = rule; self.closed = true; DestroyWindow(window)
@@ -277,6 +337,16 @@ public enum WindowsHookRuleDialog {
             case saveID: context.save()
             case cancelID: context.cancel()
             case browseID: context.browseExecutable()
+            case addArgumentID: context.addArgument()
+            case removeArgumentID: context.removeArgument()
+            case argumentsID:
+                if UINT((wParam >> 16) & 0xffff) == UINT(EN_CHANGE), !context.loadingArgument { context.argumentDirty = true }
+            case argumentChoiceID:
+                if UINT((wParam >> 16) & 0xffff) == UINT(CBN_SELCHANGE) {
+                    context.captureArgument()
+                    let index = Int(SendMessageW(GetDlgItem(hwnd, argumentChoiceID), UINT(CB_GETCURSEL), 0, 0))
+                    context.showArgument(index)
+                }
             case eventID:
                 let index = Int(SendMessageW(GetDlgItem(hwnd, eventID), UINT(CB_GETCURSEL), 0, 0))
                 EnableWindow(GetDlgItem(hwnd, thresholdID), events.indices.contains(index) && events[index] == .quotaLow ? 1 : 0)
@@ -296,8 +366,8 @@ public enum WindowsHookRuleDialog {
     private static func createControls(_ hwnd: HWND, context: Context) -> Bool {
         let font = GetStockObject(DEFAULT_GUI_FONT)
         let draft = context.initial
-        let encoder = JSONEncoder(); encoder.outputFormatting = [.prettyPrinted, .withoutEscapingSlashes]
-        guard let encoded = try? encoder.encode(draft.arguments), let arguments = String(data: encoded, encoding: .utf8) else { return false }
+        guard draft.arguments.count <= HookRule.maximumArgumentCount else { return false }
+        context.window = hwnd
         let controls: [HWND?] = [
             addLabel(hwnd, WindowsStatusLocalization.text("hooks_event"), 18, 16, 100, 22, font),
             addControl(hwnd, "COMBOBOX", "", eventID, DWORD(WS_CHILD|WS_VISIBLE|WS_TABSTOP|CBS_DROPDOWNLIST|WS_VSCROLL), 18, 40, 330, 180, font),
@@ -307,8 +377,11 @@ public enum WindowsHookRuleDialog {
             addLabel(hwnd, WindowsStatusLocalization.text("hooks_executable") + " (absolute path, without surrounding quotes)", 18, 136, 560, 22, font),
             addEdit(hwnd, draft.executable, executableID, 18, 160, 446, 24, 4096, false, font),
             addButton(hwnd, "Browse…", browseID, 478, 158, 100, 28, font),
-            addLabel(hwnd, WindowsStatusLocalization.text("hooks_arguments_placeholder") + " (JSON string array; [] for none; no shell splitting)", 18, 194, 560, 22, font),
-            addEdit(hwnd, arguments, argumentsID, 18, 218, 560, 130, 262144, true, font),
+            addLabel(hwnd, WindowsStatusLocalization.text("hooks_arguments_placeholder") + " (one value per item; empty values are kept)", 18, 194, 560, 22, font),
+            addControl(hwnd, "COMBOBOX", "", argumentChoiceID, DWORD(WS_CHILD|WS_VISIBLE|WS_TABSTOP|CBS_DROPDOWNLIST|WS_VSCROLL), 18, 218, 200, 180, font),
+            addButton(hwnd, "Add argument", addArgumentID, 232, 218, 166, 28, font),
+            addButton(hwnd, "Remove argument", removeArgumentID, 410, 218, 168, 28, font),
+            addEdit(hwnd, "", argumentsID, 18, 256, 560, 92, 262144, true, font),
             addLabel(hwnd, WindowsStatusLocalization.text("hooks_threshold") + " % (blank = provider thresholds)", 18, 362, 355, 22, font),
             addEdit(hwnd, draft.usedPercent, thresholdID, 18, 388, 250, 24, 64, false, font),
             addLabel(hwnd, "Timeout seconds (0.1–300)", 318, 362, 260, 22, font),
@@ -317,7 +390,8 @@ public enum WindowsHookRuleDialog {
             addButton(hwnd, WindowsStatusLocalization.text("Save"), saveID, 370, 480, 100, 28, font),
             addButton(hwnd, WindowsStatusLocalization.text("Cancel"), cancelID, 478, 480, 100, 28, font)
         ]
-        guard controls.allSatisfy({ $0 != nil }) else { return false }
+        guard controls.allSatisfy({ $0 != nil }),
+              context.rebuildArguments(select: draft.arguments.isEmpty ? nil : 0) else { return false }
         for event in events {
             let result = event.rawValue.withCString(encodedAs: UTF16.self) {
                 SendMessageW(GetDlgItem(hwnd, eventID), UINT(CB_ADDSTRING), 0, LPARAM(Int(bitPattern: $0)))
