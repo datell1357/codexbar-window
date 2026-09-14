@@ -47,12 +47,15 @@ public enum WindowsHookRuleDialog {
                     if !context.closed, GetFocus() != previousFocus { revealFocus(context: context) }
                 }
                 let target = message.hwnd == hwnd || IsChild(hwnd, message.hwnd) != 0
+                if target, message.message == UINT(WM_KEYDOWN),
+                   message.wParam == WPARAM(VK_RETURN) || message.wParam == WPARAM(VK_ESCAPE),
+                   let focus = GetFocus(),
+                   focus == GetDlgItem(hwnd, eventID) || focus == GetDlgItem(hwnd, providerID),
+                   SendMessageW(focus, UINT(CB_GETDROPPEDSTATE), 0, 0) != 0 {
+                    TranslateMessage(&message); DispatchMessageW(&message); continue
+                }
                 if target, message.message == UINT(WM_KEYDOWN), message.wParam == WPARAM(VK_ESCAPE) { context.cancel(); continue }
                 if target, message.message == UINT(WM_KEYDOWN), message.wParam == WPARAM(VK_RETURN) {
-                    if GetFocus() == GetDlgItem(hwnd, eventID),
-                       SendMessageW(GetDlgItem(hwnd, eventID), UINT(CB_GETDROPPEDSTATE), 0, 0) != 0 {
-                        TranslateMessage(&message); DispatchMessageW(&message); continue
-                    }
                     if GetFocus() == GetDlgItem(hwnd, argumentsID) {
                         TranslateMessage(&message); DispatchMessageW(&message); continue
                     }
@@ -72,6 +75,7 @@ public enum WindowsHookRuleDialog {
     private static let argumentsID: Int32 = 104, thresholdID: Int32 = 105, timeoutID: Int32 = 106
     private static let enabledID: Int32 = 107, saveID: Int32 = 1, cancelID: Int32 = 2
     private static let events = HookEventType.allCases
+    private static let providers = UsageProvider.allCases.sorted { $0.rawValue < $1.rawValue }
 
     private final class Context {
         let initial: WindowsHookRuleDraft
@@ -108,7 +112,7 @@ public enum WindowsHookRuleDialog {
             case .invalidExecutable:
                 message = "Choose an absolute executable path without surrounding quotes."; field = executableID
             case .invalidProvider:
-                message = "Enter a supported provider ID, or leave the field blank for all providers."; field = providerID
+                message = "Choose a supported provider or the all-providers option."; field = providerID
             case .invalidThreshold:
                 message = "Enter used percent greater than 0 and at most 100, or leave it blank to use provider thresholds. Use a dot decimal separator."; field = thresholdID
             case .invalidTimeout:
@@ -135,8 +139,9 @@ public enum WindowsHookRuleDialog {
             guard events.indices.contains(index) else { return }
             draft.event = events[index]
             draft.enabled = SendMessageW(GetDlgItem(window, enabledID), UINT(BM_GETCHECK), 0, 0) == LRESULT(BST_CHECKED)
-            let provider = readText(GetDlgItem(window, providerID)).trimmingCharacters(in: .whitespacesAndNewlines)
-            draft.provider = provider.isEmpty ? nil : provider
+            let providerIndex = Int(SendMessageW(GetDlgItem(window, providerID), UINT(CB_GETCURSEL), 0, 0))
+            guard (0...providers.count).contains(providerIndex) else { self.report(.invalidProvider); return }
+            draft.provider = providerIndex == 0 ? nil : providers[providerIndex - 1].rawValue
             draft.executable = readText(GetDlgItem(window, executableID))
             draft.usedPercent = readText(GetDlgItem(window, thresholdID))
             draft.timeoutSeconds = readText(GetDlgItem(window, timeoutID))
@@ -258,8 +263,8 @@ public enum WindowsHookRuleDialog {
             addLabel(hwnd, WindowsStatusLocalization.text("hooks_event"), 18, 16, 100, 22, font),
             addControl(hwnd, "COMBOBOX", "", eventID, DWORD(WS_CHILD|WS_VISIBLE|WS_TABSTOP|CBS_DROPDOWNLIST|WS_VSCROLL), 18, 40, 330, 180, font),
             addControl(hwnd, "BUTTON", WindowsStatusLocalization.text("hooks_rule_enabled"), enabledID, DWORD(WS_CHILD|WS_VISIBLE|WS_TABSTOP|BS_AUTOCHECKBOX), 400, 40, 150, 24, font),
-            addLabel(hwnd, "Provider ID (blank = all providers)", 18, 78, 540, 22, font),
-            addEdit(hwnd, draft.provider ?? "", providerID, 18, 102, 560, 24, 128, false, font),
+            addLabel(hwnd, "Provider", 18, 78, 540, 22, font),
+            addControl(hwnd, "COMBOBOX", "", providerID, DWORD(WS_CHILD|WS_VISIBLE|WS_TABSTOP|CBS_DROPDOWNLIST|WS_VSCROLL), 18, 102, 560, 240, font),
             addLabel(hwnd, "Executable (absolute path, without surrounding quotes)", 18, 136, 560, 22, font),
             addEdit(hwnd, draft.executable, executableID, 18, 160, 560, 24, 4096, false, font),
             addLabel(hwnd, "Arguments (JSON string array; [] for none; no shell splitting)", 18, 194, 560, 22, font),
@@ -278,6 +283,18 @@ public enum WindowsHookRuleDialog {
                 SendMessageW(GetDlgItem(hwnd, eventID), UINT(CB_ADDSTRING), 0, LPARAM(Int(bitPattern: $0)))
             }
             guard result != LRESULT(CB_ERR), result != LRESULT(CB_ERRSPACE) else { return false }
+        }
+        let providerLabels = [WindowsStatusLocalization.text("hooks_any_provider")] + providers.map(\.rawValue)
+        for label in providerLabels {
+            let result = label.withCString(encodedAs: UTF16.self) {
+                SendMessageW(GetDlgItem(hwnd, providerID), UINT(CB_ADDSTRING), 0, LPARAM(Int(bitPattern: $0)))
+            }
+            guard result != LRESULT(CB_ERR), result != LRESULT(CB_ERRSPACE) else { return false }
+        }
+        // An unknown stored ID must require explicit selection, never silently widen to all providers.
+        let providerIndex = draft.provider.flatMap { id in providers.firstIndex { $0.rawValue == id }.map { $0 + 1 } }
+        if draft.provider == nil || providerIndex != nil {
+            SendMessageW(GetDlgItem(hwnd, providerID), UINT(CB_SETCURSEL), WPARAM(providerIndex ?? 0), 0)
         }
         SendMessageW(GetDlgItem(hwnd, eventID), UINT(CB_SETCURSEL), WPARAM(events.firstIndex(of: draft.event) ?? 0), 0)
         SendMessageW(GetDlgItem(hwnd, enabledID), UINT(BM_SETCHECK), WPARAM(draft.enabled ? BST_CHECKED : BST_UNCHECKED), 0)

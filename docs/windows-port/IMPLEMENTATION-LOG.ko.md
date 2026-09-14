@@ -3458,3 +3458,11 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - 최소화 중 DPI 변경은 글꼴/배율/스크롤 상태만 갱신하고 일반 창 배치는 복원 시점으로 미룬다. 화면 구성/작업 영역 변경도 복원 필요 상태를 기록한다.
 - layout 및 초점 노출 helper도 최소화된 창에는 적용하지 않는다. 입력 control을 재생성하거나 사용자 입력을 변경하지 않는다.
 - 긴 번역 reflow/RTL 및 실제 최소화/모니터 분리/복원/DPI 검증은 남아 있다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·실제 설정/HTTP/훅/UI 실행 미실행. 전체 계획 구현은 진행 중이다.
+
+## IMPL-324 — 훅 제공자 선택 목록
+
+- 수동 provider ID 입력을 UsageProvider.allCases 기반 정렬된 선택 목록으로 교체했다. 첫 항목은 모든 제공자를 뜻하는 nil 값이며 기존 알려진 ID의 선택을 보존한다.
+- 알 수 없는 저장된 provider ID는 선택 없음으로 남기고 저장 시 명시적인 재선택을 요구한다. 이를 모든 제공자로 자동 변환하지 않는다.
+- 열린 이벤트/제공자 드롭다운의 Enter/Escape를 control에 전달해 선택 확정/닫기 후 폼 저장/취소가 적용되도록 한다.
+- 목록은 core가 허용하는 ID 범위이며 모든 제공자의 Windows 훅 관측 구현 완료를 뜻하지 않는다. 플러그인 ID 계약, 전체 번역/RTL, 실행 파일 선택 및 실제 UI 검증은 남아 있다.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·실제 설정/HTTP/훅/UI 실행 미실행.
