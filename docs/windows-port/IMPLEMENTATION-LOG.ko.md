@@ -3176,3 +3176,11 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - 상태 확인 설정을 config revision에 포함해 변경 시 기준 초기화 및 실행 authorization 재확인을 적용한다.
 - 남은 소요: incident.io/components/Workspace 피드, plugin/외부 계정 소유권, 설정 UI 및 전체 계획 나머지.
 - CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·실제 HTTP/훅 실행 미실행.
+
+## IMPL-289 — incident.io 상태 피드
+
+- 원본 UsageStore+Status.swift 및 UsageStoreSupport.swift의 summary/structure/affected_components 계약과 상태 매핑을 Windows 상태 조회에 옮겼다. 공개 /proxy/<host> 조회가 파싱되지 않으면 classic api/v2/status.json으로 fallback한다.
+- 표시 가능한 그룹/컴포넌트만 집계한다. affected 목록에 없는 컴포넌트는 operational이며 명시된 null/미지 상태는 unknown이다. unknown은 정상 복구보다 우선해 불완전한 상태로 복구 훅이 발생하지 않도록 했다.
+- 1MiB 응답, 4096개 항목/컴포넌트 제한, 중복 ID 거부, 취소 전파를 적용했다. 각 요청은 10초 timeout이며 fallback으로 공급자당 두 요청이 순차 실행될 수 있다. collect의 30초 제출 예산은 전체 반환 시간 보장이 아니다.
+- 남은 소요: component별 표시/필터, Workspace 피드, plugin/외부 계정 소유권, 설정 UI 및 전체 계획 나머지.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·실제 HTTP/훅 실행 미실행.

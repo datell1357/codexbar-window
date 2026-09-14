@@ -1,5 +1,7 @@
 # Windows 전용 제품 작업 현황
 
+- IMPL-289: Windows 상태 조회에 incident.io summary 및 classic fallback을 추가했다. unknown은 복구로 처리하지 않는다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
 - IMPL-288: classic 상태 조회를 Windows hook 관측에 합치고 상태 설정/제한 동시성/unknown 보존을 연결했다. 다른 피드는 남아 있다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
 
 - IMPL-287: Windows classic Statuspage 조회/indicator 변환 모듈을 작성했다. runtime 및 다른 피드 연결은 남아 있다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
