@@ -34,13 +34,18 @@ public enum WindowsHookRuleDialog {
         context.window = hwnd; context.ownerWasEnabled = IsWindowEnabled(owner) != 0
         center(hwnd, owner: owner); if IsWindow(owner) != 0 { EnableWindow(owner, 0) }
         withExtendedLifetime(context) {
-            ShowWindow(hwnd, Int32(SW_SHOW)); UpdateWindow(hwnd); SetFocus(GetDlgItem(hwnd, eventID))
+            ShowWindow(hwnd, Int32(SW_SHOW)); UpdateWindow(hwnd); layout(context: context)
+            SetFocus(GetDlgItem(hwnd, eventID)); revealFocus(context: context)
             var message = MSG()
             while !context.closed {
                 let result = GetMessageW(&message, nil, 0, 0)
                 if result == -1 { context.closed = true; break }
                 if result == 0 { PostQuitMessage(Int32(message.wParam)); context.closed = true; break }
                 guard context.inputContextIsValid else { context.cancel(); break }
+                let previousFocus = GetFocus()
+                defer {
+                    if !context.closed, GetFocus() != previousFocus { revealFocus(context: context) }
+                }
                 let target = message.hwnd == hwnd || IsChild(hwnd, message.hwnd) != 0
                 if target, message.message == UINT(WM_KEYDOWN), message.wParam == WPARAM(VK_ESCAPE) { context.cancel(); continue }
                 if target, message.message == UINT(WM_KEYDOWN), message.wParam == WPARAM(VK_RETURN) {
@@ -115,7 +120,9 @@ public enum WindowsHookRuleDialog {
                     _ = MessageBoxW(window, text, title, UINT(MB_OK | MB_ICONWARNING))
                 }
             }
-            if self.inputContextIsValid, IsWindow(window) != 0 { SetFocus(GetDlgItem(window, field)) }
+            if self.inputContextIsValid, IsWindow(window) != 0 {
+                SetFocus(GetDlgItem(window, field)); revealFocus(context: self)
+            }
             else { self.cancel() }
         }
 
@@ -300,6 +307,29 @@ public enum WindowsHookRuleDialog {
                 context.pixels(r.top) - context.scrollY, context.pixels(r.right - r.left),
                 context.pixels(r.bottom - r.top), UINT(SWP_NOZORDER | SWP_NOACTIVATE))
         }
+    }
+
+    /// Reveal only on focus changes so scrolling does not snap back to the active field.
+    private static func revealFocus(context: Context) {
+        guard !context.closed, let window = context.window, IsWindow(window) != 0,
+              let focus = GetFocus(), IsChild(window, focus) != 0 else { return }
+        var bounds = RECT(), client = RECT()
+        guard GetWindowRect(focus, &bounds) != 0, GetClientRect(window, &client) != 0,
+              client.right > 0, client.bottom > 0 else { return }
+        var origin = POINT(x: bounds.left, y: bounds.top)
+        guard ScreenToClient(window, &origin) != 0 else { return }
+        let margin = context.pixels(8)
+        func adjustment(start: Int32, size: Int32, viewport: Int32) -> Int32 {
+            // Oversized controls expose their leading edge; their own scrolling handles content.
+            if size + margin * 2 > viewport || start < margin { return start - margin }
+            if start + size > viewport - margin { return start + size - viewport + margin }
+            return 0
+        }
+        let dx = adjustment(start: origin.x, size: bounds.right - bounds.left, viewport: client.right)
+        let dy = adjustment(start: origin.y, size: bounds.bottom - bounds.top, viewport: client.bottom)
+        guard dx != 0 || dy != 0 else { return }
+        context.scrollX += dx; context.scrollY += dy
+        layout(context: context)
     }
 
     private static func scroll(_ window: HWND, context: Context, horizontal: Bool, action: UINT) {

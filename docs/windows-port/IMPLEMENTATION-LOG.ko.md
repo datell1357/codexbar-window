@@ -3434,3 +3434,11 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - 가로/세로 스크롤바와 client 크기 기반 range/page/position 계산을 추가했다. WM_SIZE 및 DPI layout에서 위치를 유효 범위로 제한하고 control 좌표에 스크롤 offset을 적용한다.
 - 줄/페이지/처음/끝/thumb 조작과 세로 wheel을 연결한다. 스크롤이 필요 없을 때도 비활성 바를 유지해 bar 표시 변경에 따른 layout 재진입을 피한다.
 - 키보드 focus 자동 노출, DPI 이동 후 작업 영역 재제한, 긴 번역 reflow/RTL은 후속 소요다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·실제 설정/HTTP/훅/UI 실행 미실행. 전체 잔여 구현 및 Windows 검증은 남아 있다.
+
+## IMPL-321 — 훅 form 키보드 초점 자동 노출
+
+- 초기 창 표시 후 layout을 명시적으로 적용하고 첫 입력 control을 화면에 노출한다.
+- modal message 처리 전후 focus가 바뀐 경우 실제 control의 화면 bounds를 client 좌표로 변환하여 필요한 축만 스크롤한다. Tab/Shift+Tab 등 IsDialogMessage가 처리하는 이동에도 적용한다.
+- 입력 오류로 focus를 되돌리는 경로에도 노출 처리를 연결한다. viewport보다 큰 control은 앞쪽을 노출하며 기존 control 자체 스크롤을 유지한다.
+- focus가 바뀌지 않는 wheel/scroll 조작에는 자동 노출을 반복하지 않는다. 종료된 창에는 적용하지 않는다.
+- DPI 이동 후 작업 영역 재제한, 긴 번역 reflow/RTL과 실제 키보드/접근성 검증은 남아 있다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·실제 설정/HTTP/훅/UI 실행 미실행.

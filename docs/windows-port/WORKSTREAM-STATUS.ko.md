@@ -1,5 +1,7 @@
 # Windows 전용 제품 작업 현황
 
+- IMPL-321: 훅 form 초점 변경과 입력 오류 시 해당 control을 스크롤 영역 안으로 노출하도록 연결했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
 - IMPL-320: 훅 form 초기 창을 작업 영역에 제한하고 가로/세로 스크롤을 연결했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
 
 - IMPL-319: 훅 form의 초기/변경 DPI 크기·배치와 시스템 글꼴 수명을 연결했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
