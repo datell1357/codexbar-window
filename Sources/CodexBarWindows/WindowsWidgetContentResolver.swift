@@ -64,10 +64,12 @@ public enum WindowsWidgetContentResolver {
         let stale = now.timeIntervalSince(snapshot.generatedAt) > maximumAge || now.timeIntervalSince(entry.updatedAt) > maximumAge
         // Cost data has its own update time; quota refresh must not make old cost data look fresh.
         let metricIsStale: Bool
-        if let timestamp = entry.tokenUsage?.updatedAt {
+        let extraBalance = instance.metric == .credits && selected == .devin && entry.providerCost?.period == "Extra usage balance"
+        let metricTimestamp = extraBalance ? entry.providerCost?.updatedAt : entry.tokenUsage?.updatedAt
+        if let timestamp = metricTimestamp {
             metricIsStale = !timestamp.timeIntervalSince1970.isFinite || timestamp.timeIntervalSince(now) > clockSkewTolerance ||
                 now.timeIntervalSince(timestamp) > maximumAge ||
-                (entry.tokenUsage?.isStale(comparedTo: entry.updatedAt) ?? false)
+                (!extraBalance && (entry.tokenUsage?.isStale(comparedTo: entry.updatedAt) ?? false))
         } else {
             metricIsStale = stale
         }

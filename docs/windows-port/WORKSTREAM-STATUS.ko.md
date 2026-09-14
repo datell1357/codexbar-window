@@ -1,5 +1,7 @@
 # Windows 전용 제품 작업 현황
 
+- IMPL-338: Metric 3종의 숫자/통화/토큰/추정치 표시 모델을 작성했다. 화면 미연결. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
 - IMPL-337: 위젯 인스턴스와 snapshot의 제공자 선택/empty/disabled/stale 표시 상태 계산을 작성했다. 호스트 미연결. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
 
 - IMPL-336: 위젯 설정 bounded read/원자 저장과 프로세스 간 writer lock을 작성했다. 호스트 호출 미연결. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.

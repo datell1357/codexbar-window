@@ -3564,3 +3564,10 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - 호출자가 지정하는 최대 데이터 나이로 snapshot과 entry를 각각 판단하고 cost timestamp는 quota 갱신과 별도로 stale을 계산한다. used/remaining 표시 설정을 전달한다.
 - 계산은 설정을 저장하지 않는다. runtime snapshot 공급/직렬화 검증/계정 소유권 격리, metric별 렌더링, refresh schedule 및 Windows host 호출은 미연결이다.
 - CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·UI/HTTP/위젯 실행 미실행.
+
+## IMPL-338 — 위젯 Metric 표시값
+
+- 원본 CompactMetricFormatter/WidgetBalanceFormatter를 참고해 credits/todayCost/last30DaysCost의 값·단위·label·tokenCount·갱신 시각을 투영한다.
+- Devin Extra usage balance는 provider cost의 통화 값으로 표시하고 자체 updatedAt으로 stale을 판단한다. Codex 비용은 원본의 API 추정치·미청구 안내를 유지한다.
+- nil 값을 0으로 바꾸지 않는다. 비정상 숫자/통화 코드/음수 tokenCount와 제어문자·과도한 label을 표시용 값에서 배제한다. 통화 포맷은 후속 native renderer가 locale에 맞춰 적용한다.
+- provider 계정 소유권 검증/스냅샷 공급, 화면·현지화 및 host 호출은 미연결이다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·UI/HTTP/위젯 실행 미실행.
