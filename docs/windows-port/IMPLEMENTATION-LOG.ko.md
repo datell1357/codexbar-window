@@ -3201,3 +3201,11 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - transport 주입을 collect에 추가해 이후 Windows 검증에서 요청 횟수와 취소를 독립적으로 확인할 수 있게 했다. 실제 취소/drain 지연은 미검증이며 전체 반환 시간 보장은 아니다.
 - 남은 소요: 컴포넌트 표시/필터, plugin 및 외부 계정 훅 관측, 전체 계획의 잔여 기능과 Windows 검증.
 - CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·실제 HTTP/훅 실행 미실행.
+
+## IMPL-292 — 공급자 상태 메뉴와 공통 조회
+
+- 상태 확인 설정이 켜져 있으면 활성 first-party 공급자의 상태를 조회하도록 runtime 경로를 훅 활성화 조건 밖으로 옮겼다. 동일 결과를 상태 메뉴와 HookProviderObservation에 전달한다.
+- WindowsTrayMenuEntry에 serviceStatus를 추가하고 displayTitle에 정상/성능 저하/부분 장애/중대 장애/점검/상태 불명 표시를 연결했다. 상태 URL 클릭과 dashboard 등 다른 동작의 제목은 유지한다.
+- 조회 후 취소, 종료, 설정 revision 및 상태 확인 설정을 재확인한다. 설정 변경 결과는 빈 상태로 버리며 새 메뉴 모델에 이전 상태를 보존하지 않는다. 상태 확인을 끄면 새 갱신은 기존 링크 제목만 사용한다.
+- 상태는 공급자 ID로만 대응하고 계정별 사용량이나 이메일은 사용하지 않는다. 현재 component 상세/필터, 다국어 문구, 상태 설정 변경 직후 UI 갱신 및 사용량 처리 조기 실패 시 상태 조회 보장은 남아 있다.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·실제 HTTP/훅/UI 실행 미실행.

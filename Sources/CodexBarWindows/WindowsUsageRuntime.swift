@@ -44,7 +44,30 @@ public actor WindowsUsageRuntime {
         } catch { return false }
     }
 
-    private func dispatchPendingHooks() async -> String? {
+    private func collectProviderStatuses(config: CodexBarConfig) async throws -> [String: HookProviderStatus] {
+        let defaults = UserDefaults(suiteName: WindowsRefreshSettings.suiteName) ?? .standard
+        guard defaults.object(forKey: "statusChecksEnabled") as? Bool ?? true else { return [:] }
+        let revision = try self.hookConfigRevision(config)
+        var sources: [String: WindowsProviderStatusProbe.Source] = [:]
+        for id in config.enabledProviders() {
+            guard let provider = id.firstPartyProvider else { continue }
+            let metadata = ProviderDescriptorRegistry.descriptor(for: provider).metadata
+            if let raw = metadata.statusPageURL, let url = URL(string: raw) {
+                sources[id.rawValue] = .statusPage(url)
+            } else if let productID = metadata.statusWorkspaceProductID {
+                sources[id.rawValue] = .workspace(productID: productID)
+            }
+        }
+        let statuses = try await WindowsProviderStatusProbe.collect(sources, deadline: Date().addingTimeInterval(30))
+        try Task.checkCancellation()
+        guard !self.shuttingDown,
+              defaults.object(forKey: "statusChecksEnabled") as? Bool ?? true,
+              let current = try self.configStore.load(),
+              try self.hookConfigRevision(current) == revision else { return [:] }
+        return statuses
+    }
+
+    private func dispatchPendingHooks(statuses: [String: HookProviderStatus]) async -> String? {
         guard let pending = self.pendingHookRefresh else { return nil }
         self.pendingHookRefresh = nil
         guard !Task.isCancelled, self.hookSubmissionIsCurrent(revision: pending.configRevision, privacy: pending.privacy) else {
@@ -63,36 +86,10 @@ public actor WindowsUsageRuntime {
             let batch = try WindowsHookObservationBatch.make(accounts: pending.accounts,
                 previousKeys: self.hookPreviousKeys, now: Date())
             var observations = Dictionary(uniqueKeysWithValues: batch.observations.map { ($0.provider, $0) })
-            let statusEnabled = (UserDefaults(suiteName: WindowsRefreshSettings.suiteName) ?? .standard)
-                .object(forKey: "statusChecksEnabled") as? Bool ?? true
-            if statusEnabled, let current = try self.configStore.load() {
-                var sources: [String: WindowsProviderStatusProbe.Source] = [:]
-                for id in current.enabledProviders() {
-                    guard let provider = id.firstPartyProvider,
-                          pending.config.events.contains(where: { rule in
-                              rule.enabled && (rule.provider == nil || rule.provider == id.rawValue) &&
-                                  (rule.event == .providerUnavailable || rule.event == .providerRecovered)
-                          }) else { continue }
-                    let metadata = ProviderDescriptorRegistry.descriptor(for: provider).metadata
-                    if let raw = metadata.statusPageURL, let url = URL(string: raw) {
-                        sources[id.rawValue] = .statusPage(url)
-                    } else if let productID = metadata.statusWorkspaceProductID {
-                        sources[id.rawValue] = .workspace(productID: productID)
-                    }
-                }
-                let statuses = try await WindowsProviderStatusProbe.collect(sources, deadline: Date().addingTimeInterval(30))
-                guard !Task.isCancelled, self.hookSubmissionIsCurrent(revision: pending.configRevision, privacy: pending.privacy) else {
-                    return "Hooks: discarded changed or cancelled status refresh"
-                }
-                let stillEnabled = (UserDefaults(suiteName: WindowsRefreshSettings.suiteName) ?? .standard)
-                    .object(forKey: "statusChecksEnabled") as? Bool ?? true
-                if stillEnabled {
-                    for (provider, status) in statuses {
-                        let previous = observations[provider]
-                        observations[provider] = HookProviderObservation(provider: provider, lanes: previous?.lanes ?? [],
-                            status: status, unavailableLaneKeys: previous?.unavailableLaneKeys ?? [])
-                    }
-                }
+            for (provider, status) in statuses {
+                let previous = observations[provider]
+                observations[provider] = HookProviderObservation(provider: provider, lanes: previous?.lanes ?? [],
+                    status: status, unavailableLaneKeys: previous?.unavailableLaneKeys ?? [])
             }
             let result = try await self.hookDispatchQueue.observe(observations.keys.sorted().compactMap { observations[$0] }, config: pending.config,
                 hidePersonalInfo: pending.privacy, contextRevision: revision, failures: batch.failures,
@@ -2447,6 +2444,10 @@ public actor WindowsUsageRuntime {
                 self.queuedOptionalRefresh = true
                 return
             }
+            let providerStatuses = try await self.collectProviderStatuses(config: config)
+            for index in self.statusMenuEntries.indices {
+                self.statusMenuEntries[index].serviceStatus = providerStatuses[self.statusMenuEntries[index].providerID]
+            }
             if config.hooks?.enabled == true, !Task.isCancelled {
                 let revision = try self.hookConfigRevision(config)
                 if let current = try self.configStore.load(),
@@ -2456,7 +2457,7 @@ public actor WindowsUsageRuntime {
                         presentationSettings.hidePersonalInfo, revision, self.hookUnresolvedAccountCount)
                 }
             }
-            if let hookNotice = await self.dispatchPendingHooks() { entries.append(.row(hookNotice)) }
+            if let hookNotice = await self.dispatchPendingHooks(statuses: providerStatuses) { entries.append(.row(hookNotice)) }
             guard !self.shuttingDown, !Task.isCancelled else { return }
             self.renderEntries = entries
             self.scheduleResetBoundaryRefreshIfNeeded(

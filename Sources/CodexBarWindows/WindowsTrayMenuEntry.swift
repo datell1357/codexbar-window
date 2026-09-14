@@ -1,5 +1,6 @@
 #if os(Windows)
 import Foundation
+import CodexBarCore
 
 /// Structured provider action rendered by the Windows tray popup.
 ///
@@ -25,6 +26,8 @@ public struct WindowsTrayMenuEntry: Sendable, Equatable {
     public let errorCopyText: String?
     public var tokenAccountSelection: WindowsTokenAccountSelectionSnapshot? = nil
     public var usageCopyText: String? = nil
+    /// Public provider state for this refresh; never account usage or identity.
+    public var serviceStatus: HookProviderStatus? = nil
 
     public init(
         providerID: String,
@@ -53,8 +56,19 @@ public struct WindowsTrayMenuEntry: Sendable, Equatable {
     public var isEnabled: Bool { self.statusURL != nil }
 
     public var displayTitle: String {
-        guard !self.isEnabled, let disabledText, !disabledText.isEmpty else { return self.title }
-        return "\(self.title) (\(disabledText))"
+        let statusLabel: String?
+        switch self.serviceStatus {
+        case .none?: statusLabel = "Operational"
+        case .minor?: statusLabel = "Degraded performance"
+        case .major?: statusLabel = "Partial outage"
+        case .critical?: statusLabel = "Major outage"
+        case .maintenance?: statusLabel = "Maintenance"
+        case .unknown?: statusLabel = "Status unknown"
+        case nil: statusLabel = nil
+        }
+        let label = statusLabel.map { "\(self.title): \($0)" } ?? self.title
+        guard !self.isEnabled, let disabledText, !disabledText.isEmpty else { return label }
+        return "\(label) (\(disabledText))"
     }
 }
 #endif
