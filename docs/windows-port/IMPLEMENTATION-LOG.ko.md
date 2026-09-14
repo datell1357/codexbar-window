@@ -3251,3 +3251,11 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - HookProviderObservation에는 필터되지 않은 snapshot indicator를 전달해 표시 필터가 전체 장애/복구 의미를 바꾸지 않도록 한다. 상태 확인 설정 변경 시 요약과 상세를 모두 비운다.
 - 남은 소요: Win32 하위 메뉴 렌더링, 다국어 및 전체 계획 잔여 기능. 상세 목록은 아직 화면에 그려지지 않는다.
 - CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·실제 HTTP/훅/UI 실행 미실행.
+
+## IMPL-298 — Win32 상태 컴포넌트 메뉴
+
+- 상태 확인이 켜지고 필터된 컴포넌트가 있으면 공급자 상태 행을 하위 메뉴로 만든다. 그룹은 추가 하위 메뉴, 개별 서비스는 비활성 상태 설명 행으로 표시한다. 마지막에 기존 명령 ID를 사용한 Open status page 링크를 둔다.
+- nil/빈 상세 목록 또는 메뉴 구성 실패 시 기존 공급자 상태 링크를 유지한다. 메뉴 구성 도중 실패하면 아직 부착하지 않은 핸들을 정리하고 부모 부착 후에는 부모가 소유한다.
+- 외부 이름의 제어문자와 Win32 mnemonic ampersand를 표시용으로 처리한다. 최대 4096행과 깊이 제한을 두며 일부만 성공한 메뉴는 게시하지 않는다. 상태 문구는 요약/상세가 같은 함수를 사용한다.
+- 남은 소요: 다국어, 피드 상세 지연 시 요약 보존 개선, 전체 계획 잔여 기능과 Windows 검증. 메뉴 렌더링/키보드/접근성/클릭은 미검증이다.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·실제 HTTP/훅/UI 실행 미실행.

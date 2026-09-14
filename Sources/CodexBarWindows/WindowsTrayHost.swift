@@ -2146,7 +2146,11 @@ public final class WindowsTrayHost: @unchecked Sendable {
                 let command = Self.statusCommandBase + UINT_PTR(index)
                 self.popupStatusCommands[command] = entry.statusURL
                 let flags = UINT(MF_STRING) | (entry.isEnabled ? 0 : UINT(MF_GRAYED))
-                let title = Array(entry.displayTitle.utf16) + [0]
+                if statusChecksEnabled, let components = entry.serviceComponents, !components.isEmpty,
+                   self.appendServiceComponents(entry: entry, components: components, command: command, to: statusMenu) {
+                    continue
+                }
+                let title = Array(Self.serviceMenuText(entry.displayTitle).utf16) + [0]
                 let appended = title.withUnsafeBufferPointer { text in
                     AppendMenuW(statusMenu, flags, command, text.baseAddress)
                 }
@@ -3082,6 +3086,61 @@ public final class WindowsTrayHost: @unchecked Sendable {
         } catch {
             self.showMessage("Cost collection settings could not be saved.", caption: "Cost collection")
         }
+    }
+
+    /// Escape Win32 mnemonic markers and control characters from public feed names.
+    private static func serviceMenuText(_ text: String) -> String {
+        text.components(separatedBy: .controlCharacters).joined(separator: " ")
+            .replacingOccurrences(of: "&", with: "&&")
+    }
+
+    private func appendServiceComponents(
+        entry: WindowsTrayMenuEntry, components: [WindowsProviderStatusComponent],
+        command: UINT_PTR, to parent: HMENU) -> Bool
+    {
+        guard let submenu = CreatePopupMenu() else { return false }
+        var attached = false
+        defer { if !attached { _ = DestroyMenu(submenu) } }
+        var remaining = 4096
+        func appendRows(_ rows: [WindowsProviderStatusComponent], to menu: HMENU, depth: Int) -> Bool {
+            guard depth <= 2 else { return false }
+            for row in rows {
+                guard remaining > 0 else { return false }
+                remaining -= 1
+                let label = Self.serviceMenuText(row.name + ": " + WindowsTrayMenuEntry.serviceStatusLabel(row.indicator))
+                if row.children.isEmpty {
+                    let ok = label.withCString(encodedAs: UTF16.self) {
+                        AppendMenuW(menu, UINT(MF_STRING | MF_GRAYED), 0, $0)
+                    }
+                    guard ok != 0 else { return false }
+                } else {
+                    guard let children = CreatePopupMenu() else { return false }
+                    guard appendRows(row.children, to: children, depth: depth + 1) else {
+                        _ = DestroyMenu(children)
+                        return false
+                    }
+                    let ok = label.withCString(encodedAs: UTF16.self) {
+                        AppendMenuW(menu, UINT(MF_STRING | MF_POPUP), UINT_PTR(UInt(bitPattern: children)), $0)
+                    }
+                    guard ok != 0 else {
+                        _ = DestroyMenu(children)
+                        return false
+                    }
+                }
+            }
+            return true
+        }
+        guard appendRows(components, to: submenu, depth: 0),
+              AppendMenuW(submenu, UINT(MF_SEPARATOR), 0, nil) != 0 else { return false }
+        let flags = UINT(MF_STRING) | (entry.isEnabled ? 0 : UINT(MF_GRAYED))
+        let linkAdded = "Open status page".withCString(encodedAs: UTF16.self) {
+            AppendMenuW(submenu, flags, command, $0)
+        }
+        guard linkAdded != 0 else { return false }
+        attached = Self.serviceMenuText(entry.displayTitle).withCString(encodedAs: UTF16.self) {
+            AppendMenuW(parent, UINT(MF_STRING | MF_POPUP), UINT_PTR(UInt(bitPattern: submenu)), $0) != 0
+        }
+        return attached
     }
 
     private func appendRefreshFrequencyMenu(to menu: HMENU) {

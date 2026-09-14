@@ -56,17 +56,19 @@ public struct WindowsTrayMenuEntry: Sendable, Equatable {
 
     public var isEnabled: Bool { self.statusURL != nil }
 
-    public var displayTitle: String {
-        let statusLabel: String?
-        switch self.serviceStatus {
-        case .none?: statusLabel = "Operational"
-        case .minor?: statusLabel = "Degraded performance"
-        case .major?: statusLabel = "Partial outage"
-        case .critical?: statusLabel = "Major outage"
-        case .maintenance?: statusLabel = "Maintenance"
-        case .unknown?: statusLabel = "Status unknown"
-        case nil: statusLabel = nil
+    public static func serviceStatusLabel(_ status: HookProviderStatus) -> String {
+        switch status {
+        case .none: "Operational"
+        case .minor: "Degraded performance"
+        case .major: "Partial outage"
+        case .critical: "Major outage"
+        case .maintenance: "Maintenance"
+        case .unknown: "Status unknown"
         }
+    }
+
+    public var displayTitle: String {
+        let statusLabel = self.serviceStatus.map(Self.serviceStatusLabel)
         let label = statusLabel.map { "\(self.title): \($0)" } ?? self.title
         guard !self.isEnabled, let disabledText, !disabledText.isEmpty else { return label }
         return "\(label) (\(disabledText))"

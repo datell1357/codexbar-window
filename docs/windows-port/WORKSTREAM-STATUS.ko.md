@@ -1,5 +1,7 @@
 # Windows 전용 제품 작업 현황
 
+- IMPL-298: 상세 컴포넌트를 Win32 그룹 하위 메뉴에 연결하고 상태 페이지 열기를 유지했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
 - IMPL-297: 상세 snapshot을 collect/runtime/메뉴 모델에 전달하고 descriptor 필터를 적용했다. 하위 메뉴 렌더링은 남아 있다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
 
 - IMPL-296: incident.io 그룹/하위 항목 보존과 classic 상세 조회를 snapshot에 연결했다. runtime/메뉴 상세 전달은 남아 있다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
