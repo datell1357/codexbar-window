@@ -19,7 +19,7 @@ public enum WindowsHookSettingsMenu {
         defer { _ = DestroyMenu(menu) }
         let config = snapshot.config
         guard append(config.enabled ? "Disable all hooks" : "Enable configured hooks", command: 1, to: menu),
-              append("Add rule…", command: 2, to: menu, enabled: config.events.count < HooksConfig.maximumRuleCount)
+              append(WindowsStatusLocalization.text("hooks_add_rule"), command: 2, to: menu, enabled: config.events.count < HooksConfig.maximumRuleCount)
         else { return nil }
         if config.events.isEmpty {
             guard append(WindowsStatusLocalization.text("hooks_empty"), command: 0, to: menu, enabled: false) else { return nil }
@@ -31,7 +31,7 @@ public enum WindowsHookSettingsMenu {
                 append(rule.enabled ? "Disable rule" : "Enable rule", command: base + 1, to: actions) &&
                 append("Move up", command: base + 2, to: actions, enabled: index > 0) &&
                 append("Move down", command: base + 3, to: actions, enabled: index + 1 < config.events.count) &&
-                append("Delete rule…", command: base + 4, to: actions)
+                append(WindowsStatusLocalization.text("hooks_delete_rule"), command: base + 4, to: actions)
             guard complete else { _ = DestroyMenu(actions); return nil }
             // Do not expose executable paths or argument values in the overview.
             let title = "\(index + 1). \(rule.event.rawValue) · \(rule.provider ?? WindowsStatusLocalization.text("hooks_any_provider"))" +
@@ -93,7 +93,7 @@ public enum WindowsHookSettingsMenu {
     }
     private static func confirm(owner: HWND, text: String) -> Bool {
         text.withCString(encodedAs: UTF16.self) { message in
-            "Hook settings".withCString(encodedAs: UTF16.self) { title in
+            WindowsStatusLocalization.text("tab_hooks").withCString(encodedAs: UTF16.self) { title in
                 MessageBoxW(owner, message, title, UINT(MB_YESNO | MB_DEFBUTTON2 | MB_ICONQUESTION)) == IDYES
             }
         }

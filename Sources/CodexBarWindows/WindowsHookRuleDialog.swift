@@ -302,14 +302,14 @@ public enum WindowsHookRuleDialog {
             addLabel(hwnd, WindowsStatusLocalization.text("hooks_event"), 18, 16, 100, 22, font),
             addControl(hwnd, "COMBOBOX", "", eventID, DWORD(WS_CHILD|WS_VISIBLE|WS_TABSTOP|CBS_DROPDOWNLIST|WS_VSCROLL), 18, 40, 330, 180, font),
             addControl(hwnd, "BUTTON", WindowsStatusLocalization.text("hooks_rule_enabled"), enabledID, DWORD(WS_CHILD|WS_VISIBLE|WS_TABSTOP|BS_AUTOCHECKBOX), 400, 40, 150, 24, font),
-            addLabel(hwnd, "Provider", 18, 78, 540, 22, font),
+            addLabel(hwnd, WindowsStatusLocalization.text("hooks_provider"), 18, 78, 540, 22, font),
             addControl(hwnd, "COMBOBOX", "", providerID, DWORD(WS_CHILD|WS_VISIBLE|WS_TABSTOP|CBS_DROPDOWNLIST|WS_VSCROLL), 18, 102, 560, 240, font),
-            addLabel(hwnd, "Executable (absolute path, without surrounding quotes)", 18, 136, 560, 22, font),
+            addLabel(hwnd, WindowsStatusLocalization.text("hooks_executable") + " (absolute path, without surrounding quotes)", 18, 136, 560, 22, font),
             addEdit(hwnd, draft.executable, executableID, 18, 160, 446, 24, 4096, false, font),
             addButton(hwnd, "Browse…", browseID, 478, 158, 100, 28, font),
-            addLabel(hwnd, "Arguments (JSON string array; [] for none; no shell splitting)", 18, 194, 560, 22, font),
+            addLabel(hwnd, WindowsStatusLocalization.text("hooks_arguments_placeholder") + " (JSON string array; [] for none; no shell splitting)", 18, 194, 560, 22, font),
             addEdit(hwnd, arguments, argumentsID, 18, 218, 560, 130, 262144, true, font),
-            addLabel(hwnd, "Used percent (blank = provider thresholds)", 18, 362, 355, 22, font),
+            addLabel(hwnd, WindowsStatusLocalization.text("hooks_threshold") + " % (blank = provider thresholds)", 18, 362, 355, 22, font),
             addEdit(hwnd, draft.usedPercent, thresholdID, 18, 388, 250, 24, 64, false, font),
             addLabel(hwnd, "Timeout seconds (0.1–300)", 318, 362, 260, 22, font),
             addEdit(hwnd, draft.timeoutSeconds, timeoutID, 318, 388, 260, 24, 64, false, font),
@@ -324,7 +324,7 @@ public enum WindowsHookRuleDialog {
             }
             guard result != LRESULT(CB_ERR), result != LRESULT(CB_ERRSPACE) else { return false }
         }
-        let providerLabels = [WindowsStatusLocalization.text("hooks_any_provider")] + providers.map(\.rawValue)
+        let providerLabels = [WindowsStatusLocalization.text("hooks_any_provider")] + providers.map { ProviderDescriptorRegistry.descriptor(for: $0).metadata.displayName + " (" + $0.rawValue + ")" }
         for label in providerLabels {
             let result = label.withCString(encodedAs: UTF16.self) {
                 SendMessageW(GetDlgItem(hwnd, providerID), UINT(CB_ADDSTRING), 0, LPARAM(Int(bitPattern: $0)))

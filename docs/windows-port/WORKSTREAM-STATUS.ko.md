@@ -1,5 +1,7 @@
 # Windows 전용 제품 작업 현황
 
+- IMPL-326: 원본 훅 필드 번역과 제공자 표시 이름을 Windows 편집에 연결했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
 - IMPL-325: 훅 실행 파일 Browse 선택과 경로 입력 연결을 추가했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
 
 - IMPL-324: 훅 제공자 입력을 지원 ID 선택 목록으로 바꾸고 드롭다운 Enter/Escape 처리를 연결했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.

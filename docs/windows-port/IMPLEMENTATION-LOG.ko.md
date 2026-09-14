@@ -3473,3 +3473,11 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - 선택 취소는 기존 입력을 보존하며 대화상자 오류는 고정된 메시지로 표시한다. 선택 결과의 절대 경로/UTF-8 길이를 확인하고 실행 파일 입력에만 적용한다. 파일을 실행하거나 훅 설정을 저장하지 않는다.
 - 대화상자 반환 시 owner 생존과 privacy/edit context를 다시 확인한다. Browse에 초점이 있는 Enter도 파일 선택을 열도록 연결한다.
 - 전체 번역/RTL 및 실제 파일 선택·중첩 modal 취소 검증은 남아 있다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·실제 설정/HTTP/훅/UI 실행 미실행.
+
+## IMPL-326 — 원본 훅 필드명 및 제공자 표시 이름
+
+- PreferencesHooksPane.swift의 provider/threshold/executable/arguments 필드와 원본 Localizable.strings를 참고해 플랫폼 중립적인 5개 키를 Windows catalog에 복사했다. Mac 경로 예시나 Mac 명령 안내는 복사하지 않는다.
+- form의 제공자·실행 파일·인자·사용률 임계값 명칭, 메뉴의 추가/삭제 및 확인창 제목에 기존 번역을 연결했다. Windows JSON/경로 관련 추가 안내와 오류 문구는 아직 영어다.
+- 제공자 선택 목록은 descriptor 표시 이름과 고유 ID를 함께 표시하며 저장하는 ID와 선택 순서는 유지한다.
+- 원본에는 개별 인자 행의 추가/삭제가 있으나 Windows는 JSON 입력이다. 인자별 편집 UI, 전체 번역, 긴 문구 reflow/RTL은 후속 구현 소요다.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·실제 설정/HTTP/훅/UI 실행 미실행. 전체 구현 완료를 주장하지 않는다.
