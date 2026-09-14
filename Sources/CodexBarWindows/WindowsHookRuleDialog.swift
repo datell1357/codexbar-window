@@ -180,17 +180,27 @@ public enum WindowsHookRuleDialog {
             return 0
         case UINT(WM_DPICHANGED):
             let dpi = UINT(wParam & 0xffff)
-            if dpi != 0 { context.dpi = dpi }
+            if dpi != 0 {
+                let previous = context.dpi
+                context.scrollX = Int32(Int64(context.scrollX) * Int64(dpi) / Int64(previous))
+                context.scrollY = Int32(Int64(context.scrollY) * Int64(dpi) / Int64(previous))
+                context.dpi = dpi
+            }
             updateFont(context: context)
             if let suggested = UnsafeRawPointer(bitPattern: UInt(lParam))?.assumingMemoryBound(to: RECT.self) {
-                let rect = suggested.pointee
-                SetWindowPos(hwnd, nil, rect.left, rect.top, rect.right - rect.left, rect.bottom - rect.top,
-                    UINT(SWP_NOZORDER | SWP_NOACTIVATE))
+                fitToWorkArea(hwnd, proposed: suggested.pointee)
             }
             layout(context: context)
+            revealFocus(context: context)
             return 0
-        case UINT(WM_SETTINGCHANGE):
-            updateFont(context: context)
+        case UINT(WM_SETTINGCHANGE), UINT(WM_DISPLAYCHANGE):
+            if message == UINT(WM_SETTINGCHANGE) { updateFont(context: context) }
+            if IsIconic(hwnd) == 0 {
+                var current = RECT()
+                if GetWindowRect(hwnd, &current) != 0 { fitToWorkArea(hwnd, proposed: current) }
+                layout(context: context)
+                revealFocus(context: context)
+            }
             return DefWindowProcW(hwnd, message, wParam, lParam)
         case UINT(WM_TIMER):
             if wParam == WPARAM(contextTimer), !context.inputContextIsValid { context.cancel() }
@@ -363,6 +373,27 @@ public enum WindowsHookRuleDialog {
         }
         if let previous { DeleteObject(previous) }
     }
+    /// Use the destination rectangle rather than the owner's monitor during DPI transitions.
+    private static func fitToWorkArea(_ hwnd: HWND, proposed: RECT) {
+        var rect = proposed
+        var monitor = MONITORINFO(); monitor.cbSize = DWORD(MemoryLayout<MONITORINFO>.size)
+        let handle = MonitorFromRect(&rect, UINT(MONITOR_DEFAULTTONEAREST))
+        if handle == nil || GetMonitorInfoW(handle, &monitor) == 0 {
+            guard SystemParametersInfoW(UINT(SPI_GETWORKAREA), 0, &monitor.rcWork, 0) != 0 else { return }
+        }
+        let work = monitor.rcWork
+        guard work.right > work.left, work.bottom > work.top else { return }
+        let width = min(max(1, rect.right - rect.left), work.right - work.left)
+        let height = min(max(1, rect.bottom - rect.top), work.bottom - work.top)
+        let x = min(max(rect.left, work.left), work.right - width)
+        let y = min(max(rect.top, work.top), work.bottom - height)
+        var current = RECT()
+        if GetWindowRect(hwnd, &current) != 0,
+           current.left == x, current.top == y,
+           current.right - current.left == width, current.bottom - current.top == height { return }
+        SetWindowPos(hwnd, nil, x, y, width, height, UINT(SWP_NOZORDER | SWP_NOACTIVATE))
+    }
+
     private static func center(_ hwnd: HWND, owner: HWND) {
         var rect = RECT()
         guard GetWindowRect(hwnd, &rect) != 0 else { return }

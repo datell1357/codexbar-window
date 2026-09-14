@@ -3442,3 +3442,11 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - 입력 오류로 focus를 되돌리는 경로에도 노출 처리를 연결한다. viewport보다 큰 control은 앞쪽을 노출하며 기존 control 자체 스크롤을 유지한다.
 - focus가 바뀌지 않는 wheel/scroll 조작에는 자동 노출을 반복하지 않는다. 종료된 창에는 적용하지 않는다.
 - DPI 이동 후 작업 영역 재제한, 긴 번역 reflow/RTL과 실제 키보드/접근성 검증은 남아 있다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·실제 설정/HTTP/훅/UI 실행 미실행.
+
+## IMPL-322 — 훅 form DPI 및 작업 영역 변경 대응
+
+- WM_DPICHANGED의 제안된 rectangle로 대상 모니터를 선택하고 창 크기와 위치를 해당 작업 영역 안에 제한한다. owner 모니터로 되돌리지 않는다.
+- 기존 스크롤 위치를 이전/새 DPI 비율로 변환하고 layout 이후 현재 초점을 노출한다.
+- WM_SETTINGCHANGE 및 WM_DISPLAYCHANGE에도 현재 창을 작업 영역에 맞춘다. 최소화 상태에는 일반 창 배치를 적용하지 않으며 동일 rectangle에 대한 불필요한 SetWindowPos를 생략한다.
+- 긴 번역 reflow/RTL, 최소화 중 화면 변경 후 복원 배치 및 실제 다중 모니터/DPI/접근성 검증은 남아 있다.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·실제 설정/HTTP/훅/UI 실행 미실행. 전체 계획 구현은 진행 중이다.
