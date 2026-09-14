@@ -3388,3 +3388,11 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - 전체 활성화는 향후 이벤트에서 프로그램이 실행될 수 있음을 확인하고 삭제는 선택 규칙 삭제를 확인한다. 실제 파일 저장은 하지 않는다. 최대 규칙 수/인덱스/메뉴 구성 실패를 처리하고 미부착 핸들을 정리한다.
 - 편집 전후 owner/privacy/isCurrent 조건을 확인하며 개별 form에도 전달한다. 아직 트레이의 async load/save mailbox에서 호출하지 않는다. 키보드 위치/번역/DPI/접근성도 후속 소요다.
 - CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·실제 설정/HTTP/훅/UI 실행 미실행. 전체 계획 잔여 구현 및 Windows 검증은 남아 있다.
+
+## IMPL-315 — 훅 설정 트레이 연결
+
+- 트레이 Hook settings 항목과 loading/editing/saving phase, 요청 ID 및 load/save 종류별 mailbox를 작성했다. 기대 요청과 맞지 않거나 중복된 결과는 받지 않는다.
+- WindowsMain callback이 runtime loadHookSettings/saveHookSettings와 host post 결과를 연결한다. UI 스레드에서 목록/form을 열고 반환 mutation을 비동기 저장한다. 설정이 변경되면 기존 runtime 충돌 처리를 사용한다.
+- 훅 편집이 진행 중이면 root popup과 후속 설정 mailbox drain을 보류한다. rule form의 isCurrent는 host 종료/편집 요청 ID를 확인한다. 종료 정리에서 기대 요청과 mailbox를 비운다.
+- 저장 실패는 고정 문구로 표시하며 원문 command/arguments를 넣지 않는다. 편집을 여는 것만으로 명령을 실행하지 않는다. 실제 사용자 설정 파일은 이번 작업에서 접근하지 않았다.
+- 남은 소요: load부터 save까지 privacy context 일관성, 다른 모든 비동기 editor와 상호 배제, 대기 취소/접근성/번역 및 전체 잔여 기능. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·실제 설정/HTTP/훅/UI 실행 미실행.

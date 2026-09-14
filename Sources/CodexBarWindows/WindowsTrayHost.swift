@@ -193,6 +193,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
     private static let languageCommandBase = UINT_PTR(0x7F40)
     private static let refreshOnOpenCommand = UINT_PTR(0x7019)
     private static let refreshOnOpenTimer = UINT_PTR(0x701A)
+    private static let hookSettingsCommand = UINT_PTR(0x7F80)
     private static let statusChecksCommand = UINT_PTR(0x7018)
     private static let refreshFrequencyCommandBase = UINT_PTR(0x7010)
     private static let lowPowerModeOffCommand = UINT_PTR(0x7020)
@@ -272,6 +273,15 @@ public final class WindowsTrayHost: @unchecked Sendable {
     private let onQuotaWarningSettingsChanged: QuotaWarningSettingsChangedHandler
     private let onProviderQuotaWarningLoad: ProviderQuotaWarningLoadHandler
     private let onProviderQuotaWarningSave: ProviderQuotaWarningSaveHandler
+    private let onHookSettingsLoad: @Sendable (UInt64) -> Void
+    private let onHookSettingsSave: @Sendable (UInt64, WindowsHookSettingsSnapshot, WindowsHookSettingsMutation) -> Void
+    private enum HookEditorPhase: Equatable { case idle, loading(UInt64), editing(UInt64), saving(UInt64) }
+    private enum HookEditorReply { case loaded(WindowsHookSettingsLoadResult), saved(WindowsHookSettingsSaveResult) }
+    private var hookEditorPhase: HookEditorPhase = .idle
+    private var nextHookRequest: UInt64 = 1
+    private var hookExpected: (id: UInt64, saving: Bool)?
+    private var hookReply: (id: UInt64, value: HookEditorReply)?
+
     private let onCodexWebSettingsLoad: CodexWebSettingsLoadHandler
     private let onCodexWebSettingsSave: CodexWebSettingsSaveHandler
     private let onPredictivePaceWarningSettingsChanged: PredictivePaceWarningSettingsChangedHandler
@@ -399,6 +409,8 @@ public final class WindowsTrayHost: @unchecked Sendable {
         onTokenAccountSelect: @escaping @Sendable (WindowsTokenAccountSelectionRequest) -> Void = { _ in },
         onProviderQuotaWarningLoad: @escaping ProviderQuotaWarningLoadHandler = { _, _ in },
         onProviderQuotaWarningSave: @escaping ProviderQuotaWarningSaveHandler = { _, _, _ in },
+        onHookSettingsLoad: @escaping @Sendable (UInt64) -> Void = { _ in },
+        onHookSettingsSave: @escaping @Sendable (UInt64, WindowsHookSettingsSnapshot, WindowsHookSettingsMutation) -> Void = { _, _, _ in },
         onCodexWebSettingsLoad: @escaping CodexWebSettingsLoadHandler = { _ in },
         onCodexWebSettingsSave: @escaping CodexWebSettingsSaveHandler = { _, _ in },
         onPredictivePaceWarningSettingsChanged: @escaping PredictivePaceWarningSettingsChangedHandler = { _ in })
@@ -459,6 +471,8 @@ public final class WindowsTrayHost: @unchecked Sendable {
         self.onTokenAccountSelect = onTokenAccountSelect
         self.onProviderQuotaWarningLoad = onProviderQuotaWarningLoad
         self.onProviderQuotaWarningSave = onProviderQuotaWarningSave
+        self.onHookSettingsLoad = onHookSettingsLoad
+        self.onHookSettingsSave = onHookSettingsSave
         self.onCodexWebSettingsLoad = onCodexWebSettingsLoad
         self.onCodexWebSettingsSave = onCodexWebSettingsSave
         self.onPredictivePaceWarningSettingsChanged = onPredictivePaceWarningSettingsChanged
@@ -508,6 +522,8 @@ public final class WindowsTrayHost: @unchecked Sendable {
             self.mailboxLock.lock()
             self.providerEditorExpectedRequest = nil
             self.providerEditorMailbox = nil
+            self.hookExpected = nil
+            self.hookReply = nil
             self.codexWebSettingsEditorExpectedRequest = nil
             self.codexWebSettingsEditorMailbox = nil
             self.mailboxSessionQuotaNotifications.removeAll(keepingCapacity: false)
@@ -1850,7 +1866,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
     }
 
     private func popup(notifyMenuOpen: Bool = true, keyboardInitiated: Bool = false, preserveAnchor: Bool = false) {
-        guard !self.remoteEditorOpen, !self.popupIsOpen, !self.quitInvoked else { return }
+        guard !self.remoteEditorOpen, !self.popupIsOpen, !self.quitInvoked, self.hookEditorPhase == .idle else { return }
         self.popupIsOpen = true
         self.popupCopySummary = nil
         self.popupCopyErrors.removeAll(keepingCapacity: true)
@@ -2360,6 +2376,9 @@ public final class WindowsTrayHost: @unchecked Sendable {
         let refreshOnOpen = self.presentationDefaults.object(forKey: "refreshAllProvidersOnMenuOpen") as? Bool ?? false
         _ = Self.serviceMenuText(WindowsStatusLocalization.text("refresh_on_open_title")).withCString(encodedAs: UTF16.self) {
             AppendMenuW(menu, UINT(MF_STRING) | (refreshOnOpen ? UINT(MF_CHECKED) : 0), Self.refreshOnOpenCommand, $0)
+        }
+        _ = "Hook settings…".withCString(encodedAs: UTF16.self) {
+            AppendMenuW(menu, UINT(MF_STRING), Self.hookSettingsCommand, $0)
         }
         self.appendLanguageMenu(to: menu)
         self.appendRefreshFrequencyMenu(to: menu)
@@ -3736,6 +3755,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
         case Self.refreshOnOpenCommand:
             let enabled = self.presentationDefaults.object(forKey: "refreshAllProvidersOnMenuOpen") as? Bool ?? false
             self.presentationDefaults.set(!enabled, forKey: "refreshAllProvidersOnMenuOpen")
+        case Self.hookSettingsCommand: self.beginHookSettings()
         case Self.statusChecksCommand:
             let enabled = self.presentationDefaults.object(forKey: "statusChecksEnabled") as? Bool ?? true
             self.presentationDefaults.set(!enabled, forKey: "statusChecksEnabled")
@@ -3771,6 +3791,75 @@ public final class WindowsTrayHost: @unchecked Sendable {
         self.providerEditorMailbox = nil
         self.mailboxLock.unlock()
         self.onProviderQuotaWarningLoad(requestID, providerID)
+    }
+
+    public func postHookSettingsLoad(requestID: UInt64, result: WindowsHookSettingsLoadResult) {
+        self.postHookReply(requestID, saving: false, reply: .loaded(result))
+    }
+
+    public func postHookSettingsSave(requestID: UInt64, result: WindowsHookSettingsSaveResult) {
+        self.postHookReply(requestID, saving: true, reply: .saved(result))
+    }
+
+    private func postHookReply(_ id: UInt64, saving: Bool, reply: HookEditorReply) {
+        self.mailboxLock.lock()
+        guard let expected = self.hookExpected, expected.id == id, expected.saving == saving,
+              self.hookReply == nil else { self.mailboxLock.unlock(); return }
+        self.hookReply = (id, reply)
+        self.mailboxLock.unlock()
+        if let hwnd = self.window { PostMessageW(hwnd, Self.wakeMessage, 0, 0) }
+    }
+
+    private func beginHookSettings() {
+        guard !self.quitInvoked, !self.remoteEditorOpen, self.hookEditorPhase == .idle,
+              case .idle = self.providerEditorPhase, case .idle = self.codexWebSettingsEditorPhase else { return }
+        let id = self.nextHookRequest; self.nextHookRequest &+= 1
+        self.hookEditorPhase = .loading(id)
+        self.mailboxLock.lock()
+        self.hookExpected = (id, false); self.hookReply = nil
+        self.mailboxLock.unlock()
+        self.onHookSettingsLoad(id)
+    }
+
+    private func drainHookSettings() {
+        guard !self.remoteEditorOpen, !self.quitInvoked else { return }
+        self.mailboxLock.lock()
+        let reply = self.hookReply
+        if reply != nil { self.hookReply = nil; self.hookExpected = nil }
+        self.mailboxLock.unlock()
+        guard let reply else { return }
+        switch (self.hookEditorPhase, reply.value) {
+        case let (.loading(id), .loaded(result)) where id == reply.id:
+            guard case let .loaded(snapshot) = result else {
+                self.hookEditorPhase = .idle
+                if case .unavailable = result { self.showProviderEditorNotice("Hook settings could not be loaded.") }
+                return
+            }
+            guard let hwnd = self.window, IsWindow(hwnd) != 0 else { self.hookEditorPhase = .idle; return }
+            self.hookEditorPhase = .editing(id)
+            let mutation = WindowsHookSettingsMenu.show(owner: hwnd, snapshot: snapshot, isCurrent: { [weak self] in
+                guard let self else { return false }
+                return !self.quitInvoked && self.hookEditorPhase == .editing(id)
+            })
+            self.hookEditorPhase = .idle
+            guard !self.quitInvoked, let mutation else { return }
+            let saveID = self.nextHookRequest; self.nextHookRequest &+= 1
+            self.hookEditorPhase = .saving(saveID)
+            self.mailboxLock.lock()
+            self.hookExpected = (saveID, true); self.hookReply = nil
+            self.mailboxLock.unlock()
+            self.onHookSettingsSave(saveID, snapshot, mutation)
+        case let (.saving(id), .saved(result)) where id == reply.id:
+            self.hookEditorPhase = .idle
+            switch result {
+            case .saved: break
+            case .shuttingDown: break
+            case .rejected(.changed): self.showProviderEditorNotice("Hook settings changed. Reopen the editor before saving again.")
+            case .rejected: self.showProviderEditorNotice("The hook change is invalid. Review the rule and try again.")
+            case .unavailable: self.showProviderEditorNotice("Hook settings could not be saved.")
+            }
+        default: break
+        }
     }
 
     private func beginCodexWebSettingsLoad() {
@@ -4173,7 +4262,8 @@ public final class WindowsTrayHost: @unchecked Sendable {
         }
         if message == Self.wakeMessage {
             host.drainCLISetup()
-            if host.remoteEditorOpen { return 0 }
+            host.drainHookSettings()
+            if host.remoteEditorOpen || host.hookEditorPhase != .idle { return 0 }
             host.drainAccountRemoval()
             host.drainMetadataEdit()
             host.drainCredentialEdit()

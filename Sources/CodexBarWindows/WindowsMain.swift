@@ -383,6 +383,20 @@ private final class WindowsTrayApplication: @unchecked Sendable {
                 self.host.postProviderQuotaWarningSave(requestID: requestID, providerID: providerID, result: result)
             }
         },
+        onHookSettingsLoad: { [weak self] requestID in
+            guard let self else { return }
+            Task {
+                let result = await self.runtime.loadHookSettings()
+                self.host.postHookSettingsLoad(requestID: requestID, result: result)
+            }
+        },
+        onHookSettingsSave: { [weak self] requestID, snapshot, mutation in
+            guard let self else { return }
+            Task {
+                let result = await self.runtime.saveHookSettings(expected: snapshot, mutation: mutation)
+                self.host.postHookSettingsSave(requestID: requestID, result: result)
+            }
+        },
         onCodexWebSettingsLoad: { [weak self] requestID in
             guard let self else { return }
             Task {
