@@ -1,5 +1,7 @@
 # Windows 전용 제품 작업 현황
 
+- IMPL-329: 훅 인자 dropdown 취소 후 실제 선택과 값 편집 대상을 동기화한다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
 - IMPL-328: 훅 인자 오류 시 첫 실패 인자를 선택하고 순번만 안내하도록 연결했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
 
 - IMPL-327: 훅 인자 JSON 입력을 개별 인자 선택·추가·삭제·값 편집으로 교체했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.

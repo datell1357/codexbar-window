@@ -44,6 +44,8 @@ public enum WindowsHookRuleDialog {
                 guard context.inputContextIsValid else { context.cancel(); break }
                 let previousFocus = GetFocus()
                 defer {
+                    // Combo-box cancellation may restore selection after its notification callback.
+                    context.synchronizeArgumentSelection()
                     if !context.closed, GetFocus() != previousFocus { revealFocus(context: context) }
                 }
                 let target = message.hwnd == hwnd || IsChild(hwnd, message.hwnd) != 0
@@ -213,6 +215,15 @@ public enum WindowsHookRuleDialog {
             return true
         }
 
+        func synchronizeArgumentSelection() {
+            guard !self.closed, let window, IsWindow(window) != 0 else { return }
+            let index = Int(SendMessageW(GetDlgItem(window, argumentChoiceID), UINT(CB_GETCURSEL), 0, 0))
+            let selected: Int? = self.argumentValues.indices.contains(index) ? index : nil
+            guard selected != self.selectedArgument else { return }
+            self.captureArgument()
+            self.showArgument(selected)
+        }
+
         func addArgument() {
             guard self.inputContextIsValid, !self.closed,
                   self.argumentValues.count < HookRule.maximumArgumentCount else { return }
@@ -348,9 +359,7 @@ public enum WindowsHookRuleDialog {
                 if UINT((wParam >> 16) & 0xffff) == UINT(EN_CHANGE), !context.loadingArgument { context.argumentDirty = true }
             case argumentChoiceID:
                 if UINT((wParam >> 16) & 0xffff) == UINT(CBN_SELCHANGE) {
-                    context.captureArgument()
-                    let index = Int(SendMessageW(GetDlgItem(hwnd, argumentChoiceID), UINT(CB_GETCURSEL), 0, 0))
-                    context.showArgument(index)
+                    context.synchronizeArgumentSelection()
                 }
             case eventID:
                 let index = Int(SendMessageW(GetDlgItem(hwnd, eventID), UINT(CB_GETCURSEL), 0, 0))

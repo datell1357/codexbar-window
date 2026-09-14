@@ -3496,3 +3496,10 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - 저장 실패가 개별 인자 오류이면 해당 순번을 선택한 뒤 입력란으로 초점을 이동한다. 안내에는 순번과 제한만 표시하며 인자 내용은 포함하지 않는다.
 - 전체 명령 크기 초과처럼 개별 인자에 귀속되지 않는 오류에는 임의 인자를 지목하지 않는다. 실행 파일 NUL 오류는 실행 파일 필드 오류로 구분한다.
 - 전체 번역/RTL과 실제 오류 수정/입력 보존/접근성 검증은 남아 있다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·실제 설정/HTTP/훅/UI 실행 미실행.
+
+## IMPL-329 — 인자 dropdown 취소 동기화
+
+- 선택 변경 알림에서만 편집 대상을 바꾸던 경로에 modal 메시지 처리 후 동기화를 추가했다. Escape/닫기 처리에서 native control이 알림 이후 선택을 복원하는 경우를 처리한다.
+- 실제 CB_GETCURSEL과 현재 편집 인덱스가 다를 때만 이전 값을 보존하고 선택된 값을 표시한다. 동일 선택이면 입력란을 다시 쓰지 않아 커서/수정 상태를 유지한다.
+- 기존 선택 변경 알림도 같은 helper를 사용하며 종료/파괴된 창에는 접근하지 않는다.
+- 실행 재현 및 회귀 테스트는 사용자 지시에 따라 미실행이다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 전체 번역/RTL 및 실제 선택·취소/접근성 검증은 남아 있다.
