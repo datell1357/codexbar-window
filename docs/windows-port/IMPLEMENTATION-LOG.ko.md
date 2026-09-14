@@ -3226,3 +3226,11 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - shutdown에서 상태 세대를 무효화하고 현재 상태 task를 직접 취소/drain한다. 부모 refresh 취소 전달과 함께 종료 경로를 명시한다. 요청 source는 Task 생성 전에 불변 값으로 캡처한다.
 - 남은 소요: 컴포넌트 상세/필터, 다국어 문구, 전체 계획 잔여 기능 및 Windows 검증.
 - CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 회귀 테스트 추가/실행, 빌드·lint·실제 HTTP/훅/UI 실행은 이번 구현 전용 단계에서 미실행.
+
+## IMPL-295 — 상태 컴포넌트 구조와 필터
+
+- 원본 UsageStore+Status.swift의 classic components 계약과 StatusItemController+Menu.swift의 최상위 이름 allowlist 의미를 Windows 모델로 옮겼다. 공개 컴포넌트 ID/이름/원문 상태/indicator/children만 보유한다.
+- position 정렬과 동률 원문 순서를 유지하고 그룹별 자식을 묶는다. 빈 이름은 표시에서 제외한다. 중복 ID, 누락 부모, 중첩 그룹은 malformed로 처리하여 조용한 부분 표시를 피한다.
+- 응답 1MiB, 컴포넌트 4096개, 문자열 길이 제한을 적용했다. 상태 매핑을 공통 모델 함수로 두고 incident.io summary도 같은 매핑을 사용한다. 미지 상태는 unknown이다.
+- 모델/파서/필터만 작성했다. 상세 피드 fetch와 요약 결과 모델, incident.io children 보존, runtime 전달, 트레이 하위 메뉴 및 다국어 연결은 아직 남아 있다.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·실제 HTTP/훅/UI 실행 미실행.

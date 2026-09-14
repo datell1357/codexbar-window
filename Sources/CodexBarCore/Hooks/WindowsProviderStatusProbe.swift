@@ -241,15 +241,7 @@ public enum WindowsProviderStatusProbe {
             guard !entry.component_id.isEmpty, statuses[entry.component_id] == nil else {
                 throw Failure.invalidResponse
             }
-            let status: HookProviderStatus
-            switch entry.status {
-            case "operational": status = .none
-            case "degraded_performance": status = .minor
-            case "partial_outage": status = .major
-            case "major_outage", "full_outage": status = .critical
-            case "under_maintenance": status = .maintenance
-            default: status = .unknown
-            }
+            let status = WindowsProviderStatusComponent.indicator(for: entry.status ?? "")
             statuses[entry.component_id] = status
         }
         var leaves: [Component] = []
