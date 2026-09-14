@@ -3276,3 +3276,11 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - 요약/컴포넌트 상태와 상태 확인 토글, 상태 페이지 메뉴/링크에 연결했다. 이는 상태 메뉴 범위이며 전체 Windows UI 다국어 및 언어 선택 UI는 아직 남아 있다. 원본 번역 변경 시 이 catalog도 갱신해야 한다.
 - 편집 스크립트가 무관한 strings 키의 JSON 비호환 escape에서 처음 중단되어 대상 키만 읽도록 수정 후 파일을 생성했다. 빌드나 검증 실행은 아니다.
 - CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·실제 HTTP/훅/UI 실행 미실행.
+
+## IMPL-301 — 상태 조회와 계정 해석 실패 분리
+
+- 활성 공급자 상태 메뉴 모델 생성 후 공개 상태 조회를 수행하고 TokenAccountCLIContext 해석 전에 반영한다. 이후 계정 처리 오류는 기존 오류 게시 경로에서 상태 메뉴와 함께 전달된다.
+- 공개 상태 수집의 일반 실패는 빈 결과로 처리해 사용량 처리를 중단시키지 않는다. 부모 취소는 전파한다. 조회는 순차 실행하므로 사용량 시작이 상태 조회 예산만큼 늦어질 수 있다.
+- 상세 필터/표시 모델 적용을 helper로 모았다. 사용량 처리 후 메뉴 모델 재생성에 다시 적용할 때 상태 세대와 config revision을 확인한다. 처리 중 설정 변경으로 무효화된 결과를 복원하지 않는다.
+- 남은 소요: 계정 해석 조기 실패 시 상태 전용 훅 관측, 독립적인 상태 스케줄/게시, 전체 계획 잔여 기능 및 Windows 검증. 초기 메뉴 생성 이전 config/reconciliation 실패는 여전히 상태 조회에 도달하지 않는다.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·실제 HTTP/훅/UI 실행 미실행.

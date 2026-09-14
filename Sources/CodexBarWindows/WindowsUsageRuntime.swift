@@ -80,6 +80,19 @@ public actor WindowsUsageRuntime {
         return statuses
     }
 
+    private func applyProviderStatuses(_ statuses: [String: WindowsProviderStatusSnapshot], config: CodexBarConfig) {
+        for index in self.statusMenuEntries.indices {
+            let id = self.statusMenuEntries[index].providerID
+            let snapshot = statuses[id]
+            self.statusMenuEntries[index].serviceStatus = snapshot?.indicator
+            let provider = config.enabledProviders().first { $0.rawValue == id }?.firstPartyProvider
+            let allowlist = provider.flatMap { ProviderDescriptorRegistry.descriptor(for: $0).metadata.statusComponentAllowlist }
+            self.statusMenuEntries[index].serviceComponents = snapshot?.components.map {
+                WindowsProviderStatusComponent.filtered($0, allowlist: allowlist)
+            }
+        }
+    }
+
     private func dispatchPendingHooks(statuses: [String: HookProviderStatus]) async -> String? {
         guard let pending = self.pendingHookRefresh else { return nil }
         self.pendingHookRefresh = nil
@@ -2316,6 +2329,15 @@ public actor WindowsUsageRuntime {
                     changelogVisible: metadata.changelogURL != nil,
                     disabledText: metadata.statusPageURL == nil && metadata.statusLinkURL == nil ? "unavailable" : nil)
             }
+            // Public status requests do not depend on resolving account credentials.
+            let statusRevision = try self.hookConfigRevision(config)
+            let providerStatuses: [String: WindowsProviderStatusSnapshot]
+            do { providerStatuses = try await self.collectProviderStatuses(config: config) }
+            catch is CancellationError { throw CancellationError() }
+            catch { providerStatuses = [:] }
+            let statusGeneration = self.providerStatusGeneration
+            guard !self.shuttingDown, !Task.isCancelled else { return }
+            self.applyProviderStatuses(providerStatuses, config: config)
             let accountContext = try TokenAccountCLIContext(
                 selection: TokenAccountCLISelection(label: nil, index: nil, allAccounts: false),
                 config: config,
@@ -2485,17 +2507,16 @@ public actor WindowsUsageRuntime {
                 self.queuedOptionalRefresh = true
                 return
             }
-            let providerStatuses = try await self.collectProviderStatuses(config: config)
-            for index in self.statusMenuEntries.indices {
-                let id = self.statusMenuEntries[index].providerID
-                let snapshot = providerStatuses[id]
-                self.statusMenuEntries[index].serviceStatus = snapshot?.indicator
-                let provider = config.enabledProviders().first { $0.rawValue == id }?.firstPartyProvider
-                let allowlist = provider.flatMap { ProviderDescriptorRegistry.descriptor(for: $0).metadata.statusComponentAllowlist }
-                self.statusMenuEntries[index].serviceComponents = snapshot?.components.map {
-                    WindowsProviderStatusComponent.filtered($0, allowlist: allowlist)
-                }
+            // Usage work can suspend for a long time. Do not restore a status snapshot
+            // invalidated by a settings change while that work was running.
+            var statusStillCurrent = false
+            if self.providerStatusGeneration == statusGeneration,
+               let currentConfig = try? self.configStore.load(),
+               let currentRevision = try? self.hookConfigRevision(currentConfig) {
+                statusStillCurrent = currentRevision == statusRevision
             }
+            let currentStatuses = statusStillCurrent ? providerStatuses : [:]
+            self.applyProviderStatuses(currentStatuses, config: config)
             if config.hooks?.enabled == true, !Task.isCancelled {
                 let revision = try self.hookConfigRevision(config)
                 if let current = try self.configStore.load(),
@@ -2505,7 +2526,7 @@ public actor WindowsUsageRuntime {
                         presentationSettings.hidePersonalInfo, revision, self.hookUnresolvedAccountCount)
                 }
             }
-            if let hookNotice = await self.dispatchPendingHooks(statuses: providerStatuses.mapValues(\.indicator)) { entries.append(.row(hookNotice)) }
+            if let hookNotice = await self.dispatchPendingHooks(statuses: currentStatuses.mapValues(\.indicator)) { entries.append(.row(hookNotice)) }
             guard !self.shuttingDown, !Task.isCancelled else { return }
             self.renderEntries = entries
             self.scheduleResetBoundaryRefreshIfNeeded(
