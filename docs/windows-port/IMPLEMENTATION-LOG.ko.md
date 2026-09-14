@@ -3234,3 +3234,12 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - 응답 1MiB, 컴포넌트 4096개, 문자열 길이 제한을 적용했다. 상태 매핑을 공통 모델 함수로 두고 incident.io summary도 같은 매핑을 사용한다. 미지 상태는 unknown이다.
 - 모델/파서/필터만 작성했다. 상세 피드 fetch와 요약 결과 모델, incident.io children 보존, runtime 전달, 트레이 하위 메뉴 및 다국어 연결은 아직 남아 있다.
 - CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·실제 HTTP/훅/UI 실행 미실행.
+
+## IMPL-296 — 상세 상태 snapshot 조회
+
+- WindowsProviderStatusSnapshot에 요약 indicator와 optional components를 담는다. nil은 상세 미수신이고 빈 배열은 파싱된 빈 목록이다.
+- incident.io는 같은 응답에서 그룹 ID/이름/자식/원문 상태를 보존하며 요약도 그 잎 컴포넌트에서 계산한다. 숨김/빈 이름 제외, ID 중복 및 길이/항목 수 제한을 적용한다. 빈 그룹과 미지 상태는 unknown이다.
+- fetchSnapshot은 incident.io를 우선 시도하고 classic fallback에서는 status.json 이후 components.json을 순차 조회한다. 상세 실패는 nil로 남기고 필수 요약을 유지한다. 취소는 전파한다. 기존 fetch/decodeIncidentSummary API는 indicator만 반환하는 wrapper로 유지한다.
+- classic 경로는 proxy/status/components 최대 3개 순차 요청이 가능하다. collect의 기존 기한 취소가 적용되며 상세가 기한을 넘기면 현재 collect는 해당 source를 unknown 처리한다.
+- 남은 소요: collect/runtime에 상세 snapshot 전달, descriptor 필터 적용 및 트레이 하위 메뉴. 현재 legacy collect 호출부는 상세 목록을 아직 사용하지 않는다.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·실제 HTTP/훅/UI 실행 미실행.

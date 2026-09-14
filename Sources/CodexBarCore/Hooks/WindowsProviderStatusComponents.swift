@@ -1,6 +1,17 @@
 #if os(Windows)
 import Foundation
 
+public struct WindowsProviderStatusSnapshot: Sendable, Equatable {
+    public let indicator: HookProviderStatus
+    /// Nil means no component response was obtained; an empty array is a loaded empty list.
+    public let components: [WindowsProviderStatusComponent]?
+
+    public init(indicator: HookProviderStatus, components: [WindowsProviderStatusComponent]? = nil) {
+        self.indicator = indicator
+        self.components = components
+    }
+}
+
 /// Public service components. Kept separate from account/usage observations.
 public struct WindowsProviderStatusComponent: Sendable, Equatable {
     public let id: String

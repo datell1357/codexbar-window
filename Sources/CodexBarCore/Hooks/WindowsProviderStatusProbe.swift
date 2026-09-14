@@ -17,6 +17,13 @@ public enum WindowsProviderStatusProbe {
         baseURL: URL,
         transport: any ProviderHTTPTransport = WindowsManualAccountHTTPTransport.shared) async throws -> HookProviderStatus
     {
+        try await self.fetchSnapshot(baseURL: baseURL, transport: transport).indicator
+    }
+
+    public static func fetchSnapshot(
+        baseURL: URL,
+        transport: any ProviderHTTPTransport = WindowsManualAccountHTTPTransport.shared) async throws -> WindowsProviderStatusSnapshot
+    {
         try Task.checkCancellation()
         guard let components = URLComponents(url: baseURL, resolvingAgainstBaseURL: false),
               components.scheme == "https", components.host?.isEmpty == false,
@@ -25,13 +32,21 @@ public enum WindowsProviderStatusProbe {
         var proxy = components
         proxy.path = "/proxy/" + (components.host ?? "")
         if let url = proxy.url {
-            do { return try self.decodeIncidentSummary(await self.read(url: url, transport: transport)) }
+            do { return try self.decodeIncidentSnapshot(await self.read(url: url, transport: transport)) }
             catch is CancellationError { throw CancellationError() }
             catch { /* Non-incident.io pages fall back to the classic endpoint. */ }
         }
         try Task.checkCancellation()
-        return try self.decode(await self.read(
+        let indicator = try self.decode(await self.read(
             url: baseURL.appendingPathComponent("api/v2/status.json"), transport: transport))
+        let components: [WindowsProviderStatusComponent]?
+        do {
+            components = try self.decodeStatuspageComponents(await self.read(
+                url: baseURL.appendingPathComponent("api/v2/components.json"), transport: transport))
+        } catch is CancellationError { throw CancellationError() }
+        catch { components = nil }
+        try Task.checkCancellation()
+        return WindowsProviderStatusSnapshot(indicator: indicator, components: components)
     }
 
     private static func read(url: URL, transport: any ProviderHTTPTransport) async throws -> Data {
@@ -209,6 +224,10 @@ public enum WindowsProviderStatusProbe {
 
     /// Missing affected entries are operational; malformed/unknown entries never imply recovery.
     public static func decodeIncidentSummary(_ data: Data) throws -> HookProviderStatus {
+        try self.decodeIncidentSnapshot(data).indicator
+    }
+
+    public static func decodeIncidentSnapshot(_ data: Data) throws -> WindowsProviderStatusSnapshot {
         try Task.checkCancellation()
         guard data.count <= 1024 * 1024 else { throw Failure.oversized }
         struct Component: Decodable {
@@ -217,6 +236,7 @@ public enum WindowsProviderStatusProbe {
             let hidden: Bool?
         }
         struct Group: Decodable {
+            let id: String
             let name: String?
             let hidden: Bool?
             let components: [Component]?
@@ -236,31 +256,16 @@ public enum WindowsProviderStatusProbe {
         let affected = response.summary.affected_components ?? []
         guard !items.isEmpty else { throw Failure.invalidResponse }
         guard items.count <= 4096, affected.count <= 4096 else { throw Failure.oversized }
-        var statuses: [String: HookProviderStatus] = [:]
+        var statuses: [String: String] = [:]
         for entry in affected {
-            guard !entry.component_id.isEmpty, statuses[entry.component_id] == nil else {
-                throw Failure.invalidResponse
-            }
-            let status = WindowsProviderStatusComponent.indicator(for: entry.status ?? "")
-            statuses[entry.component_id] = status
+            guard !entry.component_id.isEmpty, entry.component_id.utf8.count <= 1024,
+                  (entry.status?.utf8.count ?? 0) <= 256,
+                  statuses[entry.component_id] == nil else { throw Failure.invalidResponse }
+            statuses[entry.component_id] = entry.status ?? "unknown"
         }
-        var leaves: [Component] = []
         func visible(_ hidden: Bool?, _ name: String?) -> Bool {
             hidden != true && !(name?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true)
         }
-        for item in items {
-            try Task.checkCancellation()
-            if let group = item.group, visible(group.hidden, group.name) {
-                leaves.append(contentsOf: (group.components ?? []).filter { visible($0.hidden, $0.name) })
-            } else if item.group == nil, let component = item.component,
-                      visible(component.hidden, component.name) {
-                leaves.append(component)
-            }
-            guard leaves.count <= 4096 else { throw Failure.oversized }
-        }
-        guard !leaves.isEmpty else { return .unknown }
-        var seen = Set<String>()
-        var result: HookProviderStatus = .none
         func rank(_ status: HookProviderStatus) -> Int {
             switch status {
             case .none: 0
@@ -271,15 +276,43 @@ public enum WindowsProviderStatusProbe {
             case .unknown: 5
             }
         }
-        for leaf in leaves {
-            guard !leaf.component_id.isEmpty, seen.insert(leaf.component_id).inserted else {
-                throw Failure.invalidResponse
+        var seen = Set<String>()
+        var rowCount = 0
+        func reserve(id: String, name: String) throws {
+            guard !id.isEmpty, id.utf8.count <= 1024, name.utf8.count <= 4096,
+                  seen.insert(id).inserted else { throw Failure.invalidResponse }
+            rowCount += 1
+            guard rowCount <= 4096 else { throw Failure.oversized }
+        }
+        func leaf(_ component: Component) throws -> WindowsProviderStatusComponent {
+            let name = component.name?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            try reserve(id: component.component_id, name: name)
+            return WindowsProviderStatusComponent(id: component.component_id, name: name,
+                rawStatus: statuses[component.component_id] ?? "operational")
+        }
+        var rows: [WindowsProviderStatusComponent] = []
+        var leaves: [WindowsProviderStatusComponent] = []
+        for item in items {
+            try Task.checkCancellation()
+            guard item.group == nil || item.component == nil else { throw Failure.invalidResponse }
+            if let group = item.group, visible(group.hidden, group.name) {
+                let name = group.name?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                try reserve(id: group.id, name: name)
+                guard (group.components?.count ?? 0) <= 4096 else { throw Failure.oversized }
+                let children = try (group.components ?? []).filter { visible($0.hidden, $0.name) }.map { try leaf($0) }
+                let worst = children.max { rank($0.indicator) < rank($1.indicator) }
+                rows.append(WindowsProviderStatusComponent(id: group.id, name: name,
+                    rawStatus: worst?.rawStatus ?? "unknown", children: children))
+                leaves.append(contentsOf: children)
+            } else if item.group == nil, let component = item.component, visible(component.hidden, component.name) {
+                let row = try leaf(component)
+                rows.append(row)
+                leaves.append(row)
             }
-            let status = statuses[leaf.component_id] ?? .none
-            if rank(status) > rank(result) { result = status }
         }
         try Task.checkCancellation()
-        return result
+        let indicator = leaves.max { rank($0.indicator) < rank($1.indicator) }?.indicator ?? .unknown
+        return WindowsProviderStatusSnapshot(indicator: indicator, components: rows)
     }
 
     public static func decode(_ data: Data) throws -> HookProviderStatus {
