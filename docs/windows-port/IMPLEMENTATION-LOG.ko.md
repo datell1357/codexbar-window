@@ -3339,3 +3339,11 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - command ID, defaults key, 체크 상태, 설정 callback은 변경하지 않았다. ampersand를 표시용으로 처리하고 앱/시스템 언어 및 영어 fallback을 사용한다.
 - 온스크린 경고, 상세 설정 dialog, 계정·비용 등 나머지 UI는 번역이 남아 있다. 전체 UI 번역 완료를 의미하지 않는다.
 - CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·실제 HTTP/훅/UI 실행 미실행. 전체 계획 잔여 구현 및 Windows 검증은 남아 있다.
+
+## IMPL-309 — 훅 설정 편집 모델
+
+- WindowsHookSettingsSnapshot과 mutation/editor를 작성했다. 전체 활성화, 규칙 삽입/교체/삭제/최종 위치 이동을 지원한다. 기존 snapshot의 HooksConfig와 현재 설정이 다르면 changed로 거부한다.
+- 교체 시 ID 보존, 고유 ID/인덱스/최대 규칙 수를 확인하고 HookRule의 기존 executable/provider/threshold/timeout/command 계약을 재사용한다. 오류 enum에는 경로나 인수 원문을 담지 않는다.
+- 전체 비활성화는 malformed 기존 규칙이 있어도 허용한다. 다른 설정은 current config를 복사해 보존한다. 이 모델은 파일/프로세스 작업을 하지 않으며 적용 결과만 반환한다.
+- 이번 단계는 편집 계약만 작성했다. runtime load/save, 저장 충돌 재확인, Win32 목록/규칙 편집 화면 및 명시적 저장 동작 연결은 남아 있다. 실제 사용자 설정을 변경하거나 훅을 실행하지 않았다.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·실제 HTTP/훅/UI 실행 미실행. 전체 계획 잔여 구현 및 Windows 검증은 남아 있다.
