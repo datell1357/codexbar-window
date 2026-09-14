@@ -3356,3 +3356,11 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - 오류 응답은 fixed enum만 사용해 명령/인수/설정 원문을 UI 오류로 전달하지 않는다. 실제 설정 파일이나 DPAPI를 읽거나 쓰지 않았으며 코드만 작성했다.
 - 남은 소요: native 목록/규칙 편집 dialog, host/main callback 및 저장 확인 화면. 전체 계획 잔여 구현과 Windows 검증도 남아 있다.
 - CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·실제 HTTP/훅/UI 실행 미실행.
+
+## IMPL-311 — 훅 규칙 입력 모델
+
+- WindowsHookRuleDraft에 ID/활성화/이벤트/공급자/실행 경로/개별 인수/임계값/timeout 필드를 둔다. 기존 규칙 ID를 유지하고 새 규칙은 비활성 기본값으로 시작한다.
+- quotaLow 임계값을 사용한 백분율로 입력받아 fraction으로 변환한다. 빈 값은 기존 provider warning fallback이며 다른 이벤트는 임계값을 사용하지 않는다. timeout과 최종 규칙은 기존 HookRule 계약을 따른다.
+- 인수 배열의 추가/수정/삭제에 인덱스와 개수/바이트 제한을 적용한다. 인수를 shell 문장으로 합치거나 공백으로 분해하지 않는다. 빈 인수는 보존하고 NUL은 거부한다.
+- 숫자 입력은 점 소수점과 지수 표기를 받되 단위/그룹 구분은 받지 않는다. 지수 표기는 기존 작은 임계값을 표시 후 다시 편집할 수 있도록 허용한다. form은 이 입력 규칙을 안내해야 한다.
+- 모델만 작성했으며 Win32 필드/목록/저장 dialog 연결은 남아 있다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·실제 설정/HTTP/훅/UI 실행 미실행.
