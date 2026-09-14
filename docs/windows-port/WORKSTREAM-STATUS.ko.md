@@ -1,5 +1,7 @@
 # Windows 전용 제품 작업 현황
 
+- IMPL-310: 훅 설정 runtime load/save, 저장 직전 변경 확인, 큐 재구성을 연결했다. Win32 편집 화면은 남아 있다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
 - IMPL-309: Windows 훅 규칙 편집의 snapshot/변경 충돌/추가·수정·삭제·정렬 모델을 작성했다. 저장/UI 연결은 남아 있다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
 
 - IMPL-308: 사용량 표시/개인정보/추가 사용량과 알림·기록 토글에 원본 번역을 연결했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.

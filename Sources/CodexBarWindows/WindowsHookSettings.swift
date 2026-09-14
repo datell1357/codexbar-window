@@ -17,6 +17,19 @@ public enum WindowsHookSettingsMutation: Sendable {
     case move(id: String, to: Int)
 }
 
+public enum WindowsHookSettingsLoadResult: Sendable {
+    case loaded(WindowsHookSettingsSnapshot)
+    case shuttingDown
+    case unavailable
+}
+
+public enum WindowsHookSettingsSaveResult: Sendable {
+    case saved(WindowsHookSettingsSnapshot)
+    case rejected(WindowsHookSettingsFailure)
+    case shuttingDown
+    case unavailable
+}
+
 public enum WindowsHookSettingsFailure: Error, Sendable {
     case changed, missingRule, duplicateID, invalidPosition, tooManyRules
     case invalidExecutable, invalidProvider, invalidThreshold, invalidTimeout, invalidCommand

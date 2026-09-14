@@ -1871,6 +1871,52 @@ public actor WindowsUsageRuntime {
         }
     }
 
+    /// Loading the editor never creates a config or runs a hook.
+    public func loadHookSettings() -> WindowsHookSettingsLoadResult {
+        guard !self.shuttingDown, !Task.isCancelled else { return .shuttingDown }
+        do {
+            guard let config = try self.configStore.load() else { return .unavailable }
+            return .loaded(WindowsHookSettingsSnapshot(config: config.hooks ?? HooksConfig()))
+        } catch { return .unavailable }
+    }
+
+    public func saveHookSettings(
+        expected: WindowsHookSettingsSnapshot,
+        mutation: WindowsHookSettingsMutation) async -> WindowsHookSettingsSaveResult
+    {
+        guard !self.shuttingDown, !Task.isCancelled else { return .shuttingDown }
+        do {
+            // The host must load an existing application config before exposing an editor.
+            // A deleted config is not recreated from a stale editor snapshot.
+            guard let current = try self.configStore.load() else { return .unavailable }
+            let revision = try self.configStore.encodedData(for: current)
+            let updated = try WindowsHookSettingsEditor.applying(mutation, expected: expected, to: current)
+            let encoded = try self.configStore.encodedData(for: updated)
+            guard let latest = try self.configStore.load(),
+                  try self.configStore.encodedData(for: latest) == revision else {
+                return .rejected(.changed)
+            }
+            guard !Task.isCancelled, !self.shuttingDown else { return .shuttingDown }
+            let hooks = updated.hooks ?? HooksConfig()
+            guard encoded != revision else { return .saved(WindowsHookSettingsSnapshot(config: hooks)) }
+            try self.configStore.saveEncodedData(encoded)
+            self.pendingHookRefresh = nil
+            self.hookRefreshAccounts.removeAll()
+            self.hookPreviousKeys.removeAll()
+            self.hookOwnershipRevision = nil
+            // No synthetic event or refresh is emitted by saving a command. New rules establish
+            // their transition baseline on the next ordinary refresh.
+            await self.hookDispatchQueue.configure(hooks,
+                hidePersonalInfo: WindowsUsagePresentationSettings.load().hidePersonalInfo)
+            return .saved(WindowsHookSettingsSnapshot(config: hooks))
+        } catch let failure as WindowsHookSettingsFailure {
+            return .rejected(failure)
+        } catch {
+            // Never surface parser/IO text that could include command arguments or secrets.
+            return .unavailable
+        }
+    }
+
     public func loadCodexWebSettings() -> WindowsCodexWebSettingsLoadResult {
         guard !self.shuttingDown else { return .shuttingDown }
         do {

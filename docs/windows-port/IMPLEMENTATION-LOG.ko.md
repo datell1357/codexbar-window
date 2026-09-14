@@ -3347,3 +3347,12 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - 전체 비활성화는 malformed 기존 규칙이 있어도 허용한다. 다른 설정은 current config를 복사해 보존한다. 이 모델은 파일/프로세스 작업을 하지 않으며 적용 결과만 반환한다.
 - 이번 단계는 편집 계약만 작성했다. runtime load/save, 저장 충돌 재확인, Win32 목록/규칙 편집 화면 및 명시적 저장 동작 연결은 남아 있다. 실제 사용자 설정을 변경하거나 훅을 실행하지 않았다.
 - CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·실제 HTTP/훅/UI 실행 미실행. 전체 계획 잔여 구현 및 Windows 검증은 남아 있다.
+
+## IMPL-310 — 훅 설정 runtime 저장
+
+- typed load/save result와 runtime API를 추가했다. 없는 설정 파일은 stale editor에서 재생성하지 않는다. 불러오기만으로 설정 생성이나 명령 실행을 하지 않는다.
+- 현재 config에 편집 patch를 적용하고 encode한 뒤 전체 config를 재로드/encode하여 저장 직전 변경을 확인한다. 기존 saveEncodedData 보호 저장 경로를 사용한다. actor 내부에는 저장 전 await가 없지만 외부 프로세스의 마지막 읽기 이후 쓰기와 원자적 CAS를 보장하지는 않는다.
+- 변경 없는 저장은 큐/기준을 초기화하지 않는다. 변경 저장 후 pending batch/계정 관측 기준을 비우고 훅 큐를 재구성한다. 저장 자체는 synthetic event나 refresh를 발생시키지 않는다.
+- 오류 응답은 fixed enum만 사용해 명령/인수/설정 원문을 UI 오류로 전달하지 않는다. 실제 설정 파일이나 DPAPI를 읽거나 쓰지 않았으며 코드만 작성했다.
+- 남은 소요: native 목록/규칙 편집 dialog, host/main callback 및 저장 확인 화면. 전체 계획 잔여 구현과 Windows 검증도 남아 있다.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·실제 HTTP/훅/UI 실행 미실행.
