@@ -190,6 +190,8 @@ public final class WindowsTrayHost: @unchecked Sendable {
     private static let weeklyProgressWorkDaysCommandBase = UINT_PTR(0x7060)
     private static let providerQuotaWarningCommandBase = UINT_PTR(0x7400)
     private static let languageCommandBase = UINT_PTR(0x7F40)
+    private static let refreshOnOpenCommand = UINT_PTR(0x7019)
+    private static let refreshOnOpenTimer = UINT_PTR(0x701A)
     private static let statusChecksCommand = UINT_PTR(0x7018)
     private static let refreshFrequencyCommandBase = UINT_PTR(0x7010)
     private static let lowPowerModeOffCommand = UINT_PTR(0x7020)
@@ -1864,6 +1866,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
         self.tokenAccountPageQueued = false
         var savedAccountsMenuPosition: Int32 = -1
         defer {
+            if let window = self.window { _ = KillTimer(window, Self.refreshOnOpenTimer) }
             self.popupIsOpen = false
             self.popupCopySummary = nil
             self.popupCopyErrors.removeAll(keepingCapacity: true)
@@ -1889,7 +1892,13 @@ public final class WindowsTrayHost: @unchecked Sendable {
             self.keyboardPopupAnchor = keyboardInitiated ? self.keyboardMenuPoint() : nil
         }
         guard let hwnd = self.window, let menu = CreatePopupMenu() else { return }
-        if notifyMenuOpen { self.onMenuOpen() }
+        if notifyMenuOpen {
+            self.onMenuOpen()
+            if self.presentationDefaults.object(forKey: "refreshAllProvidersOnMenuOpen") as? Bool ?? false,
+               let window = self.window {
+                _ = SetTimer(window, Self.refreshOnOpenTimer, 250, nil)
+            }
+        }
         self.mailboxLock.lock()
         let rows = self.mailboxRows
         let menuEntries = self.mailboxMenuEntries
@@ -2352,6 +2361,10 @@ public final class WindowsTrayHost: @unchecked Sendable {
         self.appendShortcutMenu(to: menu)
         self.appendSessionLabelMenu(to: menu)
         self.appendSpendSettingsMenu(to: menu)
+        let refreshOnOpen = self.presentationDefaults.object(forKey: "refreshAllProvidersOnMenuOpen") as? Bool ?? false
+        _ = Self.serviceMenuText(WindowsStatusLocalization.text("refresh_on_open_title")).withCString(encodedAs: UTF16.self) {
+            AppendMenuW(menu, UINT(MF_STRING) | (refreshOnOpen ? UINT(MF_CHECKED) : 0), Self.refreshOnOpenCommand, $0)
+        }
         self.appendLanguageMenu(to: menu)
         self.appendRefreshFrequencyMenu(to: menu)
         self.appendLowPowerModeMenu(to: menu)
@@ -3714,6 +3727,9 @@ public final class WindowsTrayHost: @unchecked Sendable {
         case Self.quotaWarningOnScreenAlertCommand: self.toggleQuotaWarningOnScreenAlertSetting()
         case let command where command >= Self.languageCommandBase && command < Self.languageCommandBase + 64:
             self.selectLanguage(command: command)
+        case Self.refreshOnOpenCommand:
+            let enabled = self.presentationDefaults.object(forKey: "refreshAllProvidersOnMenuOpen") as? Bool ?? false
+            self.presentationDefaults.set(!enabled, forKey: "refreshAllProvidersOnMenuOpen")
         case Self.statusChecksCommand:
             let enabled = self.presentationDefaults.object(forKey: "statusChecksEnabled") as? Bool ?? true
             self.presentationDefaults.set(!enabled, forKey: "statusChecksEnabled")
@@ -4106,6 +4122,14 @@ public final class WindowsTrayHost: @unchecked Sendable {
                   case .idle = host.providerEditorPhase, case .idle = host.codexWebSettingsEditorPhase
             else { return 0 }
             host.popup(notifyMenuOpen: false, preserveAnchor: true)
+            return 0
+        }
+        if message == UINT(WM_TIMER), wParam == WPARAM(Self.refreshOnOpenTimer) {
+            _ = KillTimer(hwnd, Self.refreshOnOpenTimer)
+            if host.popupIsOpen, !host.quitInvoked,
+               host.presentationDefaults.object(forKey: "refreshAllProvidersOnMenuOpen") as? Bool ?? false {
+                host.onRefresh()
+            }
             return 0
         }
         if message == UINT(WM_TIMER), wParam == WPARAM(Self.cursorImportPrivacyTimer) {

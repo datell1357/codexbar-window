@@ -3316,3 +3316,11 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - 새로고침/종료와 지원 갱신 주기 항목/제목을 메뉴 생성 시 번역한다. action command와 저장되는 frequency 값은 유지한다. 영문 전용 mnemonic 대신 번역 문자열의 ampersand를 literal로 표시한다.
 - 언어 메뉴의 범위 표시를 partial translation으로 바꾸었다. 기존 unsupported agent-aware 항목과 계정/비용/기타 설정 등은 아직 번역 대상이다. 전체 UI 번역 완료를 의미하지 않는다.
 - CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·실제 HTTP/훅/UI 실행 미실행. 키보드 mnemonic 설계와 Windows 접근성 검증도 남아 있다.
+
+## IMPL-306 — 메뉴 열기 시 갱신
+
+- 원본 SettingsStore의 refreshAllProvidersOnMenuOpen(default false)과 MenuInteractionRefresh의 250ms 지연을 Windows 트레이에 연결했다. 번역된 체크 메뉴로 설정을 저장한다.
+- 실제 root popup의 notifyMenuOpen 경로에서만 Win32 타이머를 등록한다. 계정 페이지 이동의 notifyMenuOpen false 경로와 하위 메뉴는 새 타이머를 만들지 않는다. popup 종료 defer에서 해제한다.
+- WM_TIMER에서 타이머를 해제하고 popup/종료/설정 상태를 다시 확인한 뒤 기존 onRefresh callback을 호출한다. 이미 runtime refresh가 있으면 기존 중복 방지 규칙에 따라 추가 작업은 시작하지 않는다. 주기 설정은 바꾸지 않는다.
+- 실제 TrackPopupMenu 중 타이머 전달, 짧게 열고 닫기, 갱신 결과의 메뉴 반영은 미검증이다. 전체 계획 잔여 기능과 Windows 검증은 남아 있다.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·실제 HTTP/훅/UI 실행 미실행.

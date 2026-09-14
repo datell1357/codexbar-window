@@ -20,6 +20,7 @@ enum WindowsStatusLocalization {
 
     private static let catalog: [String: [String: String]] = [
         "ar": [
+            "refresh_on_open_title": "التحديث عند فتح القائمة",
             "Refresh": "تحديث",
             "refresh_interval_title": "فاصل التحديث",
             "refresh_manual": "الدليل",
@@ -42,6 +43,7 @@ enum WindowsStatusLocalization {
             "Status Page": "صفحة الحالة",
         ],
         "ca": [
+            "refresh_on_open_title": "Actualitza en obrir el menú",
             "Refresh": "Actualitza",
             "refresh_interval_title": "Interval d'actualització",
             "refresh_manual": "Manual",
@@ -64,6 +66,7 @@ enum WindowsStatusLocalization {
             "Status Page": "Pàgina d'estat",
         ],
         "de": [
+            "refresh_on_open_title": "Beim Öffnen des Menüs aktualisieren",
             "Refresh": "Aktualisieren",
             "refresh_interval_title": "Aktualisierungsintervall",
             "refresh_manual": "Manuell",
@@ -86,6 +89,7 @@ enum WindowsStatusLocalization {
             "Status Page": "Statusseite",
         ],
         "en": [
+            "refresh_on_open_title": "Refresh when the menu opens",
             "Refresh": "Refresh",
             "refresh_interval_title": "Refresh interval",
             "refresh_manual": "Manual",
@@ -108,6 +112,7 @@ enum WindowsStatusLocalization {
             "Status Page": "Status Page",
         ],
         "es": [
+            "refresh_on_open_title": "Actualizar al abrir el menú",
             "Refresh": "Actualizar",
             "refresh_interval_title": "Intervalo de actualización",
             "refresh_manual": "Manual",
@@ -130,6 +135,7 @@ enum WindowsStatusLocalization {
             "Status Page": "Página de estado",
         ],
         "fa": [
+            "refresh_on_open_title": "بازخوانی هنگام باز کردن منو",
             "Refresh": "تازه سازی",
             "refresh_interval_title": "فاصله تازه‌سازی",
             "refresh_manual": "دفترچه راهنما",
@@ -152,6 +158,7 @@ enum WindowsStatusLocalization {
             "Status Page": "صفحه وضعیت",
         ],
         "fr": [
+            "refresh_on_open_title": "Actualiser à l'ouverture du menu",
             "Refresh": "Actualiser",
             "refresh_interval_title": "Intervalle d’actualisation",
             "refresh_manual": "Manuel",
@@ -174,6 +181,7 @@ enum WindowsStatusLocalization {
             "Status Page": "Page d'état",
         ],
         "gl": [
+            "refresh_on_open_title": "Actualizar ao abrir o menú",
             "Refresh": "Actualizar",
             "refresh_interval_title": "Intervalo de actualización",
             "refresh_manual": "Manual",
@@ -196,6 +204,7 @@ enum WindowsStatusLocalization {
             "Status Page": "Páxina de estado",
         ],
         "id": [
+            "refresh_on_open_title": "Segarkan saat menu dibuka",
             "Refresh": "Segarkan",
             "refresh_interval_title": "Interval penyegaran",
             "refresh_manual": "Manual",
@@ -218,6 +227,7 @@ enum WindowsStatusLocalization {
             "Status Page": "Halaman Status",
         ],
         "it": [
+            "refresh_on_open_title": "Aggiorna all'apertura del menu",
             "Refresh": "Aggiorna",
             "refresh_interval_title": "Intervallo di aggiornamento",
             "refresh_manual": "Manuale",
@@ -240,6 +250,7 @@ enum WindowsStatusLocalization {
             "Status Page": "Pagina di stato",
         ],
         "ja": [
+            "refresh_on_open_title": "メニューを開いたときに更新",
             "Refresh": "更新",
             "refresh_interval_title": "更新間隔",
             "refresh_manual": "手動",
@@ -262,6 +273,7 @@ enum WindowsStatusLocalization {
             "Status Page": "ステータスページ",
         ],
         "ko": [
+            "refresh_on_open_title": "메뉴를 열 때 새로 고침",
             "Refresh": "새로 고침",
             "refresh_interval_title": "새로 고침 주기",
             "refresh_manual": "수동",
@@ -284,6 +296,7 @@ enum WindowsStatusLocalization {
             "Status Page": "상태 페이지",
         ],
         "nl": [
+            "refresh_on_open_title": "Vernieuwen bij openen van menu",
             "Refresh": "Vernieuwen",
             "refresh_interval_title": "Vernieuwingsinterval",
             "refresh_manual": "Handmatig",
@@ -306,6 +319,7 @@ enum WindowsStatusLocalization {
             "Status Page": "Statuspagina",
         ],
         "pl": [
+            "refresh_on_open_title": "Odśwież po otwarciu menu",
             "Refresh": "Odśwież",
             "refresh_interval_title": "Częstotliwość odświeżania",
             "refresh_manual": "Ręcznie",
@@ -328,6 +342,7 @@ enum WindowsStatusLocalization {
             "Status Page": "Strona statusu",
         ],
         "pt-BR": [
+            "refresh_on_open_title": "Atualizar ao abrir o menu",
             "Refresh": "Atualizar",
             "refresh_interval_title": "Intervalo de atualização",
             "refresh_manual": "Manual",
@@ -350,6 +365,7 @@ enum WindowsStatusLocalization {
             "Status Page": "Página de status",
         ],
         "ru": [
+            "refresh_on_open_title": "Обновить при открытии меню",
             "Refresh": "Обновить",
             "refresh_interval_title": "Частота обновления",
             "refresh_manual": "Вручную",
@@ -372,6 +388,7 @@ enum WindowsStatusLocalization {
             "Status Page": "Страница статуса",
         ],
         "sv": [
+            "refresh_on_open_title": "Uppdatera när menyn öppnas",
             "Refresh": "Uppdatera",
             "refresh_interval_title": "Uppdateringsintervall",
             "refresh_manual": "Manuellt",
@@ -394,6 +411,7 @@ enum WindowsStatusLocalization {
             "Status Page": "Statussida",
         ],
         "th": [
+            "refresh_on_open_title": "รีเฟรชเมื่อเปิดเมนู",
             "Refresh": "รีเฟรช",
             "refresh_interval_title": "ช่วงเวลาการรีเฟรช",
             "refresh_manual": "ด้วยมือ",
@@ -416,6 +434,7 @@ enum WindowsStatusLocalization {
             "Status Page": "หน้าสถานะ",
         ],
         "tr": [
+            "refresh_on_open_title": "Menü açıldığında yenile",
             "Refresh": "Yenile",
             "refresh_interval_title": "Yenileme aralığı",
             "refresh_manual": "El ile",
@@ -438,6 +457,7 @@ enum WindowsStatusLocalization {
             "Status Page": "Durum sayfası",
         ],
         "uk": [
+            "refresh_on_open_title": "Оновлювати при відкритті меню",
             "Refresh": "Оновити",
             "refresh_interval_title": "Інтервал оновлення",
             "refresh_manual": "Інструкція",
@@ -460,6 +480,7 @@ enum WindowsStatusLocalization {
             "Status Page": "Сторінка стану",
         ],
         "vi": [
+            "refresh_on_open_title": "Làm mới khi mở menu",
             "Refresh": "Làm mới",
             "refresh_interval_title": "Khoảng thời gian làm mới",
             "refresh_manual": "Thủ công",
@@ -482,6 +503,7 @@ enum WindowsStatusLocalization {
             "Status Page": "Trang trạng thái",
         ],
         "zh-Hans": [
+            "refresh_on_open_title": "打开菜单时刷新",
             "Refresh": "刷新",
             "refresh_interval_title": "刷新间隔",
             "refresh_manual": "手动",
@@ -504,6 +526,7 @@ enum WindowsStatusLocalization {
             "Status Page": "状态页",
         ],
         "zh-Hant": [
+            "refresh_on_open_title": "開啟選單時重新整理",
             "Refresh": "重新整理",
             "refresh_interval_title": "重新整理間隔",
             "refresh_manual": "手動",
