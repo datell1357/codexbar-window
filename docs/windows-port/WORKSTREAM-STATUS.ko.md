@@ -1,5 +1,7 @@
 # Windows 전용 제품 작업 현황
 
+- IMPL-305: 새로고침/종료와 갱신 주기 선택에 원본 번역을 연결했다. 전체 UI 번역은 진행 중이다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
 - IMPL-304: 상태 메뉴 언어 선택과 시스템 언어 옵션을 Win32 메뉴에 연결했다. 전체 UI 번역은 아직 남아 있다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
 
 - IMPL-303: 계정 소유권 변경 시 공개 상태 훅과 rate limit 기록은 유지하고 계정 관련 훅만 무효화하도록 분리했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.

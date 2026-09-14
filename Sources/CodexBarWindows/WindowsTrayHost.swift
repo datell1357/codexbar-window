@@ -2356,8 +2356,8 @@ public final class WindowsTrayHost: @unchecked Sendable {
         self.appendRefreshFrequencyMenu(to: menu)
         self.appendLowPowerModeMenu(to: menu)
         _ = AppendMenuW(menu, UINT(MF_SEPARATOR), 0, nil)
-        "Re&fresh".withCString(encodedAs: UTF16.self) { _ = AppendMenuW(menu, UINT(MF_STRING), Self.refreshCommand, $0) }
-        "&Quit".withCString(encodedAs: UTF16.self) { _ = AppendMenuW(menu, UINT(MF_STRING), Self.quitCommand, $0) }
+        Self.serviceMenuText(WindowsStatusLocalization.text("Refresh")).withCString(encodedAs: UTF16.self) { _ = AppendMenuW(menu, UINT(MF_STRING), Self.refreshCommand, $0) }
+        Self.serviceMenuText(WindowsStatusLocalization.text("Quit")).withCString(encodedAs: UTF16.self) { _ = AppendMenuW(menu, UINT(MF_STRING), Self.quitCommand, $0) }
         _ = SetForegroundWindow(hwnd)
         var point = self.keyboardPopupAnchor ?? POINT()
         let havePoint = self.keyboardPopupAnchor != nil || GetCursorPos(&point) != 0
@@ -3162,7 +3162,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
             guard added != 0 else { return }
         }
         // Until the wider Windows UI is migrated, make the current scope visible.
-        let label = WindowsStatusLocalization.text("language_title") + " (status menus)"
+        let label = WindowsStatusLocalization.text("language_title") + " (partial translation)"
         attached = Self.serviceMenuText(label).withCString(encodedAs: UTF16.self) {
             AppendMenuW(menu, UINT(MF_STRING | MF_POPUP), UINT_PTR(UInt(bitPattern: submenu)), $0) != 0
         }
@@ -3180,13 +3180,13 @@ public final class WindowsTrayHost: @unchecked Sendable {
         guard let submenu = CreatePopupMenu() else { return }
         let settings = WindowsRefreshSettings.load(userDefaults: self.presentationDefaults)
         let frequencies: [(WindowsRefreshSettings.Frequency, String, Bool)] = [
-            (.manual, "Manual", true),
-            (.oneMinute, "1 minute", true),
-            (.twoMinutes, "2 minutes", true),
-            (.fiveMinutes, "5 minutes", true),
-            (.fifteenMinutes, "15 minutes", true),
-            (.thirtyMinutes, "30 minutes", true),
-            (.adaptive, "Adaptive", true)
+            (.manual, WindowsStatusLocalization.text("refresh_manual"), true),
+            (.oneMinute, WindowsStatusLocalization.text("refresh_1min"), true),
+            (.twoMinutes, WindowsStatusLocalization.text("refresh_2min"), true),
+            (.fiveMinutes, WindowsStatusLocalization.text("refresh_5min"), true),
+            (.fifteenMinutes, WindowsStatusLocalization.text("refresh_15min"), true),
+            (.thirtyMinutes, WindowsStatusLocalization.text("refresh_30min"), true),
+            (.adaptive, WindowsStatusLocalization.text("refresh_adaptive"), true)
         ] + (settings.frequency == .adaptiveAgentAware
             ? [(.adaptiveAgentAware, "Adaptive (agent-aware unavailable)", false)]
             : [])
@@ -3194,7 +3194,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
             let checked = settings.frequency == frequency ? UINT(MF_CHECKED) : 0
             let disabled = selectable ? 0 : UINT(MF_GRAYED)
             let flags = UINT(MF_STRING) | checked | disabled
-            let appended = label.withCString(encodedAs: UTF16.self) {
+            let appended = Self.serviceMenuText(label).withCString(encodedAs: UTF16.self) {
                 AppendMenuW(submenu, flags, Self.frequencyCommand(for: frequency), $0)
             }
             guard appended != 0 else {
@@ -3202,7 +3202,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
                 return
             }
         }
-        let title = Array("Refresh frequency".utf16) + [0]
+        let title = Array(Self.serviceMenuText(WindowsStatusLocalization.text("refresh_interval_title")).utf16) + [0]
         let attached = title.withUnsafeBufferPointer { text in
             AppendMenuW(menu, UINT(MF_STRING | MF_POPUP), UINT_PTR(UInt(bitPattern: submenu)), text.baseAddress)
         }

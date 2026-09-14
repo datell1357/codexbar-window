@@ -3309,3 +3309,10 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - 원본 번역에서 language_title/language_system을 추가로 가져왔다. 메뉴에는 현재 번역 적용 범위가 상태 메뉴임을 명시했다. 전체 UI 번역 완료를 의미하지 않는다.
 - 최대 64개 command 범위와 index 확인을 적용하고 메뉴 생성 실패 시 아직 연결하지 않은 핸들을 정리한다. 실제 언어 선택/시스템 언어 매칭/RTL 표시는 미검증이다.
 - CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·실제 HTTP/훅/UI 실행 미실행. 전체 계획 잔여 기능과 Windows 검증은 남아 있다.
+
+## IMPL-305 — 기본 트레이 조작 번역
+
+- 원본 언어별 Refresh/Quit/refresh_interval_title 및 manual/1/2/5/15/30min/adaptive 문구를 Windows catalog에 추가했다. 기존 언어 선택과 영어 fallback을 사용한다.
+- 새로고침/종료와 지원 갱신 주기 항목/제목을 메뉴 생성 시 번역한다. action command와 저장되는 frequency 값은 유지한다. 영문 전용 mnemonic 대신 번역 문자열의 ampersand를 literal로 표시한다.
+- 언어 메뉴의 범위 표시를 partial translation으로 바꾸었다. 기존 unsupported agent-aware 항목과 계정/비용/기타 설정 등은 아직 번역 대상이다. 전체 UI 번역 완료를 의미하지 않는다.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·실제 HTTP/훅/UI 실행 미실행. 키보드 mnemonic 설계와 Windows 접근성 검증도 남아 있다.
