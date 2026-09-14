@@ -1,5 +1,7 @@
 # Windows 전용 제품 작업 현황
 
+- IMPL-337: 위젯 인스턴스와 snapshot의 제공자 선택/empty/disabled/stale 표시 상태 계산을 작성했다. 호스트 미연결. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
 - IMPL-336: 위젯 설정 bounded read/원자 저장과 프로세스 간 writer lock을 작성했다. 호스트 호출 미연결. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
 
 - IMPL-335: W10 위젯 6종의 선택 범위와 독립 인스턴스/공용 선택 설정 모델을 작성했다. 호스트/저장/화면 미연결. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.

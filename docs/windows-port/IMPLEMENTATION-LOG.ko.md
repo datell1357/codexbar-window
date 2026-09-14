@@ -3556,3 +3556,11 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - 모델 검증 후 atomic write를 사용하고 같은 설정이면 쓰지 않는다. lock은 defer로 닫으며 raw 오류/경로/설정 내용은 오류 메시지에 포함하지 않는다.
 - 저장 URL 결정/ACL, host 호출·재시도 UI, snapshot 전달 및 OS 위젯 등록은 미연결이다. 비협력 외부 writer에 대한 CAS나 crash durability를 보장한다고 주장하지 않는다.
 - CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 실제 파일 읽기/쓰기·lock·빌드·테스트·lint·UI/위젯 실행 미실행.
+
+## IMPL-337 — 위젯 콘텐츠 선택과 오래된 데이터 구분
+
+- 원본 Switcher의 enabledProviders 및 legacy entries fallback을 참고해 선택 가능한 제공자 순서를 유지하고 중복을 제거한다. Switcher만 사용 가능한 첫 제공자로 표시 fallback하며 독립 위젯 선택은 바꾸지 않는다.
+- snapshot 없음, entry 없음, 비활성, stale, ready를 구분한다. 중복 provider entry와 미래/비정상 시각 및 과도한 entry 수는 거부한다.
+- 호출자가 지정하는 최대 데이터 나이로 snapshot과 entry를 각각 판단하고 cost timestamp는 quota 갱신과 별도로 stale을 계산한다. used/remaining 표시 설정을 전달한다.
+- 계산은 설정을 저장하지 않는다. runtime snapshot 공급/직렬화 검증/계정 소유권 격리, metric별 렌더링, refresh schedule 및 Windows host 호출은 미연결이다.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·UI/HTTP/위젯 실행 미실행.
