@@ -6,6 +6,11 @@ import FoundationNetworking
 
 /// Public Statuspage and incident.io summaries; no credentials or account data.
 public enum WindowsProviderStatusProbe {
+    public enum Source: Sendable {
+        case statusPage(URL)
+        case workspace(productID: String)
+    }
+
     public enum Failure: Error { case invalidURL, invalidResponse, oversized, unavailable }
 
     public static func fetch(
@@ -47,6 +52,10 @@ public enum WindowsProviderStatusProbe {
 
     /// At most four requests in flight; failed or unattempted sources remain unknown.
     public static func collect(_ sources: [String: URL], deadline: Date) async throws -> [String: HookProviderStatus] {
+        try await self.collect(sources.mapValues { Source.statusPage($0) }, deadline: deadline)
+    }
+
+    public static func collect(_ sources: [String: Source], deadline: Date) async throws -> [String: HookProviderStatus] {
         guard sources.count <= 256 else { throw Failure.oversized }
         try Task.checkCancellation()
         let entries = sources.sorted { $0.key < $1.key }
@@ -57,7 +66,11 @@ public enum WindowsProviderStatusProbe {
                 let entry = entries[index]
                 group.addTask {
                     guard !Task.isCancelled, Date() < deadline else { return (entry.key, .unknown) }
-                    let status = (try? await Self.fetch(baseURL: entry.value)) ?? .unknown
+                    let status: HookProviderStatus
+                    switch entry.value {
+                    case let .statusPage(url): status = (try? await Self.fetch(baseURL: url)) ?? .unknown
+                    case let .workspace(productID): status = (try? await Self.fetchWorkspace(productID: productID)) ?? .unknown
+                    }
                     guard !Task.isCancelled, Date() < deadline else { return (entry.key, .unknown) }
                     return (entry.key, status)
                 }
@@ -70,6 +83,86 @@ public enum WindowsProviderStatusProbe {
             }
         }
         try Task.checkCancellation()
+        return result
+    }
+
+    public static func fetchWorkspace(
+        productID: String,
+        transport: any ProviderHTTPTransport = WindowsManualAccountHTTPTransport.shared) async throws -> HookProviderStatus
+    {
+        guard !productID.isEmpty, productID.utf8.count <= 256,
+              let url = URL(string: "https://www.google.com/appsstatus/dashboard/incidents.json") else {
+            throw Failure.invalidURL
+        }
+        return try self.decodeWorkspace(await self.read(url: url, transport: transport), productID: productID)
+    }
+
+    public static func decodeWorkspace(_ data: Data, productID: String) throws -> HookProviderStatus {
+        try Task.checkCancellation()
+        guard !productID.isEmpty, productID.utf8.count <= 256 else { throw Failure.invalidResponse }
+        guard data.count <= 1024 * 1024 else { throw Failure.oversized }
+        struct Product: Decodable { let id: String }
+        struct Update: Decodable { let status: String? }
+        struct Incident: Decodable {
+            let end: String?
+            let statusImpact: String?
+            let severity: String?
+            let affectedProducts: [Product]?
+            let currentlyAffectedProducts: [Product]?
+            let mostRecentUpdate: Update?
+            let updates: [Update]?
+        }
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        let incidents: [Incident]
+        do { incidents = try decoder.decode([Incident].self, from: data) }
+        catch { throw Failure.invalidResponse }
+        guard incidents.count <= 4096 else { throw Failure.oversized }
+        var result: HookProviderStatus = .none
+        func rank(_ status: HookProviderStatus) -> Int {
+            switch status {
+            case .none: 0
+            case .maintenance: 1
+            case .minor: 2
+            case .major: 3
+            case .critical: 4
+            case .unknown: 5
+            }
+        }
+        for incident in incidents {
+            try Task.checkCancellation()
+            // An explicitly empty current list overrides historical affected products.
+            let products = incident.currentlyAffectedProducts ?? incident.affectedProducts ?? []
+            guard products.count <= 4096, (incident.updates?.count ?? 0) <= 4096 else { throw Failure.oversized }
+            guard products.contains(where: { $0.id == productID }) else { continue }
+            if let end = incident.end {
+                // Reject malformed end markers rather than treating the incident as resolved.
+                let fractional = ISO8601DateFormatter()
+                fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+                let plain = ISO8601DateFormatter()
+                guard fractional.date(from: end) != nil || plain.date(from: end) != nil else {
+                    throw Failure.invalidResponse
+                }
+                continue
+            }
+            let update = incident.mostRecentUpdate ?? incident.updates?.last
+            let status: HookProviderStatus
+            switch (update?.status ?? incident.statusImpact)?.uppercased() {
+            case "AVAILABLE": status = .none
+            case "SERVICE_INFORMATION": status = .minor
+            case "SERVICE_DISRUPTION": status = .major
+            case "SERVICE_OUTAGE": status = .critical
+            case "SERVICE_MAINTENANCE", "SCHEDULED_MAINTENANCE": status = .maintenance
+            default:
+                switch incident.severity?.lowercased() {
+                case "low": status = .minor
+                case "medium": status = .major
+                case "high": status = .critical
+                default: status = .unknown
+                }
+            }
+            if rank(status) > rank(result) { result = status }
+        }
         return result
     }
 

@@ -66,15 +66,19 @@ public actor WindowsUsageRuntime {
             let statusEnabled = (UserDefaults(suiteName: WindowsRefreshSettings.suiteName) ?? .standard)
                 .object(forKey: "statusChecksEnabled") as? Bool ?? true
             if statusEnabled, let current = try self.configStore.load() {
-                var sources: [String: URL] = [:]
+                var sources: [String: WindowsProviderStatusProbe.Source] = [:]
                 for id in current.enabledProviders() {
                     guard let provider = id.firstPartyProvider,
                           pending.config.events.contains(where: { rule in
                               rule.enabled && (rule.provider == nil || rule.provider == id.rawValue) &&
                                   (rule.event == .providerUnavailable || rule.event == .providerRecovered)
-                          }), let raw = ProviderDescriptorRegistry.descriptor(for: provider).metadata.statusPageURL,
-                          let url = URL(string: raw) else { continue }
-                    sources[id.rawValue] = url
+                          }) else { continue }
+                    let metadata = ProviderDescriptorRegistry.descriptor(for: provider).metadata
+                    if let raw = metadata.statusPageURL, let url = URL(string: raw) {
+                        sources[id.rawValue] = .statusPage(url)
+                    } else if let productID = metadata.statusWorkspaceProductID {
+                        sources[id.rawValue] = .workspace(productID: productID)
+                    }
                 }
                 let statuses = try await WindowsProviderStatusProbe.collect(sources, deadline: Date().addingTimeInterval(30))
                 guard !Task.isCancelled, self.hookSubmissionIsCurrent(revision: pending.configRevision, privacy: pending.privacy) else {

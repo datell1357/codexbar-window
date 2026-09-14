@@ -3184,3 +3184,11 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - 1MiB 응답, 4096개 항목/컴포넌트 제한, 중복 ID 거부, 취소 전파를 적용했다. 각 요청은 10초 timeout이며 fallback으로 공급자당 두 요청이 순차 실행될 수 있다. collect의 30초 제출 예산은 전체 반환 시간 보장이 아니다.
 - 남은 소요: component별 표시/필터, Workspace 피드, plugin/외부 계정 소유권, 설정 UI 및 전체 계획 나머지.
 - CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·실제 HTTP/훅 실행 미실행.
+
+## IMPL-290 — Workspace 제품 상태와 Windows 훅 연결
+
+- 원본 Workspace incidents.json 계약을 Windows 상태 모듈로 옮겼다. metadata의 statusWorkspaceProductID를 사용하며 일반 statusPageURL이 있으면 기존 경로를 우선한다.
+- 현재 영향 대상 목록 우선, 제품 ID 일치, 종료되지 않은 장애만 집계, mostRecentUpdate/마지막 update/statusImpact 우선순위를 반영했다. 유효한 종료 시각을 요구하고 미지 상태/심각도는 unknown으로 보존한다.
+- Source enum을 추가해 Workspace와 Statuspage가 같은 동시성/제출 예산/취소 처리에 참여하게 했다. 기존 URL collect 진입점도 유지한다.
+- 공개 피드만 사용하며 10초 요청 timeout, 1MiB 응답 및 4096개 incident/product/update 제한을 적용했다. 피드 초과/실패는 unknown이다. 동일 제품 요청 공유와 component별 표시/필터 등은 남아 있다.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·실제 HTTP/훅 실행 미실행.
