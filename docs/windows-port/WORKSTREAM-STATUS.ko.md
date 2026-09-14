@@ -1,5 +1,7 @@
 # Windows 전용 제품 작업 현황
 
+- IMPL-339: Burn Down 세션/주간 선택, 주간 소진 상한과 갱신 희망 시점을 작성했다. 호스트/차트 미연결. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
 - IMPL-338: Metric 3종의 숫자/통화/토큰/추정치 표시 모델을 작성했다. 화면 미연결. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
 
 - IMPL-337: 위젯 인스턴스와 snapshot의 제공자 선택/empty/disabled/stale 표시 상태 계산을 작성했다. 호스트 미연결. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.

@@ -3571,3 +3571,11 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - Devin Extra usage balance는 provider cost의 통화 값으로 표시하고 자체 updatedAt으로 stale을 판단한다. Codex 비용은 원본의 API 추정치·미청구 안내를 유지한다.
 - nil 값을 0으로 바꾸지 않는다. 비정상 숫자/통화 코드/음수 tokenCount와 제어문자·과도한 label을 표시용 값에서 배제한다. 통화 포맷은 후속 native renderer가 locale에 맞춰 적용한다.
 - provider 계정 소유권 검증/스냅샷 공급, 화면·현지화 및 host 호출은 미연결이다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·UI/HTTP/위젯 실행 미실행.
+
+## IMPL-339 — Burn Down 시간 창과 갱신 정책
+
+- 원본 BurnDownWidgetProvider의 5시간 세션/7일 주간 창을 windowMinutes로 선택한다. primary/secondary 위치를 의미로 단정하지 않는다.
+- descriptor의 secondaryGloballyCapsPrimary를 사용해 주간 소진이 세션을 제한할 때 유효 세션 잔량을 0으로 만들고 세션 차트 비움/주간 reset override를 전달한다.
+- 원본의 5~30분 범위에서 미래 reset 직후를 고려한 nextRefresh를 계산한다. Windows OS가 실제 이 시각에 갱신함을 보장하지 않으며 scheduler/host 연동은 남아 있다.
+- Combined용 세션/주간 양쪽 값을 함께 제공한다. 계정별 이력/예측 차트와 native rendering, snapshot 공급은 미연결이다.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·UI/HTTP/위젯 실행 미실행.
