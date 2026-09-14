@@ -5,8 +5,13 @@ import Foundation
 /// Value-only editor contract. Commands stay in the editor, never in diagnostic summaries.
 public struct WindowsHookSettingsSnapshot: Sendable, Equatable {
     public let config: HooksConfig
+    /// Runtime-loaded snapshots bind edits to the privacy setting at load time.
+    public let hidePersonalInfo: Bool?
 
-    public init(config: HooksConfig) { self.config = config }
+    public init(config: HooksConfig, hidePersonalInfo: Bool? = nil) {
+        self.config = config
+        self.hidePersonalInfo = hidePersonalInfo
+    }
 }
 
 public enum WindowsHookSettingsMutation: Sendable {

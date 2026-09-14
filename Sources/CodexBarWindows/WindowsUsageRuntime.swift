@@ -1875,8 +1875,10 @@ public actor WindowsUsageRuntime {
     public func loadHookSettings() -> WindowsHookSettingsLoadResult {
         guard !self.shuttingDown, !Task.isCancelled else { return .shuttingDown }
         do {
+            let privacy = WindowsUsagePresentationSettings.load().hidePersonalInfo
             guard let config = try self.configStore.load() else { return .unavailable }
-            return .loaded(WindowsHookSettingsSnapshot(config: config.hooks ?? HooksConfig()))
+            guard privacy == WindowsUsagePresentationSettings.load().hidePersonalInfo else { return .unavailable }
+            return .loaded(WindowsHookSettingsSnapshot(config: config.hooks ?? HooksConfig(), hidePersonalInfo: privacy))
         } catch { return .unavailable }
     }
 
@@ -1885,6 +1887,8 @@ public actor WindowsUsageRuntime {
         mutation: WindowsHookSettingsMutation) async -> WindowsHookSettingsSaveResult
     {
         guard !self.shuttingDown, !Task.isCancelled else { return .shuttingDown }
+        guard let privacy = expected.hidePersonalInfo,
+              privacy == WindowsUsagePresentationSettings.load().hidePersonalInfo else { return .rejected(.changed) }
         do {
             // The host must load an existing application config before exposing an editor.
             // A deleted config is not recreated from a stale editor snapshot.
@@ -1897,8 +1901,9 @@ public actor WindowsUsageRuntime {
                 return .rejected(.changed)
             }
             guard !Task.isCancelled, !self.shuttingDown else { return .shuttingDown }
+            guard privacy == WindowsUsagePresentationSettings.load().hidePersonalInfo else { return .rejected(.changed) }
             let hooks = updated.hooks ?? HooksConfig()
-            guard encoded != revision else { return .saved(WindowsHookSettingsSnapshot(config: hooks)) }
+            guard encoded != revision else { return .saved(WindowsHookSettingsSnapshot(config: hooks, hidePersonalInfo: privacy)) }
             try self.configStore.saveEncodedData(encoded)
             self.pendingHookRefresh = nil
             self.hookRefreshAccounts.removeAll()
@@ -1908,7 +1913,7 @@ public actor WindowsUsageRuntime {
             // their transition baseline on the next ordinary refresh.
             await self.hookDispatchQueue.configure(hooks,
                 hidePersonalInfo: WindowsUsagePresentationSettings.load().hidePersonalInfo)
-            return .saved(WindowsHookSettingsSnapshot(config: hooks))
+            return .saved(WindowsHookSettingsSnapshot(config: hooks, hidePersonalInfo: privacy))
         } catch let failure as WindowsHookSettingsFailure {
             return .rejected(failure)
         } catch {

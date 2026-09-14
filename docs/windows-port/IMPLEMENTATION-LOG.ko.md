@@ -3396,3 +3396,11 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - 훅 편집이 진행 중이면 root popup과 후속 설정 mailbox drain을 보류한다. rule form의 isCurrent는 host 종료/편집 요청 ID를 확인한다. 종료 정리에서 기대 요청과 mailbox를 비운다.
 - 저장 실패는 고정 문구로 표시하며 원문 command/arguments를 넣지 않는다. 편집을 여는 것만으로 명령을 실행하지 않는다. 실제 사용자 설정 파일은 이번 작업에서 접근하지 않았다.
 - 남은 소요: load부터 save까지 privacy context 일관성, 다른 모든 비동기 editor와 상호 배제, 대기 취소/접근성/번역 및 전체 잔여 기능. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·실제 설정/HTTP/훅/UI 실행 미실행.
+
+## IMPL-316 — 훅 편집 개인정보 기준 연결
+
+- runtime load가 개인정보 설정을 읽기 전후 확인하고 snapshot에 값을 포함한다. host도 요청 시작 때 값을 캡처해 load 결과의 값/현재 값과 일치할 때만 목록을 연다.
+- 편집 isCurrent 및 저장 요청 직전에 같은 값을 확인한다. runtime save는 privacy 정보가 없는 snapshot을 거부하며 시작과 파일 쓰기 직전에도 현재 값을 확인한다.
+- 순수 editor 모델의 snapshot 생성은 기존과 호환되지만 privacy 미지정 snapshot은 실제 runtime 저장에 사용할 수 없다. 저장 결과에도 기준 값을 유지한다.
+- 값 비교 방식이므로 외부 설정이 중간에 바뀌었다 원복되는 ABA 변경을 전부 감지하지는 않는다. config 외부 프로세스와 atomic CAS도 아직 보장하지 않는다. 실제 파일/설정 접근은 이번 작업에서 실행하지 않았다.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·실제 설정/HTTP/훅/UI 실행 미실행. 다른 editor와의 상호 배제 및 전체 잔여 구현/Windows 검증은 남아 있다.

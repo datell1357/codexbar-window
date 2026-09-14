@@ -279,6 +279,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
     private enum HookEditorReply { case loaded(WindowsHookSettingsLoadResult), saved(WindowsHookSettingsSaveResult) }
     private var hookEditorPhase: HookEditorPhase = .idle
     private var nextHookRequest: UInt64 = 1
+    private var hookEditorPrivacy: Bool?
     private var hookExpected: (id: UInt64, saving: Bool)?
     private var hookReply: (id: UInt64, value: HookEditorReply)?
 
@@ -3814,6 +3815,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
         guard !self.quitInvoked, !self.remoteEditorOpen, self.hookEditorPhase == .idle,
               case .idle = self.providerEditorPhase, case .idle = self.codexWebSettingsEditorPhase else { return }
         let id = self.nextHookRequest; self.nextHookRequest &+= 1
+        self.hookEditorPrivacy = WindowsUsagePresentationSettings.load().hidePersonalInfo
         self.hookEditorPhase = .loading(id)
         self.mailboxLock.lock()
         self.hookExpected = (id, false); self.hookReply = nil
@@ -3835,14 +3837,22 @@ public final class WindowsTrayHost: @unchecked Sendable {
                 if case .unavailable = result { self.showProviderEditorNotice("Hook settings could not be loaded.") }
                 return
             }
-            guard let hwnd = self.window, IsWindow(hwnd) != 0 else { self.hookEditorPhase = .idle; return }
+            guard let privacy = self.hookEditorPrivacy, snapshot.hidePersonalInfo == privacy,
+                  WindowsUsagePresentationSettings.load().hidePersonalInfo == privacy,
+                  let hwnd = self.window, IsWindow(hwnd) != 0 else {
+                self.hookEditorPhase = .idle; self.hookEditorPrivacy = nil; return
+            }
             self.hookEditorPhase = .editing(id)
             let mutation = WindowsHookSettingsMenu.show(owner: hwnd, snapshot: snapshot, isCurrent: { [weak self] in
                 guard let self else { return false }
-                return !self.quitInvoked && self.hookEditorPhase == .editing(id)
+                return !self.quitInvoked && self.hookEditorPhase == .editing(id) &&
+                    WindowsUsagePresentationSettings.load().hidePersonalInfo == privacy
             })
             self.hookEditorPhase = .idle
-            guard !self.quitInvoked, let mutation else { return }
+            guard !self.quitInvoked, let mutation,
+                  WindowsUsagePresentationSettings.load().hidePersonalInfo == privacy else {
+                self.hookEditorPrivacy = nil; return
+            }
             let saveID = self.nextHookRequest; self.nextHookRequest &+= 1
             self.hookEditorPhase = .saving(saveID)
             self.mailboxLock.lock()
@@ -3851,6 +3861,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
             self.onHookSettingsSave(saveID, snapshot, mutation)
         case let (.saving(id), .saved(result)) where id == reply.id:
             self.hookEditorPhase = .idle
+            self.hookEditorPrivacy = nil
             switch result {
             case .saved: break
             case .shuttingDown: break

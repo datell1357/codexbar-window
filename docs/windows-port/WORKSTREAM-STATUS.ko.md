@@ -1,5 +1,7 @@
 # Windows 전용 제품 작업 현황
 
+- IMPL-316: 훅 편집 snapshot을 privacy 값에 연결하고 load/edit/save의 경계마다 변경을 확인하도록 작성했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
 - IMPL-315: 트레이 훅 설정의 async load/edit/save를 host/main/runtime에 연결했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
 
 - IMPL-314: 훅 규칙 목록/추가/편집/토글/삭제/정렬 메뉴를 작성했다. host 비동기 저장 연결은 남아 있다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
