@@ -1,5 +1,7 @@
 # Windows 전용 제품 작업 현황
 
+- IMPL-331: 훅 폼의 설명문 높이를 현재 글꼴로 계산해 후속 필드와 스크롤 범위를 확장한다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
 - IMPL-330: 훅 폼·메뉴의 Windows 전용 안내/오류 문구에 한국어와 영어 fallback을 연결했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
 
 - IMPL-329: 훅 인자 dropdown 취소 후 실제 선택과 값 편집 대상을 동기화한다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.

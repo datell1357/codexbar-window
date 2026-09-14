@@ -89,7 +89,7 @@ public enum WindowsHookRuleDialog {
         let initial: WindowsHookRuleDraft
         var dpi: UINT
         var font: HFONT?
-        var controls: [(handle: HWND, bounds: RECT)] = []
+        var controls: [(handle: HWND, bounds: RECT, isLabel: Bool)] = []
         var scrollX: Int32 = 0
         var scrollY: Int32 = 0
         var needsRestorePlacement = false
@@ -444,7 +444,7 @@ public enum WindowsHookRuleDialog {
         SendMessageW(handle, UINT(EM_SETLIMITTEXT), WPARAM(limit), 0)
         return handle
     }
-    private static func addLabel(_ p: HWND,_ t:String,_ x:Int32,_ y:Int32,_ w:Int32,_ h:Int32,_ f:HGDIOBJ?)->HWND? { addControl(p,"STATIC",t,0,DWORD(WS_CHILD|WS_VISIBLE),x,y,w,h,f) }
+    private static func addLabel(_ p: HWND,_ t:String,_ x:Int32,_ y:Int32,_ w:Int32,_ h:Int32,_ f:HGDIOBJ?)->HWND? { addControl(p,"STATIC",t,0,DWORD(WS_CHILD|WS_VISIBLE|SS_NOPREFIX),x,y,w,h,f) }
     private static func addButton(_ p: HWND,_ t:String,_ id:Int32,_ x:Int32,_ y:Int32,_ w:Int32,_ h:Int32,_ f:HGDIOBJ?)->HWND? { addControl(p,"BUTTON",t,id,DWORD(WS_CHILD|WS_VISIBLE|WS_TABSTOP|(id == saveID ? BS_DEFPUSHBUTTON : BS_PUSHBUTTON)),x,y,w,h,f) }
     private static func addControl(_ parent: HWND, _ kind: String, _ text: String, _ id: Int32,
                                    _ style: DWORD, _ x: Int32, _ y: Int32, _ width: Int32, _ height: Int32,
@@ -459,7 +459,7 @@ public enum WindowsHookRuleDialog {
             }
         }
         if let handle {
-            context.controls.append((handle, RECT(left: x, top: y, right: x + width, bottom: y + height)))
+            context.controls.append((handle, RECT(left: x, top: y, right: x + width, bottom: y + height), kind == "STATIC"))
             if let fallbackFont { SendMessageW(handle, UINT(WM_SETFONT), WPARAM(Int(bitPattern: fallbackFont)), 1) }
         }
         return handle
@@ -469,6 +469,26 @@ public enum WindowsHookRuleDialog {
         guard let window = context.window, IsIconic(window) == 0 else { return }
         var client = RECT()
         guard GetClientRect(window, &client) != 0 else { return }
+        // Labels sharing a row reserve the largest measured height, keeping their fields aligned.
+        var rowGrowth: [Int32: Int32] = [:]
+        if let dc = GetDC(window) {
+            let font = context.font ?? GetStockObject(DEFAULT_GUI_FONT)
+            let previous = font.map { SelectObject(dc, $0) }
+            for control in context.controls where control.isLabel {
+                let r = control.bounds
+                var measured = RECT(left: 0, top: 0, right: context.pixels(r.right - r.left), bottom: 0)
+                var text = Array(readText(control.handle).utf16) + [WCHAR(0)]
+                let height = text.withUnsafeMutableBufferPointer {
+                    DrawTextW(dc, $0.baseAddress, -1, &measured, UINT(DT_CALCRECT | DT_WORDBREAK | DT_NOPREFIX))
+                }
+                if height > 0 {
+                    let growth = max(0, measured.bottom - measured.top + context.pixels(2) - context.pixels(r.bottom - r.top))
+                    rowGrowth[r.top] = max(rowGrowth[r.top] ?? 0, growth)
+                }
+            }
+            if let previous { SelectObject(dc, previous) }
+            ReleaseDC(window, dc)
+        }
         func update(_ bar: Int32, extent: Int32, page: Int32, position: inout Int32) {
             position = max(0, min(position, max(0, extent - page)))
             var info = SCROLLINFO()
@@ -479,12 +499,16 @@ public enum WindowsHookRuleDialog {
             SetScrollInfo(window, bar, &info, 1)
         }
         update(Int32(SB_HORZ), extent: context.pixels(600), page: client.right, position: &context.scrollX)
-        update(Int32(SB_VERT), extent: context.pixels(540), page: client.bottom, position: &context.scrollY)
+        update(Int32(SB_VERT), extent: context.pixels(540) + rowGrowth.values.reduce(0, +), page: client.bottom, position: &context.scrollY)
         for control in context.controls {
             let r = control.bounds
+            let precedingGrowth = rowGrowth.reduce(Int32(0)) { total, row in
+                total + (row.key < r.top ? row.value : 0)
+            }
+            let height = context.pixels(r.bottom - r.top) + (control.isLabel ? (rowGrowth[r.top] ?? 0) : 0)
             SetWindowPos(control.handle, nil, context.pixels(r.left) - context.scrollX,
-                context.pixels(r.top) - context.scrollY, context.pixels(r.right - r.left),
-                context.pixels(r.bottom - r.top), UINT(SWP_NOZORDER | SWP_NOACTIVATE))
+                context.pixels(r.top) + precedingGrowth - context.scrollY, context.pixels(r.right - r.left),
+                height, UINT(SWP_NOZORDER | SWP_NOACTIVATE))
         }
     }
 

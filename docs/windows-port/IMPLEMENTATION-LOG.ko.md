@@ -3510,3 +3510,11 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - Browse/인자 추가·삭제, 경로/인자/임계값 보조 설명과 저장 안내에 한국어를 추가했다. 새 문구는 영어 fallback을 제공하며 다른 언어의 기존 번역은 유지한다.
 - 이벤트 raw ID, 동적 오류 인자 순번 문장과 파일 선택 filter 설명 등은 아직 원문이다. 전체 다국어 완료가 아니며 긴 문구 reflow/RTL과 실제 화면 검증도 남아 있다.
 - CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·실제 설정/HTTP/훅/UI 실행 미실행.
+
+## IMPL-331 — 훅 설명문 여러 줄 배치
+
+- STATIC 설명문을 구분해 현재 message font와 DPI/필드 폭으로 DrawText의 word-wrap 높이를 계산한다. 기존 높이보다 커진 행은 해당 증가분을 후속 항목의 위치에 누적한다.
+- 같은 행에 있는 임계값/시간 설명은 최대 높이를 공유해 아래 입력란의 정렬을 유지한다. 증가한 높이를 세로 스크롤 범위에도 반영한다.
+- 설명문의 ampersand가 접근키로 소실되지 않도록 표시와 측정 모두 NOPREFIX를 사용한다. DC와 선택한 font object는 측정 이후 복구/반환한다.
+- 버튼/체크박스의 긴 문구 자동 확장, RTL과 폭에 따른 전체 form reflow는 남아 있다. 실제 줄바꿈/글꼴/DPI/스크롤 검증도 미실행이다.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·실제 설정/HTTP/훅/UI 실행 미실행.
