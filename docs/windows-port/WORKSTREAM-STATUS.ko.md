@@ -1,5 +1,7 @@
 # Windows 전용 제품 작업 현황
 
+- IMPL-335: W10 위젯 6종의 선택 범위와 독립 인스턴스/공용 선택 설정 모델을 작성했다. 호스트/저장/화면 미연결. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
 - IMPL-334: 열린 훅 화면의 언어 snapshot을 유지하고 메시지창 RTL 방향을 연결했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
 
 - IMPL-333: 현재 catalog의 아랍어/페르시아어에 훅 form 좌우 배치와 메뉴 RTL을 연결했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.

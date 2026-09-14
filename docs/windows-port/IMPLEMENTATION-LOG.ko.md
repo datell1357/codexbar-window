@@ -3540,3 +3540,11 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - form의 필드/제목/오류 안내와 RTL 배치는 같은 snapshot을 사용한다. 설정이 바뀌어도 열린 입력란을 재생성하지 않으며 새 화면부터 새 언어를 적용한다.
 - 메뉴 확인창도 같은 언어를 사용하며 form 오류 및 메뉴 확인 MessageBox에 RTLREADING/RIGHT를 연결했다.
 - OS 공용 파일 선택창, 동적 인자 오류 문구, 전체 앱 RTL 및 실제 언어 변경/접근성 검증은 남아 있다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·UI/훅 실행 미실행.
+
+## IMPL-335 — Windows 위젯 설정 모델
+
+- W10으로 이동해 원본 CodexBarWidgetProvider/BurnDownWidgetProvider의 제공자 17개, BurnDown 2개, Metric 3개와 시간 창 2개를 모델에 반영했다.
+- Switcher/Usage/History/Metric/BurnDown/CombinedBurnDown 6종, OS 인스턴스 ID, 개별 제공자/지표/시간 창을 정의했다. Switcher만 공용 선택을 따르고 나머지는 독립 설정을 사용한다.
+- upsert/remove/공용 선택 mutation은 복사본을 검증 후 반환한다. 버전/인스턴스 ID/중복/제공자 범위와 인스턴스 128개·JSON 256KiB 상한을 적용한다. 오류나 비밀 원문을 저장하지 않는다.
+- 설정 파일 저장, runtime snapshot, Windows Widgets API 호스트/manifest/렌더링/갱신은 아직 미연결이다. 모델 작성이 위젯 사용 가능을 뜻하지 않는다.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·UI/HTTP/위젯 실행 미실행.
