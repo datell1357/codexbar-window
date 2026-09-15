@@ -27,7 +27,7 @@ CallerPolicyPath는 schemaVersion 1, packageFamily 문자열, executableNames �
 
 ## 전용 시작 채널
 
-host는 `--private-bootstrap` 모드만 처리한다. launcher는 같은 MSIX package·Windows session에서 sibling CodexBarWindows.exe로 실행되어야 하며, STARTUPINFOEX의 명시적 handle list로 이미 연결된 overlapped byte-mode pipe의 client handle을 stdin에 상속해야 한다. 다른 argv나 현재 개발 폴더에서의 단독 실행은 위젯 공급자 시작 계약이 아니다.
+IMPL-540의 host 진입점은 `--private-bootstrap`을 처리한다. IMPL-544에서 `-Embedding` OS activation 접속 경로를 추가했으며 아래 해당 절에 현재 연결을 기록했다. launcher는 같은 MSIX package·Windows session에서 sibling CodexBarWindows.exe로 실행되어야 하며, STARTUPINFOEX의 명시적 handle list로 이미 연결된 overlapped byte-mode pipe의 client handle을 stdin에 상속해야 한다. 다른 argv나 현재 개발 폴더에서의 단독 실행은 위젯 공급자 시작 계약이 아니다.
 
 host는 파이프의 서버 PID를 조회해 살아 있는 process handle을 보관하고 package full name·Windows session·설치 image 경로를 대조한 뒤 읽는다. 시작 packet은 CBL1 4바이트, little-endian UInt32 JSON 길이, little-endian UInt64 transferred event handle, 최대 4096바이트 JSON이다. 전체 시작 읽기의 제한 시간은 30초다. packet을 보내는 쪽은 connection.prepareLaunchDelivery를 사용하며 기존 JSON-only prepareBootstrap과 둘 중 하나만 호출할 수 있다.
 
@@ -35,7 +35,7 @@ host는 파이프의 서버 PID를 조회해 살아 있는 process handle을 보
 
 ## 아직 필요한 연결
 
-- 앱이 실행 중일 때의 process launcher/상속/bootstrap/종료/재연결은 아래 IMPL-541에서 연결했다. 앱이 꺼진 상태의 OS activation 처리는 아직 미구현이다.
+- IMPL-541의 explicit child launcher와 IMPL-544의 OS host bootstrap/admission 코드를 연결했다. 기본 앱 경로는 OS host 입장을 기다리며 실제 MSIX 등록과 OS 실행 검증은 남아 있다.
 - MSIX COM/위젯 6종 선언과 실제 Windows broker 정책, 패키지 identity 연결이 필요하다. host와 전체 빌드 payload의 명시적 배포 입력 및 first-party signing 연결은 아래 IMPL-542에 작성했다.
 - 프로젝트는 SDK component self-contained payload/activation manifest 생성 targets를 사용한다. Base 2.0.4의 자체 targets는 Widgets proxy/stub 자동 등록을 제외하므로, 이것만으로 Windows Widgets의 COM activation이 완성됐다고 보지 않는다. MSIX 등록 및 runtime DLL/metadata/라이선스의 최종 배포 구성을 별도로 연결해야 한다.
 - Windows SDK/C++/WinRT/App SDK 버전 조합, 실제 빌드·패키지 설치·COM 호출·파이프 인증·timeout·취소·부분 실패·x64/ARM64와 위젯 화면은 모두 미검증이다.
@@ -69,3 +69,19 @@ LOCAL_BUILD_NOT_ATTESTED와 COPIED_BYTES_MATCH_LOCAL_BUILD_RECORD는 로컬 빌�
 위젯이 앱을 깨우는 경로의 선행 조건으로 Windows 앱 진입점에 사용자/Windows-session별 instance lease를 연결했다. OS-known local app data의 빈 lock file을 독점으로 열고, 성공한 경우에만 runtime을 생성한다. 세션 종료 cleanup 제한 시간이 지나도 process exit까지 소유권을 보관한다. 파일 존재나 충돌 종료 코드가 실제 앱/host 인증 또는 bootstrap 연결 성공을 뜻하지는 않는다.
 
 세부 계약은 [앱 lifecycle 문서](../../docs/windows-port/APPLICATION-LIFECYCLE.ko.md)에 기록했다. 현재 OS-started host의 rendezvous/admission과 MSIX COM 등록은 아직 구현되지 않았다. 같은 package/image/session 및 peer 검증을 유지한 접속 경로가 추가로 필요하다. CODE_WRITTEN_UNVERIFIED이며 이번 작업에서 앱/파일/잠금/위젯을 실행하지 않았다.
+
+## IMPL-544: OS activation과 backend 접속
+
+host 진입점에 COM의 -Embedding 시작 모드를 추가했다. 이 모드는 WidgetActivationClient에서 기존 backend 파이프를 찾고, 연결 가능한 endpoint가 없으면 같은 package root의 sibling CodexBarWindows.exe를 한 번 시작하도록 작성했다. --private-bootstrap의 상속된 pipe 경로도 유지한다. argv에 PID/handle/계정/bootstrap payload를 넣지 않으며 -Embedding 문자열 자체를 OS 또는 peer 인증으로 취급하지 않는다.
+
+접속 이름은 current package full name·process token user SID·Windows session의 UTF-16 값에서 SHA-256으로 만든 고정 길이 이름이다. backend는 사용자 DACL·로컬 전용·first pipe instance·byte-mode outbound pipe를 만든다. 실제 연결된 client PID를 OS에서 얻고 살아 있는 process handle을 연 뒤, 같은 사용자/package/session 및 package root 안의 정확한 sibling host image와 대조한다. image는 열린 상태로 보관하고 연결된 PID도 다시 대조한 뒤에만 host 소유권을 받아들인다. 이름 hash는 인증 토큰이 아니다.
+
+host도 연결된 server PID를 kernel API에서 얻고 같은 사용자/package/session 및 sibling backend image를 대조한 후 CBL1 frame을 읽는다. 기존의 event 전달·usage backend handshake·COM 보안 초기화·broker caller policy·worker/receiver·철회/정리 계약으로 이어진다. caller policy를 새 argv나 연결 peer가 정하지는 않는다.
+
+cold start에서 backend는 CreateEnvironmentBlock으로 Windows가 제공한 해당 사용자 환경을 받고, host의 축소된 process 환경을 그대로 전달받지 않는다. shell·handle 상속 없이 정확한 exe를 시작하고 콘솔 창 생성을 억제하도록 작성했다. 접속 탐색은 20초, bootstrap 읽기는 기존 30초 제한을 사용한다. 중복 앱의 occupied 종료 코드 183은 연결 성공으로 보지 않고 실제 파이프를 계속 기다린다. 탐색 실패로 시작한 앱을 강제 종료하지 않는다.
+
+앱의 기본 widget runtime은 waitingForActivation에서 host 입장을 기다린다. 별도 child를 먼저 만드는 기본 경로는 OS host admission으로 대체했으며 기존 명시적 child launcher API는 유지한다. listener는 다른 session discovery/provider refresh보다 먼저 준비한다. native accept는 최대 1초의 connect를 완료 또는 cancel/drain한 뒤 돌아오며 Swift Task 취소는 호출 사이에서 반영한다. 취소와 admission이 경합하면 받은 owner를 runtime에 넘겨 그 peer를 정리한다.
+
+인증된 OS host는 job 없이 이미 실행 중이므로 ResumeThread를 호출하지 않는다. EOF 뒤 10초를 기다리고 필요하면 보관한 정확한 host process만 종료 요청한 후 5초 더 기다린다. 기존 child는 자기 Job을 사용한다. 성공한 종료 요청 뒤에만 forced 상태를 기록하며 실제 exit/cleanup/철회 결과는 별도로 남긴다. 인증 전에 실패한 연결은 채널만 닫고 상대 프로세스를 종료하지 않는다. 정리 실패 owner가 남아 있으면 다음 host를 받지 않는다.
+
+이것은 OS-started host의 접속/소유권/기존 bootstrap 연결을 작성한 상태다. 실제 MSIX COM server·6종 widget·proxy/stub 선언과 package identity, 실제 Windows broker 정책, package update/restart 전환, OS 재활성화/여러 동시 요청/timeout·종료·UI·x64/ARM64 검증은 남아 있다. 아직 Windows Widgets에서 등록·시작 성공을 확인하지 않았다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.

@@ -5131,3 +5131,14 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - 기존 application run/cleanup 범위를 정리한 후 ExitProcess까지 lease를 보관한다. 세션 종료 cleanup 시간이 지났다고 살아 있는 process의 잠금을 먼저 풀지 않는다. 새 WinSDK ACL API 호출에 필요한 Advapi32 링크를 Windows target에 명시했으며 패키지 의존성은 추가하지 않았다.
 - APPLICATION-LIFECYCLE.ko.md에 파일 소유권·실패·종료·known-folder/가상화/경로 경계를 기록했다. 실제 OS host의 bootstrap rendezvous와 admission/재연결, 기존 앱 foreground 전달, MSIX COM/6종 widget/proxy-stub 등록·broker 정책은 남아 있다.
 - CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·compiler/manifest 평가·lint·실제 WinSDK/ACL/파일/동시 실행/종료/COM/UI 검증 미실행. guidelines/COMMITS.md는 저장소에 없어 제공된 핵심 커밋 규칙을 적용했다. 직전 IMPL-542는 fc568f097로 origin/main 푸시가 성공했다. IMPL-543도 별도 구현 커밋·푸시 후 Git 결과를 보고한다.
+
+## IMPL-544 — Connect OS-activated widget hosts to the existing Windows backend
+
+- WidgetActivationIdentity에 package/user/session 기반 고정 길이 endpoint와 retained process peer 대조를 추가했다. package root 안의 정확한 sibling image, 실제 process token 사용자와 생존 상태를 확인하도록 작성했으며 pipe 이름 hash를 인증으로 취급하지 않는다. BCryptHash를 위해 native host/backend의 시스템 bcrypt 링크를 추가했다.
+- WidgetActivationClient 및 -Embedding 진입을 추가했다. 최대 20초 동안 private backend pipe를 찾고, endpoint가 없으면 pinned sibling backend exe를 한 번 시작한다. CreateEnvironmentBlock의 사용자 환경을 사용하며 argv 비밀·shell·handle 상속·콘솔 창 생성을 피한다. occupied 183은 접속 성공으로 처리하지 않으며 실패한 탐색이 앱을 종료하지 않는다. userenv 시스템 링크를 추가했다.
+- CBWidgetLaunchAccept 추가 ABI는 사용자 DACL/remote 거절/first-instance byte pipe에서 1초까지 connect를 기다린다. timeout 시 cancel 후 그 overlapped 작업을 drain하며 경합한 완료는 보관한다. 실제 client PID로 연 process의 신원을 확인하고 PID를 다시 대조한 뒤에만 WidgetHostLaunch owner로 넘긴다. 인증 전 실패는 peer를 종료하지 않는다.
+- WidgetLaunchChannel은 직접 접속한 client handle과 기존 상속 handle을 모두 받으며 server의 user/package/session/sibling image를 독립적으로 대조한다. 이후 기존 CBL1/event/JSON·backend listener·COM 보안·caller policy·worker/receiver·철회/정리 흐름을 재사용했다. startup argv 자체는 caller 인증이 아니다.
+- Swift waitForActivation은 DLL을 유지한 채 bounded accept를 반복하고, 취소와 admission이 겹치면 native owner를 반환해 runtime이 정리하도록 작성했다. 앱의 기본 경로는 private child 선행 생성에서 OS host 입장 대기로 바뀌었다. session/provider 작업보다 먼저 listener를 준비하고, 기존 owner 정리 실패 시 다음 입장을 막는다. 이전 explicit child launch API는 유지한다.
+- OS host는 이미 실행 중이므로 ResumeThread를 생략한다. EOF/10초 대기 후 필요한 경우 보관한 정확한 host process에만 종료를 요청하고 5초 더 기다린다. child는 기존 Job을 사용하며 실제 성공한 종료 요청 뒤에만 forced를 기록한다. native exit와 cleanup/철회 결과는 별도로 유지한다.
+- MSIX COM/6종 widget/proxy-stub 선언과 실제 broker 정책, package update/restart 전환·사용자 진단·OS 재활성화·전체 Windows-only 제품 graph는 남아 있다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 컴파일·빌드·테스트·lint·패키지/manifest 평가·실제 pipe/process/userenv/COM/Widgets/동시 요청/종료/x64/ARM64 검증 미실행.
+- 직전 IMPL-543은 55b57a6ea로 origin/main 푸시가 성공했다. IMPL-544도 사용자 승인에 따라 hook 비활성화 및 [skip ci] 커밋·푸시 후 실제 Git 결과를 보고한다.

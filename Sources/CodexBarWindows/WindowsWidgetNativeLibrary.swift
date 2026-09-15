@@ -24,10 +24,12 @@ final class WindowsWidgetNativeLibrary: @unchecked Sendable {
             UnsafeMutablePointer<UnsafeMutableRawPointer?>?) -> Int32
         typealias Process = @convention(c) (UnsafeMutableRawPointer?,
             UnsafeMutablePointer<UnsafeMutableRawPointer?>?) -> Int32
+        typealias Accept = @convention(c) (UInt32, UnsafeMutablePointer<UnsafeMutableRawPointer?>?) -> Int32
         typealias Deliver = @convention(c) (UnsafeMutableRawPointer?, UnsafePointer<UInt8>?, UInt32) -> Int32
         typealias Status = @convention(c) (UnsafeMutableRawPointer?, UnsafeMutablePointer<UInt32>?,
             UnsafeMutablePointer<UInt32>?, UnsafeMutablePointer<UInt32>?) -> Int32
         let create: Create
+        let accept: Accept?
         let process: Process
         let deliver: Deliver
         let stop: Operation
@@ -41,7 +43,10 @@ final class WindowsWidgetNativeLibrary: @unchecked Sendable {
             guard let address = name.withCString({ GetProcAddress(self.module, $0) }) else { throw Failure.missingExport }
             return unsafeBitCast(address, to: type)
         }
+        let accept = "CBWidgetLaunchAccept".withCString { GetProcAddress(self.module, $0) }
+            .map { unsafeBitCast($0, to: LaunchExports.Accept.self) }
         return try LaunchExports(create: resolve("CBWidgetLaunchCreate", as: LaunchExports.Create.self),
+            accept: accept,
             process: resolve("CBWidgetLaunchProcess", as: LaunchExports.Process.self),
             deliver: resolve("CBWidgetLaunchDeliver", as: LaunchExports.Deliver.self),
             stop: resolve("CBWidgetLaunchStop", as: Operation.self),

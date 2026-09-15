@@ -1,6 +1,8 @@
 #include "WidgetHostProcess.h"
 #include "WidgetLaunchChannel.h"
+#include "WidgetActivationClient.h"
 #include <CodexBarWidgetCallerPolicy.h>
+#include <memory>
 #include <shellapi.h>
 
 int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int) {
@@ -10,9 +12,12 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int) {
         auto arguments = CommandLineToArgvW(GetCommandLineW(), &count);
         if (!arguments) winrt::throw_last_error();
         bool privateLaunch = count == 2 && std::wstring_view(arguments[1]) == L"--private-bootstrap";
+        bool activated = count == 2 && CompareStringOrdinal(arguments[1], -1, L"-Embedding", -1, TRUE) == CSTR_EQUAL;
         LocalFree(arguments);
-        if (!privateLaunch) return static_cast<int>(HRESULT_FROM_WIN32(ERROR_INVALID_PARAMETER));
-        WidgetLaunchChannel channel;
+        if (!privateLaunch && !activated) return static_cast<int>(HRESULT_FROM_WIN32(ERROR_INVALID_PARAMETER));
+        auto channelOwner = activated ? std::make_unique<WidgetLaunchChannel>(WidgetActivationClient::Connect()) :
+            std::make_unique<WidgetLaunchChannel>();
+        auto& channel = *channelOwner;
         auto delivery = channel.ReadDelivery();
         auto cancellation = std::make_shared<WidgetHostCancellation>();
         channel.StartCancellation(cancellation);

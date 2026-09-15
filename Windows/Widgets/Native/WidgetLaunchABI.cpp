@@ -2,6 +2,16 @@
 #include "WidgetHostLaunch.h"
 using CodexBar::Widgets::WidgetHostLaunch;
 
+extern "C" int32_t CBWidgetLaunchAccept(uint32_t timeout, void** launch) {
+    if (!launch) return E_POINTER;
+    *launch = nullptr;
+    try {
+        auto admitted = WidgetHostLaunch::Accept(timeout);
+        if (!admitted) return S_FALSE;
+        *launch = admitted.release();
+        return S_OK;
+    } catch (...) { return winrt::to_hresult(); }
+}
 extern "C" int32_t CBWidgetLaunchCreate(uint16_t const* image, uint32_t units, void** launch) {
     if (!launch) return E_POINTER;
     *launch = nullptr;

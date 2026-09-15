@@ -1,5 +1,6 @@
 #pragma once
 #include "WidgetGuid.h"
+#include "WidgetActivationIdentity.h"
 #include <windows.h>
 #include <appmodel.h>
 #include <objbase.h>
@@ -7,15 +8,74 @@
 #include <algorithm>
 #include <array>
 #include <cstdint>
+#include <memory>
 #include <string>
 #include <string_view>
 #include <vector>
 #include <winrt/base.h>
 
 namespace CodexBar::Widgets {
-// Externally serialized owner of exactly one dedicated child. Never opens an arbitrary PID.
+// Externally serialized owner of one dedicated child or one authenticated OS-activated host.
+// An activated peer's PID comes only from the connected kernel pipe, never from argv or a request body.
 class WidgetHostLaunch final {
 public:
+    static std::unique_ptr<WidgetHostLaunch> Accept(DWORD timeout) {
+        if (!timeout || timeout > 1000) throw winrt::hresult_invalid_argument();
+        auto expected = WidgetActivationIdentity::Sibling(L"CodexBarWindows.exe", L"CodexBarWidgetHost.exe");
+        auto name = WidgetActivationIdentity::PipeName();
+        auto sddl = L"D:P(A;;GA;;;" + WidgetActivationIdentity::User(GetCurrentProcess()) + L")";
+        PSECURITY_DESCRIPTOR descriptor = nullptr;
+        winrt::check_bool(ConvertStringSecurityDescriptorToSecurityDescriptorW(sddl.c_str(), SDDL_REVISION_1,
+            &descriptor, nullptr));
+        struct DescriptorOwner { void* value; ~DescriptorOwner() { LocalFree(value); } } descriptorOwner{descriptor};
+        SECURITY_ATTRIBUTES security{sizeof(SECURITY_ATTRIBUTES), descriptor, FALSE};
+        auto raw = CreateNamedPipeW(name.c_str(), PIPE_ACCESS_OUTBOUND | FILE_FLAG_OVERLAPPED | FILE_FLAG_FIRST_PIPE_INSTANCE,
+            PIPE_TYPE_BYTE | PIPE_READMODE_BYTE | PIPE_WAIT | PIPE_REJECT_REMOTE_CLIENTS, 1, 8192, 8192, 1000, &security);
+        if (raw == INVALID_HANDLE_VALUE) winrt::throw_last_error();
+        winrt::handle pipe{raw};
+        winrt::handle completed{CreateEventW(nullptr, TRUE, FALSE, nullptr)};
+        winrt::check_bool(static_cast<bool>(completed));
+        OVERLAPPED operation{};
+        operation.hEvent = completed.get();
+        if (!ConnectNamedPipe(pipe.get(), &operation)) {
+            auto error = GetLastError();
+            if (error != ERROR_PIPE_CONNECTED) {
+                if (error != ERROR_IO_PENDING) winrt::throw_hresult(HRESULT_FROM_WIN32(error));
+                auto waited = WaitForSingleObject(completed.get(), timeout);
+                DWORD transferred = 0;
+                if (waited == WAIT_TIMEOUT) {
+                    CancelIoEx(pipe.get(), &operation);
+                    // A connect racing the timeout may already have succeeded; keep that peer.
+                    if (!GetOverlappedResult(pipe.get(), &operation, &transferred, TRUE)) {
+                        auto completion = GetLastError();
+                        if (completion == ERROR_OPERATION_ABORTED) return nullptr;
+                        winrt::throw_hresult(HRESULT_FROM_WIN32(completion));
+                    }
+                } else if (waited != WAIT_OBJECT_0) {
+                    auto failure = waited == WAIT_FAILED ? GetLastError() : ERROR_GEN_FAILURE;
+                    CancelIoEx(pipe.get(), &operation);
+                    GetOverlappedResult(pipe.get(), &operation, &transferred, TRUE);
+                    winrt::throw_hresult(HRESULT_FROM_WIN32(failure));
+                } else {
+                    winrt::check_bool(GetOverlappedResult(pipe.get(), &operation, &transferred, FALSE));
+                }
+            }
+        }
+        ULONG clientId = 0;
+        winrt::check_bool(GetNamedPipeClientProcessId(pipe.get(), &clientId));
+        winrt::handle process{OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION | PROCESS_DUP_HANDLE |
+            SYNCHRONIZE | PROCESS_TERMINATE, FALSE, clientId)};
+        winrt::check_bool(static_cast<bool>(process));
+        auto image = WidgetActivationIdentity::PinImage(expected);
+        WidgetActivationIdentity::ValidatePeer(process.get(), expected);
+        ULONG currentClient = 0;
+        winrt::check_bool(GetNamedPipeClientProcessId(pipe.get(), &currentClient));
+        if (currentClient != GetProcessId(process.get()) || WaitForSingleObject(process.get(), 0) != WAIT_TIMEOUT) {
+            throw winrt::hresult_access_denied();
+        }
+        // Ownership begins only after authentication. Failure above closes the channel without killing a peer.
+        return std::unique_ptr<WidgetHostLaunch>(new WidgetHostLaunch(std::move(pipe), std::move(process), std::move(image)));
+    }
     explicit WidgetHostLaunch(std::wstring const& hostImage) {
         auto backendImage = ImageName(GetCurrentProcess());
         auto separator = backendImage.find_last_of(L"\\/");
@@ -120,7 +180,7 @@ public:
         uint32_t length = 0;
         for (unsigned i = 0; i < 4; ++i) length |= uint32_t(bytes[4 + i]) << (8 * i);
         if (!length || length > 4096 || count != length + 16) throw winrt::hresult_invalid_argument();
-        if (ResumeThread(thread_.get()) == DWORD(-1)) winrt::throw_last_error();
+        if (!adopted_ && ResumeThread(thread_.get()) == DWORD(-1)) winrt::throw_last_error();
         thread_ = nullptr;
         started_ = true;
         auto deadline = GetTickCount64() + 5000;
@@ -154,11 +214,14 @@ public:
     void Stop() {
         if (stopped_) return;
         pipe_ = nullptr; // EOF requests host cancellation without injecting a message into the usage channel.
-        auto waited = WaitForSingleObject(process_.get(), started_ ? 10000 : 0);
+        auto waited = WaitForSingleObject(process_.get(), (started_ || adopted_) ? 10000 : 0);
         if (waited == WAIT_FAILED) winrt::throw_last_error();
         if (waited == WAIT_TIMEOUT) {
+            // The OS-started host has no application-created Job. Its authenticated process handle
+            // is the only termination target; the backend application is never terminated here.
+            if (adopted_) winrt::check_bool(TerminateProcess(process_.get(), ERROR_PROCESS_ABORTED));
+            else winrt::check_bool(TerminateJobObject(job_.get(), ERROR_PROCESS_ABORTED));
             forced_ = true;
-            winrt::check_bool(TerminateJobObject(job_.get(), ERROR_PROCESS_ABORTED));
             waited = WaitForSingleObject(process_.get(), 5000);
             if (waited == WAIT_FAILED) winrt::throw_last_error();
             if (waited != WAIT_OBJECT_0) winrt::throw_hresult(HRESULT_FROM_WIN32(ERROR_TIMEOUT));
@@ -178,6 +241,8 @@ public:
         *forced = forced_ ? 1 : 0;
     }
 private:
+    WidgetHostLaunch(winrt::handle pipe, winrt::handle process, winrt::handle image) noexcept
+        : image_(std::move(image)), pipe_(std::move(pipe)), process_(std::move(process)), adopted_(true) {}
     static std::vector<wchar_t> Environment() {
         // Widget rendering must not inherit provider credentials, shell hooks or DLL-search overrides.
         std::vector<std::pair<std::wstring, std::wstring>> values;
@@ -272,6 +337,7 @@ private:
     winrt::handle job_;
     winrt::handle process_;
     winrt::handle thread_;
+    bool adopted_ = false;
     bool started_ = false;
     bool stopped_ = false;
     bool forced_ = false;

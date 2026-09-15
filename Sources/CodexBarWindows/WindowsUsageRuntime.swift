@@ -77,7 +77,7 @@ public actor WindowsUsageRuntime {
     private(set) var widgetBackendCleanupFailed = false
 
     enum WidgetHostLaunchState: Sendable {
-        case stopped, notPackaged, missingComponents, starting, connected, waitingToRetry, failed, cleanupFailed
+        case stopped, notPackaged, missingComponents, waitingForActivation, starting, connected, waitingToRetry, failed, cleanupFailed
     }
     private(set) var widgetHostLaunchState: WidgetHostLaunchState = .stopped
     private(set) var widgetHostExit: WindowsWidgetNativeLauncher.Status?
@@ -85,6 +85,9 @@ public actor WindowsUsageRuntime {
     private(set) var widgetHostShutdownWasForced = false
     private var widgetLauncher: WindowsWidgetNativeLauncher?
     private var widgetLaunchTask: Task<Void, Never>?
+
+    /// Begin accepting OS activation before unrelated session discovery or provider refresh work.
+    func prepareWidgetActivation() { self.startWidgetHostIfAvailable() }
 
     private func startWidgetHostIfAvailable() {
         guard !self.shuttingDown, self.widgetLaunchTask == nil else { return }
@@ -113,12 +116,13 @@ public actor WindowsUsageRuntime {
         while !self.shuttingDown, !Task.isCancelled {
             var ownedConnection: WindowsWidgetBackendConnection?
             var ownedLauncher: WindowsWidgetNativeLauncher?
-            self.widgetHostLaunchState = .starting
+            self.widgetHostLaunchState = .waitingForActivation
             self.widgetHostStartupError = nil
             do {
-                let launcher = try await WindowsWidgetNativeLauncher.create(installation: installation)
+                let launcher = try await WindowsWidgetNativeLauncher.waitForActivation(installation: installation)
                 ownedLauncher = launcher
                 self.widgetLauncher = launcher
+                self.widgetHostLaunchState = .starting
                 guard !self.shuttingDown, !Task.isCancelled else { throw CancellationError() }
                 let connection = try self.makeWidgetBackendConnection(installedDLL: installation.backend,
                     stopReceiver: { _ = try await launcher.close() })

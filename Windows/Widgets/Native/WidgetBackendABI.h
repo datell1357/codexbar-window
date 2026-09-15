@@ -26,10 +26,14 @@ CB_WIDGET_API int32_t CBWidgetServerDestroy(void* server);
 // Additive launcher exports. Calls on one launch owner must be serialized on a blocking worker.
 // Process returns a borrowed LOCAL HANDLE; retain the launch owner across every use and never close it.
 CB_WIDGET_API int32_t CBWidgetLaunchCreate(const uint16_t* image, uint32_t units, void** launch);
+// Blocking admission, 1..1000 ms. S_FALSE means no peer; S_OK transfers one authenticated host owner.
+// Do not call while another admitted host remains owned. Cancel is checked between bounded calls.
+CB_WIDGET_API int32_t CBWidgetLaunchAccept(uint32_t timeoutMilliseconds, void** launch);
 CB_WIDGET_API int32_t CBWidgetLaunchProcess(void* launch, void** process);
 CB_WIDGET_API int32_t CBWidgetLaunchDeliver(void* launch, const uint8_t* bytes, uint32_t count);
 CB_WIDGET_API int32_t CBWidgetLaunchStop(void* launch);
-// phase: 0 suspended, 1 resumed, 2 exited. Exit status and forced termination remain separate from cleanup success.
+// phase: 0 awaiting bootstrap (a child is suspended), 1 delivery started, 2 exited.
+// Exit status and forced termination remain separate from cleanup success.
 CB_WIDGET_API int32_t CBWidgetLaunchStatus(void* launch, uint32_t* phase, uint32_t* exitCode, uint32_t* forced);
 CB_WIDGET_API int32_t CBWidgetLaunchDestroy(void* launch);
 #ifdef __cplusplus

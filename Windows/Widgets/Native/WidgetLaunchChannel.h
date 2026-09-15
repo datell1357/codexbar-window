@@ -1,5 +1,6 @@
 #pragma once
 #include "WidgetHostCancellation.h"
+#include "WidgetActivationIdentity.h"
 #include <windows.h>
 #include <appmodel.h>
 #include <array>
@@ -12,8 +13,8 @@
 #include <winrt/base.h>
 
 namespace CodexBar::Widgets {
-// The launcher supplies one connected, overlapped, byte-mode CLIENT pipe as stdin through
-// STARTUPINFOEX's handle list. No bootstrap payload, process ID or event value belongs in argv.
+// Accepts a connected, overlapped, byte-mode CLIENT pipe from activation discovery, or from
+// the explicit private launcher's stdin handle list. No bootstrap data or handle value belongs in argv.
 // Both ends must belong to the same installed package and Windows session. This process also
 // requires the server's image to be the sibling CodexBarWindows.exe before reading any bytes.
 class WidgetLaunchChannel final {
@@ -22,13 +23,21 @@ public:
         std::string json;
         winrt::handle invalidation;
     };
-    WidgetLaunchChannel() {
+    WidgetLaunchChannel() : WidgetLaunchChannel(RetainStandardInput()) {}
+    explicit WidgetLaunchChannel(winrt::handle pipe) : pipe_(std::move(pipe)) {
+        if (!pipe_ || pipe_.get() == INVALID_HANDLE_VALUE) throw winrt::hresult_access_denied();
+        ValidateChannel();
+    }
+private:
+    static winrt::handle RetainStandardInput() {
         auto input = GetStdHandle(STD_INPUT_HANDLE);
         if (!input || input == INVALID_HANDLE_VALUE) throw winrt::hresult_access_denied();
         HANDLE retained = nullptr;
         winrt::check_bool(DuplicateHandle(GetCurrentProcess(), input, GetCurrentProcess(), &retained,
             0, FALSE, DUPLICATE_SAME_ACCESS));
-        pipe_ = winrt::handle{retained};
+        return winrt::handle{retained};
+    }
+    void ValidateChannel() {
         if (GetFileType(pipe_.get()) != FILE_TYPE_PIPE) throw winrt::hresult_access_denied();
         DWORD flags = 0;
         winrt::check_bool(GetNamedPipeInfo(pipe_.get(), &flags, nullptr, nullptr, nullptr));
@@ -43,10 +52,8 @@ public:
         if (serverSession != ownSession || PackageName(GetCurrentProcess()) != PackageName(backend_.get())) {
             throw winrt::hresult_access_denied();
         }
-        auto ownImage = ImageName(GetCurrentProcess());
-        auto separator = ownImage.find_last_of(L"\\/");
-        if (separator == std::wstring::npos) throw winrt::hresult_access_denied();
-        installedBackendImage_ = ownImage.substr(0, separator + 1) + L"CodexBarWindows.exe";
+        installedBackendImage_ = WidgetActivationIdentity::Sibling(L"CodexBarWidgetHost.exe", L"CodexBarWindows.exe");
+        WidgetActivationIdentity::ValidatePeer(backend_.get(), installedBackendImage_);
         auto serverImage = ImageName(backend_.get());
         if (CompareStringOrdinal(installedBackendImage_.c_str(), -1, serverImage.c_str(), -1, TRUE) != CSTR_EQUAL) {
             throw winrt::hresult_access_denied();
@@ -59,6 +66,7 @@ public:
         stop_ = winrt::handle{CreateEventW(nullptr, TRUE, FALSE, nullptr)};
         winrt::check_bool(static_cast<bool>(stop_));
     }
+public:
     WidgetLaunchChannel(WidgetLaunchChannel const&) = delete;
     WidgetLaunchChannel& operator=(WidgetLaunchChannel const&) = delete;
     ~WidgetLaunchChannel() { StopCancellation(); }

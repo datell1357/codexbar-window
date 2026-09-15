@@ -40,7 +40,7 @@
       <RuntimeLibrary Condition="'$(Configuration)'=='Release'">MultiThreadedDLL</RuntimeLibrary>
     </ClCompile>
     <Link>
-      <AdditionalDependencies>runtimeobject.lib;windowsapp.lib;ole32.lib;advapi32.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>runtimeobject.lib;windowsapp.lib;ole32.lib;advapi32.lib;bcrypt.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <SubSystem>Windows</SubSystem>
     </Link>
@@ -49,6 +49,7 @@
     <ClCompile Include="WidgetBackendABI.cpp" />
     <ClCompile Include="WidgetLaunchABI.cpp" />
     <ClInclude Include="WidgetHostLaunch.h" />
+    <ClInclude Include="WidgetActivationIdentity.h" />
     <ClInclude Include="WidgetBackendABI.h" />
     <ClInclude Include="WidgetBackendServer.h" />
     <ClInclude Include="WidgetSwiftHandler.h" />

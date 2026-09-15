@@ -117,6 +117,30 @@ actor WindowsWidgetNativeLauncher {
     private var stopRequested = false
     private init(state: State) { self.state = state }
 
+    /// Keep the DLL loaded while awaiting OS activation. Native admission completes/cancels its
+    /// overlapped connect before returning. Task cancellation is checked between one-second calls.
+    static func waitForActivation(installation: WindowsWidgetInstallation) async throws -> WindowsWidgetNativeLauncher {
+        let state = try State(installation: installation)
+        while true {
+            try Task.checkCancellation()
+            let admitted = try await state.perform { state in
+                guard let accept = state.api.accept else { throw WindowsWidgetNativeLibrary.Failure.missingExport }
+                var launch: UnsafeMutableRawPointer?
+                let result = accept(1000, &launch)
+                if result == 1, launch == nil { return false } // S_FALSE: no client in this interval.
+                try State.check(result)
+                guard result == 0, let launch else { throw Failure.invalidStatus }
+                state.launch = launch
+                state.nativeLease = Unmanaged.passRetained(state)
+                return true
+            }
+            if admitted {
+                // Return the owner even if cancellation raced admission; runtime must close that exact peer.
+                return WindowsWidgetNativeLauncher(state: state)
+            }
+        }
+    }
+
     static func create(installation: WindowsWidgetInstallation) async throws -> WindowsWidgetNativeLauncher {
         let state = try State(installation: installation)
         try await state.perform { state in
