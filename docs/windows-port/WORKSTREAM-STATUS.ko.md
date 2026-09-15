@@ -1,5 +1,7 @@
 # Windows 전용 제품 작업 현황
 
+- IMPL-530: 원본 session-equivalent burn/forecast 계산을 Core로 옮기고 주간 이력 상세에 연결. 최근 7개 후보·최소 3개 유효 표본, 구간/계정 identity 및 근무일 기준 적용. 일반 사용량 행과 cache lifecycle은 남아 있음. CODE_WRITTEN_UNVERIFIED.
+
 - IMPL-529: 트레이 공급자별 사용량 이력 메뉴→계정 확인 조회→Win32 차트 창 연결. 최근 30개 리셋 구간, 마우스·키보드 탐색, 전체 텍스트 이력, DPI/시스템 색상 및 오래된 snapshot 닫기 작성. CODE_WRITTEN_UNVERIFIED.
 
 - IMPL-528: 현재 공급자·계정·설정과 묶인 이력 조회 token 및 snapshot 경로 작성. 읽기 전후 소유권 재대조, 새로고침/계정/종료 무효화, 빈 이력과 읽기 실패 구분. Native 차트 창 연결은 남아 있음. CODE_WRITTEN_UNVERIFIED.

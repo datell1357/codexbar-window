@@ -277,6 +277,13 @@ enum WindowsPlanUtilizationHistoryDialog {
                      context.text("plan_history_legend")]
         if let series = context.series, !series.points.isEmpty {
             lines.append(context.seriesTitle(series))
+            if series.name == "weekly", series.windowMinutes == SessionEquivalentForecastCore.weeklyWindowMinutes,
+               let forecast = context.snapshot.sessionEquivalentForecast {
+                lines.append(context.text("plan_forecast_asOf").replacingOccurrences(of: "{date}",
+                    with: context.date(context.snapshot.loadedAt)))
+                lines.append(contentsOf: WindowsSessionEquivalentForecastText.lines(
+                    forecast, workDays: context.snapshot.forecastWorkDays, localization: context.localization))
+            }
             if let index = context.selectedIndex, series.points.indices.contains(index) {
                 lines.append(context.text("plan_history_selected") + " " + context.pointText(series.points[index]))
             } else { lines.append(context.text("plan_history_selectHint")) }

@@ -4974,3 +4974,15 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - WIN-020 전체 완료가 아니다. session-equivalent forecast, 원본 이력 migration/adoption 및 삭제 lifecycle, 동시 계정 consumer와 Windows 동작·성능 검증은 남아 있다. 이번 Win32 창은 계획된 전체 Windows UI/릴리스 통합 완료를 의미하지 않는다.
 - CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·컴파일·실제 창 실행·계정 조회·접근성 검증 미실행.
 - 직전 IMPL-528은 293088f59로 origin/main 푸시가 성공했다. IMPL-529도 별도 구현 커밋으로 푸시하고 Git 응답을 보고한다.
+
+## IMPL-530 — Estimate session-equivalent quota from owner-matched history
+
+- 원본 SessionEquivalentForecast.swift의 순수 계산을 SessionEquivalentForecastCore/SessionEquivalentBurnEstimatorCore로 옮겼다. Mac UsageStore cache/UI 코드는 수정하지 않았으며 Windows 공통 이력 entry/series와 기간 정규화 함수를 사용한다.
+- 완료된 활성 session을 최근 순서로 최대 7개 살피고 유효 burn 표본이 최소 3개일 때 중앙값을 사용한다. 세션과 주간의 동시 관측, 시작/종료 보조 표본의 120초 허용, 주간 reset 일치, 양수 소비량, 부분 session의 100% 한도 환산 규칙을 원본에서 옮겼다. 정렬되지 않은 이력이나 불가능한 reset은 예측에 사용하지 않는다.
+- 현재 session reset이 없는 idle 상태, 295~305분/10070~10090분 허용, 이미 지난/너무 먼 reset 및 주간 한도 소진 시 표시 보류를 유지하도록 작성했다. 근무일은 calendar의 월요일부터 설정된 일수만 계산하고 남은 전체 5시간 구간 수와 소수 가용 구간 수를 구분한다.
+- PlanUtilizationHistoryProjection에 forecast window 선택을 추가하고 Codex duration lane/Antigravity Gemini pair 선택을 수집과 공유했다. Claude 고정 pair와 generic standard/named 관계를 구분하며 generic 이력은 선택한 owner bucket의 persisted pair identity가 맞아야 한다.
+- Windows 이력 조회가 같은 bucket에서 histories와 identity를 함께 가져와 forecast를 계산하도록 연결했다. 근무일 설정을 조회 전후와 snapshot 유효성 callback에서 대조한다. 다른 계정 이력이나 고정 비율을 대체값으로 사용하지 않는다.
+- 주간(10080분) 이력 상세에 계산 시각, 예상 남은 세션 한도, 주간 리셋까지의 전체 5시간 구간, 학습 표본 수, 적용한 근무일 기준을 한국어/영어로 표시한다. 예측이 없으면 그 값을 표시하지 않으며 상세 숫자는 원본처럼 소수 첫 자리·최대 1,000,000 표시 한도로 작성했다.
+- 원본 idle/cache/migration 테스트의 소스는 요구사항 파악을 위해 읽었지만 실행하지 않았다. 일반 트레이 weekly 행 연결, 이력 revision/idle 시간별 burn cache 갱신, legacy 계정·pair migration/adoption, 삭제 lifecycle 및 Windows 동작·수치 일치 검증은 남아 있다.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·컴파일·실제 이력 읽기/계산 실행·UI·성능 검증 미실행.
+- 직전 IMPL-529는 ee720096e로 origin/main 푸시가 성공했다. IMPL-530도 별도 구현 커밋으로 푸시하고 Git 결과를 보고한다.

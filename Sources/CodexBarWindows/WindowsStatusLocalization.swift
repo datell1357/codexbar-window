@@ -286,6 +286,11 @@ enum WindowsStatusLocalization {
             "Status Page": "Statusseite",
         ],
         "en": [
+            "plan_forecast_estimate": "Estimated session quotas remaining: approximately {count}",
+            "plan_forecast_windows": "Full five-hour periods before the weekly reset: {count}",
+            "plan_forecast_samples": "Learned from {count} completed active sessions.",
+            "plan_forecast_workDays": "Time until reset counts the first {count} weekdays, starting Monday.",
+            "plan_forecast_asOf": "Current-quota estimate calculated: {date}",
             "plan_history_title": "Usage history",
             "plan_history_menu": "Usage &history",
             "plan_history_seriesLabel": "&Series",
@@ -1113,6 +1118,11 @@ enum WindowsStatusLocalization {
             "Status Page": "ステータスページ",
         ],
         "ko": [
+            "plan_forecast_estimate": "예상 남은 세션 한도: 약 {count}회분",
+            "plan_forecast_windows": "주간 리셋까지 남은 전체 5시간 구간: {count}개",
+            "plan_forecast_samples": "완료된 활성 세션 {count}개의 관측으로 계산했습니다.",
+            "plan_forecast_workDays": "리셋까지의 시간은 월요일부터 주 {count}일을 근무일로 계산합니다.",
+            "plan_forecast_asOf": "현재 한도 기준 예측 계산 시각: {date}",
             "plan_history_title": "사용량 이력",
             "plan_history_menu": "사용량 이력(&H)",
             "plan_history_seriesLabel": "구간 종류(&S)",

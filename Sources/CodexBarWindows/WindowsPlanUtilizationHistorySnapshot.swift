@@ -12,6 +12,8 @@ struct WindowsPlanUtilizationHistorySnapshot: Sendable {
     let usageCapturedAt: Date
     let loadedAt: Date
     let series: [PlanUtilizationHistoryChart.Series]
+    let sessionEquivalentForecast: SessionEquivalentForecastCore?
+    let forecastWorkDays: Int?
     let isCurrent: @Sendable () -> Bool
 }
 

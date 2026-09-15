@@ -192,7 +192,7 @@ public enum PlanUtilizationHistoryCore {
         }
     }
 
-    private static func pairIdentity(session: String, weekly: String) -> String {
+    static func pairIdentity(session: String, weekly: String) -> String {
         "\(session.utf8.count)#\(session)\(weekly.utf8.count)#\(weekly)"
     }
 

@@ -3772,6 +3772,7 @@ public actor WindowsUsageRuntime {
         }
         let privacy = WindowsUsagePresentationSettings.load().hidePersonalInfo
         let isValid = context.validity.capture()
+        let forecastWorkDays = WindowsPredictivePaceWarningSettings.load().weeklyProgressWorkDays
         do {
             guard try self.planHistoryContextMatches(context, provider: provider) else {
                 self.invalidatePlanHistoryContexts()
@@ -3779,16 +3780,24 @@ public actor WindowsUsageRuntime {
             }
             let document = try self.planUtilizationHistoryStore.load(providerID: providerID)
             let histories: [PlanUtilizationHistoryCore.Series]
+            let historyIdentity: String?
             switch context.owner {
-            case let .scoped(key): histories = document.histories(accountKey: key)
-            case .unscoped: histories = document.histories(accountKey: nil)
+            case let .scoped(key):
+                histories = document.histories(accountKey: key)
+                historyIdentity = document.sessionEquivalentWindowPairIdentities[key]
+            case .unscoped:
+                histories = document.histories(accountKey: nil)
+                historyIdentity = document.sessionEquivalentWindowPairIdentities["__codexbar_unscoped__"]
             case .unavailable: return .unavailable(.noCurrentUsage)
             }
             let now = Date()
             let series = try PlanUtilizationHistoryChart.make(provider: provider, histories: histories,
                 snapshot: context.result.usage, referenceDate: now)
+            let forecast = SessionEquivalentForecastCore.make(provider: provider, snapshot: context.result.usage,
+                histories: histories, persistedHistoryIdentity: historyIdentity, now: now, workDays: forecastWorkDays)
             // IO can overlap edits from another process even though this actor never suspends.
             guard isValid(), privacy == WindowsUsagePresentationSettings.load().hidePersonalInfo,
+                  forecastWorkDays == WindowsPredictivePaceWarningSettings.load().weeklyProgressWorkDays,
                   try self.planHistoryContextMatches(context, provider: provider) else {
                 self.invalidatePlanHistoryContexts()
                 return .unavailable(.changed)
@@ -3797,9 +3806,10 @@ public actor WindowsUsageRuntime {
             return .snapshot(.init(providerID: providerID, contextToken: contextToken,
                 title: String(title.replacingOccurrences(of: "\0", with: "").prefix(240)),
                 hidePersonalInfo: privacy, usageCapturedAt: context.result.usage.updatedAt,
-                loadedAt: now, series: series,
+                loadedAt: now, series: series, sessionEquivalentForecast: forecast, forecastWorkDays: forecastWorkDays,
                 isCurrent: {
-                    isValid() && privacy == WindowsUsagePresentationSettings.load().hidePersonalInfo
+                    isValid() && privacy == WindowsUsagePresentationSettings.load().hidePersonalInfo &&
+                        forecastWorkDays == WindowsPredictivePaceWarningSettings.load().weeklyProgressWorkDays
                 }))
         } catch let error as WindowsPlanUtilizationHistoryStore.Failure {
             switch error {

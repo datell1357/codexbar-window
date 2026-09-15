@@ -5,6 +5,42 @@ public struct PlanUtilizationHistoryProjection: Sendable {
     public let samples: [PlanUtilizationHistoryCore.Series]
     public let identityTransition: PlanUtilizationHistoryCore.IdentityTransition
 
+    public struct ForecastWindows: Sendable {
+        public let session: RateWindow
+        public let weekly: RateWindow
+        public let weeklyWindowID: String?
+        public let historyIdentity: String?
+    }
+
+    /// Uses the same source identity as history collection. A mixed or ambiguous pair
+    /// must not borrow a burn estimate from a different quota family.
+    public static func forecastWindows(provider: UsageProvider, snapshot: UsageSnapshot) -> ForecastWindows? {
+        switch provider {
+        case .codex:
+            let lanes = self.codexWindows(snapshot)
+            guard let session = lanes["session"], let weekly = lanes["weekly"] else { return nil }
+            return ForecastWindows(session: session, weekly: weekly, weeklyWindowID: nil, historyIdentity: nil)
+        case .claude:
+            guard let session = snapshot.primary,
+                  session.windowMinutes.map({ PlanUtilizationHistoryCore.canonicalMinutes($0, name: "session") }) == 300,
+                  let weekly = snapshot.secondary,
+                  weekly.windowMinutes.map({ PlanUtilizationHistoryCore.canonicalMinutes($0, name: "weekly") }) == 10080 else { return nil }
+            return ForecastWindows(session: session, weekly: weekly, weeklyWindowID: nil, historyIdentity: nil)
+        case .antigravity:
+            guard let pair = self.antigravityWindows(snapshot) else { return nil }
+            return ForecastWindows(session: pair.session.window, weekly: pair.weekly.window,
+                weeklyWindowID: pair.weekly.id, historyIdentity: nil)
+        default:
+            let session = self.resolve(snapshot: snapshot, minutes: 300)
+            let weekly = self.resolve(snapshot: snapshot, minutes: 10080)
+            guard case let .genericResolved(sessionID, weeklyID) = self.transition(session: session, weekly: weekly),
+                  let sessionWindow = session.window, let weeklyWindow = weekly.window else { return nil }
+            let namedID = weeklyID.hasPrefix("named:") ? String(weeklyID.dropFirst(6)) : nil
+            return ForecastWindows(session: sessionWindow, weekly: weeklyWindow, weeklyWindowID: namedID,
+                historyIdentity: PlanUtilizationHistoryCore.pairIdentity(session: sessionID, weekly: weeklyID))
+        }
+    }
+
     public static func make(provider: UsageProvider, snapshot: UsageSnapshot, capturedAt: Date) -> Self {
         typealias Series = PlanUtilizationHistoryCore.Series
         struct Key: Hashable { let name: String; let minutes: Int }
@@ -34,18 +70,7 @@ public struct PlanUtilizationHistoryProjection: Sendable {
         switch provider {
         case .codex:
             transition = .fixed
-            var lanes: [String: RateWindow] = [:]
-            for (window, fallback) in [(snapshot.primary, "session"), (snapshot.secondary, "weekly")] {
-                guard let window else { continue }
-                let role: String
-                switch window.windowMinutes {
-                case 300: role = "session"
-                case 10080: role = "weekly"
-                case 43200: role = "monthly"
-                default: role = fallback
-                }
-                lanes[role] = window
-            }
+            let lanes = Self.codexWindows(snapshot)
             for name in ["session", "weekly", "monthly"] { append(lanes[name], name: name) }
         case .claude:
             transition = .fixed
@@ -64,20 +89,41 @@ public struct PlanUtilizationHistoryProjection: Sendable {
         case .antigravity:
             transition = .antigravityGemini
             // Persistence uses the complete Gemini pair, not a provider-wide weekly maximum.
-            let windows = snapshot.extraRateWindows?.filter {
-                $0.usageKnown && $0.id.hasPrefix("antigravity-quota-summary-") && Self.antigravityFamily($0.id) == "gemini"
-            } ?? []
-            let sessions = windows.filter { $0.window.windowMinutes == 300 }
-            let weeklies = windows.filter { $0.window.windowMinutes == 10080 }
-            if sessions.count == 1, weeklies.count == 1 {
-                append(sessions[0].window, name: "session")
-                append(weeklies[0].window, name: "weekly")
+            if let pair = Self.antigravityWindows(snapshot) {
+                append(pair.session.window, name: "session")
+                append(pair.weekly.window, name: "weekly")
             }
         default: appendGeneric()
         }
         return Self(samples: samples.values.sorted {
             $0.windowMinutes == $1.windowMinutes ? $0.name < $1.name : $0.windowMinutes < $1.windowMinutes
         }, identityTransition: transition)
+    }
+
+    private static func codexWindows(_ snapshot: UsageSnapshot) -> [String: RateWindow] {
+        var lanes: [String: RateWindow] = [:]
+        for (window, fallback) in [(snapshot.primary, "session"), (snapshot.secondary, "weekly")] {
+            guard let window else { continue }
+            let role: String
+            switch window.windowMinutes {
+            case 300: role = "session"
+            case 10080: role = "weekly"
+            case 43200: role = "monthly"
+            default: role = fallback
+            }
+            lanes[role] = window
+        }
+        return lanes
+    }
+
+    private static func antigravityWindows(_ snapshot: UsageSnapshot) -> (session: NamedRateWindow, weekly: NamedRateWindow)? {
+        let windows = snapshot.extraRateWindows?.filter {
+            $0.usageKnown && $0.id.hasPrefix("antigravity-quota-summary-") && self.antigravityFamily($0.id) == "gemini"
+        } ?? []
+        let sessions = windows.filter { $0.window.windowMinutes == 300 }
+        let weeklies = windows.filter { $0.window.windowMinutes == 10080 }
+        guard sessions.count == 1, weeklies.count == 1 else { return nil }
+        return (sessions[0], weeklies[0])
     }
 
     private enum Component {
