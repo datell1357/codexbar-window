@@ -214,7 +214,7 @@ public enum PlanUtilizationHistoryCore {
         return (session, weekly)
     }
 
-    private static func validate(_ series: [Series]) throws {
+    static func validate(_ series: [Series]) throws {
         guard series.count <= 128 else { throw Failure.capacityExceeded }
         for history in series {
             guard !history.name.isEmpty, history.name.utf8.count <= 128, !history.name.contains("\0"),
@@ -228,7 +228,7 @@ public enum PlanUtilizationHistoryCore {
         }
     }
 
-    private static func canonicalMinutes(_ minutes: Int, name: String) -> Int {
+    static func canonicalMinutes(_ minutes: Int, name: String) -> Int {
         if name == "session", (295...305).contains(minutes) { return 300 }
         if name == "weekly", (10070...10090).contains(minutes) { return 10080 }
         return minutes

@@ -1,6 +1,8 @@
 # Windows 전용 제품 작업 현황
 
-- Git 반영 규칙: 매 구현 단위마다 커밋 및 origin/main 푸시. IMPL-340~526 누적분은 사용자 재지시에 따라 복구 커밋으로 반영하며, 검증 보류 상태를 유지한다.
+- IMPL-527: 원본 이력 차트의 공급자 series 선택·리셋 구간 peak·빈 구간·최근 30개·날짜 축을 공통 모델로 작성. 계정 조회 및 native chart UI 연결은 남아 있음. CODE_WRITTEN_UNVERIFIED.
+
+- Git 반영 규칙: 매 구현 단위마다 커밋 및 origin/main 푸시. 누적 IMPL-340~526은 4135f98d0으로 원격 반영 완료. 검증 보류 상태는 유지한다.
 
 - IMPL-526: 공급자별 plan-utilization 표본/구간 identity 전환을 저장소와 조회 성공 경로에 연결. 계정·설정 변경 표본 제외, 수집 오류 별도 안내. CODE_WRITTEN_UNVERIFIED.
 

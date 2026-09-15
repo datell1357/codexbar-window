@@ -4941,3 +4941,13 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - 사용자가 매 구현 후 커밋·푸시를 다시 명시했다. 이전 자동 승인 검토 시간 초과 뒤 보류된 IMPL-340~526의 staging/commit/push를 재시도하는 권한으로 적용한다.
 - 누적된 Windows widget backend·tray plugin 관리·plan-utilization 이력 코드 및 관련 문서를 한 복구 커밋으로 기록한다. 이후 구현은 단위별로 커밋하고 origin/main에 푸시한다.
 - 빌드·테스트·lint·실행 검증은 계속 보류한다. 커밋/푸시에는 검증 훅을 실행하지 않고 [skip ci]를 사용한다. 원격 반영 성공 여부는 Git 응답으로 별도 기록하며 코드 검증과 구분한다.
+
+## IMPL-527 — Project plan-utilization chart periods for native consumers
+
+- 원본 PlanUtilizationHistoryChartMenuView의 데이터 모델을 읽고 PlanUtilizationHistoryChart로 분리 작성했다. SwiftUI/Charts 의존 없이 이미 선택된 한 계정의 이력을 입력받으며 계정 bucket 선택이나 adoption을 추정하지 않는다.
+- provider presentation의 normalizePlanUtilizationSeries/planUtilizationSeries를 재사용해 Codex legacy monthly lane 병합, 현재 snapshot의 표시 가능 series, session/weekly 허용 오차, 중복 표본 및 선택 순서를 적용한다.
+- 가장 늦은 알려진 reset을 기준으로 구간 경계를 맞추고 사용률 peak를 선택한다. 동률이면 알려진 reset, 늦은 표시 reset, 늦은 관측 순으로 선택하며 실제 관측 시각을 보존한다. 표본이 없는 구간은 isObserved=false로 표시해 실제 0% 관측과 구분한다.
+- 원본의 최근 30개 구간, 현재 구간까지 빈 구간 보충, 30칸 x축과 최대 4개 비례 날짜 라벨 규칙을 작성했다. 긴 이력 공백은 화면에 남는 30개만 계산하고 날짜 산술 실패를 오류로 반환한다. 날짜 축에 Calendar를 주입할 수 있게 했다.
+- 이번 범위는 차트 데이터 변환이다. Windows runtime의 현재 계정과 일치하는 조회 token, native chart 창/선택·접근성, session-equivalent forecast, migration 및 삭제 lifecycle은 남아 있다. 원본과 같은 실행 결과를 검증한 것은 아니다.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·컴파일·UI·fixture 비교·성능 검증 미실행.
+- Git 보류 복구: IMPL-340~526은 4135f98d0으로 커밋되어 origin/main 푸시가 성공했다. IMPL-527도 사용자 지시에 따라 별도 구현 커밋과 푸시 대상으로 처리하며 최종 Git 결과를 보고한다.
