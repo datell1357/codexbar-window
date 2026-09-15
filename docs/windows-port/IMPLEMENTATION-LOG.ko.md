@@ -5054,3 +5054,15 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - 과거 UUID bucket에 섞여 있을 수 있는 데이터를 새 OAuth owner로 자동 병합하거나 삭제하지 않았다. 원본의 exact-Keychain binding을 Windows에 있다고 가정하지 않는다. Windows credential-file 근거를 사용한 지속 binding 및 확인된 기존 bucket 복구, 일반 session-exhausted/restored 알림의 Claude owner baseline 통합, 전체 이력 lifecycle/동시 계정 소비는 남아 있다.
 - CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·컴파일·lint·실제 credential/계정 전환·알림·widget·hook·UI 검증 미실행. source 판정 로직을 작성했으며 실제 격리 성공을 검증한 상태는 아니다.
 - 직전 IMPL-535는 aeabefaa2로 origin/main 푸시가 성공했다. IMPL-536도 별도 구현 커밋·푸시 후 Git 결과를 보고한다.
+
+## IMPL-537 — Scope session transition baselines and queued notifications to the observed owner
+
+- Windows의 일반 session depleted/restored 기준에 현재 owner를 연결했다. Codex는 기존 owner/fingerprint key를 유지하고 다른 공급자는 plan history와 동일한 scoped owner를 사용한다. identity가 없는 공급자는 provider config revision을 포함한 unscoped 기준으로 구분한다.
+- owner가 바뀌거나 계정 선택이 무효화되면 이전 transition state를 제거하고 다음 유효 관측을 baseline으로만 저장한다. 알 수 없는 owner에서도 이전 기준과 대기 알림을 무효화한다. 새 실행에서 처음 관측한 0%의 기존 알림 정책은 유지하며, 같은 owner의 오래되거나 같은 시각인 non-Codex 관측은 재평가하지 않는다.
+- 현재 config와 owner를 대조한 뒤 세션 알림과 선택적 이력 기록을 처리하도록 processOwnedUsageObservation 경로를 구성했다. 세션 알림 계산은 historical tracking 설정 확인 전에 수행하며, 뒤따르는 이력 파일 저장 실패만으로 알림 관측을 무효화하지 않는다. 취소/이전 generation의 응답은 이 경로에 진입하지 않는다.
+- WindowsSessionQuotaNotification에 isCurrent callback을 추가했다. owner 변경, provider 비활성화, 알림 끄기, 종료, baseline 변경 또는 새로운 transition에서 이전 lease를 무효화한다. 현재 refresh 실패, 유효하지 않은 수치/시각, session metric 부재/placeholder에서도 대기 알림이 남지 않도록 작성했다.
+- tray는 enqueue와 실제 Shell_NotifyIcon 호출 직전에 lease를 확인한다. 메뉴 때문에 지연된 이전 계정의 알림 또는 이미 반전된 depleted/restored 알림을 건너뛰도록 연결했다. 기존 생성 호출은 기본 callback으로 소스 호환성을 유지한다.
+- 파일·계정 변경을 OS 전체에서 실시간 관찰하는 기능은 아니다. 외부 변경은 runtime이 현재 config/owner를 다시 관측한 시점에 반영된다. Windows 전환/취소/메뉴 대기/알림 OFF-ON 및 실제 notification delivery 검증이 필요하다.
+- Windows credential-file 근거의 지속 Claude binding 및 확인된 이전 bucket 복구, quota/pace 대기 알림의 동등한 delivery 검토, 이력 삭제 lifecycle, 동시 계정 소비와 전체 Windows 실행 검증은 남아 있다. W05/WIN-020 전체 완료가 아니다.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·컴파일·lint·실제 이력/계정 전환·Windows 알림/UI 검증 미실행.
+- 직전 IMPL-536은 ae51d7945로 origin/main 푸시가 성공했다. IMPL-537도 별도 구현 커밋·푸시 후 Git 결과를 보고한다.

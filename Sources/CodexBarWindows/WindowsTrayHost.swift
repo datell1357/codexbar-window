@@ -1352,6 +1352,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
     }
 
     public func postSessionQuotaNotification(_ notification: WindowsSessionQuotaNotification) {
+        guard notification.isCurrent() else { return }
         self.mailboxLock.lock()
         guard !self.quitInvoked else {
             self.mailboxLock.unlock()
@@ -5002,6 +5003,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
     }
 
     private func deliverSessionQuotaNotification(_ notification: WindowsSessionQuotaNotification) {
+        guard !self.quitInvoked, notification.isCurrent() else { return }
         guard self.presentationDefaults.object(forKey: "sessionQuotaNotificationsEnabled") as? Bool ?? true,
               self.iconInstalled,
               let hwnd = self.window
@@ -5014,6 +5016,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
         data.dwInfoFlags = DWORD(NIIF_INFO)
         Self.copyUTF16(notification.title, into: &data.szInfoTitle)
         Self.copyUTF16(notification.body, into: &data.szInfo)
+        guard notification.isCurrent() else { return }
         guard Shell_NotifyIconW(DWORD(NIM_MODIFY), &data) != 0 else {
             let error = GetLastError()
             FileHandle.standardError.write(

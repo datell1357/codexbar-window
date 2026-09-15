@@ -807,6 +807,9 @@ public actor WindowsUsageRuntime {
     }
     private var dashboardContextCache: [ProviderInstanceID: DashboardContext] = [:]
     private var sessionQuotaStates: [ProviderInstanceID: SessionQuotaTransitionCore.State] = [:]
+    private var sessionQuotaOwners: [ProviderInstanceID: String] = [:]
+    private var sessionQuotaNeedsBaseline: Set<ProviderInstanceID> = []
+    private var sessionQuotaNotificationValidity: [ProviderInstanceID: WindowsSnapshotValidity] = [:]
     private var codexSessionQuotaBaselineWatermark: Date?
     private var quotaWarningStates: [QuotaWarningTransitionCore.Key: QuotaWarningTransitionCore.State] = [:]
     private var latestProviderConfigs: [ProviderInstanceID: ProviderConfig] = [:]
@@ -1910,9 +1913,8 @@ public actor WindowsUsageRuntime {
         self.accountInvalidationPublisher(providerID)
         self.planUtilizationHistoryNotices.removeValue(forKey: providerID)
         self.dashboardContextCache.removeValue(forKey: providerID)
-        // Session transitions are keyed only by provider. The first observation for
-        // a newly selected account must establish a baseline, not compare with its predecessor.
-        self.sessionQuotaStates.removeValue(forKey: providerID)
+        // A newly selected account establishes a fresh baseline and revokes queued session notifications.
+        self.invalidateSessionQuotaOwner(providerID)
         if providerID == UsageProvider.codex.instanceID {
             self.codexSessionQuotaBaselineWatermark = Date()
             self.historicalTrackingGeneration &+= 1
@@ -2481,6 +2483,7 @@ public actor WindowsUsageRuntime {
     public func sessionQuotaNotificationSettingsDidChange() async {
         guard !self.shuttingDown else { return }
         if !self.sessionQuotaNotificationsEnabled() {
+            for validity in self.sessionQuotaNotificationValidity.values { validity.invalidate() }
             self.codexSessionQuotaBaselineWatermark = max(self.codexSessionQuotaBaselineWatermark ?? .distantPast, self.sessionQuotaStates[UsageProvider.codex.instanceID]?.observedAt ?? .distantPast)
         }
     }
@@ -3105,6 +3108,9 @@ public actor WindowsUsageRuntime {
                     result[id] = providerConfig
                 }
             }
+            for id in Array(self.sessionQuotaOwners.keys) where !enabledIDs.contains(id) {
+                self.invalidateSessionQuotaOwner(id)
+            }
             self.sessionQuotaStates = self.sessionQuotaStates.filter { enabledIDs.contains($0.key) }
             self.quotaWarningStates = self.quotaWarningStates.filter { enabledIDs.contains($0.key.provider.instanceID) }
             for instanceID in config.enabledProviders() {
@@ -3514,6 +3520,7 @@ public actor WindowsUsageRuntime {
             return
         }
         self.shuttingDown = true
+        for validity in self.sessionQuotaNotificationValidity.values { validity.invalidate() }
         self.invalidatePlanHistoryContexts()
         // All callers await the same cleanup, including the widget receiver/server join.
         // Caller cancellation must not cancel resource teardown halfway through.
@@ -3578,6 +3585,9 @@ public actor WindowsUsageRuntime {
         self.startupConnectivityRetryActive = false
         self.startupConnectivityRetryNeeded = false
         self.sessionQuotaStates.removeAll(keepingCapacity: false)
+        self.sessionQuotaOwners.removeAll(keepingCapacity: false)
+        self.sessionQuotaNeedsBaseline.removeAll(keepingCapacity: false)
+        self.sessionQuotaNotificationValidity.removeAll(keepingCapacity: false)
         self.codexSessionQuotaBaselineWatermark = nil
         self.quotaWarningStates.removeAll(keepingCapacity: false)
         self.predictivePaceWarningKeys.removeAll(keepingCapacity: false)
@@ -3599,30 +3609,64 @@ public actor WindowsUsageRuntime {
         UserDefaults(suiteName: WindowsRefreshSettings.suiteName)?.object(forKey: "sessionQuotaNotificationsEnabled") as? Bool ?? true
     }
 
+    private func invalidateSessionQuotaOwner(_ providerID: ProviderInstanceID) {
+        self.sessionQuotaStates.removeValue(forKey: providerID)
+        self.sessionQuotaOwners.removeValue(forKey: providerID)
+        self.sessionQuotaNeedsBaseline.insert(providerID)
+        self.sessionQuotaNotificationValidity.removeValue(forKey: providerID)?.invalidate()
+    }
+
     private func evaluateSessionQuota(
         provider: UsageProvider,
         snapshot: UsageSnapshot,
         codexVisibleAccount: CodexVisibleAccount?,
-        tokenAccount: ProviderTokenAccount?)
+        tokenAccount: ProviderTokenAccount?,
+        resolvedOwner: PlanHistoryOwner,
+        providerRevision: Data?)
     {
-        guard !self.shuttingDown else { return }
+        guard !self.shuttingDown, !Task.isCancelled else { return }
+        guard snapshot.updatedAt.timeIntervalSince1970.isFinite else {
+            self.invalidateSessionQuotaOwner(provider.instanceID)
+            return
+        }
         let enabled = self.sessionQuotaNotificationsEnabled()
         let ownerKey = provider == .codex
             ? self.codexSessionOwnerKey(snapshot: snapshot, visibleAccount: codexVisibleAccount, tokenAccount: tokenAccount)
             : nil
+        let scope: String
+        if provider == .codex {
+            guard let ownerKey else {
+                let previousDate = self.sessionQuotaStates[provider.instanceID]?.observedAt ?? .distantPast
+                self.invalidateSessionQuotaOwner(provider.instanceID)
+                self.codexSessionQuotaBaselineWatermark = max(
+                    max(self.codexSessionQuotaBaselineWatermark ?? .distantPast, previousDate), snapshot.updatedAt)
+                return
+            }
+            scope = ownerKey
+        } else {
+            switch resolvedOwner {
+            case let .scoped(key): scope = key
+            case .unscoped: scope = "unscoped-config:" + (providerRevision?.base64EncodedString() ?? "default")
+            case .unavailable:
+                self.invalidateSessionQuotaOwner(provider.instanceID)
+                return
+            }
+        }
+        if let previousOwner = self.sessionQuotaOwners[provider.instanceID], previousOwner != scope {
+            self.invalidateSessionQuotaOwner(provider.instanceID)
+        }
+        self.sessionQuotaOwners[provider.instanceID] = scope
+        if self.sessionQuotaNotificationValidity[provider.instanceID] == nil {
+            self.sessionQuotaNotificationValidity[provider.instanceID] = WindowsSnapshotValidity()
+        }
+        if !enabled { self.sessionQuotaNotificationValidity[provider.instanceID]?.invalidate() }
+        if provider != .codex, let previous = self.sessionQuotaStates[provider.instanceID],
+           snapshot.updatedAt <= previous.observedAt { return }
         if provider == .codex, !enabled {
             self.codexSessionQuotaBaselineWatermark = max(
                 max(
                     self.codexSessionQuotaBaselineWatermark ?? .distantPast,
                     self.sessionQuotaStates[UsageProvider.codex.instanceID]?.observedAt ?? .distantPast),
-                snapshot.updatedAt)
-            self.sessionQuotaStates.removeValue(forKey: provider.instanceID)
-            return
-        }
-        guard provider != .codex || ownerKey != nil else {
-            self.codexSessionQuotaBaselineWatermark = max(
-                max(self.codexSessionQuotaBaselineWatermark ?? .distantPast,
-                    self.sessionQuotaStates[provider.instanceID]?.observedAt ?? .distantPast),
                 snapshot.updatedAt)
             self.sessionQuotaStates.removeValue(forKey: provider.instanceID)
             return
@@ -3634,6 +3678,7 @@ public actor WindowsUsageRuntime {
             return
         }
         guard let selected = SessionQuotaTransitionCore.sessionWindow(provider: provider, snapshot: snapshot) else {
+            self.sessionQuotaNotificationValidity[provider.instanceID]?.invalidate()
             if provider == .codex {
                 if let previous = self.sessionQuotaStates[provider.instanceID], previous.codexOwnerKey != ownerKey {
                     self.codexSessionQuotaBaselineWatermark = max(
@@ -3651,22 +3696,33 @@ public actor WindowsUsageRuntime {
             }
             return
         }
-        guard !selected.window.isSyntheticPlaceholder else { return }
-        let forceBaseline = provider == .codex && self.codexSessionQuotaBaselineWatermark != nil
-        if forceBaseline { self.codexSessionQuotaBaselineWatermark = nil }
+        guard !selected.window.isSyntheticPlaceholder, selected.window.remainingPercent.isFinite else {
+            self.sessionQuotaNotificationValidity[provider.instanceID]?.invalidate()
+            return
+        }
+        let forceBaseline = self.sessionQuotaNeedsBaseline.contains(provider.instanceID)
+            || (provider == .codex && self.codexSessionQuotaBaselineWatermark != nil)
+        if forceBaseline {
+            self.sessionQuotaNeedsBaseline.remove(provider.instanceID)
+            if provider == .codex { self.codexSessionQuotaBaselineWatermark = nil }
+        }
         let evaluation = SessionQuotaTransitionCore.evaluate(
             previous: self.sessionQuotaStates[provider.instanceID],
             observation: .init(provider: provider, remaining: selected.window.remainingPercent, source: selected.source, resetBoundary: selected.window.resetsAt, observedAt: snapshot.updatedAt, evaluationTime: Date(), codexOwnerKey: ownerKey),
             notificationsEnabled: enabled,
             forceBaseline: forceBaseline)
         self.sessionQuotaStates[provider.instanceID] = evaluation.state
-        guard enabled, !forceBaseline, evaluation.outcome.transition != .none else { return }
+        if evaluation.outcome == .baselineChanged || evaluation.outcome.transition != .none {
+            self.sessionQuotaNotificationValidity[provider.instanceID]?.invalidate()
+        }
+        guard enabled, !forceBaseline, evaluation.outcome.transition != .none,
+              let validity = self.sessionQuotaNotificationValidity[provider.instanceID] else { return }
         let restored = evaluation.outcome.transition == .restored
         let providerName = ProviderDescriptorRegistry.descriptor(for: provider).metadata.displayName
         self.notificationPublisher(.init(
             title: "\(providerName) session \(restored ? "restored" : "depleted")",
             body: restored ? "Session quota is available again." : "0% left. Will notify when it's available again.",
-            providerID: provider.instanceID))
+            providerID: provider.instanceID, isCurrent: validity.capture()))
     }
 
     private func evaluateQuotaWarnings(
@@ -4037,7 +4093,7 @@ public actor WindowsUsageRuntime {
         return owner == expected.owner && owner != .unavailable
     }
 
-    private func recordPlanUtilizationSampleIfNeeded(
+    private func processOwnedUsageObservation(
         provider: UsageProvider, result: ProviderFetchResult, config: CodexBarConfig,
         tokenAccount: ProviderTokenAccount?, codexVisibleAccount: CodexVisibleAccount?,
         codexAccountContext: CodexAccountContextSnapshot?, environment: [String: String],
@@ -4048,12 +4104,16 @@ public actor WindowsUsageRuntime {
         guard !self.shuttingDown, !Task.isCancelled, generation == self.historicalTrackingGeneration,
               contextGeneration == self.planHistoryContextGeneration,
               self.latestEnabledProviderIDs?.contains(id) == true else { return }
+        var acceptedObservation = false
         do {
             // Configuration may change while the provider request is in flight.
             let current = try self.configStore.loadOrCreateDefault()
             let revision = try self.pluginProviderRevision(config.providerConfig(for: id))
             guard current.enabledProviders().contains(id),
-                  try self.pluginProviderRevision(current.providerConfig(for: id)) == revision else { return }
+                  try self.pluginProviderRevision(current.providerConfig(for: id)) == revision else {
+                self.invalidateSessionQuotaOwner(id)
+                return
+            }
             let owner = self.planUtilizationHistoryOwner(provider: provider, result: result,
                 tokenAccount: tokenAccount, codexVisibleAccount: codexVisibleAccount,
                 codexAccountContext: codexAccountContext, environment: environment,
@@ -4063,6 +4123,7 @@ public actor WindowsUsageRuntime {
             case let .scoped(key): accountKey = key
             case .unscoped: accountKey = nil
             case .unavailable:
+                self.invalidateSessionQuotaOwner(id)
                 self.planUtilizationHistoryNotices[id] = "plan_history_ownerUnavailable"
                 return
             }
@@ -4076,6 +4137,17 @@ public actor WindowsUsageRuntime {
                     ? ClaudeOAuthCredentialsStore.credentialsProfileIdentifier(environment: environment) : nil,
                 validity: WindowsSnapshotValidity())
             self.planHistoryContexts[id] = historyContext
+            guard try self.planHistoryContextMatches(historyContext, provider: provider) else {
+                historyContext.validity.invalidate()
+                self.planHistoryContexts.removeValue(forKey: id)
+                self.invalidateSessionQuotaOwner(id)
+                self.planUtilizationHistoryNotices[id] = "plan_history_ownerUnavailable"
+                return
+            }
+            acceptedObservation = true
+            self.evaluateSessionQuota(provider: provider, snapshot: result.usage,
+                codexVisibleAccount: codexVisibleAccount, tokenAccount: tokenAccount,
+                resolvedOwner: owner, providerRevision: revision)
             // Stopping collection must not erase or make an existing, owner-matched history unreadable.
             let alwaysTracks = ProviderDescriptorRegistry.descriptor(for: provider).history.alwaysTracksPlanUtilization
             guard alwaysTracks || WindowsPredictivePaceWarningSettings.load().historicalTrackingEnabled else {
@@ -4113,6 +4185,7 @@ public actor WindowsUsageRuntime {
                 })
             self.planUtilizationHistoryNotices.removeValue(forKey: id)
         } catch {
+            if !acceptedObservation { self.invalidateSessionQuotaOwner(id) }
             // A history failure does not turn a successful quota fetch into an authentication/network error.
             self.planUtilizationHistoryNotices[id] = "plan_history_saveFailed"
         }
@@ -4762,7 +4835,6 @@ public actor WindowsUsageRuntime {
                             discriminator: discriminator, lanes: lanes, failure: nil))
                     } else { self.hookUnresolvedAccountCount += 1 }
                 }
-                self.evaluateSessionQuota(provider: provider, snapshot: result.usage, codexVisibleAccount: codexVisibleAccount, tokenAccount: account)
                 self.evaluateQuotaWarnings(provider: provider, snapshot: result.usage,
                     codexVisibleAccount: codexVisibleAccount, tokenAccount: account, environment: env, config: config,
                     claudeAccountUUIDBefore: claudeAccountUUIDBefore,
@@ -4772,7 +4844,7 @@ public actor WindowsUsageRuntime {
                     oauthHistoryOwnerIdentifier: result.claudeOAuthHistoryOwnerIdentifier,
                     oauthCredentialOwner: result.claudeOAuthCredentialOwner,
                     quotaWarningGeneration: quotaWarningGeneration)
-                self.recordPlanUtilizationSampleIfNeeded(provider: provider, result: result, config: config,
+                self.processOwnedUsageObservation(provider: provider, result: result, config: config,
                     tokenAccount: account, codexVisibleAccount: codexVisibleAccount,
                     codexAccountContext: retainedCodexContext, environment: env,
                     claudeAccountUUIDBefore: claudeAccountUUIDBefore,
@@ -4798,6 +4870,9 @@ public actor WindowsUsageRuntime {
                     oauthCredentialOwner: result.claudeOAuthCredentialOwner)
                 return presentation.rows()
             case let .failure(error):
+                if !self.shuttingDown, !Task.isCancelled, historyContextGeneration == self.planHistoryContextGeneration {
+                    self.sessionQuotaNotificationValidity[provider.instanceID]?.invalidate()
+                }
                 if config.hooks?.enabled == true, !Task.isCancelled, !self.shuttingDown {
                     if let account {
                         let owner = "token-account:" + account.id.uuidString.lowercased()

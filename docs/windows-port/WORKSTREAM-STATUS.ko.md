@@ -1,5 +1,7 @@
 # Windows 전용 제품 작업 현황
 
+- IMPL-537: 일반 세션 소진/복구 알림의 owner 경계와 대기 알림 lease 연결. 계정 변경 후 첫 관측은 baseline, 현재 config/owner 확인 후 알림 계산, 비활성화·설정 끄기·종료·새 상태에서 이전 알림 무효화. 이력 수집 여부와 독립. CODE_WRITTEN_UNVERIFIED.
+
 - IMPL-536: Claude OAuth 응답에 CLI UUID/token 계정을 우선하던 owner 판정을 수정. winning credential owner 기준의 Core resolver를 이력·quota/pace 경고·widget·hook에 연결하고 OAuth/CLI 응답의 token 계정 label 덮어쓰기 제거. Windows credential binding 및 일반 session quota 알림 owner 통합은 남아 있음. CODE_WRITTEN_UNVERIFIED.
 
 - IMPL-535: 새 관측 없이 기존 이력을 여는 경로에도 계정/pair 이관 연결. 파일·owner·이관 근거가 같은 경우에만 read cache 재사용, 이관 후 실제 게시 데이터 revision을 전달하고 이전 chart lease 무효화. 없는 provider history JSON은 만들지 않음. CODE_WRITTEN_UNVERIFIED.
