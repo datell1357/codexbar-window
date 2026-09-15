@@ -1,9 +1,35 @@
 #if os(Windows)
 import Foundation
+import WinSDK
 
 @main
 struct CodexBarWindowsMain {
     static func main() {
+        do {
+            let instance = try WindowsApplicationInstance.acquire()
+            withExtendedLifetime(instance) {
+                self.runApplication()
+                // Keep the startup lease even if session-ending cleanup exhausted its budget.
+                // The kernel releases it at process exit, after the other process threads stop.
+                ExitProcess(0)
+            }
+        } catch let failure as WindowsApplicationInstance.Failure {
+            let message: String
+            switch failure {
+            case .occupied:
+                message = "CodexBar: the startup lock is in use; no additional runtime was started.\n"
+            case .windows, .invalidStorage:
+                message = "CodexBar: startup ownership could not be established; no runtime was started.\n"
+            }
+            FileHandle.standardError.write(Data(message.utf8))
+            ExitProcess(failure.exitCode)
+        } catch {
+            FileHandle.standardError.write(Data("CodexBar: startup ownership failed; no runtime was started.\n".utf8))
+            ExitProcess(UINT(ERROR_GEN_FAILURE))
+        }
+    }
+
+    private static func runApplication() {
         let application = WindowsTrayApplication()
         application.run()
     }

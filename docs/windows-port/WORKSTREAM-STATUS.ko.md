@@ -1,5 +1,7 @@
 # Windows 전용 제품 작업 현황
 
+- IMPL-543: runtime 생성 전 Windows 사용자/session별 파일 소유권 확보, 새 항목 user DACL·directory pin·독점 열기·실패/점유 구분 연결. cleanup 후 process exit까지 lease 유지. OS-started widget의 실제 bootstrap/admission은 남아 있음. CODE_WRITTEN_UNVERIFIED.
+
 - IMPL-542: host v2 빌드 receipt에 runtime/metadata/resource/라이선스 payload를 기록하고 배포 입력·복사 byte 대조·first-party 서명 대상에 연결. backend v1 계약 유지, 누락/종류 변경/byte 불일치 시 완료 inventory 미작성. MSIX/OS activation은 남아 있음. CODE_WRITTEN_UNVERIFIED.
 
 - IMPL-541: packaged 앱 시작→native child 생성→backend listener→상속 파이프 전달→handshake/종료 관측→정리·재시도 연결. 제한된 handle·환경변수 상속, 같은 package/image/session 대조, 강제 종료/실패 owner 보존 작성. cold OS activation·MSIX/배포 연결은 남아 있음. CODE_WRITTEN_UNVERIFIED.

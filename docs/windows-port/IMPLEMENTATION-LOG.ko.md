@@ -5121,3 +5121,13 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - host exe를 root first-party application으로 서명 판정에 포함하고 backend 없는 host를 거절하도록 작성했다. 공유 서명/설치 계약은 기존 17개 대상에 backend/host가 있을 때 19개를 요구한다. 최종 서명 후 inventory에는 다시 계산한 실제 hash를 사용하며 사전 서명 payload hash를 그대로 적용하지 않는다.
 - LOCAL_BUILD_NOT_ATTESTED 및 COPIED_BYTES_MATCH_LOCAL_BUILD_RECORD는 source에 정의한 기록 상태일 뿐 실제 빌드·복사·서명·OS 등록 성공을 보고하는 값이 아니다. MSIX COM/6종 widget/proxy-stub 선언, cold activation·broker 정책·사용자 진단·전체 Windows-only 제품 graph와 실행 검증은 남아 있다.
 - CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. PowerShell·NuGet restore·MSBuild·컴파일·테스트·lint·배포 조립·서명·설치·실제 Windows 검증 미실행. 직전 IMPL-541은 02b8798d3으로 origin/main 푸시가 성공했다. IMPL-542도 별도 구현 커밋·푸시 후 Git 결과를 보고한다.
+
+## IMPL-543 — Hold application startup ownership through process exit
+
+- OS CreateInstance activation은 현재 private-bootstrap child 경로와 다른 시작 연결이 필요함을 Microsoft widget manifest/protocol 문서에서 읽었다. 기존 IWidgetProvider COM 인터페이스는 유지하며, OS-started host가 backend를 깨울 때 중복 runtime을 만들지 않도록 WIN-052의 단일 인스턴스 선행 계약을 구현했다.
+- WindowsApplicationInstance는 SHGetKnownFolderPath의 LocalAppData와 현재 Windows session ID에서 정확한 runtime lock 위치를 만든다. user SID 보호 DACL을 새 항목에 적용하고 share mode 0으로 빈 파일을 연다. 기존 ACL/파일 내용을 덮어쓰거나 잠금 파일을 삭제하지 않는다. 환경변수/실행 경로/임의 PID로 소유권을 선택하지 않는다.
+- root 및 자식 directory를 순서대로 열고 pin한 뒤 다음 경로로 진행한다. reparse/directory leaf·빈 파일이 아닌 입력·여러 hard link를 거절하며, 실패 시 확보한 handle만 닫고 생성된 파일은 보존한다. shared/lock 충돌은 occupied, 그 외 접근/구조 문제는 startup 실패로 구분했다.
+- WindowsMain에서 runtime 생성 전에 lease를 얻도록 연결했다. 실패/occupied 때 provider 조회·session runtime·widget launcher를 새로 시작하지 않고 별도 종료 코드를 반환한다. 점유자 신원/건강 상태/IPC 접속 성공은 추정하지 않는다.
+- 기존 application run/cleanup 범위를 정리한 후 ExitProcess까지 lease를 보관한다. 세션 종료 cleanup 시간이 지났다고 살아 있는 process의 잠금을 먼저 풀지 않는다. 새 WinSDK ACL API 호출에 필요한 Advapi32 링크를 Windows target에 명시했으며 패키지 의존성은 추가하지 않았다.
+- APPLICATION-LIFECYCLE.ko.md에 파일 소유권·실패·종료·known-folder/가상화/경로 경계를 기록했다. 실제 OS host의 bootstrap rendezvous와 admission/재연결, 기존 앱 foreground 전달, MSIX COM/6종 widget/proxy-stub 등록·broker 정책은 남아 있다.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·compiler/manifest 평가·lint·실제 WinSDK/ACL/파일/동시 실행/종료/COM/UI 검증 미실행. guidelines/COMMITS.md는 저장소에 없어 제공된 핵심 커밋 규칙을 적용했다. 직전 IMPL-542는 fc568f097로 origin/main 푸시가 성공했다. IMPL-543도 별도 구현 커밋·푸시 후 Git 결과를 보고한다.

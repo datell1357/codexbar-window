@@ -63,3 +63,9 @@ Build-WidgetHost.ps1은 MSBuild가 남긴 배포 파일을 읽어 schemaVersion 
 공유 payload 계약은 빌드 기록·입력 생성·조립에서 같은 경로/종류/필수 파일 규칙을 사용한다. 조립기는 전체 payload의 포함 여부를 먼저 대조하고, 복사 후 열어 보관한 파일의 크기·hash가 기록과 다르면 완료 inventory를 쓰지 않는다. 실패한 부분 출력은 보존한다. CodexBarWidgetHost.exe는 root first-party application으로 서명 대상에 포함되며 backend 없이 포함할 수 없다. 서명 후 inventory는 변경된 실제 파일을 기준으로 기존 서명 경로에서 다시 작성한다.
 
 LOCAL_BUILD_NOT_ATTESTED와 COPIED_BYTES_MATCH_LOCAL_BUILD_RECORD는 로컬 빌드 기록 및 복사 byte 일치 상태다. MSIX 등록·OS activation·서명 성공·실행 성공을 뜻하지 않는다. 현재 모든 변경은 CODE_WRITTEN_UNVERIFIED이며 build/restore/PowerShell/서명/설치/검증을 실행하지 않았다. 앱이 닫힌 상태의 OS activation, MSIX COM/6종 widget 선언과 proxy/stub 등록, 실제 broker 정책 및 사용자-facing 위젯 진단은 남아 있다.
+
+## IMPL-543: 앱 시작 소유권
+
+위젯이 앱을 깨우는 경로의 선행 조건으로 Windows 앱 진입점에 사용자/Windows-session별 instance lease를 연결했다. OS-known local app data의 빈 lock file을 독점으로 열고, 성공한 경우에만 runtime을 생성한다. 세션 종료 cleanup 제한 시간이 지나도 process exit까지 소유권을 보관한다. 파일 존재나 충돌 종료 코드가 실제 앱/host 인증 또는 bootstrap 연결 성공을 뜻하지는 않는다.
+
+세부 계약은 [앱 lifecycle 문서](../../docs/windows-port/APPLICATION-LIFECYCLE.ko.md)에 기록했다. 현재 OS-started host의 rendezvous/admission과 MSIX COM 등록은 아직 구현되지 않았다. 같은 package/image/session 및 peer 검증을 유지한 접속 경로가 추가로 필요하다. CODE_WRITTEN_UNVERIFIED이며 이번 작업에서 앱/파일/잠금/위젯을 실행하지 않았다.
