@@ -9,6 +9,7 @@ import WinSDK
 /// arrives.
 public final class WindowsQuotaWarningOverlay {
     private static let lifetimeMilliseconds: UINT = 4_500
+    private static let validityPollMilliseconds: UINT = 250
     private static let className = "CodexBar.QuotaWarningOverlay"
     private static let width: Int32 = 440
     private static let height: Int32 = 112
@@ -18,7 +19,9 @@ public final class WindowsQuotaWarningOverlay {
 
     public init() {}
 
-    public func show(title: String, body: String, owner: HWND) {
+    public func show(title: String, body: String, owner: HWND,
+                     isCurrent: @escaping @Sendable () -> Bool = { true }) {
+        guard isCurrent() else { return }
         self.dismiss()
         let generation = self.nextGeneration &+ 1
         self.nextGeneration = generation == 0 ? 1 : generation
@@ -26,7 +29,7 @@ public final class WindowsQuotaWarningOverlay {
             title: String(decoding: title.utf16.prefix(256), as: UTF16.self),
             body: String(decoding: body.utf16.prefix(768), as: UTF16.self),
             owner: owner,
-            timerID: self.nextGeneration)
+            timerID: self.nextGeneration, isCurrent: isCurrent)
         self.context = context
 
         guard Self.registerClass() else {
@@ -53,11 +56,12 @@ public final class WindowsQuotaWarningOverlay {
         context.window = created
         Self.center(created, owner: owner)
         guard SetLayeredWindowAttributes(created, 0, 255, DWORD(LWA_ALPHA)) != 0,
-              SetTimer(created, context.timerID, Self.lifetimeMilliseconds, nil) != 0 else {
+              SetTimer(created, context.timerID, Self.validityPollMilliseconds, nil) != 0 else {
             DestroyWindow(created)
             self.context = nil
             return
         }
+        guard isCurrent() else { self.dismiss(); return }
         SetWindowPos(created, HWND_TOPMOST, 0, 0, 0, 0,
                      UINT(SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW))
         ShowWindow(created, Int32(SW_SHOWNOACTIVATE))
@@ -79,13 +83,16 @@ public final class WindowsQuotaWarningOverlay {
         let body: String
         let owner: HWND
         let timerID: UINT_PTR
+        let isCurrent: @Sendable () -> Bool
+        let expiresAt = ContinuousClock.now + .milliseconds(Int64(WindowsQuotaWarningOverlay.lifetimeMilliseconds))
         var window: HWND?
 
-        init(title: String, body: String, owner: HWND, timerID: UINT_PTR) {
+        init(title: String, body: String, owner: HWND, timerID: UINT_PTR, isCurrent: @escaping @Sendable () -> Bool) {
             self.title = title
             self.body = body
             self.owner = owner
             self.timerID = timerID
+            self.isCurrent = isCurrent
         }
     }
 
@@ -107,6 +114,7 @@ public final class WindowsQuotaWarningOverlay {
         switch message {
         case UINT(WM_TIMER):
             guard UINT_PTR(wParam) == context.timerID else { return 0 }
+            guard !context.isCurrent() || ContinuousClock.now >= context.expiresAt else { return 0 }
             KillTimer(hwnd, context.timerID)
             DestroyWindow(hwnd)
             return 0
@@ -119,6 +127,7 @@ public final class WindowsQuotaWarningOverlay {
         case UINT(WM_ERASEBKGND):
             return 1
         case UINT(WM_PAINT):
+            guard context.isCurrent() else { DestroyWindow(hwnd); return 0 }
             Self.paint(hwnd, context: context)
             return 0
         case UINT(WM_NCDESTROY):

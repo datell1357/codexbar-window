@@ -10,6 +10,7 @@ public struct WindowsQuotaWarningNotification: Sendable {
     public let currentRemaining: Double
     public let accountDisplayName: String?
     public let windowDisplayLabel: String?
+    public let isCurrent: @Sendable () -> Bool
 
     public init(
         providerName: String,
@@ -18,9 +19,11 @@ public struct WindowsQuotaWarningNotification: Sendable {
         currentRemaining: Double,
         accountDisplayName: String? = nil,
         windowDisplayLabel: String? = nil,
-        providerID: ProviderInstanceID? = nil)
+        providerID: ProviderInstanceID? = nil,
+        isCurrent: @escaping @Sendable () -> Bool = { true })
     {
         self.providerID = providerID
+        self.isCurrent = isCurrent
         self.providerName = providerName
         self.window = window
         self.threshold = threshold

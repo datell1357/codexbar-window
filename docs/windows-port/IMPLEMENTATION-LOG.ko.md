@@ -5066,3 +5066,16 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - Windows credential-file 근거의 지속 Claude binding 및 확인된 이전 bucket 복구, quota/pace 대기 알림의 동등한 delivery 검토, 이력 삭제 lifecycle, 동시 계정 소비와 전체 Windows 실행 검증은 남아 있다. W05/WIN-020 전체 완료가 아니다.
 - CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·컴파일·lint·실제 이력/계정 전환·Windows 알림/UI 검증 미실행.
 - 직전 IMPL-536은 ae51d7945로 origin/main 푸시가 성공했다. IMPL-537도 별도 구현 커밋·푸시 후 Git 결과를 보고한다.
+
+## IMPL-538 — Reconcile queued quota and pace warnings with current ownership and conditions
+
+- WindowsWarningDeliveryLeases를 추가해 대기 중인 threshold/pace payload의 유효성을 이미 경고한 episode 기록과 분리했다. owner/provider config가 바뀌거나 provider가 비활성화되면 해당 대기 알림을 무효화하며, 기존 reducer의 중복 경고 기록은 별도로 유지한다.
+- threshold 후보의 source·구간 길이·reset(120초 미만 보정 허용)·설정과 remaining/threshold를 대조한다. metric이 없어지거나 placeholder/비유한 값이 되거나 경고 조건이 사라지면 이전 대기 알림을 제거한다. 새로 발생한 같은 key 경고는 이전 payload를 대체한다.
+- quota 경고를 현재 config/owner 확인에 성공한 processOwnedUsageObservation 뒤에서 평가하도록 연결했다. 이 함수가 반환한 context를 Codex history enrichment의 await 이후에도 다시 대조한 뒤 pace 경고를 계산한다. 이력 수집을 꺼도 경고 평가가 가능하며, 이력 파일 저장 실패와 현재 owner 관측 실패를 구분한다.
+- Claude OAuth/CLI pace 판정에서 설정 token account ID가 winning credential owner를 다시 덮어쓰거나, unresolved owner가 snapshot email fallback으로 바뀌는 경로를 차단했다. 다른 공급자의 quota discriminator가 없을 때도 확인한 owner/config scope를 사용한다.
+- pace 후보가 더 이상 경고 조건을 만족하지 않거나 현재 후보에 해당 구간이 없으면 대기 알림을 무효화한다. reset 보정은 기존 Core의 same-cycle 판정으로 lease를 이동하고, 새 cycle/owner는 이전 lease를 제거한다. 비유한 ETA/reset 및 이미 지난 예상 소진 시각은 새 경고로 게시하지 않는다.
+- 두 알림 payload에 유효성 callback을 넣고 enqueue 및 실제 Win32 표시 직전에 확인한다. global settings snapshot도 delivery 때 재확인한다. pace payload는 관측 시각+ETA로 절대 소진 시각을 보관하며, 늦게 표시할 때 ETA가 새로 시작되지 않도록 countdown과 만료를 연결했다.
+- overlay는 기존 4.5초 수명을 유지하면서 250ms timer와 paint 전 확인으로 owner/settings/privacy/ETA 무효화를 반영한다. 실제 Windows 메시지 순서, overlay 종료, 메뉴 대기, reset 보정, OFF-ON 설정, 경고 중복 정책, 성능은 실행 검증이 필요하다.
+- 외부 credential/config 변경을 OS 전체에서 즉시 감지하거나 이미 표시된 OS balloon을 회수했다는 뜻은 아니다. Windows credential-file 근거의 지속 Claude binding, 이력 삭제 lifecycle, 동시 계정 소비, Windows 제품 graph/패키징 및 전체 실행 검증은 남아 있다.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·컴파일·lint·실제 provider/계정·Windows 알림/overlay/UI·성능 검증 미실행.
+- 직전 IMPL-537은 ce91b5615로 origin/main 푸시가 성공했다. IMPL-538도 별도 구현 커밋·푸시 후 Git 결과를 보고한다.

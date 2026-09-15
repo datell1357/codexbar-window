@@ -812,6 +812,7 @@ public actor WindowsUsageRuntime {
     private var sessionQuotaNotificationValidity: [ProviderInstanceID: WindowsSnapshotValidity] = [:]
     private var codexSessionQuotaBaselineWatermark: Date?
     private var quotaWarningStates: [QuotaWarningTransitionCore.Key: QuotaWarningTransitionCore.State] = [:]
+    private var warningDeliveryLeases = WindowsWarningDeliveryLeases()
     private var latestProviderConfigs: [ProviderInstanceID: ProviderConfig] = [:]
     private var latestEnabledProviderIDs: Set<ProviderInstanceID>?
     private var observedAccountSignatures: [ProviderInstanceID: String]?
@@ -947,6 +948,7 @@ public actor WindowsUsageRuntime {
     public func predictivePaceWarningSettingsDidChange(_ settings: WindowsPredictivePaceWarningSettings) async {
         guard !self.shuttingDown else { return }
         self.predictivePaceWarningGeneration &+= 1
+        self.warningDeliveryLeases.clearPace()
         if !settings.notificationsEnabled { self.predictivePaceWarningKeys.removeAll(keepingCapacity: true) }
         if settings.historicalTrackingEnabled != self.lastHistoricalTrackingEnabled {
             self.invalidatePlanHistoryContexts()
@@ -2437,6 +2439,7 @@ public actor WindowsUsageRuntime {
                 }
             }
             self.quotaWarningGeneration &+= 1
+            self.warningDeliveryLeases.clearThresholds(providerID: providerID)
             let latestGlobal = WindowsQuotaWarningSettings.load()
             self.quotaWarningStates = self.quotaWarningStates.filter { key, _ in
                 guard enabledIDs.contains(key.provider.instanceID) else { return false }
@@ -2470,6 +2473,8 @@ public actor WindowsUsageRuntime {
     /// removed from the transition state cache.
     public func quotaWarningSettingsDidChange(_ settings: WindowsQuotaWarningSettings) async {
         guard !self.shuttingDown else { return }
+        self.quotaWarningGeneration &+= 1
+        self.warningDeliveryLeases.clearThresholds()
         guard let enabledProviders = self.latestEnabledProviderIDs else { return }
         self.quotaWarningStates = self.quotaWarningStates.filter { key, _ in
             guard enabledProviders.contains(key.provider.instanceID) else { return false }
@@ -3112,6 +3117,7 @@ public actor WindowsUsageRuntime {
                 self.invalidateSessionQuotaOwner(id)
             }
             self.sessionQuotaStates = self.sessionQuotaStates.filter { enabledIDs.contains($0.key) }
+            self.warningDeliveryLeases.retainProviders(enabledIDs)
             self.quotaWarningStates = self.quotaWarningStates.filter { enabledIDs.contains($0.key.provider.instanceID) }
             for instanceID in config.enabledProviders() {
                 guard let provider = instanceID.firstPartyProvider else { continue }
@@ -3520,6 +3526,8 @@ public actor WindowsUsageRuntime {
             return
         }
         self.shuttingDown = true
+        self.warningDeliveryLeases.clearThresholds()
+        self.warningDeliveryLeases.clearPace()
         for validity in self.sessionQuotaNotificationValidity.values { validity.invalidate() }
         self.invalidatePlanHistoryContexts()
         // All callers await the same cleanup, including the widget receiver/server join.
@@ -3610,6 +3618,7 @@ public actor WindowsUsageRuntime {
     }
 
     private func invalidateSessionQuotaOwner(_ providerID: ProviderInstanceID) {
+        self.warningDeliveryLeases.invalidate(providerID: providerID)
         self.sessionQuotaStates.removeValue(forKey: providerID)
         self.sessionQuotaOwners.removeValue(forKey: providerID)
         self.sessionQuotaNeedsBaseline.insert(providerID)
@@ -3725,6 +3734,32 @@ public actor WindowsUsageRuntime {
             providerID: provider.instanceID, isCurrent: validity.capture()))
     }
 
+    private func warningDeliveryScope(_ context: PlanHistoryContext) -> String? {
+        switch context.owner {
+        case let .scoped(key): return key
+        case .unscoped: return "unscoped-config:" + (context.providerRevision?.base64EncodedString() ?? "default")
+        case .unavailable: return nil
+        }
+    }
+
+    private func prepareWarningObservation(provider: UsageProvider, context: PlanHistoryContext) -> Bool {
+        guard !self.shuttingDown, !Task.isCancelled,
+              self.planHistoryContexts[provider.instanceID]?.token == context.token else { return false }
+        do {
+            guard try self.planHistoryContextMatches(context, provider: provider),
+                  let scope = self.warningDeliveryScope(context) else {
+                self.warningDeliveryLeases.invalidate(providerID: provider.instanceID)
+                return false
+            }
+            self.warningDeliveryLeases.prepare(providerID: provider.instanceID, owner: scope,
+                configRevision: context.providerRevision)
+            return true
+        } catch {
+            self.warningDeliveryLeases.invalidate(providerID: provider.instanceID)
+            return false
+        }
+    }
+
     private func evaluateQuotaWarnings(
         provider: UsageProvider,
         snapshot: UsageSnapshot,
@@ -3737,25 +3772,32 @@ public actor WindowsUsageRuntime {
         strategyKind: ProviderFetchKind? = nil,
         oauthHistoryOwnerIdentifier: String? = nil,
         oauthCredentialOwner: ClaudeOAuthCredentialOwner? = nil,
-        quotaWarningGeneration: UInt64)
+        quotaWarningGeneration: UInt64, observationContext: PlanHistoryContext)
     {
         guard !self.shuttingDown, quotaWarningGeneration == self.quotaWarningGeneration else { return }
         let globalSettings = WindowsQuotaWarningSettings.load()
         let settings = config.providerConfig(for: provider.instanceID).map {
             globalSettings.resolved(providerConfig: $0)
         } ?? globalSettings
-        guard settings.notificationsEnabled else { return }
-        let accountDiscriminator = self.quotaAccountDiscriminator(provider: provider, snapshot: snapshot,
+        guard settings.notificationsEnabled else {
+            self.warningDeliveryLeases.clearThresholds(providerID: provider.instanceID)
+            return
+        }
+        let resolvedDiscriminator = self.quotaAccountDiscriminator(provider: provider, snapshot: snapshot,
             codexVisibleAccount: codexVisibleAccount, tokenAccount: tokenAccount, environment: environment,
             strategyKind: strategyKind, oauthHistoryOwnerIdentifier: oauthHistoryOwnerIdentifier,
             oauthCredentialOwner: oauthCredentialOwner,
             claudeAccountUUIDBefore: claudeAccountUUIDBefore, claudeAccountUUIDAfter: claudeAccountUUIDAfter)
-        if provider == .claude, strategyKind == .oauth || strategyKind == .cli, accountDiscriminator == nil {
+        if provider == .claude, strategyKind == .oauth || strategyKind == .cli, resolvedDiscriminator == nil {
             // Do not advance a shared anonymous baseline when a credential/account observation is unresolved.
+            self.warningDeliveryLeases.clearThresholds(providerID: provider.instanceID)
             return
         }
+        let accountDiscriminator = resolvedDiscriminator ?? self.warningDeliveryScope(observationContext)
         let selection = QuotaWarningTransitionCore.candidates(provider: provider, snapshot: snapshot,
             accountDiscriminator: accountDiscriminator)
+        self.warningDeliveryLeases.reconcileThresholds(provider: provider,
+            candidates: selection.candidates, settings: settings)
         for window in QuotaWarningWindow.allCases {
             guard settings.isEnabled(for: window) else {
                 self.quotaWarningStates = self.quotaWarningStates.filter { $0.key.provider != provider || $0.key.lane != window }
@@ -3763,13 +3805,13 @@ public actor WindowsUsageRuntime {
             }
             let candidate = selection.candidates.first { $0.key.lane == window && $0.key.windowID == nil }
             if let candidate {
-                self.evaluateCandidate(candidate, settings: settings, accountDisplayName: WindowsUsagePresentationSettings.load().hidePersonalInfo ? nil : snapshot.accountEmail(for: provider))
+                self.evaluateCandidate(candidate, settings: settings, globalSettings: globalSettings, accountDisplayName: WindowsUsagePresentationSettings.load().hidePersonalInfo ? nil : snapshot.accountEmail(for: provider))
             } else {
                 self.quotaWarningStates.removeValue(forKey: .init(provider: provider, lane: window, accountDiscriminator: accountDiscriminator))
             }
         }
         for candidate in selection.candidates where candidate.key.windowID != nil && settings.isEnabled(for: candidate.key.lane) {
-            self.evaluateCandidate(candidate, settings: settings, accountDisplayName: WindowsUsagePresentationSettings.load().hidePersonalInfo ? nil : snapshot.accountEmail(for: provider))
+            self.evaluateCandidate(candidate, settings: settings, globalSettings: globalSettings, accountDisplayName: WindowsUsagePresentationSettings.load().hidePersonalInfo ? nil : snapshot.accountEmail(for: provider))
         }
         if selection.reconciliation.authoritative {
             self.quotaWarningStates = self.quotaWarningStates.filter { key, _ in
@@ -3778,16 +3820,18 @@ public actor WindowsUsageRuntime {
         }
     }
 
-    private func evaluateCandidate(_ candidate: QuotaWarningTransitionCore.Candidate?, settings: WindowsQuotaWarningSettings, accountDisplayName: String?) {
-        guard let candidate else { return }
+    private func evaluateCandidate(_ candidate: QuotaWarningTransitionCore.Candidate?, settings: WindowsQuotaWarningSettings, globalSettings: WindowsQuotaWarningSettings, accountDisplayName: String?) {
+        guard let candidate, candidate.window.remainingPercent.isFinite else { return }
         let key = candidate.key
         let evaluation = QuotaWarningTransitionCore.evaluate(previous: self.quotaWarningStates[key], current: candidate.window,
             source: candidate.source, thresholds: settings.thresholds(for: key.lane), enabled: true)
         if let state = evaluation.state { self.quotaWarningStates[key] = state }
         if case let .warning(threshold) = evaluation.outcome {
+            let isCurrent = self.warningDeliveryLeases.registerThreshold(candidate, threshold: threshold, settings: settings)
             let providerName = ProviderDescriptorRegistry.descriptor(for: key.provider).metadata.displayName
             self.quotaWarningPublisher(.init(providerName: providerName, window: key.lane, threshold: threshold,
-                currentRemaining: candidate.window.remainingPercent, accountDisplayName: accountDisplayName, windowDisplayLabel: candidate.displayLabel, providerID: key.provider.instanceID))
+                currentRemaining: candidate.window.remainingPercent, accountDisplayName: accountDisplayName, windowDisplayLabel: candidate.displayLabel, providerID: key.provider.instanceID,
+                isCurrent: { isCurrent() && WindowsQuotaWarningSettings.load() == globalSettings }))
         }
     }
 
@@ -4098,13 +4142,13 @@ public actor WindowsUsageRuntime {
         tokenAccount: ProviderTokenAccount?, codexVisibleAccount: CodexVisibleAccount?,
         codexAccountContext: CodexAccountContextSnapshot?, environment: [String: String],
         claudeAccountUUIDBefore: String?, claudeAccountUUIDAfter: String?, generation: UInt64,
-        contextGeneration: UUID, title: String)
+        contextGeneration: UUID, quotaWarningGeneration: UInt64, title: String) -> PlanHistoryContext?
     {
         let id = provider.instanceID
         guard !self.shuttingDown, !Task.isCancelled, generation == self.historicalTrackingGeneration,
               contextGeneration == self.planHistoryContextGeneration,
-              self.latestEnabledProviderIDs?.contains(id) == true else { return }
-        var acceptedObservation = false
+              self.latestEnabledProviderIDs?.contains(id) == true else { return nil }
+        var acceptedContext: PlanHistoryContext?
         do {
             // Configuration may change while the provider request is in flight.
             let current = try self.configStore.loadOrCreateDefault()
@@ -4112,7 +4156,7 @@ public actor WindowsUsageRuntime {
             guard current.enabledProviders().contains(id),
                   try self.pluginProviderRevision(current.providerConfig(for: id)) == revision else {
                 self.invalidateSessionQuotaOwner(id)
-                return
+                return nil
             }
             let owner = self.planUtilizationHistoryOwner(provider: provider, result: result,
                 tokenAccount: tokenAccount, codexVisibleAccount: codexVisibleAccount,
@@ -4125,7 +4169,7 @@ public actor WindowsUsageRuntime {
             case .unavailable:
                 self.invalidateSessionQuotaOwner(id)
                 self.planUtilizationHistoryNotices[id] = "plan_history_ownerUnavailable"
-                return
+                return nil
             }
             self.planHistoryContexts[id]?.validity.invalidate()
             let requiresClaudeAccount = provider == .claude && ClaudeUsageOwnerResolution.requiresCLIAccountObservation(
@@ -4142,22 +4186,31 @@ public actor WindowsUsageRuntime {
                 self.planHistoryContexts.removeValue(forKey: id)
                 self.invalidateSessionQuotaOwner(id)
                 self.planUtilizationHistoryNotices[id] = "plan_history_ownerUnavailable"
-                return
+                return nil
             }
-            acceptedObservation = true
+            acceptedContext = historyContext
             self.evaluateSessionQuota(provider: provider, snapshot: result.usage,
                 codexVisibleAccount: codexVisibleAccount, tokenAccount: tokenAccount,
                 resolvedOwner: owner, providerRevision: revision)
+            if let scope = self.warningDeliveryScope(historyContext) {
+                self.warningDeliveryLeases.prepare(providerID: id, owner: scope, configRevision: revision)
+            }
+            self.evaluateQuotaWarnings(provider: provider, snapshot: result.usage,
+                codexVisibleAccount: codexVisibleAccount, tokenAccount: tokenAccount, environment: environment, config: config,
+                claudeAccountUUIDBefore: claudeAccountUUIDBefore, claudeAccountUUIDAfter: claudeAccountUUIDAfter,
+                strategyKind: result.strategyKind, oauthHistoryOwnerIdentifier: result.claudeOAuthHistoryOwnerIdentifier,
+                oauthCredentialOwner: result.claudeOAuthCredentialOwner,
+                quotaWarningGeneration: quotaWarningGeneration, observationContext: historyContext)
             // Stopping collection must not erase or make an existing, owner-matched history unreadable.
             let alwaysTracks = ProviderDescriptorRegistry.descriptor(for: provider).history.alwaysTracksPlanUtilization
             guard alwaysTracks || WindowsPredictivePaceWarningSettings.load().historicalTrackingEnabled else {
                 self.planUtilizationHistoryNotices.removeValue(forKey: id)
-                return
+                return acceptedContext
             }
             let projection = PlanUtilizationHistoryProjection.make(provider: provider, snapshot: result.usage, capturedAt: Date())
             guard !projection.samples.isEmpty else {
                 self.planUtilizationHistoryNotices.removeValue(forKey: id)
-                return
+                return acceptedContext
             }
             let migrationOwnership: CodexHistoricalOwnershipContext?
             if provider == .codex, tokenAccount == nil {
@@ -4184,10 +4237,12 @@ public actor WindowsUsageRuntime {
                     }
                 })
             self.planUtilizationHistoryNotices.removeValue(forKey: id)
+            return acceptedContext
         } catch {
-            if !acceptedObservation { self.invalidateSessionQuotaOwner(id) }
+            if acceptedContext == nil { self.invalidateSessionQuotaOwner(id) }
             // A history failure does not turn a successful quota fetch into an authentication/network error.
             self.planUtilizationHistoryNotices[id] = "plan_history_saveFailed"
+            return acceptedContext
         }
     }
 
@@ -4372,6 +4427,7 @@ public actor WindowsUsageRuntime {
               self.latestEnabledProviderIDs?.contains(provider.instanceID) == true
         else { return }
         guard settings.notificationsEnabled, provider == .codex || provider == .claude else {
+            self.warningDeliveryLeases.clearPace(providerID: provider.instanceID)
             if provider == .codex || provider == .claude {
                 self.predictivePaceWarningKeys = self.predictivePaceWarningKeys.filter { $0.provider != provider }
             }
@@ -4388,6 +4444,11 @@ public actor WindowsUsageRuntime {
             strategyKind: strategyKind, oauthHistoryOwnerIdentifier: oauthHistoryOwnerIdentifier,
             oauthCredentialOwner: oauthCredentialOwner,
             claudeAccountUUIDBefore: claudeAccountUUIDBefore, claudeAccountUUIDAfter: claudeAccountUUIDAfter)
+        let claudeCredentialStrategy = provider == .claude && (strategyKind == .oauth || strategyKind == .cli)
+        if claudeCredentialStrategy, resolved == nil {
+            self.warningDeliveryLeases.clearPace(providerID: provider.instanceID)
+            return
+        }
         let owner: String? = if provider == .codex {
             resolved
         } else {
@@ -4395,10 +4456,11 @@ public actor WindowsUsageRuntime {
                 provider: provider, snapshotAccountID: snapshot.identity?.accountID,
                 snapshotEmail: snapshot.accountEmail(for: provider),
                 codexSelectedWorkspaceAccountID: nil,
-                codexSelectedEmail: nil, tokenAccountID: tokenAccount?.id,
+                codexSelectedEmail: nil, tokenAccountID: claudeCredentialStrategy ? nil : tokenAccount?.id,
                 claudeResolvedDiscriminator: resolved))
         }
         guard let owner else {
+            self.warningDeliveryLeases.clearPace(providerID: provider.instanceID)
             // An incomplete identity is not evidence that a prior account disappeared.
             // Preserve the episode until a later successful snapshot supplies stable ownership.
             return
@@ -4448,8 +4510,19 @@ public actor WindowsUsageRuntime {
             sourceWindows: source,
             weeklyPace: weekly,
             now: snapshot.updatedAt)
+        let deliveryNow = Date()
+        let warningKeys: [PredictivePaceWarningTransitionCore.Key] = candidates.compactMap { candidate in
+            guard snapshot.updatedAt.timeIntervalSince1970.isFinite,
+                  let reset = candidate.rateWindow.resetsAt, reset.timeIntervalSince1970.isFinite,
+                  PredictivePaceWarningTransitionCore.shouldNotify(pace: candidate.pace),
+                  let eta = candidate.pace.etaSeconds, eta.isFinite, eta > 0,
+                  snapshot.updatedAt.addingTimeInterval(eta) > deliveryNow else { return nil }
+            return .init(provider: provider, accountDiscriminator: owner, window: candidate.window,
+                resetWindow: .init(windowMinutes: candidate.rateWindow.windowMinutes, resetsAt: reset))
+        }
+        self.warningDeliveryLeases.reconcilePace(provider: provider, warningKeys: warningKeys)
         for candidate in candidates {
-            guard let resetsAt = candidate.rateWindow.resetsAt else { continue }
+            guard let resetsAt = candidate.rateWindow.resetsAt, resetsAt.timeIntervalSince1970.isFinite else { continue }
             let key = PredictivePaceWarningTransitionCore.Key(
                 provider: provider,
                 accountDiscriminator: owner,
@@ -4460,17 +4533,21 @@ public actor WindowsUsageRuntime {
             PredictivePaceWarningTransitionCore.reconcileSiblingWindowKeys(
                 activeKey: key,
                 notifiedKeys: &self.predictivePaceWarningKeys)
+            if !candidate.pace.willLastToReset && !warningKeys.contains(key) { continue }
             guard PredictivePaceWarningTransitionCore.recordObservation(
                 key: key,
                 pace: candidate.pace,
                 notifiedKeys: &self.predictivePaceWarningKeys),
                   let eta = candidate.pace.etaSeconds, eta > 0 else { continue }
+            let isCurrent = self.warningDeliveryLeases.registerPace(key)
             self.predictivePaceWarningPublisher(.init(
                 providerName: ProviderDescriptorRegistry.descriptor(for: provider).metadata.displayName,
                 window: candidate.window,
                 etaSeconds: eta,
                 accountDisplayName: WindowsUsagePresentationSettings.load().hidePersonalInfo
-                    ? nil : snapshot.accountEmail(for: provider), providerID: provider.instanceID))
+                    ? nil : snapshot.accountEmail(for: provider), providerID: provider.instanceID,
+                observedAt: snapshot.updatedAt,
+                isCurrent: { isCurrent() && WindowsPredictivePaceWarningSettings.load() == settings }))
         }
     }
 
@@ -4835,22 +4912,13 @@ public actor WindowsUsageRuntime {
                             discriminator: discriminator, lanes: lanes, failure: nil))
                     } else { self.hookUnresolvedAccountCount += 1 }
                 }
-                self.evaluateQuotaWarnings(provider: provider, snapshot: result.usage,
-                    codexVisibleAccount: codexVisibleAccount, tokenAccount: account, environment: env, config: config,
-                    claudeAccountUUIDBefore: claudeAccountUUIDBefore,
-                    claudeAccountUUIDAfter: provider == .claude
-                        ? ClaudeAccountProfile.accountUuid(environment: env) : nil,
-                    strategyKind: result.strategyKind,
-                    oauthHistoryOwnerIdentifier: result.claudeOAuthHistoryOwnerIdentifier,
-                    oauthCredentialOwner: result.claudeOAuthCredentialOwner,
-                    quotaWarningGeneration: quotaWarningGeneration)
-                self.processOwnedUsageObservation(provider: provider, result: result, config: config,
+                let ownedObservation = self.processOwnedUsageObservation(provider: provider, result: result, config: config,
                     tokenAccount: account, codexVisibleAccount: codexVisibleAccount,
                     codexAccountContext: retainedCodexContext, environment: env,
                     claudeAccountUUIDBefore: claudeAccountUUIDBefore,
                     claudeAccountUUIDAfter: provider == .claude ? ClaudeAccountProfile.accountUuid(environment: env) : nil,
                     generation: historicalTrackingGeneration,
-                    contextGeneration: historyContextGeneration, title: title)
+                    contextGeneration: historyContextGeneration, quotaWarningGeneration: quotaWarningGeneration, title: title)
                 await self.recordCodexHistoricalSampleIfNeeded(
                     provider: provider,
                     snapshot: result.usage,
@@ -4858,20 +4926,23 @@ public actor WindowsUsageRuntime {
                     codexVisibleAccount: codexVisibleAccount,
                     codexAccountContext: retainedCodexContext,
                     generation: historicalTrackingGeneration)
-                self.evaluatePredictivePaceWarnings(provider: provider, snapshot: result.usage,
-                    predictivePaceWarningGeneration: predictivePaceWarningGeneration,
-                    codexVisibleAccount: codexVisibleAccount, tokenAccount: account,
-                    codexAccountContext: retainedCodexContext,
-                    environment: env,
-                    claudeAccountUUIDBefore: claudeAccountUUIDBefore,
-                    claudeAccountUUIDAfter: provider == .claude ? ClaudeAccountProfile.accountUuid(environment: env) : nil,
-                    strategyKind: result.strategyKind,
-                    oauthHistoryOwnerIdentifier: result.claudeOAuthHistoryOwnerIdentifier,
-                    oauthCredentialOwner: result.claudeOAuthCredentialOwner)
+                if let ownedObservation, self.prepareWarningObservation(provider: provider, context: ownedObservation) {
+                    self.evaluatePredictivePaceWarnings(provider: provider, snapshot: result.usage,
+                        predictivePaceWarningGeneration: predictivePaceWarningGeneration,
+                        codexVisibleAccount: codexVisibleAccount, tokenAccount: account,
+                        codexAccountContext: retainedCodexContext,
+                        environment: env,
+                        claudeAccountUUIDBefore: claudeAccountUUIDBefore,
+                        claudeAccountUUIDAfter: provider == .claude ? ClaudeAccountProfile.accountUuid(environment: env) : nil,
+                        strategyKind: result.strategyKind,
+                        oauthHistoryOwnerIdentifier: result.claudeOAuthHistoryOwnerIdentifier,
+                        oauthCredentialOwner: result.claudeOAuthCredentialOwner)
+                }
                 return presentation.rows()
             case let .failure(error):
                 if !self.shuttingDown, !Task.isCancelled, historyContextGeneration == self.planHistoryContextGeneration {
                     self.sessionQuotaNotificationValidity[provider.instanceID]?.invalidate()
+                    self.warningDeliveryLeases.invalidate(providerID: provider.instanceID)
                 }
                 if config.hooks?.enabled == true, !Task.isCancelled, !self.shuttingDown {
                     if let account {

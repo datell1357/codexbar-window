@@ -1370,6 +1370,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
     /// Queues a threshold warning from any thread. Delivery is bounded and
     /// performed only by the tray UI thread once the icon exists.
     public func postQuotaWarningNotification(_ notification: WindowsQuotaWarningNotification) {
+        guard notification.isCurrent() else { return }
         self.mailboxLock.lock()
         guard !self.quitInvoked else {
             self.mailboxLock.unlock()
@@ -1387,6 +1388,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
     public func postPredictivePaceWarningNotification(
         _ notification: WindowsPredictivePaceWarningNotification)
     {
+        guard notification.isDeliverable() else { return }
         self.mailboxLock.lock()
         guard !self.quitInvoked else { self.mailboxLock.unlock(); return }
         if self.mailboxPredictivePaceWarningNotifications.count >= 16 {
@@ -5026,6 +5028,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
     }
 
     private func deliverQuotaWarningNotification(_ notification: WindowsQuotaWarningNotification) {
+        guard !self.quitInvoked, notification.isCurrent() else { return }
         guard self.presentationDefaults.object(forKey: "quotaWarningNotificationsEnabled") as? Bool ?? false,
               self.iconInstalled,
               let hwnd = self.window
@@ -5037,7 +5040,8 @@ public final class WindowsTrayHost: @unchecked Sendable {
         let copy = notification.copy(hidePersonalInfo: hidePersonalInfo)
         if overlayEnabled {
             if self.quotaWarningOverlay == nil { self.quotaWarningOverlay = WindowsQuotaWarningOverlay() }
-            self.quotaWarningOverlay?.show(title: copy.title, body: copy.body, owner: hwnd)
+            self.quotaWarningOverlay?.show(title: copy.title, body: copy.body, owner: hwnd,
+                isCurrent: { notification.isCurrent() && WindowsUsagePresentationSettings.load().hidePersonalInfo == hidePersonalInfo })
             self.quotaWarningOverlayOwner = .threshold
         } else {
             if self.quotaWarningOverlayOwner == .threshold {
@@ -5052,6 +5056,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
         data.dwInfoFlags = DWORD(soundEnabled ? NIIF_INFO : (NIIF_INFO | NIIF_NOSOUND))
         Self.copyUTF16(copy.title, into: &data.szInfoTitle)
         Self.copyUTF16(copy.body, into: &data.szInfo)
+        guard notification.isCurrent() else { return }
         guard Shell_NotifyIconW(DWORD(NIM_MODIFY), &data) != 0 else {
             let error = GetLastError()
             FileHandle.standardError.write(
@@ -5061,6 +5066,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
     }
 
     private func deliverPredictivePaceWarningNotification(_ notification: WindowsPredictivePaceWarningNotification) {
+        guard !self.quitInvoked, notification.isDeliverable() else { return }
         guard self.presentationDefaults.object(forKey: "predictivePaceWarningNotificationsEnabled") as? Bool ?? false,
               self.iconInstalled,
               let hwnd = self.window else { return }
@@ -5071,7 +5077,8 @@ public final class WindowsTrayHost: @unchecked Sendable {
         let copy = notification.copy(hidePersonalInfo: hidePersonalInfo)
         if overlayEnabled {
             if self.quotaWarningOverlay == nil { self.quotaWarningOverlay = WindowsQuotaWarningOverlay() }
-            self.quotaWarningOverlay?.show(title: copy.title, body: copy.body, owner: hwnd)
+            self.quotaWarningOverlay?.show(title: copy.title, body: copy.body, owner: hwnd,
+                isCurrent: { notification.isDeliverable() && WindowsUsagePresentationSettings.load().hidePersonalInfo == hidePersonalInfo })
             self.quotaWarningOverlayOwner = .predictive
         } else if self.quotaWarningOverlayOwner == .predictive {
             self.dismissQuotaWarningOverlay()
@@ -5084,6 +5091,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
         data.dwInfoFlags = DWORD(soundEnabled ? NIIF_INFO : (NIIF_INFO | NIIF_NOSOUND))
         Self.copyUTF16(copy.title, into: &data.szInfoTitle)
         Self.copyUTF16(copy.body, into: &data.szInfo)
+        guard notification.isDeliverable() else { return }
         guard Shell_NotifyIconW(DWORD(NIM_MODIFY), &data) != 0 else {
             let error = GetLastError()
             FileHandle.standardError.write(Data("CodexBar: failed to deliver predictive warning notification (Win32 error \(error))\n".utf8))
