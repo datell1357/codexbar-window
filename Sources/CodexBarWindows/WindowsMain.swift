@@ -103,6 +103,14 @@ private final class WindowsTrayApplication: @unchecked Sendable {
                 self.host.postShareStatsCopy(requestID: requestID, result: result)
             }
         },
+        onPlanHistoryRequested: { [weak self] requestID, providerID, contextToken in
+            guard let self else { return }
+            Task {
+                let result = await self.runtime.planUtilizationHistorySnapshot(
+                    providerID: providerID, contextToken: contextToken)
+                self.host.postPlanHistory(requestID: requestID, result: result)
+            }
+        },
         onCursorBrowserImportRequested: { [weak self] requestID in
             guard let self else { return }
             self.cursorBrowserImports.start(id: requestID) { [weak self] in

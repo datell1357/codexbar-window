@@ -1,5 +1,7 @@
 # Windows 전용 제품 작업 현황
 
+- IMPL-529: 트레이 공급자별 사용량 이력 메뉴→계정 확인 조회→Win32 차트 창 연결. 최근 30개 리셋 구간, 마우스·키보드 탐색, 전체 텍스트 이력, DPI/시스템 색상 및 오래된 snapshot 닫기 작성. CODE_WRITTEN_UNVERIFIED.
+
 - IMPL-528: 현재 공급자·계정·설정과 묶인 이력 조회 token 및 snapshot 경로 작성. 읽기 전후 소유권 재대조, 새로고침/계정/종료 무효화, 빈 이력과 읽기 실패 구분. Native 차트 창 연결은 남아 있음. CODE_WRITTEN_UNVERIFIED.
 
 - IMPL-527: 원본 이력 차트의 공급자 series 선택·리셋 구간 peak·빈 구간·최근 30개·날짜 축을 공통 모델로 작성. 계정 조회 및 native chart UI 연결은 남아 있음. CODE_WRITTEN_UNVERIFIED.

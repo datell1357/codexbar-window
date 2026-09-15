@@ -26,7 +26,7 @@
   "static_qa_status": "NOT_RUN_DURING_IMPLEMENTATION",
   "windows_runtime_status": "NOT_VALIDATED",
   "completion_claim": false,
-  "latest_completed_slice": "IMPL-528",
+  "latest_completed_slice": "IMPL-529",
   "next": "Implement remaining full Windows parity, including spend project/session exploration, ownership lifecycle and release integration; validation deferred by user instruction.",
   "inventory": {
     "baseline_entries": 2844,
@@ -49,7 +49,7 @@
     "widget_provider_choices": 17
   },
   "automation_action_this_revision": "Created active thread heartbeat codexbar-windows-30 at 30-minute intervals",
-  "publication_action_this_revision": "IMPL-340 through IMPL-526 were pushed as 4135f98d0 and IMPL-527 as a04cb541e. IMPL-528 follows the per-batch commit-and-push policy; its result is reported from Git output.",
+  "publication_action_this_revision": "Implementation batches through IMPL-528 are pushed to origin/main (293088f59). IMPL-529 follows the per-batch commit-and-push policy; its result is reported from Git output.",
   "historical_state_before_2026_09_12": {
     "phase": "IMPLEMENTING",
     "repository": "/Users/yeoreum/Documents/codexbar-window/fork",
@@ -4197,6 +4197,15 @@
       "workstream": "W05 Usage and quota",
       "status": "CODE_WRITTEN_UNVERIFIED",
       "validation": "NOT_RUN_BY_USER_INSTRUCTION"
+    },
+    {
+      "id": "IMPL-529",
+      "contracts": [
+        "WIN-020"
+      ],
+      "workstream": "W05 Usage and quota",
+      "status": "CODE_WRITTEN_UNVERIFIED",
+      "validation": "NOT_RUN_BY_USER_INSTRUCTION"
     }
   ],
   "publication_policy": {
@@ -4207,8 +4216,8 @@
     "authorization": "User explicitly reaffirmed commit and push after every implementation on 2026-09-15."
   },
   "last_confirmed_code_publication": {
-    "through_slice": "IMPL-527",
-    "commit": "a04cb541e",
+    "through_slice": "IMPL-528",
+    "commit": "293088f59",
     "remote": "origin/main",
     "status": "PUSH_CONFIRMED",
     "validation": "NOT_RUN_BY_USER_INSTRUCTION"

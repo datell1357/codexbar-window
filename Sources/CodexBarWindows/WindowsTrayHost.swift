@@ -26,6 +26,12 @@ public final class WindowsTrayHost: @unchecked Sendable {
     private static let startupRegistrationCommand = UINT_PTR(0x7546)
     private static let providerDetailsCommandBase = UINT_PTR(0x7D00)
     private var popupProviderDetails: [UINT_PTR: (title: String, body: String, links: [WindowsProviderDetailsDialog.Link])] = [:]
+    private static let planHistoryCommandBase = UINT_PTR(0xD800)
+    private var popupPlanHistoryCommands: [UINT_PTR: (providerID: ProviderInstanceID, token: UUID)] = [:]
+    private let onPlanHistoryRequested: @Sendable (UUID, ProviderInstanceID, UUID) -> Void
+    // Request identity, privacy and reply are protected by mailboxLock.
+    private var planHistoryRequest: (id: UUID, providerID: ProviderInstanceID, token: UUID, privacy: Bool)?
+    private var planHistoryMailbox: WindowsPlanUtilizationHistoryResult?
     private static let copyUsageCommandBase = UINT_PTR(0x7C00)
     private static let copyErrorCommandBase = UINT_PTR(0x7B00)
     private var popupCopyErrors: [UINT_PTR: String] = [:]
@@ -425,6 +431,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
         onTokenActivityRequested: @escaping @Sendable (UUID) -> Void = { _ in },
         onSpendHoursRequested: @escaping @Sendable (UUID, UInt64, Date, String) -> Void = { _, _, _, _ in },
         onSpendHistoryRequested: @escaping @Sendable (UUID) -> Void = { _ in },
+        onPlanHistoryRequested: @escaping @Sendable (UUID, ProviderInstanceID, UUID) -> Void = { _, _, _ in },
         onCursorBrowserImportRequested: @escaping @Sendable (UUID) -> Void = { _ in },
         onCursorBrowserImportSave: @escaping @Sendable (UUID, UUID, UUID, String) -> Void = { _, _, _, _ in },
         onCursorBrowserImportCancel: @escaping @Sendable (UUID) -> Void = { _ in },
@@ -519,6 +526,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
         self.onTokenActivityRequested = onTokenActivityRequested
         self.onSpendHoursRequested = onSpendHoursRequested
         self.onSpendHistoryRequested = onSpendHistoryRequested
+        self.onPlanHistoryRequested = onPlanHistoryRequested
         self.onCursorBrowserImportRequested = onCursorBrowserImportRequested
         self.onAugmentBrowserImportRequested = onAugmentBrowserImportRequested
         self.onWindsurfBrowserImportRequested = onWindsurfBrowserImportRequested
@@ -1100,6 +1108,54 @@ public final class WindowsTrayHost: @unchecked Sendable {
         if let window { PostMessageW(window, Self.wakeMessage, 0, 0) }
     }
 
+    func postPlanHistory(requestID: UUID, result: WindowsPlanUtilizationHistoryResult) {
+        self.mailboxLock.lock()
+        guard !self.quitInvoked, self.planHistoryRequest?.id == requestID,
+              self.planHistoryMailbox == nil else { self.mailboxLock.unlock(); return }
+        self.planHistoryMailbox = result
+        let window = self.window
+        self.mailboxLock.unlock()
+        if let window { PostMessageW(window, Self.wakeMessage, 0, 0) }
+    }
+
+    private func drainPlanHistory() {
+        guard !self.remoteEditorOpen, !self.popupIsOpen, !self.pluginApprovalDialogOpen,
+              !self.quitInvoked, self.hookEditorPhase == .idle, let window = self.window,
+              case .idle = self.providerEditorPhase, case .idle = self.codexWebSettingsEditorPhase else { return }
+        self.mailboxLock.lock()
+        let request = self.planHistoryRequest
+        let result = self.planHistoryMailbox
+        if result != nil { self.planHistoryRequest = nil; self.planHistoryMailbox = nil }
+        self.mailboxLock.unlock()
+        guard let request, let result else { return }
+        let caption = WindowsStatusLocalization.text("plan_history_title")
+        guard request.privacy == WindowsUsagePresentationSettings.load().hidePersonalInfo else {
+            self.showMessage(WindowsStatusLocalization.text("plan_history_changed"), caption: caption)
+            return
+        }
+        switch result {
+        case let .unavailable(failure): self.showMessage(failure.message, caption: caption)
+        case let .snapshot(snapshot):
+            guard snapshot.providerID == request.providerID, snapshot.contextToken == request.token,
+                  snapshot.hidePersonalInfo == request.privacy, snapshot.isCurrent() else {
+                self.showMessage(WindowsStatusLocalization.text("plan_history_changed"), caption: caption)
+                return
+            }
+            self.remoteEditorOpen = true
+            let result = WindowsPlanUtilizationHistoryDialog.show(owner: window, snapshot: snapshot,
+                isCurrent: self.snapshotValidity.capture())
+            self.remoteEditorOpen = false
+            guard !self.quitInvoked else { return }
+            PostMessageW(window, Self.wakeMessage, 0, 0)
+            switch result {
+            case .refresh?: self.onRefresh()
+            case .closed?: break
+            case .invalidated?: self.showMessage(WindowsStatusLocalization.text("plan_history_changed"), caption: caption)
+            case nil: self.showMessage(WindowsStatusLocalization.text("plan_history_displayFailed"), caption: caption)
+            }
+        }
+    }
+
     private func drainShareStatsCopy() {
         guard !self.remoteEditorOpen, !self.quitInvoked, let window = self.window,
               case .idle = self.providerEditorPhase, case .idle = self.codexWebSettingsEditorPhase else { return }
@@ -1196,6 +1252,8 @@ public final class WindowsTrayHost: @unchecked Sendable {
         self.mailboxLock.lock()
         self.shareStatsCopyRequest = nil
         self.shareStatsCopyMailbox = nil
+        self.planHistoryRequest = nil
+        self.planHistoryMailbox = nil
         self.mailboxLock.unlock()
     }
 
@@ -1957,6 +2015,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
         self.popupCopySummary = nil
         self.popupCopyErrors.removeAll(keepingCapacity: true)
         self.popupProviderDetails.removeAll(keepingCapacity: true)
+        self.popupPlanHistoryCommands.removeAll(keepingCapacity: true)
         self.popupTokenAccountCommands.removeAll(keepingCapacity: true)
         self.popupTokenAccountRenames.removeAll(keepingCapacity: true)
         self.popupCredentialEdits.removeAll(keepingCapacity: true)
@@ -1975,6 +2034,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
             self.popupCopySummary = nil
             self.popupCopyErrors.removeAll(keepingCapacity: true)
             self.popupProviderDetails.removeAll(keepingCapacity: true)
+            self.popupPlanHistoryCommands.removeAll(keepingCapacity: true)
             self.popupTokenAccountCommands.removeAll(keepingCapacity: true)
         self.popupTokenAccountRenames.removeAll(keepingCapacity: true)
         self.popupCredentialEdits.removeAll(keepingCapacity: true)
@@ -1984,8 +2044,9 @@ public final class WindowsTrayHost: @unchecked Sendable {
             self.popupTokenAccountPages.removeAll(keepingCapacity: true)
             self.mailboxLock.lock()
             let cliReady = self.cliSetupResult != nil
+            let historyReady = self.planHistoryMailbox != nil
             self.mailboxLock.unlock()
-            if cliReady, !self.quitInvoked, let hwnd = self.window {
+            if cliReady || historyReady, !self.quitInvoked, let hwnd = self.window {
                 PostMessageW(hwnd, Self.wakeMessage, 0, 0)
             }
             if !continuingPage { self.keyboardReturnTarget = nil }
@@ -2178,6 +2239,23 @@ public final class WindowsTrayHost: @unchecked Sendable {
                 self.popupTokenAccountPages = pageCommands
                 savedAccountsMenuPosition = menuPosition
             } else { DestroyMenu(accountsMenu) }
+        }
+        let historyEntries = menuEntries.filter { $0.planHistoryContextToken != nil }
+        if !historyEntries.isEmpty, let historyMenu = CreatePopupMenu() {
+            var commands: [UINT_PTR: (providerID: ProviderInstanceID, token: UUID)] = [:]
+            for (index, entry) in historyEntries.prefix(128).enumerated() {
+                guard let token = entry.planHistoryContextToken,
+                      let provider = UsageProvider(rawValue: entry.providerID) else { continue }
+                let command = Self.planHistoryCommandBase + UINT_PTR(index)
+                let title = entry.title.replacingOccurrences(of: "&", with: "&&")
+                if title.withCString(encodedAs: UTF16.self, { AppendMenuW(historyMenu, UINT(MF_STRING), command, $0) }) != 0 {
+                    commands[command] = (provider.instanceID, token)
+                }
+            }
+            let attached = !commands.isEmpty && WindowsStatusLocalization.text("plan_history_menu").withCString(encodedAs: UTF16.self) {
+                AppendMenuW(menu, UINT(MF_STRING | MF_POPUP), UINT_PTR(UInt(bitPattern: historyMenu)), $0) != 0
+            }
+            if attached { self.popupPlanHistoryCommands = commands } else { DestroyMenu(historyMenu) }
         }
         let detailEntries = menuEntries.filter { $0.usageCopyText != nil || $0.errorCopyText != nil }
         if !detailEntries.isEmpty, let detailsMenu = CreatePopupMenu() {
@@ -2966,6 +3044,9 @@ public final class WindowsTrayHost: @unchecked Sendable {
             return
         }
         self.quitInvoked = true
+        self.snapshotValidity.invalidate()
+        self.planHistoryRequest = nil
+        self.planHistoryMailbox = nil
         self.cliSetupCancelled = true
         self.cliSetupResult = nil
         self.mailboxAgentSessions = .disabled
@@ -3671,6 +3752,30 @@ public final class WindowsTrayHost: @unchecked Sendable {
             self.mailboxLock.unlock()
             if busy { self.showMessage("An account selection is already being saved. Please wait.", caption: "Saved accounts") }
             else { self.onTokenAccountSelect(request) }
+            return
+        }
+        if let selected = self.popupPlanHistoryCommands[command] {
+            guard !self.quitInvoked, !self.remoteEditorOpen, !self.pluginApprovalDialogOpen,
+                  self.hookEditorPhase == .idle, case .idle = self.providerEditorPhase,
+                  case .idle = self.codexWebSettingsEditorPhase else { return }
+            let privacy = WindowsUsagePresentationSettings.load().hidePersonalInfo
+            guard self.popupCopyPrivacy == privacy else {
+                self.showMessage(WindowsStatusLocalization.text("plan_history_changed"),
+                    caption: WindowsStatusLocalization.text("plan_history_title"))
+                return
+            }
+            self.mailboxLock.lock()
+            let busy = self.planHistoryRequest != nil
+            let requestID = UUID()
+            if !busy {
+                self.planHistoryRequest = (requestID, selected.providerID, selected.token, privacy)
+                self.planHistoryMailbox = nil
+            }
+            self.mailboxLock.unlock()
+            if busy {
+                self.showMessage(WindowsStatusLocalization.text("plan_history_loading"),
+                    caption: WindowsStatusLocalization.text("plan_history_title"))
+            } else { self.onPlanHistoryRequested(requestID, selected.providerID, selected.token) }
             return
         }
         if let details = self.popupProviderDetails[command] {
@@ -4691,6 +4796,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
             host.drainSpendSources()
             host.drainSpendSummary()
             host.drainShareStatsCopy()
+            host.drainPlanHistory()
             host.drainSessionQuotaNotifications()
             if case .editing = host.providerEditorPhase {} else if case .saving = host.providerEditorPhase {}
             else if case .editing = host.codexWebSettingsEditorPhase {} else if case .saving = host.codexWebSettingsEditorPhase {} else {

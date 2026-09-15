@@ -4962,3 +4962,15 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - 외부 브라우저/CLI 계정의 변경은 설정·프로필·Codex 소유권으로 관찰되는 범위와 후속 provider refresh에서 반영된다. snapshot의 유효성 callback 자체가 실시간 외부 인증 변경 감시를 수행하는 것은 아니다. native chart 대화상자 및 tray load/reply 연결, migration/session-equivalent forecast/삭제 lifecycle은 남아 있다.
 - CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·컴파일·실제 계정/설정 읽기·파일 저장·UI·성능 검증 미실행.
 - 직전 IMPL-527은 a04cb541e으로 origin/main 푸시가 성공했다. 이번 IMPL-528도 별도 커밋·푸시하며 결과는 Git 응답으로 보고한다.
+
+## IMPL-529 — Open the Windows plan-utilization history chart from the tray
+
+- 트레이에 현재 이력 context token이 있는 공급자의 사용량 이력 메뉴를 추가했다. WindowsMain에서 runtime 조회를 예약하고 전용 request UUID/공급자 ID/token/개인정보 설정과 함께 응답 mailbox에 전달한다. 중복 응답·취소·종료 뒤 응답을 버리고 메뉴/다른 modal 편집 중에는 표시를 지연한다.
+- WindowsPlanUtilizationHistoryDialog를 추가했다. 구간 종류 combo, 원본 차트 모델의 최대 30개 리셋 구간과 0~100% 사용률, 날짜 축, 관측 없음 dash, 관측한 0%의 작은 막대, 선택한 구간 강조를 작성했다. 공급자 metadata의 구간 이름과 window minutes를 표시한다.
+- 마우스 hover/click, 이전·다음/선택 해제 버튼, 방향키·Home/End, Escape, Tab, 읽기 전용 상세 영역의 Ctrl+A를 연결했다. 상세 영역은 관측 시각, 현재 선택, 차트의 모든 구간 값을 텍스트로 제공한다. 빈 이력은 빈 상태 안내로 표시한다.
+- 창/controls/font를 DPI에 맞춰 배치하고 DPI·시스템 글꼴·색상/theme 변경을 다시 반영하도록 작성했다. 시스템 색상으로 배경/막대/선택을 표시하고 monitor 작업 영역을 기준으로 최초 크기와 최소 크기를 정한다. Win32 자원 실패와 상세 텍스트 교체 실패는 창 표시 실패로 처리한다.
+- 표시 직전 및 message/timer/paint 경로에서 runtime snapshot과 host 유효성을 확인한다. 계정·표시 설정·새로고침·종료 등으로 이전 snapshot이 무효화되면 창을 숨기고 닫는다. 새로고침 버튼은 창을 닫은 뒤 기존 refresh 흐름에 연결한다.
+- 한국어/영어 메뉴·탐색·legend·빈 상태·읽기 중·표시 실패 안내를 추가했다. 다른 언어의 누락 항목은 기존 방식대로 영어로 fallback한다. 실제 화면/WinSDK 컴파일/고대비/스크린리더 동작을 입증한 것은 아니다.
+- WIN-020 전체 완료가 아니다. session-equivalent forecast, 원본 이력 migration/adoption 및 삭제 lifecycle, 동시 계정 consumer와 Windows 동작·성능 검증은 남아 있다. 이번 Win32 창은 계획된 전체 Windows UI/릴리스 통합 완료를 의미하지 않는다.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·컴파일·실제 창 실행·계정 조회·접근성 검증 미실행.
+- 직전 IMPL-528은 293088f59로 origin/main 푸시가 성공했다. IMPL-529도 별도 구현 커밋으로 푸시하고 Git 응답을 보고한다.
