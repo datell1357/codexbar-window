@@ -4998,3 +4998,14 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - 직접 실행해 cache hit/idle 전환/수치/메모리·I/O 비용을 검증하지 않았다. 파일 전체 read/hash 비용, 열린 메뉴 갱신, legacy migration/adoption, 삭제 lifecycle 및 Windows 실행 검증은 계속 남아 있다. W05/WIN-020 완료로 판정하지 않는다.
 - CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·컴파일·실제 cache/파일/계정/UI 실행·성능 검증 미실행.
 - 직전 IMPL-530은 58b2ec9da로 origin/main 푸시가 성공했다. IMPL-531도 별도 커밋·푸시 후 Git 결과를 보고한다.
+
+## IMPL-532 — Refresh an open tray popup with a coherent presentation snapshot
+
+- 사용량 rows와 menu entries가 달라졌을 때만 mailbox presentation revision을 교체한다. 같은 내용의 재게시나 다른 mailbox 알림만으로 메뉴를 다시 열지 않는다.
+- Win32 tracking 중 새 revision을 받으면 EndMenu로 현재 tracking을 끝낸 후 반복문에서 최신 전체 메뉴를 구성한다. 메뉴 표시와 copy summary/errors, provider details, history context token, account expected IDs를 포함한 명령 연결을 같은 구성 단계에서 교체하며, 열린 HMENU 일부만 새 데이터로 바꾸지 않는다.
+- 다시 구성할 때 기존 화면 위치와 keyboard return target을 유지한다. onMenuOpen 및 refresh-on-open 요청은 최초 한 번만 수행하며, 250ms timer deadline은 이른 데이터 게시로 인한 재구성 사이에도 유지한다.
+- 열린 하위 메뉴는 사용자가 탐색을 마칠 때까지 유지하고 root로 돌아왔을 때 최신 revision을 소비한다. 선택한 명령이 반환되면 그 명령을 처리하고 다시 열지 않는다. root uninit 이후의 늦은 wake는 닫힌 메뉴를 재개하지 않으며 단축키 닫기는 갱신 요청을 해제한다. EndMenu 실패 시 기존 snapshot을 유지한다.
+- native tracking이 끝난 뒤 대기하던 editor/history mailbox를 다시 깨운다. 이미 선택한 명령의 modal editor는 기존 reply 처리 경로를 사용한다.
+- 메뉴 재구성은 native tracking 재진입 방식이므로 깜빡임, highlight/keyboard 탐색, 화면 구성 변경, 취소/닫기와 게시 경합을 Windows에서 확인해야 한다. 하위 메뉴를 연 동안에는 이전 snapshot이 유지되며 root highlight를 완전히 복원하는 구현은 포함하지 않았다. legacy migration/adoption, 이력 삭제 lifecycle 및 W05 전체 검증은 남아 있다.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·컴파일·lint·UI·실제 계정·성능 검증 미실행.
+- 직전 IMPL-531은 c519e56c3로 origin/main 푸시가 성공했다. IMPL-532도 별도 구현 커밋·푸시 후 Git 결과를 보고한다.

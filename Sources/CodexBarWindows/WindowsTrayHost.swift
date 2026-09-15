@@ -81,6 +81,13 @@ public final class WindowsTrayHost: @unchecked Sendable {
     private var menuHotkeyFailureMessage: String?
     private static let cleanupHotkeyCommand = UINT_PTR(0x7544)
     private var popupIsOpen = false
+    // UI-thread state. A live update ends tracking before replacing any action maps.
+    private var popupTrackingMenu: HMENU?
+    private var popupTrackingActive = false
+    private var popupOpenSubmenus: Set<UInt> = []
+    private var popupTrackingRevision: UUID?
+    private var popupRefreshRequested = false
+    private var popupLiveAnchor: POINT?
     private var refreshOnOpenDeadline: ContinuousClock.Instant?
     private var keyboardInitialMenu: HMENU?
     private var keyboardInitialPosition: UINT?
@@ -350,6 +357,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
     private let presentationDefaults: UserDefaults
     private let mailboxLock = NSLock()
     private var mailboxRows: [String] = []
+    private var mailboxPresentationRevision = UUID()
     private var mailboxMenuEntries: [WindowsTrayMenuEntry] = []
     private var mailboxSessionQuotaNotifications: [WindowsSessionQuotaNotification] = []
     private var mailboxQuotaWarningNotifications: [WindowsQuotaWarningNotification] = []
@@ -1320,6 +1328,9 @@ public final class WindowsTrayHost: @unchecked Sendable {
 
     public func postRows(_ rows: [String], menuEntries: [WindowsTrayMenuEntry]) {
         self.mailboxLock.lock()
+        if self.mailboxRows != rows || self.mailboxMenuEntries != menuEntries {
+            self.mailboxPresentationRevision = UUID()
+        }
         self.mailboxRows = rows
         self.mailboxMenuEntries = menuEntries
         let hwnd = self.window
@@ -2012,6 +2023,50 @@ public final class WindowsTrayHost: @unchecked Sendable {
     private func popup(notifyMenuOpen: Bool = true, keyboardInitiated: Bool = false, preserveAnchor: Bool = false) {
         guard !self.remoteEditorOpen, !self.popupIsOpen, !self.quitInvoked, self.hookEditorPhase == .idle else { return }
         self.popupIsOpen = true
+        self.popupLiveAnchor = nil
+        defer {
+            if let window = self.window { _ = KillTimer(window, Self.refreshOnOpenTimer) }
+            self.refreshOnOpenDeadline = nil
+            self.popupTrackingMenu = nil
+            self.popupTrackingActive = false
+            self.popupOpenSubmenus.removeAll(keepingCapacity: true)
+            self.popupTrackingRevision = nil
+            self.popupRefreshRequested = false
+            self.popupLiveAnchor = nil
+            self.popupIsOpen = false
+            // Replies deferred by the tracking loop may now open their native dialogs.
+            if !self.quitInvoked, let window = self.window { PostMessageW(window, Self.wakeMessage, 0, 0) }
+        }
+        var liveRefresh = false
+        repeat {
+            self.popupRefreshRequested = false
+            let rebuild = self.trackPopupSnapshot(
+                notifyMenuOpen: notifyMenuOpen && !liveRefresh,
+                keyboardInitiated: keyboardInitiated,
+                preserveAnchor: preserveAnchor || liveRefresh,
+                liveRefresh: liveRefresh)
+            guard rebuild else { break }
+            // Re-enter here, not through a queued popup message or recursive menu call.
+            // Only the first snapshot requests provider refresh or records menu-open activity.
+            liveRefresh = true
+        } while !self.quitInvoked
+    }
+
+    private func requestLivePopupRefresh() {
+        guard self.popupTrackingMenu != nil, self.popupOpenSubmenus.isEmpty,
+              !self.popupRefreshRequested, !self.quitInvoked else { return }
+        self.mailboxLock.lock()
+        let changed = self.popupTrackingRevision != self.mailboxPresentationRevision
+        self.mailboxLock.unlock()
+        guard changed else { return }
+        self.popupRefreshRequested = true
+        if EndMenu() == 0 { self.popupRefreshRequested = false }
+    }
+
+    /// Returns true only when this tracking session was ended by a newer presentation.
+    private func trackPopupSnapshot(
+        notifyMenuOpen: Bool, keyboardInitiated: Bool, preserveAnchor: Bool, liveRefresh: Bool
+    ) -> Bool {
         self.popupCopySummary = nil
         self.popupCopyErrors.removeAll(keepingCapacity: true)
         self.popupProviderDetails.removeAll(keepingCapacity: true)
@@ -2028,9 +2083,6 @@ public final class WindowsTrayHost: @unchecked Sendable {
         self.tokenAccountPageQueued = false
         var savedAccountsMenuPosition: Int32 = -1
         defer {
-            if let window = self.window { _ = KillTimer(window, Self.refreshOnOpenTimer) }
-            self.refreshOnOpenDeadline = nil
-            self.popupIsOpen = false
             self.popupCopySummary = nil
             self.popupCopyErrors.removeAll(keepingCapacity: true)
             self.popupProviderDetails.removeAll(keepingCapacity: true)
@@ -2046,7 +2098,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
             let cliReady = self.cliSetupResult != nil
             let historyReady = self.planHistoryMailbox != nil
             self.mailboxLock.unlock()
-            if cliReady || historyReady, !self.quitInvoked, let hwnd = self.window {
+            if !self.popupRefreshRequested, cliReady || historyReady, !self.quitInvoked, let hwnd = self.window {
                 PostMessageW(hwnd, Self.wakeMessage, 0, 0)
             }
             if !continuingPage { self.keyboardReturnTarget = nil }
@@ -2056,10 +2108,14 @@ public final class WindowsTrayHost: @unchecked Sendable {
             else { self.keyboardReturnTarget = nil }
             self.keyboardPopupAnchor = keyboardInitiated ? self.keyboardMenuPoint() : nil
         }
-        guard let hwnd = self.window, let menu = CreatePopupMenu() else { return }
+        guard let hwnd = self.window, let menu = CreatePopupMenu() else {
+            if let hwnd = self.window { self.restoreKeyboardReturnTarget(owner: hwnd) }
+            return false
+        }
         if notifyMenuOpen { self.onMenuOpen() }
         self.mailboxLock.lock()
         let rows = self.mailboxRows
+        self.popupTrackingRevision = self.mailboxPresentationRevision
         let menuEntries = self.mailboxMenuEntries
         let agentSessions = self.mailboxAgentSessions
         let remoteSessions = self.mailboxRemoteSessions
@@ -2552,8 +2608,9 @@ public final class WindowsTrayHost: @unchecked Sendable {
         Self.serviceMenuText(WindowsStatusLocalization.text("Refresh")).withCString(encodedAs: UTF16.self) { _ = AppendMenuW(menu, UINT(MF_STRING), Self.refreshCommand, $0) }
         Self.serviceMenuText(WindowsStatusLocalization.text("Quit")).withCString(encodedAs: UTF16.self) { _ = AppendMenuW(menu, UINT(MF_STRING), Self.quitCommand, $0) }
         _ = SetForegroundWindow(hwnd)
-        var point = self.keyboardPopupAnchor ?? POINT()
-        let havePoint = self.keyboardPopupAnchor != nil || GetCursorPos(&point) != 0
+        let retainedPoint = liveRefresh ? self.popupLiveAnchor : self.keyboardPopupAnchor
+        var point = retainedPoint ?? POINT()
+        let havePoint = retainedPoint != nil || GetCursorPos(&point) != 0
         guard havePoint else {
             _ = DestroyMenu(menu)
             self.restoreKeyboardReturnTarget(owner: hwnd)
@@ -2567,7 +2624,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
             self.popupChangelogCommands.removeAll(keepingCapacity: true)
             self.popupProviderQuotaWarningCommands.removeAll(keepingCapacity: true)
             self.popupProviderQuotaWarningNames.removeAll(keepingCapacity: true)
-            return
+            return false
         }
         var flags = UINT(TPM_RIGHTBUTTON | TPM_RETURNCMD)
         if self.keyboardPopupAnchor != nil {
@@ -2598,17 +2655,27 @@ public final class WindowsTrayHost: @unchecked Sendable {
                 self.refreshOnOpenDeadline = nil
             }
         }
+        self.popupLiveAnchor = point
+        self.popupTrackingMenu = menu
+        self.popupTrackingActive = true
+        self.popupOpenSubmenus.removeAll(keepingCapacity: true)
         let command = TrackPopupMenu(menu, flags, point.x, point.y, 0, hwnd, nil)
-        _ = KillTimer(hwnd, Self.refreshOnOpenTimer)
-        self.refreshOnOpenDeadline = nil
+        self.popupTrackingMenu = nil
+        self.popupTrackingActive = false
+        self.popupOpenSubmenus.removeAll(keepingCapacity: true)
+        let rebuild = command == 0 && self.popupRefreshRequested && !self.quitInvoked
+        if !rebuild {
+            _ = KillTimer(hwnd, Self.refreshOnOpenTimer)
+            self.refreshOnOpenDeadline = nil
+        }
         self.keyboardInitialMenu = nil
         self.keyboardInitialPosition = nil
         _ = DestroyMenu(menu)
-        continuingPage = command != 0 && self.popupPageCommands[UINT_PTR(command)] != nil
+        continuingPage = rebuild || (command != 0 && self.popupPageCommands[UINT_PTR(command)] != nil)
         if command != 0 {
             self.dispatchCommand(UINT_PTR(command))
             continuingPage = continuingPage || self.tokenAccountPageQueued
-        } else { self.restoreKeyboardReturnTarget(owner: hwnd) }
+        } else if !rebuild { self.restoreKeyboardReturnTarget(owner: hwnd) }
         self.popupPageCommands.removeAll(keepingCapacity: true)
         self.popupRemoteCommands.removeAll(keepingCapacity: true)
         self.popupRemoteDetails.removeAll(keepingCapacity: true)
@@ -2620,6 +2687,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
         self.popupProviderQuotaWarningCommands.removeAll(keepingCapacity: true)
         self.popupProviderQuotaWarningNames.removeAll(keepingCapacity: true)
         _ = PostMessageW(hwnd, WM_NULL, 0, 0)
+        return rebuild
     }
 
     private func appendAgentSessionsMenu(to menu: HMENU, snapshot: WindowsSessionMenuSnapshot) {
@@ -4686,6 +4754,23 @@ public final class WindowsTrayHost: @unchecked Sendable {
             return DefWindowProcW(hwnd, message, wParam, lParam)
         }
         let host = Unmanaged<WindowsTrayHost>.fromOpaque(UnsafeRawPointer(bitPattern: UInt(pointer))!).takeUnretainedValue()
+        if let menu = host.popupTrackingMenu {
+            let root = WPARAM(UInt(bitPattern: menu))
+            if message == UINT(WM_INITMENUPOPUP), wParam != root {
+                host.popupOpenSubmenus.insert(UInt(wParam))
+            }
+            if message == UINT(WM_UNINITMENUPOPUP) {
+                if wParam == root {
+                    // A closed root must not be reopened by a wake queued after dismissal.
+                    host.popupTrackingMenu = nil
+                    host.popupOpenSubmenus.removeAll(keepingCapacity: true)
+                } else if host.popupOpenSubmenus.remove(UInt(wParam)) != nil,
+                          host.popupOpenSubmenus.isEmpty {
+                    // Preserve submenu navigation; consume the latest snapshot back at the root.
+                    PostMessageW(hwnd, Self.wakeMessage, 0, 0)
+                }
+            }
+        }
         if message == UINT(WM_INITMENUPOPUP), let menu = host.keyboardInitialMenu,
            wParam == WPARAM(UInt(bitPattern: menu)), let position = host.keyboardInitialPosition {
             host.keyboardInitialMenu = nil
@@ -4701,7 +4786,10 @@ public final class WindowsTrayHost: @unchecked Sendable {
         if message == UINT(WM_HOTKEY), wParam == WPARAM(host.activeHotkeyID) {
             guard host.menuHotkeyRegistered, !host.quitInvoked, !host.remoteEditorOpen, !host.pluginApprovalDialogOpen,
                   case .idle = host.providerEditorPhase, case .idle = host.codexWebSettingsEditorPhase else { return 0 }
-            if host.popupIsOpen { _ = EndMenu() }
+            if host.popupIsOpen {
+                host.popupRefreshRequested = false
+                _ = EndMenu()
+            }
             else { host.popup(keyboardInitiated: true) }
             return 0
         }
@@ -4764,6 +4852,10 @@ public final class WindowsTrayHost: @unchecked Sendable {
             return 0
         }
         if message == Self.wakeMessage {
+            if host.popupTrackingActive {
+                host.requestLivePopupRefresh()
+                return 0
+            }
             if host.drainingEditorReplies || host.pluginApprovalDialogOpen {
                 host.deferredEditorDrain = true
                 return 0

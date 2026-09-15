@@ -1,5 +1,7 @@
 # Windows 전용 제품 작업 현황
 
+- IMPL-532: 열린 트레이의 사용량/예측 게시 변경에 따라 메뉴와 복사·상세·이력·계정 명령을 함께 다시 구성하는 경로 작성. 위치 유지, 중복 게시 무시, 하위 메뉴 탐색 중 갱신 유예, 닫기/선택 우선 처리. Windows 메뉴 동작 검증 미실행. CODE_WRITTEN_UNVERIFIED.
+
 - IMPL-531: 일반 트레이의 해당 주간 행에 세션 환산 예측 연결. 파일 내용/owner 기반 읽기 cache 및 이력 revision·구간 identity·idle 분 단위 burn cache 작성. 이미 열린 Win32 메뉴의 즉시 갱신은 남아 있음. CODE_WRITTEN_UNVERIFIED.
 
 - IMPL-530: 원본 session-equivalent burn/forecast 계산을 Core로 옮기고 주간 이력 상세에 연결. 최근 7개 후보·최소 3개 유효 표본, 구간/계정 identity 및 근무일 기준 적용. 일반 사용량 행과 cache lifecycle은 남아 있음. CODE_WRITTEN_UNVERIFIED.
