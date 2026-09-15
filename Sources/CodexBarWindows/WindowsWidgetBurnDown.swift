@@ -12,6 +12,24 @@ public struct WindowsWidgetBurnDown: Sendable {
     public let selectedResetOverride: Date?
     public let nextRefresh: Date
 
+    public func selectedGeometry(now: Date) throws -> WindowsWidgetBurnGeometry? {
+        guard let selected else { return nil }
+        return try WindowsWidgetBurnGeometry(window: selected, now: now,
+            blankChart: self.blankSelectedChart, resetOverride: self.selectedResetOverride)
+    }
+
+    public func sessionGeometry(now: Date) throws -> WindowsWidgetBurnGeometry? {
+        guard let session else { return nil }
+        return try WindowsWidgetBurnGeometry(window: session, now: now,
+            blankChart: self.sessionBlockedByWeekly,
+            resetOverride: self.sessionBlockedByWeekly ? self.weekly?.resetsAt : nil)
+    }
+
+    public func weeklyGeometry(now: Date) throws -> WindowsWidgetBurnGeometry? {
+        guard let weekly else { return nil }
+        return try WindowsWidgetBurnGeometry(window: weekly, now: now)
+    }
+
     public static func make(from content: WindowsWidgetContentResolver.Content, now: Date) -> Self? {
         guard now.timeIntervalSince1970.isFinite,
               WindowsWidgetConfiguration.burnDownProviders.contains(content.provider) else { return nil }

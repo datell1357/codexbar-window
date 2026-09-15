@@ -196,6 +196,57 @@ public final class WindowsTrayHost: @unchecked Sendable {
     private static let languageCommandBase = UINT_PTR(0x7F40)
     private static let refreshOnOpenCommand = UINT_PTR(0x7019)
     private static let refreshOnOpenTimer = UINT_PTR(0x701A)
+    private static let pluginInstallCommand = UINT_PTR(0xE102)
+    private static let failedPluginFileRemovalCommand = UINT_PTR(0xE103)
+    private static let pluginBackupRestoreCommand = UINT_PTR(0xE104)
+    private let onPluginBackupRestoreLoad: @Sendable (UUID, URL) -> Void
+    private let onFailedPluginFileRemovalLoad: @Sendable (UUID, URL) -> Void
+    private enum PluginFileAction {
+        case install, replace(ProviderInstanceID), removeFailedFile, restoreBackup
+        var titleKey: String {
+            switch self {
+            case .install: "plugin_installTitle"
+            case .replace: "plugin_replaceTitle"
+            case .removeFailedFile: "plugin_removeFailedFileTitle"
+            case .restoreBackup: "plugin_restoreBackupTitle"
+            }
+        }
+        var installsWithoutReview: Bool {
+            if case .install = self { return true }
+            return false
+        }
+        var initialDirectory: URL? {
+            switch self {
+            case .removeFailedFile: return UserProviderPluginLoader.defaultProvidersDirectory
+            case .restoreBackup: return WindowsPluginReplacementPlan.backupDirectory
+            default: return nil
+            }
+        }
+    }
+    private let onPluginRemovalLoad: @Sendable (UUID, ProviderInstanceID) -> Void
+    private let onPluginRemovalSave: @Sendable (UUID, UUID) -> Void
+    private let onPluginRemovalCancel: @Sendable (UUID) -> Void
+    private var pluginRemovalCommands: [UINT_PTR: ProviderInstanceID] = [:]
+    private let onPluginReplacementLoad: @Sendable (UUID, ProviderInstanceID, URL) -> Void
+    private let onPluginReplacementSave: @Sendable (UUID, UUID) -> Void
+    private let onPluginReplacementCancel: @Sendable (UUID) -> Void
+    private var configuredPluginIDs: [ProviderInstanceID] = [] // mailboxLock
+    private var pluginReplacementCommands: [UINT_PTR: ProviderInstanceID] = [:]
+    private let onPluginInstall: @Sendable (UUID, URL) -> Void
+    private let onPluginSettingsLoad: @Sendable (UUID, ProviderInstanceID) -> Void
+    private let onPluginSettingsSave: @Sendable (UUID, UUID, [String: WindowsPluginSettingChange]) -> Void
+    private let onPluginSettingsCancel: @Sendable (UUID) -> Void
+    private var pluginSettingsCommands: [UINT_PTR: ProviderInstanceID] = [:]
+    private let onPluginApprovalLoad: @Sendable (UUID, ProviderInstanceID) -> Void
+    private let onPluginEnabledSave: @Sendable (UUID, UUID, Bool) -> Void
+    private let onPluginApprovalRevoke: @Sendable (UUID, UUID) -> Void
+    private let onPluginApprovalSave: @Sendable (UUID, UUID, [String]) -> Void
+    private var pluginApprovalCommands: [UINT_PTR: ProviderInstanceID] = [:]
+    private var pluginApprovalPageCommands: [UINT_PTR: Int] = [:]
+    private var pluginApprovalPage = 0
+    private var pluginApprovalRequest: (id: UUID, saving: Bool)? // mailboxLock
+    private var pluginApprovalReply: WindowsPluginApprovalReply? // mailboxLock
+    private var pluginApprovalDialogOpen = false // UI thread
     private static let hookSettingsCommand = UINT_PTR(0x7F80)
     private static let statusChecksCommand = UINT_PTR(0x7018)
     private static let refreshFrequencyCommandBase = UINT_PTR(0x7010)
@@ -413,12 +464,44 @@ public final class WindowsTrayHost: @unchecked Sendable {
         onTokenAccountSelect: @escaping @Sendable (WindowsTokenAccountSelectionRequest) -> Void = { _ in },
         onProviderQuotaWarningLoad: @escaping ProviderQuotaWarningLoadHandler = { _, _ in },
         onProviderQuotaWarningSave: @escaping ProviderQuotaWarningSaveHandler = { _, _, _ in },
+        onPluginBackupRestoreLoad: @escaping @Sendable (UUID, URL) -> Void = { _, _ in },
+        onFailedPluginFileRemovalLoad: @escaping @Sendable (UUID, URL) -> Void = { _, _ in },
+        onPluginRemovalLoad: @escaping @Sendable (UUID, ProviderInstanceID) -> Void = { _, _ in },
+        onPluginRemovalSave: @escaping @Sendable (UUID, UUID) -> Void = { _, _ in },
+        onPluginRemovalCancel: @escaping @Sendable (UUID) -> Void = { _ in },
+        onPluginReplacementLoad: @escaping @Sendable (UUID, ProviderInstanceID, URL) -> Void = { _, _, _ in },
+        onPluginReplacementSave: @escaping @Sendable (UUID, UUID) -> Void = { _, _ in },
+        onPluginReplacementCancel: @escaping @Sendable (UUID) -> Void = { _ in },
+        onPluginInstall: @escaping @Sendable (UUID, URL) -> Void = { _, _ in },
+        onPluginSettingsLoad: @escaping @Sendable (UUID, ProviderInstanceID) -> Void = { _, _ in },
+        onPluginSettingsSave: @escaping @Sendable (UUID, UUID, [String: WindowsPluginSettingChange]) -> Void = { _, _, _ in },
+        onPluginSettingsCancel: @escaping @Sendable (UUID) -> Void = { _ in },
+        onPluginApprovalLoad: @escaping @Sendable (UUID, ProviderInstanceID) -> Void = { _, _ in },
+        onPluginEnabledSave: @escaping @Sendable (UUID, UUID, Bool) -> Void = { _, _, _ in },
+        onPluginApprovalRevoke: @escaping @Sendable (UUID, UUID) -> Void = { _, _ in },
+        onPluginApprovalSave: @escaping @Sendable (UUID, UUID, [String]) -> Void = { _, _, _ in },
         onHookSettingsLoad: @escaping @Sendable (UInt64) -> Void = { _ in },
         onHookSettingsSave: @escaping @Sendable (UInt64, WindowsHookSettingsSnapshot, WindowsHookSettingsMutation) -> Void = { _, _, _ in },
         onCodexWebSettingsLoad: @escaping CodexWebSettingsLoadHandler = { _ in },
         onCodexWebSettingsSave: @escaping CodexWebSettingsSaveHandler = { _, _ in },
         onPredictivePaceWarningSettingsChanged: @escaping PredictivePaceWarningSettingsChangedHandler = { _ in })
     {
+        self.onPluginBackupRestoreLoad = onPluginBackupRestoreLoad
+        self.onFailedPluginFileRemovalLoad = onFailedPluginFileRemovalLoad
+        self.onPluginRemovalLoad = onPluginRemovalLoad
+        self.onPluginRemovalSave = onPluginRemovalSave
+        self.onPluginRemovalCancel = onPluginRemovalCancel
+        self.onPluginReplacementLoad = onPluginReplacementLoad
+        self.onPluginReplacementSave = onPluginReplacementSave
+        self.onPluginReplacementCancel = onPluginReplacementCancel
+        self.onPluginInstall = onPluginInstall
+        self.onPluginSettingsLoad = onPluginSettingsLoad
+        self.onPluginSettingsSave = onPluginSettingsSave
+        self.onPluginSettingsCancel = onPluginSettingsCancel
+        self.onPluginApprovalLoad = onPluginApprovalLoad
+        self.onPluginApprovalSave = onPluginApprovalSave
+        self.onPluginApprovalRevoke = onPluginApprovalRevoke
+        self.onPluginEnabledSave = onPluginEnabledSave
         self.onLocalSessionPage = onLocalSessionPage
         self.onRemoteSessionPage = onRemoteSessionPage
         self.onRemoteSettingsChanged = onRemoteSettingsChanged
@@ -2383,6 +2466,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
         _ = "Hook settings…".withCString(encodedAs: UTF16.self) {
             AppendMenuW(menu, UINT(MF_STRING), Self.hookSettingsCommand, $0)
         }
+        self.appendPluginApprovalMenu(to: menu)
         self.appendLanguageMenu(to: menu)
         self.appendRefreshFrequencyMenu(to: menu)
         self.appendLowPowerModeMenu(to: menu)
@@ -3303,6 +3387,49 @@ public final class WindowsTrayHost: @unchecked Sendable {
     }
 
     private func dispatchCommand(_ command: UINT_PTR) {
+        if self.pluginApprovalDialogOpen { return }
+        if command == Self.pluginInstallCommand {
+            self.beginPluginFileSelection(.install); return
+        }
+        if command == Self.pluginBackupRestoreCommand {
+            self.beginPluginFileSelection(.restoreBackup); return
+        }
+        if command == Self.failedPluginFileRemovalCommand {
+            self.beginPluginFileSelection(.removeFailedFile); return
+        }
+        if let instanceID = self.pluginReplacementCommands[command] {
+            self.beginPluginFileSelection(.replace(instanceID)); return
+        }
+        if let page = self.pluginApprovalPageCommands[command] {
+            guard !self.quitInvoked, !self.remoteEditorOpen, self.hookEditorPhase == .idle,
+                  case .idle = self.providerEditorPhase, case .idle = self.codexWebSettingsEditorPhase,
+                  let hwnd = self.window else { return }
+            self.mailboxLock.lock()
+            let busy = self.pluginApprovalRequest != nil
+            self.mailboxLock.unlock()
+            guard !busy else { return }
+            let previous = self.pluginApprovalPage
+            self.pluginApprovalPage = page
+            self.pluginApprovalCommands.removeAll(); self.pluginSettingsCommands.removeAll(); self.pluginReplacementCommands.removeAll(); self.pluginRemovalCommands.removeAll()
+            self.pluginApprovalPageCommands.removeAll()
+            if PostMessageW(hwnd, Self.pagePopupMessage, 0, 0) == 0 { self.pluginApprovalPage = previous }
+            return
+        }
+        if let instanceID = self.pluginApprovalCommands[command] ?? self.pluginSettingsCommands[command] ?? self.pluginRemovalCommands[command] {
+            guard !self.quitInvoked, !self.remoteEditorOpen, self.hookEditorPhase == .idle,
+                  case .idle = self.providerEditorPhase, case .idle = self.codexWebSettingsEditorPhase else { return }
+            self.mailboxLock.lock()
+            guard self.pluginApprovalRequest == nil else { self.mailboxLock.unlock(); return }
+            let requestID = UUID()
+            self.pluginApprovalRequest = (requestID, false)
+            self.pluginApprovalReply = nil
+            self.mailboxLock.unlock()
+            if self.pluginRemovalCommands[command] != nil { self.onPluginRemovalLoad(requestID, instanceID) }
+            else if self.pluginSettingsCommands[command] != nil { self.onPluginSettingsLoad(requestID, instanceID) }
+            else { self.onPluginApprovalLoad(requestID, instanceID) }
+            return
+        }
+
         if command == Self.cursorBrowserImportCancelCommand {
             guard !self.remoteEditorOpen else { return }
             self.mailboxLock.lock()
@@ -3875,6 +4002,254 @@ public final class WindowsTrayHost: @unchecked Sendable {
         }
     }
 
+    private func beginPluginFileSelection(_ action: PluginFileAction) {
+        guard !self.quitInvoked, !self.remoteEditorOpen, !self.pluginApprovalDialogOpen,
+              self.hookEditorPhase == .idle, case .idle = self.providerEditorPhase,
+              case .idle = self.codexWebSettingsEditorPhase, let hwnd = self.window,
+              IsWindow(hwnd) != 0 else { return }
+        self.mailboxLock.lock()
+        guard self.pluginApprovalRequest == nil else { self.mailboxLock.unlock(); return }
+        let requestID = UUID()
+        self.pluginApprovalRequest = (requestID, action.installsWithoutReview)
+        self.pluginApprovalReply = nil
+        self.mailboxLock.unlock()
+        self.pluginApprovalDialogOpen = true
+        let selection = WindowsPluginFileDialog.show(owner: hwnd, titleKey: action.titleKey,
+            initialDirectory: action.initialDirectory)
+        self.pluginApprovalDialogOpen = false
+        defer { if !self.quitInvoked { PostMessageW(hwnd, Self.wakeMessage, 0, 0) } }
+        if !self.quitInvoked, IsWindow(hwnd) != 0, case let .selected(url) = selection {
+            switch action {
+            case .install: self.onPluginInstall(requestID, url)
+            case let .replace(instanceID): self.onPluginReplacementLoad(requestID, instanceID, url)
+            case .removeFailedFile: self.onFailedPluginFileRemovalLoad(requestID, url)
+            case .restoreBackup: self.onPluginBackupRestoreLoad(requestID, url)
+            }
+            return
+        }
+        self.mailboxLock.lock()
+        if self.pluginApprovalRequest?.id == requestID {
+            self.pluginApprovalRequest = nil
+            self.pluginApprovalReply = nil
+        }
+        self.mailboxLock.unlock()
+        if !self.quitInvoked, case .failed = selection {
+            self.showProviderEditorNotice(WindowsStatusLocalization.text("plugin_fileSelectionFailed"))
+        }
+    }
+
+    public func postConfiguredPluginIDs(_ ids: [ProviderInstanceID]) {
+        self.mailboxLock.lock()
+        if !self.quitInvoked { self.configuredPluginIDs = ids }
+        self.mailboxLock.unlock()
+    }
+
+    private func appendPluginApprovalMenu(to menu: HMENU) {
+        self.pluginApprovalCommands.removeAll(); self.pluginSettingsCommands.removeAll(); self.pluginReplacementCommands.removeAll(); self.pluginRemovalCommands.removeAll()
+        self.pluginApprovalPageCommands.removeAll()
+        let discovered = UserProviderPluginRegistry.all.map { $0.manifest.id }
+        let recorded = ProviderPluginApprovalStore().recordedBindings().map { $0.instanceID }
+        self.mailboxLock.lock()
+        let configured = self.configuredPluginIDs
+        self.mailboxLock.unlock()
+        let pluginIDs = Set(discovered + recorded + configured).sorted { $0.rawValue < $1.rawValue }
+        let lastPage = pluginIDs.isEmpty ? 0 : (pluginIDs.count - 1) / 256
+        self.pluginApprovalPage = min(max(0, self.pluginApprovalPage), lastPage)
+        guard let submenu = CreatePopupMenu() else { return }
+        self.mailboxLock.lock()
+        let busy = self.pluginApprovalRequest != nil
+        self.mailboxLock.unlock()
+        Self.serviceMenuText(WindowsStatusLocalization.text("plugin_installTitle")).withCString(encodedAs: UTF16.self) {
+            _ = AppendMenuW(submenu, UINT(MF_STRING) | (busy ? UINT(MF_GRAYED) : 0), Self.pluginInstallCommand, $0)
+        }
+        Self.serviceMenuText(WindowsStatusLocalization.text("plugin_restoreBackupTitle")).withCString(encodedAs: UTF16.self) {
+            _ = AppendMenuW(submenu, UINT(MF_STRING) | (busy ? UINT(MF_GRAYED) : 0), Self.pluginBackupRestoreCommand, $0)
+        }
+        Self.serviceMenuText(WindowsStatusLocalization.text("plugin_removeFailedFileTitle")).withCString(encodedAs: UTF16.self) {
+            _ = AppendMenuW(submenu, UINT(MF_STRING) | (busy ? UINT(MF_GRAYED) : 0), Self.failedPluginFileRemovalCommand, $0)
+        }
+        if !pluginIDs.isEmpty { _ = AppendMenuW(submenu, UINT(MF_SEPARATOR), 0, nil) }
+        let start = self.pluginApprovalPage * 256
+        let discoveredIDs = Set(discovered)
+        for (index, instanceID) in pluginIDs.dropFirst(start).prefix(256).enumerated() {
+            guard let itemMenu = CreatePopupMenu() else { continue }
+            let command = UINT_PTR(0xE000 + index), settingsCommand = UINT_PTR(0xE200 + index)
+            let approvalAdded = Self.serviceMenuText(WindowsStatusLocalization.text("plugin_approvalTitle"))
+                .withCString(encodedAs: UTF16.self) {
+                    AppendMenuW(itemMenu, UINT(MF_STRING) | (busy ? UINT(MF_GRAYED) : 0), command, $0)
+                }
+            let settingsAdded = Self.serviceMenuText(WindowsStatusLocalization.text("plugin_settingsTitle"))
+                .withCString(encodedAs: UTF16.self) {
+                    AppendMenuW(itemMenu, UINT(MF_STRING) | (busy || !discoveredIDs.contains(instanceID) ? UINT(MF_GRAYED) : 0), settingsCommand, $0)
+                }
+            let replacementCommand = UINT_PTR(0xE300 + index)
+            let replacementAdded = Self.serviceMenuText(WindowsStatusLocalization.text("plugin_replaceTitle"))
+                .withCString(encodedAs: UTF16.self) {
+                    AppendMenuW(itemMenu, UINT(MF_STRING) | (busy ? UINT(MF_GRAYED) : 0), replacementCommand, $0)
+                }
+            let removalCommand = UINT_PTR(0xE400 + index)
+            let removalAdded = Self.serviceMenuText(WindowsStatusLocalization.text("plugin_removeTitle"))
+                .withCString(encodedAs: UTF16.self) {
+                    AppendMenuW(itemMenu, UINT(MF_STRING) | (busy ? UINT(MF_GRAYED) : 0), removalCommand, $0)
+                }
+            let added = Self.serviceMenuText(instanceID.rawValue).withCString(encodedAs: UTF16.self) {
+                AppendMenuW(submenu, UINT(MF_POPUP), UINT_PTR(UInt(bitPattern: itemMenu)), $0)
+            }
+            if added == 0 { DestroyMenu(itemMenu); continue }
+            if approvalAdded != 0 { self.pluginApprovalCommands[command] = instanceID }
+            if settingsAdded != 0, discoveredIDs.contains(instanceID) { self.pluginSettingsCommands[settingsCommand] = instanceID }
+            if replacementAdded != 0 { self.pluginReplacementCommands[replacementCommand] = instanceID }
+            if removalAdded != 0 { self.pluginRemovalCommands[removalCommand] = instanceID }
+        }
+        if lastPage > 0 {
+            _ = AppendMenuW(submenu, UINT(MF_SEPARATOR), 0, nil)
+            let localization = WindowsStatusLocalization.Snapshot()
+            let formatter = NumberFormatter()
+            formatter.locale = Locale(identifier: localization.language)
+            formatter.numberStyle = .decimal
+            func number(_ value: Int) -> String { formatter.string(from: NSNumber(value: value)) ?? String(value) }
+            let range = localization.text("plugin_pageRange")
+                .replacingOccurrences(of: "{first}", with: number(start + 1))
+                .replacingOccurrences(of: "{last}", with: number(min(start + 256, pluginIDs.count)))
+                .replacingOccurrences(of: "{total}", with: number(pluginIDs.count))
+            range.withCString(encodedAs: UTF16.self) {
+                _ = AppendMenuW(submenu, UINT(MF_STRING|MF_GRAYED), 0, $0)
+            }
+            for (command, target, key) in [(UINT_PTR(0xE100), self.pluginApprovalPage - 1, "plugin_previousPage"),
+                                            (UINT_PTR(0xE101), self.pluginApprovalPage + 1, "plugin_nextPage")] {
+                guard (0...lastPage).contains(target) else { continue }
+                let added = Self.serviceMenuText(localization.text(key)).withCString(encodedAs: UTF16.self) {
+                    AppendMenuW(submenu, UINT(MF_STRING) | (busy ? UINT(MF_GRAYED) : 0), command, $0)
+                }
+                if added != 0 { self.pluginApprovalPageCommands[command] = target }
+            }
+        }
+        let added = Self.serviceMenuText(WindowsStatusLocalization.text("plugin_managementTitle"))
+            .withCString(encodedAs: UTF16.self) {
+                AppendMenuW(menu, UINT(MF_POPUP), UINT_PTR(UInt(bitPattern: submenu)), $0)
+            }
+        if added == 0 { DestroyMenu(submenu); self.pluginApprovalCommands.removeAll(); self.pluginSettingsCommands.removeAll(); self.pluginReplacementCommands.removeAll(); self.pluginRemovalCommands.removeAll(); self.pluginApprovalPageCommands.removeAll() }
+    }
+
+    public func postPluginApproval(requestID: UUID, reply: WindowsPluginApprovalReply) {
+        self.mailboxLock.lock()
+        guard !self.quitInvoked, let expected = self.pluginApprovalRequest,
+              expected.id == requestID, self.pluginApprovalReply == nil else { self.mailboxLock.unlock(); return }
+        switch reply {
+        case .removal where expected.saving: self.mailboxLock.unlock(); return
+        case .failedFileRemoved where !expected.saving: self.mailboxLock.unlock(); return
+        case .removed where !expected.saving: self.mailboxLock.unlock(); return
+        case .replacement where expected.saving: self.mailboxLock.unlock(); return
+        case .restoredBackup where !expected.saving: self.mailboxLock.unlock(); return
+        case .reinstalled where !expected.saving: self.mailboxLock.unlock(); return
+        case .replaced where !expected.saving: self.mailboxLock.unlock(); return
+        case .review where expected.saving: self.mailboxLock.unlock(); return
+        case .settings where expected.saving: self.mailboxLock.unlock(); return
+        case .installFailed where !expected.saving: self.mailboxLock.unlock(); return
+        case .installed where !expected.saving: self.mailboxLock.unlock(); return
+        case .saved where !expected.saving: self.mailboxLock.unlock(); return
+        default: break
+        }
+        self.pluginApprovalReply = reply
+        let hwnd = self.window
+        self.mailboxLock.unlock()
+        if let hwnd { PostMessageW(hwnd, Self.wakeMessage, 0, 0) }
+    }
+
+    private func drainPluginApproval() {
+        guard !self.quitInvoked, !self.remoteEditorOpen, self.hookEditorPhase == .idle,
+              case .idle = self.providerEditorPhase, case .idle = self.codexWebSettingsEditorPhase else { return }
+        self.mailboxLock.lock()
+        guard let reply = self.pluginApprovalReply else { self.mailboxLock.unlock(); return }
+        self.pluginApprovalReply = nil
+        self.pluginApprovalRequest = nil
+        self.mailboxLock.unlock()
+        switch reply {
+        case let .review(review):
+            guard let hwnd = self.window, IsWindow(hwnd) != 0 else { return }
+            self.pluginApprovalDialogOpen = true
+            let decision = WindowsPluginApprovalDialog.show(owner: hwnd, review: review)
+            self.pluginApprovalDialogOpen = false
+            guard !self.quitInvoked, let decision else { return }
+            let requestID = UUID()
+            self.mailboxLock.lock()
+            self.pluginApprovalRequest = (requestID, true)
+            self.mailboxLock.unlock()
+            switch decision {
+            case let .approve(origins): self.onPluginApprovalSave(requestID, review.token, origins)
+            case .revoke: self.onPluginApprovalRevoke(requestID, review.token)
+            case let .setEnabled(enabled): self.onPluginEnabledSave(requestID, review.token, enabled)
+            }
+        case let .settings(snapshot):
+            guard let hwnd = self.window, IsWindow(hwnd) != 0 else {
+                self.onPluginSettingsCancel(snapshot.token); return
+            }
+            self.pluginApprovalDialogOpen = true
+            let changes = WindowsPluginSettingsDialog.show(owner: hwnd, snapshot: snapshot)
+            self.pluginApprovalDialogOpen = false
+            guard !self.quitInvoked, let changes, !changes.isEmpty else {
+                self.onPluginSettingsCancel(snapshot.token); return
+            }
+            let requestID = UUID()
+            self.mailboxLock.lock()
+            self.pluginApprovalRequest = (requestID, true)
+            self.mailboxLock.unlock()
+            self.onPluginSettingsSave(requestID, snapshot.token, changes)
+        case let .removal(review):
+            guard let hwnd = self.window, IsWindow(hwnd) != 0 else {
+                self.onPluginRemovalCancel(review.token); return
+            }
+            self.pluginApprovalDialogOpen = true
+            let accepted = WindowsPluginRemovalDialog.confirm(owner: hwnd, review: review)
+            self.pluginApprovalDialogOpen = false
+            guard !self.quitInvoked, accepted else {
+                self.onPluginRemovalCancel(review.token); return
+            }
+            let requestID = UUID()
+            self.mailboxLock.lock()
+            self.pluginApprovalRequest = (requestID, true)
+            self.mailboxLock.unlock()
+            self.onPluginRemovalSave(requestID, review.token)
+        case .failedFileRemoved:
+            self.showProviderEditorNotice(WindowsStatusLocalization.text("plugin_failedFileRemoved"))
+        case .removed:
+            self.showProviderEditorNotice(WindowsStatusLocalization.text("plugin_removed"))
+        case let .removalFailed(failure):
+            self.showProviderEditorNotice(WindowsStatusLocalization.text(failure.localizationKey))
+        case let .replacement(review):
+            guard let hwnd = self.window, IsWindow(hwnd) != 0 else {
+                self.onPluginReplacementCancel(review.token); return
+            }
+            self.pluginApprovalDialogOpen = true
+            let accepted = WindowsPluginReplacementDialog.confirm(owner: hwnd, review: review)
+            self.pluginApprovalDialogOpen = false
+            guard !self.quitInvoked, accepted else {
+                self.onPluginReplacementCancel(review.token); return
+            }
+            let requestID = UUID()
+            self.mailboxLock.lock()
+            self.pluginApprovalRequest = (requestID, true)
+            self.mailboxLock.unlock()
+            self.onPluginReplacementSave(requestID, review.token)
+        case .restoredBackup:
+            self.showProviderEditorNotice(WindowsStatusLocalization.text("plugin_restoredBackup"))
+        case .reinstalled:
+            self.showProviderEditorNotice(WindowsStatusLocalization.text("plugin_reinstalled"))
+        case .replaced:
+            self.showProviderEditorNotice(WindowsStatusLocalization.text("plugin_replaced"))
+        case let .replacementFailed(failure):
+            self.showProviderEditorNotice(WindowsStatusLocalization.text(failure.localizationKey))
+        case let .installFailed(failure):
+            self.showProviderEditorNotice(WindowsStatusLocalization.text(failure.localizationKey))
+        case .installed:
+            self.showProviderEditorNotice(WindowsStatusLocalization.text("plugin_installed"))
+        case .saved:
+            self.showProviderEditorNotice(WindowsStatusLocalization.text("plugin_approvalSaved"))
+        case .failed:
+            self.showProviderEditorNotice(WindowsStatusLocalization.text("plugin_approvalFailed"))
+        }
+    }
+
     private func beginCodexWebSettingsLoad() {
         guard case .idle = self.codexWebSettingsEditorPhase, !self.quitInvoked else { return }
         let requestID = self.nextCodexWebSettingsRequestID
@@ -4219,14 +4594,14 @@ public final class WindowsTrayHost: @unchecked Sendable {
             return 0
         }
         if message == UINT(WM_HOTKEY), wParam == WPARAM(host.activeHotkeyID) {
-            guard host.menuHotkeyRegistered, !host.quitInvoked, !host.remoteEditorOpen,
+            guard host.menuHotkeyRegistered, !host.quitInvoked, !host.remoteEditorOpen, !host.pluginApprovalDialogOpen,
                   case .idle = host.providerEditorPhase, case .idle = host.codexWebSettingsEditorPhase else { return 0 }
             if host.popupIsOpen { _ = EndMenu() }
             else { host.popup(keyboardInitiated: true) }
             return 0
         }
         if message == Self.pagePopupMessage {
-            guard !host.quitInvoked, !host.remoteEditorOpen,
+            guard !host.quitInvoked, !host.remoteEditorOpen, !host.pluginApprovalDialogOpen,
                   case .idle = host.providerEditorPhase, case .idle = host.codexWebSettingsEditorPhase
             else { return 0 }
             host.popup(notifyMenuOpen: false, preserveAnchor: true)
@@ -4270,7 +4645,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
             return 0
         }
         if message == UINT(WM_TIMER), wParam == WPARAM(Self.cliSetupTimer) {
-            if host.drainingEditorReplies || host.hookEditorPhase != .idle {
+            if host.drainingEditorReplies || host.pluginApprovalDialogOpen || host.hookEditorPhase != .idle {
                 host.deferredEditorDrain = true
                 return 0
             }
@@ -4284,7 +4659,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
             return 0
         }
         if message == Self.wakeMessage {
-            if host.drainingEditorReplies {
+            if host.drainingEditorReplies || host.pluginApprovalDialogOpen {
                 host.deferredEditorDrain = true
                 return 0
             }
@@ -4308,6 +4683,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
             host.drainTokenAccountSelection()
             host.drainProviderQuotaWarningEditor()
             host.drainCodexWebSettingsEditor()
+            host.drainPluginApproval()
             host.drainCursorBrowserImport()
             host.drainAugmentBrowserImport()
             host.drainWindsurfBrowserImport()

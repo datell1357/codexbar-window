@@ -1,0 +1,53 @@
+#if os(Windows)
+import Foundation
+
+/// Capture once per card batch so a language change cannot split a card across catalogs.
+enum WindowsWidgetLocalization {
+    static func labels(_ snapshot: WindowsStatusLocalization.Snapshot) -> WindowsWidgetAdaptiveCard.Labels {
+        var result = WindowsWidgetAdaptiveCard.Labels()
+        result.noData = snapshot.text("widget_noData")
+        result.disabled = snapshot.text("widget_disabled")
+        result.waiting = snapshot.text("widget_waiting")
+        result.stale = snapshot.text("widget_stale")
+        result.unknown = snapshot.text("widget_unknown")
+        result.used = snapshot.text("widget_used")
+        result.remaining = snapshot.text("widget_remaining")
+        result.updated = snapshot.text("widget_updated")
+        result.resets = snapshot.text("widget_resets")
+        result.codeReview = snapshot.text("widget_codeReview")
+        result.tokens = snapshot.text("widget_tokens")
+        result.session = snapshot.text("widget_session")
+        result.weekly = snapshot.text("widget_weekly")
+        result.full = snapshot.text("widget_full")
+        result.spent = snapshot.text("widget_spent")
+        result.conserving = snapshot.text("widget_conserving")
+        result.onPace = snapshot.text("widget_onPace")
+        result.overPace = snapshot.text("widget_overPace")
+        result.weeklyBlocked = snapshot.text("widget_weeklyBlocked")
+        result.runsOut = snapshot.text("widget_runsOut")
+        result.afterReset = snapshot.text("widget_afterReset")
+        result.burnLegend = snapshot.text("widget_burnLegend")
+        result.historyCost = snapshot.text("widget_historyCost")
+        result.historyTokens = snapshot.text("widget_historyTokens")
+        result.historyMissing = snapshot.text("widget_historyMissing")
+        result.historyUnknown = snapshot.text("widget_historyUnknown")
+        result.historyLegend = snapshot.text("widget_historyLegend")
+        result.maximum = snapshot.text("widget_maximum")
+        result.provider = snapshot.text("widget_provider")
+        result.selectProvider = snapshot.text("widget_selectProvider")
+        result.customize = snapshot.text("widget_customize")
+        result.saveSettings = snapshot.text("widget_saveSettings")
+        result.metric = snapshot.text("widget_metric")
+        result.window = snapshot.text("widget_window")
+        result.credits = snapshot.text("widget_credits")
+        result.extraUsageBalance = snapshot.text("widget_extraUsageBalance")
+        result.apiEstimate = snapshot.text("widget_apiEstimate")
+        result.todayCost = snapshot.text("widget_todayCost")
+        result.monthCost = snapshot.text("widget_monthCost")
+        result.cancelSettings = snapshot.text("Cancel")
+        result.refreshFailed = snapshot.text("widget_refreshFailed")
+        result.unavailableWidget = snapshot.text("widget_unavailableWidget")
+        return result
+    }
+}
+#endif

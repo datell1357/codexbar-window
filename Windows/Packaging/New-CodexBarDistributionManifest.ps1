@@ -7,6 +7,8 @@ param(
     [Parameter(Mandatory = $true)][ValidateSet('x64', 'arm64')][string] $Architecture,
     [Parameter(Mandatory = $true)][string[]] $RuntimeFiles,
     [string[]] $RuntimeSearchDirectories = @(),
+    [string] $WidgetBackendDLL,
+    [string] $WidgetBackendBuildReceipt,
     [string] $SystemPolicyFile,
     [Parameter(Mandatory = $true)][string[]] $ResourceDirectories,
     [Parameter(Mandatory = $true)][string] $LicenseDirectory,
@@ -16,6 +18,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'Read-CodexBarFirstPartyFiles.ps1')
 . (Join-Path $PSScriptRoot 'Read-CodexBarPEImports.ps1')
+. (Join-Path $PSScriptRoot 'Read-CodexBarWidgetBuildReceipt.ps1')
 . (Join-Path $PSScriptRoot 'Read-CodexBarSystemPolicy.ps1')
 . (Join-Path $PSScriptRoot 'Read-CodexBarBuildProvenance.ps1')
 $provenance = Read-CodexBarBuildProvenance ([pscustomobject] @{
@@ -41,6 +44,19 @@ function Add-ManifestFile([string] $Source, [string] $Destination, [string] $Kin
     $file = Get-Item -LiteralPath $Source -Force
     if ($file.PSIsContainer -or ($file.Attributes -band [IO.FileAttributes]::ReparsePoint)) {
         throw 'Manifest inputs must be regular files.'
+    }
+    # Apply this gate to every insertion path, including recursively discovered imports.
+    if ([IO.Path]::GetFileName($Destination) -ieq 'CodexBarWidgetBackend.dll') {
+        if ($Destination -ine 'CodexBarWidgetBackend.dll' -or $Kind -ne 'runtime' -or
+            [string]::IsNullOrWhiteSpace($WidgetBackendDLL) -or
+            [string]::IsNullOrWhiteSpace($WidgetBackendBuildReceipt)) {
+            throw 'The widget backend requires an explicit root runtime input and build receipt.'
+        }
+        $explicitBackend = Get-Item -LiteralPath $WidgetBackendDLL -Force
+        if (-not [StringComparer]::OrdinalIgnoreCase.Equals($file.FullName, $explicitBackend.FullName)) {
+            throw 'Discovered widget backend differs from the explicitly selected artifact.'
+        }
+        Assert-CodexBarWidgetBuildReceipt $WidgetBackendBuildReceipt $file.FullName $Architecture
     }
     if (-not $destinations.Add($Destination)) { throw 'Duplicate distribution destination.' }
     if ($Kind -in @('application', 'cli', 'runtime')) {
@@ -90,8 +106,23 @@ function Add-ManifestTree([string] $Directory, [string] $Prefix, [string] $Kind)
 
 Add-ManifestFile (Join-Path $BuildDirectory 'CodexBarWindows.exe') 'CodexBarWindows.exe' 'application'
 Add-ManifestFile (Join-Path $BuildDirectory 'CodexBarCLI.exe') 'CodexBarCLI.exe' 'cli'
+# Explicit opt-in until the host executable and widget registration are integrated.
+# It remains a first-party signed binary while using the runtime PE/dependency checks.
+if (-not [string]::IsNullOrWhiteSpace($WidgetBackendDLL)) {
+    if ([IO.Path]::GetFileName($WidgetBackendDLL) -ine 'CodexBarWidgetBackend.dll') {
+        throw 'Widget backend input must be CodexBarWidgetBackend.dll.'
+    }
+    if ([string]::IsNullOrWhiteSpace($WidgetBackendBuildReceipt)) { throw 'Widget backend build receipt is required.' }
+    Add-ManifestFile $WidgetBackendDLL 'CodexBarWidgetBackend.dll' 'runtime'
+}
 if ($RuntimeFiles.Count -eq 0 -or $ResourceDirectories.Count -eq 0) { throw 'Explicit runtime and resource inputs are required.' }
+if ([string]::IsNullOrWhiteSpace($WidgetBackendDLL) -and -not [string]::IsNullOrWhiteSpace($WidgetBackendBuildReceipt)) {
+    throw 'Widget backend receipt was supplied without a backend DLL.'
+}
 foreach ($runtime in $RuntimeFiles) {
+    if ([IO.Path]::GetFileName($runtime) -ieq 'CodexBarWidgetBackend.dll') {
+        throw 'Supply the widget backend through WidgetBackendDLL and its build receipt.'
+    }
     if ([IO.Path]::GetExtension($runtime) -ine '.dll') { throw 'Runtime inputs must be DLL files.' }
     Add-ManifestFile $runtime ([IO.Path]::GetFileName($runtime)) 'runtime'
 }
@@ -131,6 +162,10 @@ while ($queue.Count -gt 0) {
     if ($scanned.Count -gt 1024) { throw 'Imported image limit exceeded.' }
     foreach ($import in @(Read-CodexBarPEImports $file.source)) {
         if ($dependencies.Count -ge 100000) { throw 'Dependency edge limit exceeded.' }
+        # First-party widget code cannot be supplied by search roots or declared as an OS DLL.
+        if ($import.name -ieq 'CodexBarWidgetBackend.dll' -and -not $runtimeNames.Contains($import.name)) {
+            throw 'An image imports the widget backend; supply WidgetBackendDLL and WidgetBackendBuildReceipt.'
+        }
         if (-not $runtimeNames.Contains($import.name) -and -not $systemLibraries.ContainsKey($import.name)) {
             if (-not $lookupCache.ContainsKey($import.name)) {
                 $candidates = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
@@ -167,6 +202,8 @@ while ($queue.Count -gt 0) {
         })
     }
 }
+# Dependency traversal may add files after the initial first-party check.
+$null = Assert-CodexBarFirstPartyFiles $entries.ToArray() 'destination'
 $unresolved = @($dependencies | Where-Object { $_.resolution -eq 'external_unclassified' } |
     ForEach-Object { $_.library } | Sort-Object -Unique)
 $manifest = [ordered] @{

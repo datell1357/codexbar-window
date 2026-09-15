@@ -16,6 +16,8 @@ actor WindowsSpendDashboardController {
         var sourceFailures: [SourceFailure] = []
         var openCodexObservation: WindowsOpenCodexSpendSource.Observation = .disabled
         var capturedAt: Date = Date()
+        var widgetCosts: [WindowsWidgetSnapshotBuilder.CostOnlyObservation] = []
+        var widgetCostFailures: [SourceFailure] = []
     }
     struct Options: Sendable {
         var days = 30
@@ -28,6 +30,15 @@ actor WindowsSpendDashboardController {
     enum Phase: Sendable { case idle, refreshing, ready, partial, failed, stopped }
     enum OptionsResult: Sendable { case applied, requiresCollectionReconfiguration, stopped }
     enum Failure: Sendable { case scanFailed, duplicateSourceIDs }
+    enum WidgetCostPublication: Sendable {
+        /// Source context was removed, replaced, or stopped; withdraw prior widget costs.
+        case withdrawn
+        /// No new costs are being published while collection is pending.
+        case pending
+        case failed
+        /// Successful sources remain usable independently of source-specific failures.
+        case available(costs: [WindowsWidgetSnapshotBuilder.CostOnlyObservation], failures: [SourceFailure])
+    }
     struct Snapshot: Sendable {
         let generation: UInt64
         let phase: Phase
@@ -38,11 +49,12 @@ actor WindowsSpendDashboardController {
         let failure: Failure?
         let openCodexObservation: WindowsOpenCodexSpendSource.Observation
         let sourceFailures: [SourceFailure]
+        var widgetPublication: WidgetCostPublication = .withdrawn
 
         func refreshing() -> Self {
             Self(generation: self.generation, phase: .refreshing, model: self.model, sharePayload: nil,
                  loadedAt: self.loadedAt, stale: true, failure: nil,
-                 openCodexObservation: self.openCodexObservation, sourceFailures: self.sourceFailures)
+                 openCodexObservation: self.openCodexObservation, sourceFailures: self.sourceFailures, widgetPublication: .pending)
         }
     }
     typealias Loader = @Sendable (_ historyDays: Int) async throws -> Scan
@@ -120,9 +132,20 @@ actor WindowsSpendDashboardController {
         // Failed/refreshing data remains visible with stale status but is not offered for sharing.
         let share = self.phase == .ready
             ? WindowsShareStatsBuilder.make(model: model, subscriptionNames: self.scan?.subscriptionNames ?? [:]) : nil
+        let widgetPublication: WidgetCostPublication
+        switch self.phase {
+        case .idle, .stopped: widgetPublication = .withdrawn
+        case .refreshing: widgetPublication = .pending
+        case .failed: widgetPublication = .failed
+        case .ready, .partial:
+            if let scan = self.scan {
+                widgetPublication = .available(costs: scan.widgetCosts,
+                    failures: scan.sourceFailures + scan.widgetCostFailures)
+            } else { widgetPublication = .withdrawn }
+        }
         return Snapshot(generation: self.generation, phase: self.phase, model: model, sharePayload: share,
             loadedAt: self.loadedAt, stale: self.scan != nil && (self.phase == .refreshing || self.phase == .failed),
-            failure: self.failure, openCodexObservation: self.scan?.openCodexObservation ?? .disabled, sourceFailures: self.scan?.sourceFailures ?? [])
+            failure: self.failure, openCodexObservation: self.scan?.openCodexObservation ?? .disabled, sourceFailures: self.scan?.sourceFailures ?? [], widgetPublication: widgetPublication)
     }
 
     func refresh() async {

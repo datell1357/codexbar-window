@@ -21,7 +21,7 @@ private final class WindowsTrayApplication: @unchecked Sendable {
     private lazy var host: WindowsTrayHost = WindowsTrayHost(
         onRefresh: { [weak self] in
             guard let self else { return }
-            Task { await self.runtime.refresh() }
+            Task { await self.runtime.refreshIncludingPluginDiscovery() }
             Task { await self.sessions.refresh() }
             Task { await self.remoteSessions.refresh() }
         },
@@ -383,6 +383,163 @@ private final class WindowsTrayApplication: @unchecked Sendable {
                 self.host.postProviderQuotaWarningSave(requestID: requestID, providerID: providerID, result: result)
             }
         },
+        onPluginBackupRestoreLoad: { [weak self] requestID, source in
+            guard let self else { return }
+            Task {
+                do {
+                    let review = try await self.runtime.reviewPluginBackupRestoration(source: source)
+                    self.host.postPluginApproval(requestID: requestID, reply: .replacement(review))
+                } catch {
+                    self.host.postPluginApproval(requestID: requestID, reply: .replacementFailed(.classify(error)))
+                }
+            }
+        },
+        onFailedPluginFileRemovalLoad: { [weak self] requestID, source in
+            guard let self else { return }
+            Task {
+                do {
+                    let review = try await self.runtime.reviewFailedPluginFileRemoval(source: source)
+                    self.host.postPluginApproval(requestID: requestID, reply: .removal(review))
+                } catch {
+                    self.host.postPluginApproval(requestID: requestID, reply: .removalFailed(.classify(error)))
+                }
+            }
+        },
+        onPluginRemovalLoad: { [weak self] requestID, instanceID in
+            guard let self else { return }
+            Task {
+                do {
+                    let review = try await self.runtime.reviewPluginRemoval(instanceID: instanceID)
+                    self.host.postPluginApproval(requestID: requestID, reply: .removal(review))
+                } catch {
+                    self.host.postPluginApproval(requestID: requestID, reply: .removalFailed(.classify(error)))
+                }
+            }
+        },
+        onPluginRemovalSave: { [weak self] requestID, token in
+            guard let self else { return }
+            Task {
+                do {
+                    let outcome = try await self.runtime.removeReviewedPlugin(token: token)
+                    switch outcome {
+                    case .providerRemoved: self.host.postPluginApproval(requestID: requestID, reply: .removed)
+                    case .failedFileRemoved: self.host.postPluginApproval(requestID: requestID, reply: .failedFileRemoved)
+                    }
+                } catch {
+                    await self.runtime.cancelPluginRemoval(token: token)
+                    self.host.postPluginApproval(requestID: requestID, reply: .removalFailed(.classify(error)))
+                }
+            }
+        },
+        onPluginRemovalCancel: { [weak self] token in
+            guard let self else { return }
+            Task { await self.runtime.cancelPluginRemoval(token: token) }
+        },
+        onPluginReplacementLoad: { [weak self] requestID, instanceID, source in
+            guard let self else { return }
+            Task {
+                do {
+                    let review = try await self.runtime.reviewPluginReplacement(instanceID: instanceID, source: source)
+                    self.host.postPluginApproval(requestID: requestID, reply: .replacement(review))
+                } catch {
+                    self.host.postPluginApproval(requestID: requestID, reply: .replacementFailed(.classify(error)))
+                }
+            }
+        },
+        onPluginReplacementSave: { [weak self] requestID, token in
+            guard let self else { return }
+            Task {
+                do {
+                    let outcome = try await self.runtime.replaceReviewedPlugin(token: token)
+                    switch outcome {
+                    case .replaced: self.host.postPluginApproval(requestID: requestID, reply: .replaced)
+                    case .reinstalled: self.host.postPluginApproval(requestID: requestID, reply: .reinstalled)
+                    case .restoredBackup: self.host.postPluginApproval(requestID: requestID, reply: .restoredBackup)
+                    }
+                } catch {
+                    await self.runtime.cancelPluginReplacement(token: token)
+                    self.host.postPluginApproval(requestID: requestID, reply: .replacementFailed(.classify(error)))
+                }
+            }
+        },
+        onPluginReplacementCancel: { [weak self] token in
+            guard let self else { return }
+            Task { await self.runtime.cancelPluginReplacement(token: token) }
+        },
+        onPluginInstall: { [weak self] requestID, source in
+            guard let self else { return }
+            Task {
+                do {
+                    _ = try await self.runtime.installPlugin(source: source)
+                    self.host.postPluginApproval(requestID: requestID, reply: .installed)
+                } catch let failure as WindowsPluginInstallFailure {
+                    self.host.postPluginApproval(requestID: requestID, reply: .installFailed(failure))
+                } catch {
+                    self.host.postPluginApproval(requestID: requestID, reply: .installFailed(.storageUnavailable))
+                }
+            }
+        },
+        onPluginSettingsLoad: { [weak self] requestID, instanceID in
+            guard let self else { return }
+            Task {
+                do {
+                    let snapshot = try await self.runtime.reviewPluginSettings(instanceID: instanceID)
+                    self.host.postPluginApproval(requestID: requestID, reply: .settings(snapshot))
+                } catch { self.host.postPluginApproval(requestID: requestID, reply: .failed) }
+            }
+        },
+        onPluginSettingsSave: { [weak self] requestID, token, changes in
+            guard let self else { return }
+            Task {
+                do {
+                    try await self.runtime.saveReviewedPluginSettings(token: token, changes: changes)
+                    self.host.postPluginApproval(requestID: requestID, reply: .saved)
+                } catch {
+                    await self.runtime.cancelPluginSettingsReview(token: token)
+                    self.host.postPluginApproval(requestID: requestID, reply: .failed)
+                }
+            }
+        },
+        onPluginSettingsCancel: { [weak self] token in
+            guard let self else { return }
+            Task { await self.runtime.cancelPluginSettingsReview(token: token) }
+        },
+        onPluginApprovalLoad: { [weak self] requestID, instanceID in
+            guard let self else { return }
+            Task {
+                do {
+                    let review = try await self.runtime.reviewPluginApproval(instanceID: instanceID)
+                    self.host.postPluginApproval(requestID: requestID, reply: .review(review))
+                } catch { self.host.postPluginApproval(requestID: requestID, reply: .failed) }
+            }
+        },
+        onPluginEnabledSave: { [weak self] requestID, token, enabled in
+            guard let self else { return }
+            Task {
+                do {
+                    try await self.runtime.setReviewedPluginEnabled(token: token, enabled: enabled)
+                    self.host.postPluginApproval(requestID: requestID, reply: .saved)
+                } catch { self.host.postPluginApproval(requestID: requestID, reply: .failed) }
+            }
+        },
+        onPluginApprovalRevoke: { [weak self] requestID, token in
+            guard let self else { return }
+            Task {
+                do {
+                    try await self.runtime.revokeReviewedPlugin(token: token)
+                    self.host.postPluginApproval(requestID: requestID, reply: .saved)
+                } catch { self.host.postPluginApproval(requestID: requestID, reply: .failed) }
+            }
+        },
+        onPluginApprovalSave: { [weak self] requestID, token, origins in
+            guard let self else { return }
+            Task {
+                do {
+                    try await self.runtime.approveReviewedPlugin(token: token, typedOrigins: origins)
+                    self.host.postPluginApproval(requestID: requestID, reply: .saved)
+                } catch { self.host.postPluginApproval(requestID: requestID, reply: .failed) }
+            }
+        },
         onHookSettingsLoad: { [weak self] requestID in
             guard let self else { return }
             Task {
@@ -436,6 +593,9 @@ private final class WindowsTrayApplication: @unchecked Sendable {
                 host?.postAgentSessions(snapshot)
             }
             await sessions.start()
+            await runtime.setConfiguredPluginPublisher { [weak host] ids in
+                host?.postConfiguredPluginIDs(ids)
+            }
             await runtime.setCombinedPublisher { [weak host] rows, entries in
                 host?.postRows(rows, menuEntries: entries)
             }
@@ -464,6 +624,10 @@ private final class WindowsTrayApplication: @unchecked Sendable {
                 group.addTask { await self.remoteSessions.shutdown() }
                 group.addTask { await self.runtime.shutdown() }
                 await group.waitForAll()
+            }
+            if await self.runtime.widgetBackendCleanupFailed {
+                FileHandle.standardError.write(Data(
+                    "CodexBar: widget backend cleanup is incomplete; the widget host may still need to exit.\n".utf8))
             }
             self.shutdownSignal.signal()
         }

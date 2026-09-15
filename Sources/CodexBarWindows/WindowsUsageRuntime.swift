@@ -8,7 +8,7 @@ import CryptoKit
 import Crypto
 #endif
 
-public struct WindowsUsagePresentationSettings: Sendable {
+public struct WindowsUsagePresentationSettings: Sendable, Equatable {
     public let hidePersonalInfo: Bool
     public let showOptionalCreditsAndExtraUsage: Bool
     public let usageBarsShowUsed: Bool
@@ -27,6 +27,117 @@ public struct WindowsUsagePresentationSettings: Sendable {
 /// Owns the Windows tray's provider refresh lifecycle.  Win32 callbacks only
 /// enqueue work; all provider I/O stays on this actor and is serialized.
 public actor WindowsUsageRuntime {
+    private var widgetQuotaContext = UUID()
+    private var widgetInvalidationSubscribers: [UUID: AsyncStream<UUID>.Continuation] = [:]
+
+    public struct WidgetInvalidationSubscription: Sendable {
+        public let id: UUID
+        public let events: AsyncStream<UUID>
+        public let initialRevision: UUID
+    }
+    public enum WidgetSubscriptionFailure: Error, Sendable { case stopped, tooManySubscribers }
+
+    /// UUIDs identify invalidations only; no account IDs, configuration hashes, or provider data leave this actor.
+    public func subscribeWidgetInvalidations() throws -> WidgetInvalidationSubscription {
+        guard !self.shuttingDown else { throw WidgetSubscriptionFailure.stopped }
+        guard self.widgetInvalidationSubscribers.count < 8 else { throw WidgetSubscriptionFailure.tooManySubscribers }
+        let id = UUID()
+        let pair = AsyncStream<UUID>.makeStream(bufferingPolicy: .bufferingNewest(1))
+        pair.continuation.onTermination = { [weak self] _ in
+            Task { await self?.unsubscribeWidgetInvalidations(id) }
+        }
+        self.widgetInvalidationSubscribers[id] = pair.continuation
+        let initialRevision = UUID()
+        pair.continuation.yield(initialRevision) // Reconcile before displaying retained content.
+        return WidgetInvalidationSubscription(id: id, events: pair.stream, initialRevision: initialRevision)
+    }
+
+    public func unsubscribeWidgetInvalidations(_ id: UUID) {
+        self.widgetInvalidationSubscribers.removeValue(forKey: id)?.finish()
+    }
+
+    private func emitWidgetInvalidation() {
+        let revision = UUID()
+        for continuation in self.widgetInvalidationSubscribers.values { continuation.yield(revision) }
+    }
+
+    private func finishWidgetInvalidations() {
+        let subscribers = self.widgetInvalidationSubscribers
+        self.widgetInvalidationSubscribers.removeAll()
+        for continuation in subscribers.values { continuation.finish() }
+    }
+    private var widgetQuotaConfigRevision: Data?
+    private var widgetQuotaObservations: [UsageProvider: (owner: String, codexAuthFingerprint: String?, observation: WindowsWidgetSnapshotBuilder.Observation)] = [:]
+    private var widgetAmbiguousQuotaProviders = Set<UsageProvider>()
+    private var widgetCostOwners: [String: (source: WindowsSpendSnapshotLoader.Source, revision: UUID)] = [:]
+    private let widgetService: WindowsWidgetService
+    private var widgetBackendConnection: WindowsWidgetBackendConnection?
+    private var widgetBackendLifecycleTask: Task<Void, Never>?
+    private(set) var widgetBackendLifecycle: WindowsWidgetBackendConnection.Lifecycle?
+    private(set) var widgetBackendCleanupFailed = false
+
+    /// The trusted launcher uses this factory; a second host must wait for the previous connection to close.
+    /// This creates only the backend owner. Authentication, host launch and bootstrap delivery remain external.
+    func makeWidgetBackendConnection(installedDLL: URL,
+                                     stopReceiver: @escaping @Sendable () async throws -> Void) throws
+        -> WindowsWidgetBackendConnection {
+        guard !self.shuttingDown else { throw WindowsWidgetBackendConnection.Failure.closed }
+        guard self.widgetBackendConnection == nil else { throw WindowsWidgetBackendConnection.Failure.alreadyStarted }
+        let connection = try WindowsWidgetBackendConnection(installedDLL: installedDLL, runtime: self,
+            service: self.widgetService, stopReceiver: stopReceiver)
+        self.widgetBackendConnection = connection
+        self.widgetBackendCleanupFailed = false
+        self.widgetBackendLifecycle = nil
+        let events = connection.lifecycleEvents
+        self.widgetBackendLifecycleTask = Task { [weak self, weak connection] in
+            for await state in events {
+                guard !Task.isCancelled, let connection else { return }
+                guard let finished = await self?.receiveWidgetBackendLifecycle(state, connection: connection),
+                      !finished else { return }
+            }
+        }
+        return connection
+    }
+
+    private func receiveWidgetBackendLifecycle(_ state: WindowsWidgetBackendConnection.Lifecycle,
+                                              connection: WindowsWidgetBackendConnection) -> Bool {
+        guard self.widgetBackendConnection === connection else { return true }
+        self.widgetBackendLifecycle = state
+        switch state.phase {
+        case .closed:
+            self.releaseWidgetBackendConnection()
+            return true
+        case .cleanupFailed:
+            self.widgetBackendCleanupFailed = true
+            return false
+        default: return false
+        }
+    }
+
+    private func releaseWidgetBackendConnection() {
+        self.widgetBackendLifecycleTask?.cancel()
+        self.widgetBackendLifecycleTask = nil
+        self.widgetBackendConnection = nil
+        self.widgetBackendCleanupFailed = false
+    }
+
+    /// Retain an owner whose cleanup failed so the launcher can retry instead of starting a competing host.
+    func closeWidgetBackendConnection() async throws {
+        guard let connection = self.widgetBackendConnection else { return }
+        do {
+            try await connection.close()
+            let state = await connection.lifecycleSnapshot()
+            // Another waiter may already have cleared this owner and allowed a replacement to be created.
+            if self.widgetBackendConnection === connection {
+                self.widgetBackendLifecycle = state
+                self.releaseWidgetBackendConnection()
+            }
+        } catch {
+            if self.widgetBackendConnection === connection { self.widgetBackendCleanupFailed = true }
+            throw error
+        }
+    }
+
     private let hookDispatchQueue = WindowsHookDispatchQueue()
     private var hookPreviousKeys = Set<HookQuotaLaneKey>()
     private var hookOwnershipRevision: Data?
@@ -233,6 +344,232 @@ public actor WindowsUsageRuntime {
         }
     }
 
+    private func widgetConfigurationRevision(_ config: CodexBarConfig) throws -> Data {
+        let encoder = JSONEncoder(); encoder.outputFormatting = [.sortedKeys]
+        return Data(SHA256.hash(data: try encoder.encode(config)))
+    }
+
+    /// In-process freshness stamp. It must never be serialized into a native card or transport reply.
+    struct WidgetContextStamp: Equatable, Sendable {
+        let quotaContext: UUID
+        let spendGeneration: UInt64
+        let configurationRevision: Data?
+        let presentation: WindowsUsagePresentationSettings
+        let spend: WindowsSpendSettings
+        let language: String
+        let refreshing: Bool
+        let stopped: Bool
+    }
+
+    func widgetContextStamp() throws -> WidgetContextStamp {
+        let config = try self.configStore.load()
+        let revision = try config.map { try self.widgetConfigurationRevision($0) }
+        return WidgetContextStamp(quotaContext: self.widgetQuotaContext, spendGeneration: self.spendGeneration,
+            configurationRevision: revision, presentation: WindowsUsagePresentationSettings.load(),
+            spend: WindowsSpendSettings.load(), language: WindowsStatusLocalization.Snapshot().language,
+            refreshing: self.refreshTask != nil, stopped: self.shuttingDown)
+    }
+
+    public enum WidgetQuotaSnapshotResult: Sendable {
+        case withdrawn, pending
+        case available(snapshot: WidgetSnapshot, context: UUID, spendGeneration: UInt64, unavailableProviders: [UsageProvider])
+    }
+
+    public func widgetQuotaSnapshot(now: Date) throws -> WidgetQuotaSnapshotResult {
+        guard !self.shuttingDown else { return .withdrawn }
+        guard self.refreshTask == nil else { return .pending }
+        guard let expected = self.widgetQuotaConfigRevision, let config = try self.configStore.load(),
+              try self.widgetConfigurationRevision(config) == expected else { return .withdrawn }
+        let enabled = config.enabledProviders().compactMap(\.firstPartyProvider)
+            .filter { WindowsWidgetConfiguration.selectableProviders.contains($0) }
+        let settings = WindowsUsagePresentationSettings.load()
+        var observations: [WindowsWidgetSnapshotBuilder.Observation] = []
+        var revisions: [UsageProvider: UUID] = [:]
+        for provider in enabled {
+            guard let captured = self.widgetQuotaObservations[provider]?.observation else { continue }
+            let original = captured.presentation
+            let presentation = WindowsUsagePresentation(instanceID: original.instanceID, provider: original.provider,
+                title: original.title, privacyTitle: original.privacyTitle, result: original.result, snapshot: original.snapshot,
+                hidePersonalInfo: settings.hidePersonalInfo, showOptionalUsage: settings.showOptionalCreditsAndExtraUsage,
+                usageBarsShowUsed: settings.usageBarsShowUsed, resetTimesShowAbsolute: settings.resetTimesShowAbsolute)
+            observations.append(.init(presentation: presentation, accountRevision: captured.accountRevision,
+                tokenCost: self.widgetCostForQuota(provider: provider, quotaRevision: captured.accountRevision),
+                codexExtras: WindowsWidgetCodexExtrasAdapter.make(presentation: presentation,
+                    accountRevision: captured.accountRevision)))
+            revisions[provider] = captured.accountRevision
+        }
+        let snapshot = try WindowsWidgetSnapshotBuilder.make(observations: observations, enabled: enabled,
+            expectedAccountRevisions: revisions, showUsed: settings.usageBarsShowUsed, now: now)
+        return .available(snapshot: snapshot, context: self.widgetQuotaContext, spendGeneration: self.spendGeneration,
+            unavailableProviders: enabled.filter { revisions[$0] == nil })
+    }
+
+    public func isWidgetQuotaSnapshotCurrent(context: UUID, spendGeneration: UInt64) -> Bool {
+        guard !self.shuttingDown, self.refreshTask == nil, self.widgetQuotaContext == context,
+              self.spendGeneration == spendGeneration,
+              let expected = self.widgetQuotaConfigRevision else { return false }
+        do {
+            guard let config = try self.configStore.load() else { return false }
+            return try self.widgetConfigurationRevision(config) == expected
+        } catch { return false }
+    }
+
+    /// Join only a captured Codex credential scope, never provider identity or display labels alone.
+    private func widgetCostForQuota(provider: UsageProvider, quotaRevision: UUID) -> WindowsWidgetSnapshotBuilder.TokenCost? {
+        guard provider == .codex,
+              let fingerprint = self.widgetQuotaObservations[provider]?.codexAuthFingerprint else { return nil }
+        let revisions = self.widgetCostAccountRevisions()
+        guard let revision = revisions[provider],
+              case let .available(costs, _) = self.widgetCostResult(expectedAccountRevisions: revisions) else { return nil }
+        let owners = self.widgetCostOwners.values.filter { $0.source.provider == provider && $0.revision == revision }
+        guard owners.count == 1, let owner = owners.first, owner.source.verifyCodexOwner,
+              CodexAuthFingerprint.normalize(owner.source.expectedCodexAuthFingerprint) == fingerprint else { return nil }
+        let matching = costs.filter { $0.provider == provider && $0.cost.accountRevision == revision }
+        guard matching.count == 1, let cost = matching.first?.cost else { return nil }
+        // Only this ownership-confirmed join translates the cost revision into the quota observation's revision.
+        return .init(accountRevision: quotaRevision, summary: cost.summary, dailyUsage: cost.dailyUsage)
+    }
+
+    private func clearWidgetQuotaContext() {
+        self.widgetQuotaContext = UUID()
+        self.emitWidgetInvalidation()
+        self.widgetQuotaConfigRevision = nil
+        self.widgetQuotaObservations = [:]
+        self.widgetAmbiguousQuotaProviders = []
+    }
+
+    private func recordWidgetQuota(presentation: WindowsUsagePresentation, provider: UsageProvider, owner: String?,
+                                   codexAuthFingerprint: String?) {
+        guard let owner, !owner.isEmpty else {
+            self.widgetQuotaObservations.removeValue(forKey: provider)
+            self.widgetAmbiguousQuotaProviders.insert(provider)
+            return
+        }
+        guard !self.widgetAmbiguousQuotaProviders.contains(provider) else { return }
+        let digest = SHA256.hash(data: Data(owner.utf8)).map { String(format: "%02x", $0) }.joined()
+        if let existing = self.widgetQuotaObservations[provider] {
+            guard existing.owner == digest else {
+                self.widgetQuotaObservations.removeValue(forKey: provider)
+                self.widgetAmbiguousQuotaProviders.insert(provider)
+                return
+            }
+            guard presentation.snapshot.updatedAt >= existing.observation.presentation.snapshot.updatedAt else { return }
+        }
+        let revision = self.widgetQuotaObservations[provider]?.observation.accountRevision ?? UUID()
+        self.widgetQuotaObservations[provider] = (digest, CodexAuthFingerprint.normalize(codexAuthFingerprint),
+            .init(presentation: presentation, accountRevision: revision))
+    }
+
+    /// Revisions are reused only for identical captured source settings and a single unambiguous provider source.
+    private func attachWidgetCostOwnership(_ sources: [WindowsSpendSnapshotLoader.Source]) -> [WindowsSpendSnapshotLoader.Source] {
+        let counts = Dictionary(grouping: sources, by: \.provider).mapValues(\.count)
+        var next: [String: (source: WindowsSpendSnapshotLoader.Source, revision: UUID)] = [:]
+        let result = sources.map { original -> WindowsSpendSnapshotLoader.Source in
+            var source = original
+            guard counts[source.provider] == 1 else { return source }
+            switch source.provider {
+            case .codex:
+                guard source.verifyCodexOwner, source.expectedCodexAuthFingerprint != nil else { return source }
+            case .cursor:
+                guard let account = source.expectedCursorAccountID, !account.isEmpty,
+                      let cookie = CookieHeaderNormalizer.normalize(source.cursorCookieHeader) else { return source }
+                source.expectedWidgetScopeFingerprint = CookieHeaderCache.credentialFingerprint(cookie)
+            default:
+                // Other sources need an explicit ownership adapter; an environment or provider ID alone is not proof.
+                return source
+            }
+            let previous = self.widgetCostOwners[source.id]
+            let revision: UUID
+            if let previous, previous.source == source { revision = previous.revision }
+            else { revision = UUID() }
+            next[source.id] = (source, revision)
+            source.widgetAccountRevision = revision
+            return source
+        }
+        self.widgetCostOwners = next
+        return result
+    }
+
+    /// Exposes only successfully collected account revisions, never credential or source identifiers.
+    public func widgetCostAccountRevisions() -> [UsageProvider: UUID] {
+        guard !self.shuttingDown, self.spendState == .available, let snapshot = self.spendSnapshot,
+              let settings = self.collectedSpendSettings, WindowsSpendSettings.load() == settings,
+              case let .available(costs, _) = snapshot.widgetPublication else { return [:] }
+        var result: [UsageProvider: UUID] = [:]
+        let grouped = Dictionary(grouping: costs, by: \.provider)
+        for (provider, observations) in grouped where observations.count == 1 {
+            let revision = observations[0].cost.accountRevision
+            if self.widgetCostOwners.values.contains(where: { $0.source.provider == provider && $0.revision == revision }) {
+                result[provider] = revision
+            }
+        }
+        return result
+    }
+
+    public enum WidgetCostResult: Sendable {
+        case withdrawn, pending, failed
+        case available(costs: [WindowsWidgetSnapshotBuilder.CostOnlyObservation], unavailableProviders: [UsageProvider])
+    }
+
+    /// Read only against the host's current ownership revisions; source IDs and account labels never leave this boundary.
+    public func widgetCostResult(expectedAccountRevisions: [UsageProvider: UUID]) -> WidgetCostResult {
+        guard !self.shuttingDown else { return .withdrawn }
+        guard expectedAccountRevisions.count <= 256 else { return .failed }
+        switch self.spendState {
+        case .idle, .disabled, .stopped: return .withdrawn
+        case .collecting: return .pending
+        case .failed: return .failed
+        case .available: break
+        }
+        guard let snapshot = self.spendSnapshot, let settings = self.collectedSpendSettings,
+              WindowsSpendSettings.load() == settings else { return .withdrawn }
+        switch snapshot.widgetPublication {
+        case .withdrawn: return .withdrawn
+        case .pending: return .pending
+        case .failed: return .failed
+        case let .available(costs, failures):
+            guard costs.count <= 256, failures.count <= 256 else { return .failed }
+            var unavailable = Set(failures.map(\.provider))
+            let matching = costs.filter { expectedAccountRevisions[$0.provider] == $0.cost.accountRevision }
+            let grouped = Dictionary(grouping: matching, by: \.provider)
+            // Widget entries have one account per provider. Do not merge independent source totals implicitly.
+            for (provider, values) in grouped where values.count != 1 { unavailable.insert(provider) }
+            let accepted = matching.filter { !unavailable.contains($0.provider) }
+            return .available(costs: accepted, unavailableProviders: unavailable.sorted { $0.rawValue < $1.rawValue })
+        }
+    }
+
+    public enum WidgetCostSnapshotResult: Sendable {
+        case withdrawn, pending, failed
+        case available(snapshot: WidgetSnapshot, generation: UInt64, unavailableProviders: [UsageProvider])
+    }
+
+    /// Builds the cost-only snapshot without suspending between ownership selection and data projection.
+    /// The widget host captures its own context before calling, then rechecks both contexts before publication.
+    public func widgetCostSnapshot(now: Date) throws -> WidgetCostSnapshotResult {
+        let revisions = self.widgetCostAccountRevisions()
+        switch self.widgetCostResult(expectedAccountRevisions: revisions) {
+        case .withdrawn: return .withdrawn
+        case .pending: return .pending
+        case .failed: return .failed
+        case let .available(costs, unavailable):
+            let enabled = Set(revisions.keys).union(unavailable)
+                .filter { WindowsWidgetConfiguration.selectableProviders.contains($0) }
+                .sorted { $0.rawValue < $1.rawValue }
+            let snapshot = try WindowsWidgetSnapshotBuilder.make(observations: [], enabled: enabled,
+                expectedAccountRevisions: revisions, showUsed: WindowsUsagePresentationSettings.load().usageBarsShowUsed,
+                now: now, costOnly: costs)
+            return .available(snapshot: snapshot, generation: self.spendGeneration, unavailableProviders: unavailable)
+        }
+    }
+
+    public func isWidgetCostSnapshotCurrent(generation: UInt64) -> Bool {
+        guard !self.shuttingDown, generation == self.spendGeneration, self.spendState == .available,
+              let settings = self.collectedSpendSettings, WindowsSpendSettings.load() == settings,
+              let snapshot = self.spendSnapshot, case .available = snapshot.widgetPublication else { return false }
+        return true
+    }
+
     public func tokenActivityResult() -> ShareStatsCopyResult {
         guard !self.shuttingDown, self.canPresentSpendSnapshot,
               let snapshot = self.spendSnapshot, !snapshot.model.tokenActivity.isEmpty,
@@ -402,6 +739,8 @@ public actor WindowsUsageRuntime {
     private let claudeFetcher: ClaudeUsageFetcher
     private let pluginApprovalStore: ProviderPluginApprovalStore
     private var publisher: RowPublisher
+    private var configuredPluginIDs: [ProviderInstanceID] = []
+    private var configuredPluginPublisher: @Sendable ([ProviderInstanceID]) -> Void = { _ in }
     private var combinedPublisher: CombinedPublisher
     private var notificationPublisher: NotificationPublisher
     private var accountInvalidationPublisher: @Sendable (ProviderInstanceID) -> Void = { _ in }
@@ -431,9 +770,18 @@ public actor WindowsUsageRuntime {
     private var refreshSettings: WindowsRefreshSettings
     private var started = false
     private var pluginDiscoveryInitialized = false
+    private var pluginDiscoveryRequested = false
+    private var pluginApprovalReview: WindowsPluginApprovalReview?
+    private var pluginRemovalReview: (plan: WindowsPluginRemovalPlan,
+        providerRevision: Data?, approval: ProviderPluginApprovalBinding?)?
+    private var pluginReplacementReview: (plan: WindowsPluginReplacementPlan,
+        providerRevision: Data?, approval: ProviderPluginApprovalBinding?)?
+    private var pluginSettingsReview: (snapshot: WindowsPluginSettingsSnapshot,
+        values: [String: String], secrets: [String: String])?
     private var shuttingDown = false
+    private var shutdownTask: Task<Void, Never>?
     private var presentations: [ProviderInstanceID: WindowsUsagePresentation] = [:]
-    private enum RenderEntry { case presentation(WindowsUsagePresentation); case row(String) }
+    private enum RenderEntry { case presentation(WindowsUsagePresentation); case row(String); case pluginDiscoveryFailures(Int) }
     private var renderEntries: [RenderEntry] = []
     private var providerCopyErrors: [String: String] = [:]
     private var statusMenuEntries: [WindowsTrayMenuEntry] = []
@@ -507,6 +855,9 @@ public actor WindowsUsageRuntime {
     // Windows keeps one in-memory dataset for the currently visible Codex owner.
     // Persistence is delegated to the shared history actor; no account dictionary
     // is kept here, so a stale owner cannot score another account.
+    private let planUtilizationHistoryStore = WindowsPlanUtilizationHistoryStore()
+    private var planUtilizationHistoryNotices: [ProviderInstanceID: String] = [:]
+    private enum PlanHistoryOwner { case scoped(String), unscoped, unavailable }
     private let historicalUsageHistoryStore: HistoricalUsageHistoryStore
     private var codexHistoricalDataset: CodexHistoricalDataset?
     private var codexHistoricalDatasetAccountKey: String?
@@ -515,6 +866,7 @@ public actor WindowsUsageRuntime {
 
     public init(
         configStore: CodexBarConfigStore = CodexBarConfigStore(),
+        widgetSettingsURL: URL? = nil,
         publisher: @escaping RowPublisher = { _ in },
         combinedPublisher: @escaping CombinedPublisher = { _, _ in },
         notificationPublisher: @escaping NotificationPublisher = { _ in },
@@ -531,6 +883,12 @@ public actor WindowsUsageRuntime {
     {
         let browserDetection = BrowserDetection()
         self.configStore = configStore
+        // Follow the selected app configuration root, including explicit portable/config overrides.
+        // Construction does not read or create files; the first widget operation loads the store.
+        let widgetURL = widgetSettingsURL ?? configStore.fileURL.deletingLastPathComponent()
+            .appendingPathComponent("WindowsWidgets", isDirectory: true)
+            .appendingPathComponent("settings.json")
+        self.widgetService = WindowsWidgetService(store: WindowsWidgetConfigurationStore(url: widgetURL))
         self.browserDetection = browserDetection
         self.fetcher = UsageFetcher()
         self.claudeFetcher = ClaudeUsageFetcher(browserDetection: browserDetection)
@@ -548,6 +906,11 @@ public actor WindowsUsageRuntime {
 
     public func setPublisher(_ publisher: @escaping RowPublisher) {
         self.publisher = publisher
+    }
+
+    public func setConfiguredPluginPublisher(_ publisher: @escaping @Sendable ([ProviderInstanceID]) -> Void) {
+        self.configuredPluginPublisher = publisher
+        if !self.shuttingDown { publisher(self.configuredPluginIDs) }
     }
 
     public func setCombinedPublisher(_ publisher: @escaping CombinedPublisher) {
@@ -1521,12 +1884,15 @@ public actor WindowsUsageRuntime {
     }
 
     private func invalidateSelectedAccountState(_ providerID: ProviderInstanceID) {
+        self.clearWidgetQuotaContext()
         self.spendGeneration &+= 1
         self.collectedSpendSources = nil
+        self.widgetCostOwners = [:]
         self.spendSnapshot = nil
         self.spendState = .idle
         // Delivery adapters run synchronously, preserving order with earlier runtime notifications.
         self.accountInvalidationPublisher(providerID)
+        self.planUtilizationHistoryNotices.removeValue(forKey: providerID)
         self.dashboardContextCache.removeValue(forKey: providerID)
         // Session transitions are keyed only by provider. The first observation for
         // a newly selected account must establish a baseline, not compare with its predecessor.
@@ -2126,7 +2492,9 @@ public actor WindowsUsageRuntime {
     }
 
     public func presentationSettingsDidChange() async {
-        guard !self.shuttingDown, !self.renderEntries.isEmpty else { return }
+        guard !self.shuttingDown else { return }
+        self.emitWidgetInvalidation()
+        guard !self.renderEntries.isEmpty else { return }
         self.publishRenderEntries(settings: WindowsUsagePresentationSettings.load())
     }
 
@@ -2135,6 +2503,7 @@ public actor WindowsUsageRuntime {
     /// in-flight refresh when necessary.
     public func optionalUsageSettingsDidChange() async {
         guard !self.shuttingDown else { return }
+        self.emitWidgetInvalidation()
         let showOptionalUsage = WindowsUsagePresentationSettings.load().showOptionalCreditsAndExtraUsage
         guard showOptionalUsage else {
             self.queuedOptionalRefresh = false
@@ -2243,6 +2612,7 @@ public actor WindowsUsageRuntime {
 
     public func spendSettingsDidChange() async {
         guard !self.shuttingDown else { return }
+        self.emitWidgetInvalidation()
         let settings = WindowsSpendSettings.load()
         let previousSnapshot = self.spendSnapshot
         let previousSettings = self.collectedSpendSettings
@@ -2274,12 +2644,364 @@ public actor WindowsUsageRuntime {
             }
         }
         // Source/calendar changes, missing data, or a stopped controller need a fresh scan.
+        self.widgetCostOwners = [:]
         let refreshing = self.refreshTask != nil
         if refreshing { self.queuedSpendRefresh = true }
         self.spendController = nil
         if let controller { await controller.stop() }
         guard !self.shuttingDown, generation == self.spendGeneration else { return }
         if !refreshing { await self.refresh() }
+    }
+
+    func reviewPluginRemoval(instanceID: ProviderInstanceID) throws -> WindowsPluginRemovalReview {
+        guard !self.shuttingDown else { throw WindowsPluginRemovalFailure.unavailable }
+        guard self.refreshTask == nil else { throw WindowsPluginRemovalFailure.busy }
+        self.pluginRemovalReview = nil
+        let config = try self.configStore.loadOrCreateDefault()
+        let approval = self.pluginApprovalStore.recordedBindings().first { $0.instanceID == instanceID }
+        let installed = UserProviderPluginRegistry.plugin(for: instanceID)
+        guard installed != nil || config.providerConfig(for: instanceID) != nil || approval != nil else {
+            throw WindowsPluginRemovalFailure.changed
+        }
+        let plan = try WindowsPluginRemovalPlan.prepare(instanceID: instanceID, installed: installed)
+        self.pluginRemovalReview = (plan, try self.pluginProviderRevision(config.providerConfig(for: instanceID)), approval)
+        return plan.review
+    }
+
+    func reviewFailedPluginFileRemoval(source: URL) throws -> WindowsPluginRemovalReview {
+        guard !self.shuttingDown else { throw WindowsPluginRemovalFailure.unavailable }
+        guard self.refreshTask == nil else { throw WindowsPluginRemovalFailure.busy }
+        self.pluginRemovalReview = nil
+        let plan = try WindowsPluginRemovalPlan.prepareFailedFile(sourceURL: source)
+        self.pluginRemovalReview = (plan, nil, nil)
+        return plan.review
+    }
+
+    func cancelPluginRemoval(token: UUID) {
+        guard self.pluginRemovalReview?.plan.review.token == token else { return }
+        self.pluginRemovalReview = nil
+    }
+
+    func removeReviewedPlugin(token: UUID) throws -> WindowsPluginRemovalOutcome {
+        guard !self.shuttingDown else { throw WindowsPluginRemovalFailure.unavailable }
+        guard self.refreshTask == nil else { throw WindowsPluginRemovalFailure.busy }
+        guard let pending = self.pluginRemovalReview, pending.plan.review.token == token else {
+            throw WindowsPluginRemovalFailure.changed
+        }
+        self.pluginRemovalReview = nil
+        let id = pending.plan.review.instanceID
+        var changesStarted = false
+        defer {
+            self.pluginApprovalReview = nil
+            self.pluginSettingsReview = nil
+            self.pluginReplacementReview = nil
+            self.schedulePluginApprovalRefresh()
+        }
+        do {
+            try pending.plan.commit {
+                guard let id else { return } // File-only removal never reads or mutates saved credentials.
+                // Re-read after pinning files, retaining unrelated current provider configuration.
+                var config = try self.configStore.loadOrCreateDefault()
+                guard try self.pluginProviderRevision(config.providerConfig(for: id)) == pending.providerRevision else {
+                    throw WindowsPluginRemovalFailure.changed
+                }
+                try self.pluginApprovalStore.remove(instanceID: id, expected: pending.approval)
+                changesStarted = true
+                config.providers.removeAll { $0.id == id }
+                try self.configStore.save(config)
+                self.configuredPluginIDs = config.providers.map(\.id).filter { $0.firstPartyProvider == nil }
+                self.configuredPluginPublisher(self.configuredPluginIDs)
+                self.latestEnabledProviderIDs?.remove(id)
+                self.presentations.removeValue(forKey: id)
+                self.providerCopyErrors.removeValue(forKey: id.rawValue)
+                self.statusMenuEntries.removeAll { $0.providerID == id.rawValue }
+                self.renderEntries.removeAll {
+                    if case let .presentation(presentation) = $0 { return presentation.instanceID == id }
+                    return false
+                }
+                self.accountInvalidationPublisher(id)
+                self.publishRenderEntries(settings: WindowsUsagePresentationSettings.load())
+            }
+        } catch {
+            if changesStarted { throw WindowsPluginRemovalFailure.partiallyRemoved }
+            if id == nil, error as? WindowsPluginRemovalFailure == .partiallyRemoved {
+                throw WindowsPluginRemovalFailure.fileRemovalIncomplete
+            }
+            throw error
+        }
+        return id == nil ? .failedFileRemoved : .providerRemoved
+    }
+
+    func reviewPluginReplacement(instanceID: ProviderInstanceID, source: URL) throws -> WindowsPluginReplacementReview {
+        guard !self.shuttingDown else { throw WindowsPluginInstallFailure.appUnavailable }
+        guard self.refreshTask == nil else { throw WindowsPluginInstallFailure.busy }
+        self.pluginReplacementReview = nil
+        let config = try self.configStore.loadOrCreateDefault()
+        let approval = self.pluginApprovalStore.recordedBindings().first { $0.instanceID == instanceID }
+        let plan: WindowsPluginReplacementPlan
+        if let installed = UserProviderPluginRegistry.plugin(for: instanceID) {
+            plan = try WindowsPluginReplacementPlan.prepare(source: source, installed: installed)
+        } else {
+            guard config.providerConfig(for: instanceID) != nil || approval != nil else {
+                throw WindowsPluginApprovalFailure.missingPlugin
+            }
+            plan = try WindowsPluginReplacementPlan.prepareReinstallation(source: source, instanceID: instanceID)
+        }
+        let revision = try self.pluginProviderRevision(config.providerConfig(for: instanceID))
+        self.pluginReplacementReview = (plan, revision, approval)
+        return plan.review
+    }
+
+    func reviewPluginBackupRestoration(source: URL) throws -> WindowsPluginReplacementReview {
+        guard !self.shuttingDown else { throw WindowsPluginReplacementFailure.unavailable }
+        guard self.refreshTask == nil else { throw WindowsPluginReplacementFailure.busy }
+        self.pluginReplacementReview = nil
+        let config = try self.configStore.loadOrCreateDefault()
+        let plan = try WindowsPluginReplacementPlan.prepareBackupRestoration(source: source)
+        let id = plan.review.instanceID
+        let approval = self.pluginApprovalStore.recordedBindings().first { $0.instanceID == id }
+        let revision = try self.pluginProviderRevision(config.providerConfig(for: id))
+        self.pluginReplacementReview = (plan, revision, approval)
+        return plan.review
+    }
+
+    func cancelPluginReplacement(token: UUID) {
+        guard self.pluginReplacementReview?.plan.review.token == token else { return }
+        self.pluginReplacementReview = nil
+    }
+
+    func replaceReviewedPlugin(token: UUID) async throws -> WindowsPluginReplacementOutcome {
+        guard !self.shuttingDown else { throw WindowsPluginInstallFailure.appUnavailable }
+        guard self.refreshTask == nil else { throw WindowsPluginInstallFailure.busy }
+        guard let pending = self.pluginReplacementReview, pending.plan.review.token == token else {
+            throw WindowsPluginReplacementFailure.changed
+        }
+        self.pluginReplacementReview = nil
+        let id = pending.plan.review.instanceID
+        var config = try self.configStore.loadOrCreateDefault()
+        guard try self.pluginProviderRevision(config.providerConfig(for: id)) == pending.providerRevision else {
+            throw WindowsPluginReplacementFailure.changed
+        }
+        var safetyChangesStarted = false
+        defer {
+            self.pluginApprovalReview = nil
+            self.pluginSettingsReview = nil
+            self.schedulePluginApprovalRefresh()
+        }
+        do {
+            _ = try pending.plan.commit {
+                safetyChangesStarted = true
+                try self.pluginApprovalStore.remove(instanceID: id, expected: pending.approval)
+                var provider = config.providerConfig(for: id) ?? ProviderConfig(id: id)
+                provider.enabled = false
+                config.setProviderConfig(provider)
+                try self.configStore.save(config)
+            }
+        } catch {
+            if safetyChangesStarted {
+                throw pending.plan.review.previousHash == nil
+                    ? WindowsPluginReplacementFailure.reinstallStateChangedBeforeFailure
+                    : WindowsPluginReplacementFailure.stateChangedBeforeFailure
+            }
+            throw error
+        }
+        if pending.plan.review.restoringBackup { return .restoredBackup }
+        return pending.plan.review.previousHash == nil ? .reinstalled : .replaced
+    }
+
+    private func pluginProviderRevision(_ provider: ProviderConfig?) throws -> Data? {
+        guard let provider else { return nil }
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        let encoded = try encoder.encode(provider)
+        // Keep only a digest while review UI is open, not another copy of configured secrets.
+        return Data(SHA256.hash(data: encoded))
+    }
+
+    func installPlugin(source: URL) async throws -> ProviderInstanceID {
+        guard !self.shuttingDown else { throw WindowsPluginInstallFailure.appUnavailable }
+        guard self.refreshTask == nil else { throw WindowsPluginInstallFailure.busy }
+        let config: CodexBarConfig
+        do { config = try self.configStore.loadOrCreateDefault() }
+        catch { throw WindowsPluginInstallFailure.configUnavailable }
+        // New installs cannot inherit an orphaned enabled config or a previous permission grant.
+        let reserved = Set(config.providers.map(\.id) + self.pluginApprovalStore.recordedBindings().map(\.instanceID))
+        let id = try WindowsPluginInstaller.install(source: source, reservedIDs: reserved)
+        self.schedulePluginApprovalRefresh()
+        return id
+    }
+
+    func reviewPluginSettings(instanceID: ProviderInstanceID) throws -> WindowsPluginSettingsSnapshot {
+        guard !self.shuttingDown else { throw WindowsPluginApprovalFailure.unavailable }
+        guard self.refreshTask == nil else { throw WindowsPluginApprovalFailure.busy }
+        self.pluginSettingsReview = nil
+        guard let plugin = UserProviderPluginRegistry.plugin(for: instanceID) else {
+            throw WindowsPluginApprovalFailure.missingPlugin
+        }
+        let config = try self.configStore.loadOrCreateDefault()
+        let provider = config.providerConfig(for: instanceID)
+        let values = provider?.pluginSettings ?? [:], secrets = provider?.pluginSecrets ?? [:]
+        let plainKeys = Set(plugin.manifest.settings.filter { $0.kind == .plain }.map(\.key))
+        let secureKeys = Set(plugin.manifest.settings.filter { $0.kind == .secure }.map(\.key))
+        let snapshot = WindowsPluginSettingsSnapshot(token: UUID(), instanceID: instanceID,
+            sourceHash: plugin.sourceHash, sourceURL: plugin.fileURL, fields: plugin.manifest.settings,
+            values: values.filter { plainKeys.contains($0.key) },
+            storedSecretKeys: Set(secrets.keys).intersection(secureKeys))
+        self.pluginSettingsReview = (snapshot, values, secrets)
+        return snapshot
+    }
+
+    func saveReviewedPluginSettings(token: UUID, changes: [String: WindowsPluginSettingChange]) async throws {
+        guard !self.shuttingDown else { throw WindowsPluginApprovalFailure.unavailable }
+        guard self.refreshTask == nil else { throw WindowsPluginApprovalFailure.busy }
+        guard let review = self.pluginSettingsReview, review.snapshot.token == token else {
+            throw WindowsPluginApprovalFailure.changed
+        }
+        self.pluginSettingsReview = nil
+        guard let plugin = UserProviderPluginRegistry.plugin(for: review.snapshot.instanceID),
+              plugin.fileURL == review.snapshot.sourceURL,
+              plugin.sourceHash == review.snapshot.sourceHash else { throw WindowsPluginApprovalFailure.changed }
+        try self.requireReviewedPluginSource(url: review.snapshot.sourceURL, hash: review.snapshot.sourceHash)
+        var config = try self.configStore.loadOrCreateDefault()
+        let provider = config.providerConfig(for: review.snapshot.instanceID) ?? ProviderConfig(id: review.snapshot.instanceID)
+        guard (provider.pluginSettings ?? [:]) == review.values,
+              (provider.pluginSecrets ?? [:]) == review.secrets else { throw WindowsPluginApprovalFailure.changed }
+        let updated = try WindowsPluginSettingsEditor.applying(changes, fields: plugin.manifest.settings, to: provider)
+        // Validate endpoint/auth policy, but never grant approval as a side effect of editing settings.
+        _ = try plugin.approvalBinding(settings: updated.pluginSettings ?? [:])
+        config.setProviderConfig(updated)
+        try self.configStore.save(config)
+        self.pluginApprovalReview = nil
+        self.schedulePluginApprovalRefresh()
+    }
+
+    func cancelPluginSettingsReview(token: UUID) {
+        guard self.pluginSettingsReview?.snapshot.token == token else { return }
+        self.pluginSettingsReview = nil
+    }
+
+    private func requireReviewedPluginSource(url: URL, hash: String) throws {
+        let file = try FileHandle(forReadingFrom: url)
+        defer { try? file.close() }
+        let bytes = try file.read(upToCount: UserProviderPlugin.maximumSourceBytes + 1) ?? Data()
+        guard bytes.count <= UserProviderPlugin.maximumSourceBytes,
+              SHA256.hash(data: bytes).map({ String(format: "%02x", $0) }).joined() == hash else {
+            throw WindowsPluginApprovalFailure.changed
+        }
+    }
+
+    func reviewPluginApproval(instanceID: ProviderInstanceID) throws -> WindowsPluginApprovalReview {
+        guard !self.shuttingDown else { throw WindowsPluginApprovalFailure.unavailable }
+        guard self.refreshTask == nil else { throw WindowsPluginApprovalFailure.busy }
+        self.pluginApprovalReview = nil
+        let stored = self.pluginApprovalStore.recordedBindings().first { $0.instanceID == instanceID }
+        let review: WindowsPluginApprovalReview
+        do {
+            guard let plugin = UserProviderPluginRegistry.plugin(for: instanceID) else {
+                throw WindowsPluginApprovalFailure.missingPlugin
+            }
+            let config = try self.configStore.loadOrCreateDefault()
+            let binding = try plugin.approvalBinding(settings: config.providerConfig(for: instanceID)?.pluginSettings ?? [:])
+            review = WindowsPluginApprovalReview(token: UUID(), instanceID: instanceID,
+                name: plugin.manifest.name, sourceHash: plugin.sourceHash, binding: binding,
+                previousBinding: stored, alreadyApproved: stored == binding, approvalAvailable: true,
+                isEnabled: config.enabledProviders().contains(instanceID),
+                fileURL: plugin.fileURL)
+        } catch {
+            // Revocation remains available even when config parsing, discovery, or binding resolution fails.
+            guard let stored else { throw error }
+            review = WindowsPluginApprovalReview(token: UUID(), instanceID: instanceID,
+                name: instanceID.rawValue, sourceHash: "", binding: stored,
+                previousBinding: stored, alreadyApproved: true, approvalAvailable: false,
+                isEnabled: (try? self.configStore.loadOrCreateDefault()).map { $0.enabledProviders().contains(instanceID) }, fileURL: nil)
+        }
+        self.pluginApprovalReview = review
+        return review
+    }
+
+    /// Invoked only by an explicit approval action after displaying the full binding and required origins.
+    func approveReviewedPlugin(token: UUID, typedOrigins: [String]) async throws {
+        guard !self.shuttingDown else { throw WindowsPluginApprovalFailure.unavailable }
+        guard self.refreshTask == nil else { throw WindowsPluginApprovalFailure.busy }
+        guard let review = self.pluginApprovalReview, review.token == token,
+              review.approvalAvailable, let reviewedURL = review.fileURL else {
+            throw WindowsPluginApprovalFailure.changed
+        }
+        guard typedOrigins.sorted() == review.binding.typedConfirmationOrigins.sorted() else {
+            throw WindowsPluginApprovalFailure.confirmationRequired
+        }
+        // Consume the review before checking disk/config so a failed attempt cannot replay stale consent.
+        self.pluginApprovalReview = nil
+        guard let plugin = UserProviderPluginRegistry.plugin(for: review.instanceID),
+              plugin.fileURL == review.fileURL, plugin.sourceHash == review.sourceHash else {
+            throw WindowsPluginApprovalFailure.changed
+        }
+        let config = try self.configStore.loadOrCreateDefault()
+        let binding = try plugin.approvalBinding(
+            settings: config.providerConfig(for: review.instanceID)?.pluginSettings ?? [:])
+        guard binding == review.binding else { throw WindowsPluginApprovalFailure.changed }
+        try self.requireReviewedPluginSource(url: reviewedURL, hash: review.sourceHash)
+        try self.pluginApprovalStore.record(binding, replacing: review.previousBinding)
+        self.schedulePluginApprovalRefresh()
+    }
+
+    /// Revocation uses the reviewed identity and does not require a valid current plugin file or endpoint.
+    func revokeReviewedPlugin(token: UUID) async throws {
+        guard !self.shuttingDown else { throw WindowsPluginApprovalFailure.unavailable }
+        guard self.refreshTask == nil else { throw WindowsPluginApprovalFailure.busy }
+        guard let review = self.pluginApprovalReview, review.token == token else {
+            throw WindowsPluginApprovalFailure.changed
+        }
+        self.pluginApprovalReview = nil
+        try self.pluginApprovalStore.remove(instanceID: review.instanceID, expected: review.previousBinding)
+        self.schedulePluginApprovalRefresh()
+    }
+
+    func setReviewedPluginEnabled(token: UUID, enabled: Bool) async throws {
+        guard !self.shuttingDown else { throw WindowsPluginApprovalFailure.unavailable }
+        guard self.refreshTask == nil else { throw WindowsPluginApprovalFailure.busy }
+        guard let review = self.pluginApprovalReview, review.token == token,
+              review.instanceID.firstPartyProvider == nil, let previous = review.isEnabled else {
+            throw WindowsPluginApprovalFailure.changed
+        }
+        self.pluginApprovalReview = nil
+        var config = try self.configStore.loadOrCreateDefault()
+        guard config.enabledProviders().contains(review.instanceID) == previous else {
+            throw WindowsPluginApprovalFailure.changed
+        }
+        if enabled {
+            guard review.approvalAvailable,
+                  let plugin = UserProviderPluginRegistry.plugin(for: review.instanceID) else {
+                throw WindowsPluginApprovalFailure.missingPlugin
+            }
+            let binding = try plugin.approvalBinding(
+                settings: config.providerConfig(for: review.instanceID)?.pluginSettings ?? [:])
+            guard self.pluginApprovalStore.isApproved(binding) else {
+                throw WindowsPluginApprovalFailure.confirmationRequired
+            }
+        }
+        var provider = config.providerConfig(for: review.instanceID) ?? ProviderConfig(id: review.instanceID)
+        provider.enabled = enabled
+        config.setProviderConfig(provider)
+        try self.configStore.save(config)
+        self.schedulePluginApprovalRefresh()
+    }
+
+    private func schedulePluginApprovalRefresh() {
+        // Persistence already succeeded. A later provider/network error must not delay its acknowledgement.
+        self.pluginDiscoveryRequested = true
+        Task { [weak self] in
+            guard let self else { return }
+            await self.refresh()
+        }
+    }
+
+    /// Manual refresh rediscovers installed plugin files at the next serialized refresh boundary.
+    /// Existing fetch approval remains bound to the declared permissions and resolved origins.
+    public func refreshIncludingPluginDiscovery() async {
+        guard !self.shuttingDown else { return }
+        self.pluginDiscoveryRequested = true
+        if self.refreshTask == nil { await self.refresh() }
     }
 
     /// Refreshes enabled providers once. A second request while a
@@ -2304,7 +3026,7 @@ public actor WindowsUsageRuntime {
             let spendRefreshNeeded = self.queuedSpendRefresh
             let codexWebSettingsRefreshNeeded = self.queuedCodexWebSettingsRefresh
             guard !self.shuttingDown,
-                  statusRefreshNeeded || optionalRefreshNeeded || predictiveSettingsRefreshNeeded || codexWebSettingsRefreshNeeded || spendRefreshNeeded
+                  statusRefreshNeeded || optionalRefreshNeeded || predictiveSettingsRefreshNeeded || codexWebSettingsRefreshNeeded || spendRefreshNeeded || self.pluginDiscoveryRequested
             else {
                 self.queuedStatusRefresh = false
                 self.queuedSpendRefresh = false
@@ -2328,6 +3050,7 @@ public actor WindowsUsageRuntime {
         self.hookUnresolvedAccountCount = 0
         self.pendingHookRefresh = nil
         defer { self.hookRefreshAccounts.removeAll() }
+        self.clearWidgetQuotaContext()
         self.spendGeneration &+= 1
         self.spendSnapshot = nil
         self.spendState = .idle
@@ -2336,11 +3059,15 @@ public actor WindowsUsageRuntime {
         let presentationSettings = WindowsUsagePresentationSettings.load()
         let fetchOptionalUsage = presentationSettings.showOptionalCreditsAndExtraUsage
         do {
-            if !self.pluginDiscoveryInitialized {
+            if !self.pluginDiscoveryInitialized || self.pluginDiscoveryRequested {
+                self.pluginDiscoveryRequested = false
                 _ = UserProviderPluginRegistry.refresh()
                 self.pluginDiscoveryInitialized = true
             }
             let config = try self.configStore.loadOrCreateDefault()
+            self.configuredPluginIDs = config.providers.map(\.id).filter { $0.firstPartyProvider == nil }
+            self.configuredPluginPublisher(self.configuredPluginIDs)
+            self.widgetQuotaConfigRevision = try self.widgetConfigurationRevision(config)
             await self.hookDispatchQueue.configure(config.hooks ?? HooksConfig(), hidePersonalInfo: presentationSettings.hidePersonalInfo)
             guard !self.shuttingDown, !Task.isCancelled else { return }
             self.reconcileConfiguredAccounts(config)
@@ -2413,6 +3140,8 @@ public actor WindowsUsageRuntime {
             self.reconcileCodexOwner(codexAccountContext)
             let refreshHistoricalTrackingGeneration = self.historicalTrackingGeneration
             var entries: [RenderEntry] = []
+            let pluginFailures = UserProviderPluginRegistry.allResults.filter { $0.error != nil }.count
+            if pluginFailures > 0 { entries.append(.pluginDiscoveryFailures(pluginFailures)) }
             if let statusHookNotice { entries.append(.row(statusHookNotice)) }
             self.presentations.removeAll(keepingCapacity: true)
             self.providerCopyErrors.removeAll(keepingCapacity: true)
@@ -2624,17 +3353,19 @@ public actor WindowsUsageRuntime {
             if let previous = self.spendController { await previous.stop() }
             self.spendController = nil
             self.collectedSpendSources = nil
+            self.widgetCostOwners = [:]
             self.spendState = .disabled
             return
         }
         do {
             // Pin the calendar before a first enabled scan. Loading preferences alone never writes.
             try settings.save()
-            let sources = try WindowsSpendSourceResolver.resolve(config: config, settings: settings,
+            let resolvedSources = try WindowsSpendSourceResolver.resolve(config: config, settings: settings,
                 environment: ProcessInfo.processInfo.environment,
                 cacheRoot: self.configStore.fileURL.deletingLastPathComponent()
                     .appendingPathComponent("spend-cache", isDirectory: true),
                 codexContext: codexContext)
+            let sources = self.attachWidgetCostOwnership(resolvedSources)
             let canReuse = self.collectedSpendSettings == settings && self.collectedSpendSources == sources &&
                 !settings.openCodexUsageLogsEnabled && !sources.isEmpty &&
                 sources.allSatisfy(\.supportsRetainedCollection)
@@ -2669,6 +3400,7 @@ public actor WindowsUsageRuntime {
                 self.spendController = nil
                 self.spendSnapshot = nil
                 self.collectedSpendSources = nil
+                self.widgetCostOwners = [:]
                 self.collectedSpendSettings = nil
                 self.spendState = .idle
                 return
@@ -2682,6 +3414,7 @@ public actor WindowsUsageRuntime {
         } catch {
             guard !self.shuttingDown, generation == self.spendGeneration else { return }
             // Do not expose credential, path, or configuration decoder diagnostics to the dashboard.
+            self.widgetCostOwners = [:]
             self.spendSnapshot = nil
             self.spendState = .failed
         }
@@ -2701,9 +3434,19 @@ public actor WindowsUsageRuntime {
                     showOptionalUsage: settings.showOptionalCreditsAndExtraUsage,
                     usageBarsShowUsed: settings.usageBarsShowUsed,
                     resetTimesShowAbsolute: settings.resetTimesShowAbsolute)
-                let rows = updated.rows()
+                var rows = updated.rows()
+                if let notice = self.planUtilizationHistoryNotices[presentation.instanceID] {
+                    rows.append(WindowsStatusLocalization.text(notice))
+                }
                 copyRows[presentation.instanceID.rawValue] = WindowsClipboard.summary(rows: rows)
                 return rows
+            case let .pluginDiscoveryFailures(count):
+                let localization = WindowsStatusLocalization.Snapshot()
+                let formatter = NumberFormatter()
+                formatter.locale = Locale(identifier: localization.language)
+                formatter.numberStyle = .decimal
+                let number = formatter.string(from: NSNumber(value: count)) ?? String(count)
+                return [localization.text("plugin_discoveryFailures").replacingOccurrences(of: "{count}", with: number)]
             case let .row(row): return [row]
             }
         }
@@ -2735,8 +3478,24 @@ public actor WindowsUsageRuntime {
     }
 
     public func shutdown() async {
-        guard !self.shuttingDown else { return }
+        if let task = self.shutdownTask {
+            await task.value
+            return
+        }
         self.shuttingDown = true
+        // All callers await the same cleanup, including the widget receiver/server join.
+        // Caller cancellation must not cancel resource teardown halfway through.
+        let task = Task { await self.performShutdown() }
+        self.shutdownTask = task
+        await task.value
+    }
+
+    private func performShutdown() async {
+        self.pluginRemovalReview = nil
+        self.pluginReplacementReview = nil
+        self.pluginSettingsReview = nil
+        self.pluginApprovalReview = nil
+        self.pluginDiscoveryRequested = false
         self.queuedStatusRefresh = false
         self.providerStatusGeneration &+= 1
         let statusTask = self.providerStatusTask
@@ -2757,6 +3516,11 @@ public actor WindowsUsageRuntime {
         self.spendGeneration &+= 1
         self.spendSnapshot = nil
         self.spendState = .stopped
+        self.clearWidgetQuotaContext()
+        self.finishWidgetInvalidations()
+        do { try await self.closeWidgetBackendConnection() }
+        catch { self.widgetBackendCleanupFailed = true }
+        self.widgetCostOwners = [:]
         if let controller = self.spendController { await controller.stop() }
         self.spendController = nil
         self.scheduleGeneration &+= 1
@@ -2967,6 +3731,107 @@ public actor WindowsUsageRuntime {
             snapshot: selectedContext.reconciliationSnapshot,
             projection: selectedContext.visibleAccounts,
             includeVisibleAccounts: codexVisibleAccount != nil)
+    }
+
+    private func recordPlanUtilizationSampleIfNeeded(
+        provider: UsageProvider, result: ProviderFetchResult, config: CodexBarConfig,
+        tokenAccount: ProviderTokenAccount?, codexVisibleAccount: CodexVisibleAccount?,
+        codexAccountContext: CodexAccountContextSnapshot?, environment: [String: String],
+        claudeAccountUUIDBefore: String?, claudeAccountUUIDAfter: String?, generation: UInt64)
+    {
+        let id = provider.instanceID
+        guard !self.shuttingDown, !Task.isCancelled, generation == self.historicalTrackingGeneration,
+              self.latestEnabledProviderIDs?.contains(id) == true else { return }
+        let alwaysTracks = ProviderDescriptorRegistry.descriptor(for: provider).history.alwaysTracksPlanUtilization
+        guard alwaysTracks || (WindowsPredictivePaceWarningSettings.load().historicalTrackingEnabled &&
+            generation == self.historicalTrackingGeneration) else {
+            self.planUtilizationHistoryNotices.removeValue(forKey: id)
+            return
+        }
+        let projection = PlanUtilizationHistoryProjection.make(provider: provider, snapshot: result.usage, capturedAt: Date())
+        guard !projection.samples.isEmpty else {
+            self.planUtilizationHistoryNotices.removeValue(forKey: id)
+            return
+        }
+        do {
+            // Configuration may change while the provider request is in flight.
+            let current = try self.configStore.loadOrCreateDefault()
+            guard try self.pluginProviderRevision(current.providerConfig(for: id)) ==
+                self.pluginProviderRevision(config.providerConfig(for: id)) else { return }
+            let owner = self.planUtilizationHistoryOwner(provider: provider, result: result,
+                tokenAccount: tokenAccount, codexVisibleAccount: codexVisibleAccount,
+                codexAccountContext: codexAccountContext, environment: environment,
+                claudeAccountUUIDBefore: claudeAccountUUIDBefore, claudeAccountUUIDAfter: claudeAccountUUIDAfter)
+            let accountKey: String?
+            switch owner {
+            case let .scoped(key): accountKey = key
+            case .unscoped: accountKey = nil
+            case .unavailable:
+                self.planUtilizationHistoryNotices[id] = "plan_history_ownerUnavailable"
+                return
+            }
+            try self.planUtilizationHistoryStore.record(providerID: id, samples: projection.samples,
+                accountKey: accountKey, updatePreferred: codexVisibleAccount?.isActive ?? true,
+                identityTransition: projection.identityTransition)
+            self.planUtilizationHistoryNotices.removeValue(forKey: id)
+        } catch {
+            // A history failure does not turn a successful quota fetch into an authentication/network error.
+            self.planUtilizationHistoryNotices[id] = "plan_history_saveFailed"
+        }
+    }
+
+    private func planUtilizationHistoryOwner(
+        provider: UsageProvider, result: ProviderFetchResult, tokenAccount: ProviderTokenAccount?,
+        codexVisibleAccount: CodexVisibleAccount?, codexAccountContext: CodexAccountContextSnapshot?,
+        environment: [String: String], claudeAccountUUIDBefore: String?, claudeAccountUUIDAfter: String?) -> PlanHistoryOwner
+    {
+        func normalized(_ value: String?) -> String? {
+            guard let value = value?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased(), !value.isEmpty else { return nil }
+            return value
+        }
+        func digest(_ value: String) -> String {
+            SHA256.hash(data: Data(value.utf8)).map { String(format: "%02x", $0) }.joined()
+        }
+        if provider == .claude, result.strategyKind == .oauth || result.strategyKind == .cli {
+            let observedBefore = normalized(claudeAccountUUIDBefore)
+            let observedAfter = normalized(claudeAccountUUIDAfter)
+            guard observedBefore == observedAfter else { return .unavailable }
+            if let before = observedBefore,
+               let accountID = UUID(uuidString: before) {
+                let profile = ClaudeOAuthCredentialsStore.credentialsProfileIdentifier(environment: environment)
+                return .scoped(digest("claude:active-account:v3:\(profile):\(accountID.uuidString.lowercased())"))
+            }
+            if result.strategyKind == .oauth {
+                guard let owner = normalized(result.claudeOAuthHistoryOwnerIdentifier), owner.utf8.count == 64,
+                      owner.utf8.allSatisfy({ (48...57).contains($0) || (97...102).contains($0) }) else { return .unavailable }
+                return .scoped("__claude_oauth__:" + digest("claude:oauth-history-owner:v2:" + owner))
+            }
+        }
+        if let tokenAccount, !(provider == .claude && result.strategyKind == .cli) {
+            return .scoped(digest("\(provider.rawValue):token-account:\(tokenAccount.id.uuidString.lowercased())"))
+        }
+        if provider == .codex {
+            guard let context = codexAccountContext,
+                  let owner = self.codexHistoricalOwnership(snapshot: result.usage,
+                    codexVisibleAccount: codexVisibleAccount, codexAccountContext: context).canonicalKey else { return .unavailable }
+            return .scoped(owner)
+        }
+        let identity = result.usage.identity(for: provider.instanceID)
+        if let email = normalized(identity?.accountEmail) {
+            if provider == .claude {
+                let organization = normalized(identity?.accountOrganization).map { "org:" + $0 }
+                let plan = ClaudePlan.fromCompatibilityLoginMethod(identity?.loginMethod).map { "plan:" + $0.rawValue }
+                let login = normalized(identity?.loginMethod).map { "plan:" + $0 }
+                let suffix = (organization ?? plan ?? login).map { ":" + $0 } ?? ""
+                return .scoped(digest("claude:email:" + email + suffix))
+            }
+            return .scoped(digest(provider.rawValue + ":email:" + email))
+        }
+        if provider == .claude { return .unavailable }
+        if let organization = normalized(identity?.accountOrganization) {
+            return .scoped(digest(provider.rawValue + ":organization:" + organization))
+        }
+        return .unscoped
     }
 
     private func recordCodexHistoricalSampleIfNeeded(
@@ -3510,6 +4375,7 @@ public actor WindowsUsageRuntime {
                     signals: self.signalProvider()))
             let claudeAccountUUIDBefore = provider == .claude
                 ? ClaudeAccountProfile.accountUuid(environment: env) : nil
+            let widgetContext = self.widgetQuotaContext
             let outcome = await ProviderDescriptorRegistry.descriptor(for: provider).fetchOutcome(context: fetchContext)
             switch outcome.result {
             case let .success(result):
@@ -3525,6 +4391,16 @@ public actor WindowsUsageRuntime {
                 let title = accountLabel.map { "\(metadata.displayName) [\($0)]" } ?? metadata.displayName
                 let presentation = WindowsUsagePresentation(instanceID: provider.instanceID, provider: provider, title: title, privacyTitle: metadata.displayName, result: result, snapshot: labeledUsage, hidePersonalInfo: presentationSettings.hidePersonalInfo, showOptionalUsage: presentationSettings.showOptionalCreditsAndExtraUsage, usageBarsShowUsed: presentationSettings.usageBarsShowUsed, resetTimesShowAbsolute: presentationSettings.resetTimesShowAbsolute)
                 self.presentations[provider.instanceID] = presentation
+                if !self.shuttingDown, !Task.isCancelled, widgetContext == self.widgetQuotaContext,
+                   WindowsWidgetConfiguration.selectableProviders.contains(provider) {
+                    let owner = self.quotaAccountDiscriminator(provider: provider, snapshot: result.usage,
+                        codexVisibleAccount: codexVisibleAccount, tokenAccount: account, environment: env,
+                        strategyKind: result.strategyKind, oauthHistoryOwnerIdentifier: result.claudeOAuthHistoryOwnerIdentifier,
+                        claudeAccountUUIDBefore: claudeAccountUUIDBefore,
+                        claudeAccountUUIDAfter: provider == .claude ? ClaudeAccountProfile.accountUuid(environment: env) : nil)
+                    self.recordWidgetQuota(presentation: presentation, provider: provider, owner: owner,
+                        codexAuthFingerprint: provider == .codex && account == nil ? codexVisibleAccount?.authFingerprint : nil)
+                }
                 if config.hooks?.enabled == true, !Task.isCancelled, !self.shuttingDown {
                     let owner = self.quotaAccountDiscriminator(provider: provider, snapshot: result.usage,
                         codexVisibleAccount: codexVisibleAccount, tokenAccount: account, environment: env,
@@ -3552,6 +4428,12 @@ public actor WindowsUsageRuntime {
                     strategyKind: result.strategyKind,
                     oauthHistoryOwnerIdentifier: result.claudeOAuthHistoryOwnerIdentifier,
                     quotaWarningGeneration: quotaWarningGeneration)
+                self.recordPlanUtilizationSampleIfNeeded(provider: provider, result: result, config: config,
+                    tokenAccount: account, codexVisibleAccount: codexVisibleAccount,
+                    codexAccountContext: retainedCodexContext, environment: env,
+                    claudeAccountUUIDBefore: claudeAccountUUIDBefore,
+                    claudeAccountUUIDAfter: provider == .claude ? ClaudeAccountProfile.accountUuid(environment: env) : nil,
+                    generation: historicalTrackingGeneration)
                 await self.recordCodexHistoricalSampleIfNeeded(
                     provider: provider,
                     snapshot: result.usage,

@@ -5,6 +5,11 @@ import Foundation
 /// Numeric metric projection. The native renderer formats money using its display locale.
 public struct WindowsWidgetMetric: Sendable {
     public enum Unit: Sendable { case credits, currency(String), unknownCurrency }
+    public enum Title: Sendable {
+        case credits, extraUsageBalance, todayCost, last30DaysCost
+        case providerPeriod(String)
+    }
+    public let title: Title
     public let value: Double?
     public let unit: Unit
     public let label: String
@@ -18,11 +23,11 @@ public struct WindowsWidgetMetric: Sendable {
         switch content.instance.metric {
         case .credits:
             if content.provider == .devin, let cost = entry?.providerCost, cost.period == "Extra usage balance" {
-                return Self(value: currency(cost.currencyCode) == nil ? nil : finite(cost.used),
+                return Self(title: .extraUsageBalance, value: currency(cost.currencyCode) == nil ? nil : finite(cost.used),
                     unit: currency(cost.currencyCode).map(Unit.currency) ?? .unknownCurrency, label: "Extra usage balance",
                     tokenCount: nil, updatedAt: cost.updatedAt, isStale: content.metricIsStale, isAPIEstimate: false)
             }
-            return Self(value: finite(entry?.creditsRemaining), unit: .credits, label: "Credits left",
+            return Self(title: .credits, value: finite(entry?.creditsRemaining), unit: .credits, label: "Credits left",
                 tokenCount: nil, updatedAt: entry?.updatedAt, isStale: content.state == .stale, isAPIEstimate: false)
         case .todayCost, .last30DaysCost:
             let token = entry?.tokenUsage
@@ -33,7 +38,11 @@ public struct WindowsWidgetMetric: Sendable {
             let period = cleanLabel(today ? token?.sessionLabel : token?.last30DaysLabel) ?? (today ? "Today" : "30d")
             let estimate = content.provider == .codex
             let label = estimate ? (period.contains("API est.") ? period : period + " API est. · not billed") : period + " cost"
-            return Self(value: code == nil ? nil : finite(amount), unit: code.map(Unit.currency) ?? .unknownCurrency, label: label,
+            let title: Title
+            if today && ["Today", "Today API est.", "Today API est. · not billed"].contains(period) { title = .todayCost }
+            else if !today && ["30d", "30d API est.", "30d API est. · not billed"].contains(period) { title = .last30DaysCost }
+            else { title = .providerPeriod(period) }
+            return Self(title: title, value: code == nil ? nil : finite(amount), unit: code.map(Unit.currency) ?? .unknownCurrency, label: label,
                 tokenCount: count.flatMap { $0 >= 0 ? $0 : nil }, updatedAt: token?.updatedAt,
                 isStale: content.metricIsStale, isAPIEstimate: estimate)
         }

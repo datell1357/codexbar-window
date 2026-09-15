@@ -25,6 +25,13 @@ public actor WindowsWidgetConfigurationStore {
     /// An exclusive sidecar handle serializes cooperating writers across app/host processes.
     /// The byte comparison rejects edits made against a stale or different store snapshot.
     public func save(expected: Snapshot, mutation: WindowsWidgetConfiguration.Mutation) throws -> Snapshot {
+        try self.save(expected: expected, mutations: [mutation])
+    }
+
+    /// Validate and persist an inventory reconciliation as one bounded, revision-checked write.
+    public func save(expected: Snapshot, mutations: [WindowsWidgetConfiguration.Mutation]) throws -> Snapshot {
+        guard mutations.count <= WindowsWidgetConfiguration.maximumInstances else { throw Failure.invalidConfiguration }
+        try Task.checkCancellation()
         try self.validateLocation()
         guard expected.source == self.url else { throw Failure.changed }
         let parent = self.url.deletingLastPathComponent()
@@ -45,10 +52,13 @@ public actor WindowsWidgetConfigurationStore {
         let updated: WindowsWidgetConfiguration
         let encoded: Data
         do {
-            updated = try current.configuration.applying(mutation)
+            var candidate = current.configuration
+            for mutation in mutations { candidate = try candidate.applying(mutation) }
+            updated = candidate
             encoded = try updated.encoded()
         } catch { throw Failure.invalidConfiguration }
         if updated == current.configuration { return current }
+        try Task.checkCancellation()
         do { try encoded.write(to: self.url, options: .atomic) }
         catch { throw Failure.unavailable }
         return Snapshot(configuration: updated, bytes: encoded, source: self.url)

@@ -3579,3 +3579,1365 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - 원본의 5~30분 범위에서 미래 reset 직후를 고려한 nextRefresh를 계산한다. Windows OS가 실제 이 시각에 갱신함을 보장하지 않으며 scheduler/host 연동은 남아 있다.
 - Combined용 세션/주간 양쪽 값을 함께 제공한다. 계정별 이력/예측 차트와 native rendering, snapshot 공급은 미연결이다.
 - CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·UI/HTTP/위젯 실행 미실행.
+
+## IMPL-340 — History 위젯 일별 차트 데이터
+
+- 원본 UsageHistoryChartMode처럼 모든 공급된 일별 값에 cost가 있으면 비용 모드, 그렇지 않으면 token 모드로 투영한다. 공통 UsageChartScale을 재사용한다.
+- 366개 상한, 실제 Gregorian 날짜, 중복 날짜, 비정상 비용/토큰을 거부하고 날짜순으로 정렬한다. 값 없음과 측정된 0을 value/fraction의 nil로 구분한다.
+- currency 및 stale 상태를 전달한다. 존재하지 않는 날짜를 임의로 0으로 채우지 않는다.
+- account별 이력 수집/snapshot 공급과 native chart 렌더링·접근성·현지화·host 연결은 남아 있다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·UI/HTTP/위젯 실행 미실행.
+
+- 게시 상태: staging 자동 승인 검토가 최초 및 허용된 1회 재시도에서 모두 시간 초과됐다. IMPL-340은 로컬 미커밋 상태이며 commit/push는 실행되지 않았다. 재시도 전 사용자 지침 대기.
+
+## IMPL-341 — History 차트 날짜 간격
+
+- 각 관측값에 첫 날짜부터의 Gregorian UTC dayOffset을 부여하고 전체 calendarDayCount/missingDayCount를 전달한다. 누락된 날짜가 차트에서 압축되지 않도록 renderer가 별도 slot을 배치할 수 있다.
+- 누락 날짜의 사용량을 생성하거나 0으로 채우지 않는다. 입력이 366개 이하여도 날짜 범위가 366일을 넘으면 오류로 처리한다.
+- IMPL-340 staging 승인 검토 및 허용된 재시도 모두 시간 초과로 종료되어 추가 게시 시도는 하지 않았다. IMPL-340/341은 로컬 미커밋 상태다.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·UI/HTTP/위젯 실행 미실행. 실제 차트/host 연결과 게시 재시도 확인은 남아 있다.
+
+## IMPL-342 — Usage 위젯 표시 행
+
+- snapshot에 명시된 usageRows가 있으면 빈 배열도 그대로 존중한다. 없을 때만 descriptor 명칭과 primary/secondary/tertiary 창으로 legacy 표시 행을 구성한다.
+- 사용/잔여 표시 설정에 따른 백분율, 0~1로 제한한 막대 길이, reset timestamp 및 stale 상태를 제공한다. 값 없음은 nil로 보존하고 원래 백분율을 임의로 덮어쓰지 않는다.
+- 행 수 64개, ID/명칭 길이와 제어문자, 중복 ID 및 비정상 수치를 제한한다.
+- 원본 Codex legacy window 복원/주간 상한, Antigravity 크기별 행 선택, native renderer와 runtime 공급은 후속 작업이다.
+- 게시 재시도 확인 대기이므로 git add/commit/push를 실행하지 않았다. IMPL-340~342 로컬 미커밋. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·UI/HTTP/위젯 실행 미실행.
+
+## IMPL-343 — Usage 위젯 Codex 시간 창 호환성
+
+- 원본 legacyCodexRateWindow와 동일하게 window가 없는 Codex 명시 행의 session/weekly를 primary/secondary의 300/10080분 분류 및 기존 위치 fallback으로 복원한다.
+- 유효한 weekly 행이 소진됐고 reset이 아직 미래이거나 없으면 paired session의 유효 잔여를 0으로 표시한다. 사용률 모드에서는 100%를 표시한다. 다른 제공자 및 primary/secondary fallback ID에 임의 적용하지 않는다.
+- 원본 수치 검사를 먼저 수행하고 비정상 시각을 거부한다. stale 플래그와 reset 정보는 유지한다.
+- Antigravity 크기별 선택, native 화면/host 및 runtime 공급은 남아 있다. IMPL-340~343은 게시 재시도 확인 대기로 로컬 미커밋이다.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·UI/HTTP/위젯 실행 미실행.
+
+## IMPL-344 — 위젯 크기별 사용량 행 선택
+
+- ProviderUsagePresentation.widgetRowLimit의 small/medium 정책을 재사용하는 표시 행 overload를 추가했다. 크기 제한 없는 원본 전체 행 경로도 유지한다.
+- Antigravity summary 행을 2개 이상 표시할 수 있으면 원본처럼 Gemini 및 Claude/GPT 모델군에서 잔여량이 가장 적은 행을 각각 선택한다. 나머지는 잔여량순으로 채운다.
+- 값 없는 행은 유효한 수치 뒤에 두며 같은 수치/누락 값끼리는 원본 순서를 유지한다. used 표시 모드에서도 선택 우선순위는 잔여량 기준이다.
+- Windows 실제 size-to-family 매핑, renderer 및 host 호출은 남아 있다. 게시 재시도 확인 대기로 IMPL-340~344 로컬 미커밋. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·UI/HTTP/위젯 실행 미실행.
+
+## IMPL-345 — 위젯 표시 모델 조합
+
+- WindowsWidgetPresentation.make에서 설정/선택/최신성 해석 후 종류별 Usage/History/Metric/BurnDown 모델을 호출한다. 데이터가 없는 경우 unavailable 또는 Switcher 선택 목록을 전달한다.
+- instance ID, provider, updatedAt, 사용/잔여 모드와 nextRefresh를 함께 전달한다. 원본 snapshot 전체를 표시 모델에 포함하지 않는다.
+- 종류와 무관한 일별 history 계산은 수행하지 않는다. 필수 모델 오류는 전파하며 성공처럼 감추지 않는다.
+- 실제 Windows Widgets COM/API 호스트, adaptive card/차트 renderer, 계정별 snapshot 공급, 보조 token/code-review 표시와 설정 action 연결은 남아 있다.
+- IMPL-340~345 게시 재시도 확인 대기로 미커밋. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·UI/HTTP/위젯 실행 미실행.
+
+## IMPL-346 — 위젯 설정과 표시 서비스
+
+- WindowsWidgetService가 store load와 presentation 생성, expected revision 기반 update를 조합한다. render 결과에 해당 설정 snapshot을 함께 제공해 후속 action의 stale 저장을 거부할 수 있다.
+- Switcher action은 표시된 선택 목록 안의 provider만 공용 선택으로 저장한다. 다른 위젯 body에서 Switcher action을 실행하지 않는다.
+- 읽기/계산 전후 취소를 확인하고 store가 actor 대기 이후 및 atomic write 직전에 취소를 확인한다. 성공한 저장 이후에는 취소 오류로 바꾸지 않고 저장 결과를 반환한다.
+- OS host/등록/IPC 요청 식별 및 응답 순서 관리, 신뢰된 snapshot 공급/권한 경계, 설정 UI는 미연결이다. service 존재가 위젯 실행 가능을 뜻하지 않는다.
+- IMPL-340~346 게시 재시도 확인 대기로 로컬 미커밋. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·파일/위젯 실행 미실행.
+
+## IMPL-347 — 다중 위젯 표시 갱신
+
+- renderBatch는 설정을 한 번 읽고 동일 usage snapshot/now로 요청된 widget들을 계산한다. 최대 128개, ID 형식과 중복 요청을 제한한다.
+- 요청 순서대로 표시 결과 또는 missingInstance/invalidContent를 반환한다. 특정 widget의 history 등 필수 데이터 오류는 해당 결과에 남기고 다른 widget 계산을 계속한다.
+- 설정 읽기 실패는 전체 요청 오류로 전파한다. 항목 사이와 최종 반환 전에 취소를 확인해 취소된 batch를 부분 성공처럼 반환하지 않는다.
+- OS callback/응답 generation 관리/실제 일괄 게시 및 runtime snapshot 공급은 아직 미연결이다. IMPL-340~347 게시 재시도 확인 대기로 미커밋. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·파일/위젯 실행 미실행.
+
+## IMPL-348 — 위젯 보조 정보
+
+- Switcher/Usage/History presentation에 code-review 잔여/표시 비율과 오늘/30일 비용 metric을 연결했다. 비정상 code-review 수치는 표시값에서 배제한다.
+- 원본 compactTokenUsage처럼 전체 사용량 행이 없고 code-review 원본 값도 없을 때 token fallback을 표시할 수 있도록 한다. 크기 때문에 잘린 행을 데이터 없음으로 취급하지 않는다.
+- 비용은 설정의 메모리 복사본에 metric 종류만 바꿔 기존 resolver와 metric projection을 재사용한다. 실제 설정을 저장하지 않으며 비용 자체의 stale/API 추정치 처리를 유지한다.
+- 보조 정보의 크기별 native 배치, host/runtime 연결 및 현지화는 남아 있다. IMPL-340~348 게시 재시도 확인 대기로 로컬 미커밋. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·파일/위젯 실행 미실행.
+
+## IMPL-349 — 위젯 갱신 요청 순서
+
+- 전체 표시 위젯 요청 집합마다 UUID generation을 부여한다. 새 요청은 이전 task를 취소하고 drain한 뒤 시작하며 await 중 더 최신 요청이 오면 이전 요청은 superseded로 종료한다.
+- caller 취소를 render task로 전달하고 완료 시 generation/종료 상태를 다시 확인한다. shutdown은 새 요청을 막고 active task를 취소·drain한다.
+- 반환 이후 OS 전달 큐에 쌓인 결과도 판정할 수 있게 isCurrent를 제공한다. 실제 OS 게시 경로의 직렬화/최종 검사는 host에서 연결해야 한다.
+- partial widget 집합을 이 coordinator에 독립 업데이트처럼 보내면 안 되며 전체 visible set을 공급하는 host 계약으로 명시한다. runtime/host 공급은 미연결이다.
+- IMPL-340~349 게시 재시도 확인 대기로 로컬 미커밋. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·파일/위젯 실행 미실행.
+
+## IMPL-350 — 위젯 계정/개인정보 context 무효화
+
+- host가 usage snapshot을 얻기 전에 context ID를 캡처하고 refresh에 전달하도록 계약을 추가했다. 무효화 전 context로 얻은 snapshot 요청은 거부한다.
+- invalidateContext는 새 갱신이 없어도 이전 generation/context를 폐기하고 active task를 취소·drain한다. drain 중 더 최신 refresh가 시작되면 해당 active task를 지우지 않는다.
+- delivery 유효성에 context ID도 포함하고 shutdown도 context를 폐기한다. 이미 OS에 게시한 카드 삭제는 host의 별도 책임으로 명시한다.
+- runtime 계정/개인정보/설정 이벤트 및 실제 카드 삭제 경로는 아직 미연결이다. IMPL-340~350 게시 재시도 확인 대기로 미커밋. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·파일/위젯 실행 미실행.
+
+## IMPL-351 — 계정 확인된 기본 위젯 snapshot 생성
+
+- WindowsUsageRuntime의 presentations가 전체 결과/계정 라벨을 보관함을 확인하고 이를 직접 serialize하지 않는 builder를 추가했다.
+- 호출자가 제공한 accountRevision과 현재 provider별 expected revision이 일치하고 활성 위젯 제공자인 관측만 포함한다. 일치하는 중복 provider는 계정 혼합을 피하기 위해 오류로 처리한다.
+- 기본 primary/secondary/tertiary 수치와 시각만 복사하고 free-form resetDescription, 계정 라벨, quotaOwnerKey 및 원본 fetch 결과는 전달하지 않는다. 비정상 수치/시각/시간 창은 거부한다.
+- 이번 builder는 quota-only다. Codex projection/Claude spend-limit/Antigravity 상세 행, 비용/이력, runtime ownership revision 공급과 실제 호출은 아직 미연결이며 전체 snapshot 구현 완료가 아니다.
+- IMPL-340~351 게시 재시도 확인 대기로 로컬 미커밋. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·파일/위젯 실행 미실행.
+
+## IMPL-352 — Claude 위젯 추가 사용 한도
+
+- 원본 UsageStore.widgetUsageRows/claudeSpendLimitWindow를 읽고 실제 판단을 담당하는 공통 descriptor.menuBarWindow 정책을 직접 호출한다. Mac 앱 코드를 Windows target에 의존시키지 않는다.
+- 공통 정책이 시간 창을 반환하면 extraUsage 명시 행으로 전달하고, 처리하지 않거나 값이 없으면 기존 legacy 시간 창 fallback을 유지한다.
+- 수치/비용의 유한성을 확인하고 period 명칭은 길이/제어문자 조건을 만족할 때만 사용한다. 부적합하거나 빈 명칭은 Extra usage로 표시한다.
+- Codex projection/Antigravity 상세 행/비용·이력과 runtime 호출은 남아 있다. IMPL-340~352 게시 재시도 확인 대기로 미커밋. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·파일/위젯 실행 미실행.
+
+## IMPL-353 — Antigravity 위젯 상세 할당량
+
+- 원본 antigravityQuotaSummaryWidgetRows의 summary prefix와 공통 idleWindowIDs 정책을 사용해 사용하지 않는 모델군을 제외한다.
+- 표시할 summary가 없고 primary/secondary도 없으면 원본 compact-fallback prefix 중 usageKnown인 행을 사용한다. known=false인 summary는 잔여량 nil로 전달한다.
+- 원본과 동일하게 summary 행에 시간 창을 합성하지 않는다. extra/선택 행 수, ID/명칭, 중복 및 known window 수치를 제한한다.
+- Codex projection/비용/이력, runtime 계정 revision 공급과 실제 host 호출은 남아 있다. IMPL-340~353 게시 재시도 확인 대기로 미커밋. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·파일/위젯 실행 미실행.
+
+## IMPL-354 — Codex 위젯 시간 창 분류
+
+- CodexConsumerProjection의 classifyRateWindow/rateWindowsByLane/visibleRateLanes와 rateTitle을 읽었다. 해당 타입이 Mac 앱 target에 있어 Windows에 직접 의존시키지 않고 위젯용 분류를 옮겼다.
+- 300/10080/43200분을 session/weekly/monthly로 분류하고 나머지는 원래 primary/secondary slot을 따른다. 첫 등장 순서를 유지하며 같은 의미 lane이 반복되면 원본처럼 마지막 slot 값을 쓴다.
+- 명시 행을 생성해 이미 작성한 Codex 주간 상한 표시와 연결한다. 시간 창이 없을 때 빈 명시 행을 반환하며 월간 크레딧 한도를 임의 합성하지 않는다.
+- 웹 대시보드 extras/계정 소유권/비용·이력 및 runtime host 연결은 남아 있다. IMPL-340~354 게시 재시도 확인 대기로 미커밋. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·파일/위젯 실행 미실행.
+
+## IMPL-355 — Devin 위젯 추가 사용 잔액 공급
+
+- 원본의 Devin + showOptionalCreditsAndExtraUsage 조건을 Windows presentation.showOptionalUsage에 연결한다. 알려진 Extra usage balance 기간의 값만 widget providerCost에 복사한다.
+- used/limit/통화/갱신 시각을 확인하고 widget이 사용하지 않는 추가 provider metadata는 복사하지 않는다. 실제 갱신 시각을 유지해 기존 metric stale 계산으로 연결한다.
+- 정보 숨김/다른 제공자/해당 비용 없음은 nil로 전달한다. 전체 snapshot 계정 확인 조건은 유지한다.
+- Codex extras, token 비용/일별 이력과 runtime/OS host 연결은 남아 있다. IMPL-340~355 게시 재시도 확인 대기로 미커밋. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·파일/위젯 실행 미실행.
+
+## IMPL-356 — 계정별 토큰 비용 요약 공급
+
+- Observation에 별도의 accountRevision을 가진 TokenCost 입력을 추가했다. 현재 확인된 usage 계정 revision과 다른 비용 요약은 포함하지 않는다.
+- 오늘/30일 비용과 token 수, 통화 코드, label 길이/제어문자, 갱신 시각을 확인한 뒤 TokenUsageSummary를 새로 구성한다.
+- 새 비용 게시에는 updatedAt을 요구하고 quota 시각으로 대체하지 않는다. 기존 legacy snapshot 읽기 정책은 변경하지 않는다.
+- 실제 spend source에서 accountRevision/요약을 공급하는 adapter, 비용-only 제공자, 일별 이력, runtime/host 연결은 남아 있다. IMPL-340~356 게시 재시도 확인 대기로 미커밋. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·파일/위젯 실행 미실행.
+
+## IMPL-357 — 계정별 일별 위젯 이력 공급
+
+- TokenCost에 일별 비용/토큰 이력을 추가하고 비용 요약과 동일한 accountRevision이 확인된 경우에만 snapshot에 포함한다. 다른 계정 이력은 빈 목록으로 제외한다.
+- History의 날짜/중복/수치 검사를 공통 함수로 추출해 게시 경계에서도 적용한다. 최대 366개 관측 및 366일 이내 범위만 허용하고 날짜순으로 반환한다.
+- 누락 날짜나 nil 측정값을 0으로 채우지 않는다. 비용 요약의 독립 갱신 시각 요구를 유지한다.
+- 실제 비용 source adapter, runtime 및 OS 위젯 host 연결은 남아 있다. IMPL-340~357 게시 재시도 확인 대기로 미커밋. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·파일/위젯 실행 미실행.
+
+## IMPL-358 — Codex 위젯 부가 정보의 계정 및 표시 조건
+
+- 원본 widget snapshot과 CodexConsumerProjection의 dashboardVisibility/creditsProjection 조건을 읽고 CodexExtras 입력을 추가했다.
+- Codex이면서 계정 revision이 일치해야 전달한다. displayOnly는 두 값 모두 제외하고, hidden은 크레딧만 허용하며 코드 리뷰는 attached에서만 전달한다.
+- 부가 값의 유한성 및 관측 시각을 확인한다. 공유 snapshot에 별도 extras timestamp가 없으므로 값이 전달될 때 entry 시각은 quota/extras 중 오래된 것으로 설정해 오래된 값을 새 관측처럼 표시하지 않는다.
+- 실제 계정 및 dashboard attachment 판단을 공급할 runtime adapter와 OS host는 미연결이다. IMPL-340~358 게시 재시도 확인 대기로 미커밋. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·파일/위젯 실행 미실행.
+
+## IMPL-359 — Windows 위젯 snapshot 직렬화 경계
+
+- version 1/context ID/snapshot envelope와 명시적 millisecond epoch 날짜 형식을 가진 encode/decode를 작성했다. decode 전 2 MiB 입력 제한, encode 후 출력 제한을 적용한다.
+- 지원 제공자/중복/행 수/문자열/날짜/비용/시간 창 수치를 제한하고 일별 이력의 공통 검사 함수를 재사용한다. quotaOwnerKey 및 자유 형식 resetDescription, 불필요한 providerCost metadata는 수신 거부한다.
+- 다른 context 및 지원하지 않는 버전은 명시적 오류로 반환한다. context ID가 송신자 인증 수단은 아님을 코드에 명시했다.
+- 이는 wire codec이며 인증된 IPC transport, runtime 게시 및 OS host 호출은 아직 없다. IMPL-340~359 게시 재시도 확인 대기로 미커밋. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·파일/위젯 실행 미실행.
+
+## IMPL-360 — 직렬화 위젯 데이터의 갱신 조정기 연결
+
+- refreshEncoded를 추가해 현재 조정기 context로 envelope를 decode한 뒤 기존 refresh/renderBatch 경로에 전달한다. 호출자가 임의 expected context를 지정하지 않는다.
+- 중단/취소를 decode 앞뒤에서 확인하고 기존 refresh에서 context/세대/취소를 다시 적용한다. 잘못된 payload는 진행 중인 정상 요청을 교체하기 전에 실패한다.
+- codec의 사용하지 않는 window 검사 now 인자를 정리했다. 인증된 transport와 OS 게시 경로는 여전히 별도 구현 대상이다.
+- IMPL-340~360 게시 재시도 확인 대기로 미커밋. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·파일/위젯 실행 미실행.
+
+## IMPL-361 — Usage/Metric Adaptive Card 생성
+
+- Microsoft 공식 Windows Widgets template 문서를 읽고 version 1.6 template/data 분리 방식으로 Usage/Metric 카드 생성기를 작성했다. https://learn.microsoft.com/en-us/windows/apps/develop/widgets/widgets-create-a-template
+- 제공자명, 잔여/사용량 수치 및 막대, 리셋 시각, 코드 리뷰/비용 보조 정보, 없음/비활성/오래됨 상태를 카드 요소로 구성한다. locale 및 번역 label 입력을 받고 source 문자열은 expression에 삽입하지 않으며 Markdown을 escape한다.
+- 잘못된 수치/날짜/문자열 및 과도한 JSON 출력을 오류로 반환한다. Switcher/History/BurnDown/Combined 전용 template은 미구현 오류로 남기며 usage 카드로 대체하지 않는다.
+- 실제 OS host/렌더링/높이 적합성/현지화 연결은 미검증·미완료다. IMPL-340~361 게시 재시도 확인 대기로 미커밋. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·파일/위젯 실행 미실행.
+
+## IMPL-362 — 제공자 전환 카드 및 저장 라우팅
+
+- Switcher에 ChoiceSet/Action.Execute UI를 추가하고 Usage와 같은 quota/supplement 표시를 사용한다. 선택 가능한 제공자가 있으면 host가 생성한 actionToken을 요구한다.
+- 인증된 사용자 context에서만 선택 UI를 노출하고 callback verb/입력 크기/host 위젯 ID/카드 토큰을 확인한다. 표시된 제공자 선택지는 기존 service.switchProvider가 검사하고 기존 store.save가 설정 revision 충돌을 처리한다.
+- host는 카드별 rendered/settings/token을 보관하고 계정/개인정보 context가 폐기된 callback을 사전에 거부해야 한다. 이 host lifecycle과 실제 OS callback은 미연결이며 token 자체는 인증 수단이 아니다.
+- IMPL-340~362 게시 재시도 확인 대기로 미커밋. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·파일/위젯 실행 미실행.
+
+## IMPL-363 — 카드 생성과 갱신 delivery 연결
+
+- WindowsWidgetCardBatch가 각 presentation의 Adaptive Card payload, actionToken, 동일 batch 설정 revision을 하나의 Card로 묶도록 작성했다. 카드 생성자는 외부에서 토큰/payload를 혼합하지 못하도록 제한했다.
+- 조정기의 prepareCards는 현재 context/세대인 delivery만 허용한다. 개별 카드 실패와 지원하지 않는 종류는 요청 위치에 명시적으로 남기고 전체 취소는 throw한다.
+- WindowsWidgetAction에 host가 보관한 Card를 받는 경로를 추가해 토큰과 rendered revision을 따로 전달할 때의 혼동을 줄였다.
+- OS 게시 직전 최신 delivery 재확인, 게시 성공 카드 보관, context 폐기 시 제거는 host 구현 과제로 남아 있다. IMPL-340~363 게시 재시도 확인 대기로 미커밋. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·파일/위젯 실행 미실행.
+
+## IMPL-364 — 게시 카드 및 액션 lifecycle
+
+- recordPublished가 현재 delivery 중 host가 게시 성공을 알린 카드만 보관하도록 작성했다. 중복/알 수 없는 ID를 거부하며 실패/제거된 카드의 기존 액션 참조를 교체한다.
+- handleAction은 현재 세대에 게시된 카드만 선택하고 동시에 하나의 설정 액션을 실행한다. 카드 토큰/설정 revision 처리는 기존 handler/service로 연결한다.
+- context 무효화와 shutdown은 보관 카드 참조를 폐기하고 진행 중인 액션을 cancel/drain한다. 저장 성공 후에는 기존 context의 카드를 무효화하되 이미 저장된 결과를 취소 오류로 바꾸지 않는다.
+- OS 카드 게시/삭제와 인증된 callback 호출은 아직 미연결이다. IMPL-340~364 게시 재시도 확인 대기로 미커밋. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·파일/위젯 실행 미실행.
+
+## IMPL-365 — History 위젯 차트 이미지 및 카드 연결
+
+- 기존 WindowsPNGEncoder를 재사용해 400×100 일별 막대 이미지를 메모리에서 생성한다. 관측 없는 날짜는 빈 간격, nil 관측은 기준선 아래 표식, 실제 0은 기준선 위 작은 막대로 구분한다.
+- History 카드에 data URI 이미지, 날짜 범위/통화 또는 token 단위/최댓값/누락·알 수 없는 관측 수, 대체 설명과 오래됨 표시를 연결했다. 밝은/어두운 palette를 card batch/조정기 입력으로 전달한다.
+- Microsoft AdaptiveCards Image schema의 PNG/data URI 지원을 확인했다: https://raw.githubusercontent.com/microsoft/AdaptiveCards/main/schemas/src/elements/Image.json
+- 실제 Windows host의 이미지 수신/크기/높이/접근성/테마 전환은 미검증이다. BurnDown 계열과 OS host는 남아 있다. IMPL-340~365 게시 재시도 확인 대기로 미커밋. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·파일/위젯 실행 미실행.
+
+## IMPL-366 — 원본 번다운 평균 소진 계산
+
+- BurnDownWidgetViews의 BurnGeom 및 effective reset/run-out 정책을 읽었다. 원본은 sampled history가 아닌 현재 remaining/reset 기반 평균 소진 projection이다.
+- 잔여율/시간 위치/이상적 잔여량/마진/기울기/예상 끝점과 ±4% pace 상태, 99.5/0.5% fresh/depleted 조건을 옮겼다. now를 명시적으로 주입한다.
+- 리셋 지난 날짜를 새 리셋으로 대체하지 않고, 처음 8% 기간의 run-out 추정은 숨긴다. 주간 상한에 막힌 세션은 주간 reset override만 사용하고 run-out을 숨긴다.
+- 선택/세션/주간 geometry 생성 메서드를 WindowsWidgetBurnDown에 연결했다. raster 및 카드 연결은 남아 있다. IMPL-340~366 게시 재시도 확인 대기로 미커밋. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·파일/위젯 실행 미실행.
+
+## IMPL-367 — 번다운 PNG 및 단일/통합 카드
+
+- 평균 소진선/면적, 이상적 pace 점선, 미래 projection 점선, 현재 시각선을 그리는 bounded RGB raster를 기존 PNG encoder에 연결했다. 두 차트가 data 한도에 들어가도록 각각 360×72로 작성했다.
+- 단일 BurnDown과 세션/주간 Combined 카드에 이미지/페이스/잔여량/추정 소진/리셋을 연결했다. 주간 상한으로 막힌 세션은 차트를 숨기고 주간 리셋을 표시한다.
+- presentation.renderedAt을 추가해 카드 준비가 지연되더라도 한 render에서 같은 now로 계산한다. 그래프는 관측 이력이 아닌 평균 소진 추정임을 legend로 표시한다.
+- 여섯 종류의 카드 코드 경로가 작성되었으나 실제 host 게시/크기 적합성/레이아웃/접근성/테마는 미검증이다. IMPL-340~367 게시 재시도 확인 대기로 미커밋. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·파일/위젯 실행 미실행.
+
+## IMPL-368 — 위젯 카드 언어 설정 연결
+
+- 기존 WindowsStatusLocalization에 위젯 상태/소진/차트/전환 label 30개의 영어·한국어 번역을 추가하고 snapshot 기반 adapter를 작성했다. 미번역 언어는 기존 영어 fallback을 따른다.
+- prepareLocalizedCards가 선택된 앱 언어를 한 번 캡처해 label/숫자·날짜 locale/RTL을 같은 batch에 전달한다. Adaptive Card의 rtl 속성을 설정한다.
+- 기존 explicit locale/label 입력 경로도 유지한다. 제공자 metadata/비용 source label의 별도 현지화 및 언어 변경 때 OS 카드 갱신 이벤트는 남아 있다.
+- IMPL-340~368 게시 재시도 확인 대기로 미커밋. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·파일/위젯 실행 미실행.
+
+## IMPL-369 — 작은 위젯 카드의 표시 밀도
+
+- family가 quota row 제한에서만 사용되고 card 생성 시 보존되지 않던 경로에 presentation.family를 추가했다.
+- 작은 카드에서는 보조 비용 label/값을 한 줄로 묶고 token 수와 행별 reset 시각을 생략한다. 중요 비용 값 및 오래된 비용의 갱신 시각은 유지한다.
+- 작은 번다운 카드에서는 반복되는 시각적 범례를 줄이고 이미지 대체 설명은 유지한다. 일반 갱신 footer는 작은 카드에서 stale일 때 표시한다.
+- 실제 Windows 카드 높이, Combined 레이아웃 및 크기 변경 이벤트 연결은 미검증·미완료다. IMPL-340~369 게시 재시도 확인 대기로 미커밋. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·파일/위젯 실행 미실행.
+
+## IMPL-370 — 위젯 인스턴스 추가/삭제 저장 경로
+
+- registerInstance는 ID/종류를 확인하고 새 인스턴스만 기본값으로 저장한다. 동일 ID/종류의 재등록은 기존 provider/metric/window를 유지하며 다른 종류로의 재사용은 오류로 처리한다.
+- unregisterInstance는 이미 없는 인스턴스의 반복 삭제를 허용한다. 두 경로 모두 기존 lock/revision 비교 저장을 사용하고 충돌을 숨기지 않는다.
+- 갱신 조정기는 lifecycle 저장 전후 context를 무효화해 보관 액션과 저장 도중 시작된 이전 설정 기반 갱신을 폐기한다. 저장 성공을 사후 취소 오류로 보고하지 않는다.
+- OS definition ID 매핑, CreateWidget/DeleteWidget callback 및 실제 게시/삭제는 미연결이다. IMPL-340~370 게시 재시도 확인 대기로 미커밋. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·파일/위젯 실행 미실행.
+
+## IMPL-371 — 위젯별 사용자 설정 저장
+
+- customizeInstance는 폼이 열린 시점의 settings snapshot에서 ID/종류를 읽고 provider 및 해당 종류의 metric/window만 변경한다. 허용되지 않는 설정 조합은 오류로 반환한다.
+- Switcher는 공통 provider를 갱신하고, Metric은 지표, BurnDown은 시간 창, Usage/History/Combined는 provider 선택을 저장한다. 종류 변경이나 instance ID 생성은 허용하지 않는다.
+- 설정 revision 비교는 기존 store에 맡기고 갱신 조정기는 저장 전후 context를 무효화한다. 실제 사용자 설정 폼 및 OS OnCustomizationRequested 연결은 남아 있다.
+- IMPL-340~371 게시 재시도 확인 대기로 미커밋. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·파일/위젯 실행 미실행.
+
+## IMPL-372 — 위젯 사용자 설정 카드
+
+- provider 및 Metric/BurnDown 전용 metric/window ChoiceSet을 포함하는 customization template/data를 작성했다. Switcher는 현재 공통 provider를 선택 상태로 표시한다.
+- 폼은 settings snapshot/instance/actionToken을 보관하고 제출 크기/위젯 ID/토큰/종류별 필수 선택지를 확인한다. 폼 입력에서 위젯 종류나 ID를 변경하지 않는다.
+- 새 설정 label 7개를 기존 영어·한국어 catalog에 추가했다. 인증되지 않은 host context에는 설정 입력을 표시하지 않는다.
+- 조정기의 폼 보관/저장/취소 및 실제 OS 설정 이벤트 연결은 남아 있다. IMPL-340~372 게시 재시도 확인 대기로 미커밋. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·파일/위젯 실행 미실행.
+
+## IMPL-373 — 설정 폼 lifecycle 및 저장 액션 연결
+
+- openCustomization은 bounded ID/폼 수와 context/최신 열기 ticket을 확인하고 현재 언어의 설정 카드를 보관한다. 동일 위젯을 다시 열면 이전 폼 토큰은 폐기된다.
+- closeCustomization은 토큰이 일치할 때만 폼을 닫아 지연된 close가 새 폼을 닫지 않게 한다. invalidateContext/shutdown은 열린 폼과 진행 중인 열기 ticket도 폐기한다.
+- saveWidgetSettings 제출은 보관 폼의 선택 검사 후 기존 단일 액션 task/customizeInstance/revision 비교/성공 후 무효화 경로로 연결한다.
+- OS OnCustomizationRequested/close/실제 카드 교체 이벤트는 아직 미연결이다. IMPL-340~373 게시 재시도 확인 대기로 미커밋. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·파일/위젯 실행 미실행.
+
+## IMPL-374 — 설정 화면과 일반 갱신의 충돌 처리
+
+- card batch에 customizing 결과를 추가하고 열려 있거나 준비 중인 폼의 위젯은 일반 payload로 교체하지 않도록 작성했다. host는 해당 결과에서 설정 화면을 유지해야 한다.
+- 폼 열기/닫기는 갱신 세대를 변경하고 기존 render task를 취소해 미리 준비된 일반 카드가 뒤늦게 게시되는 것을 막는 최신성 경로에 연결했다.
+- isCurrentCustomization으로 host가 설정 카드 게시 직전에 보관 토큰을 다시 확인할 수 있게 했다. 이전 context의 폼은 기존 무효화로 보관 대상에서 제거된다.
+- 실제 OS UI 직렬 게시 및 customizing 결과 처리는 host 구현 과제다. IMPL-340~374 게시 재시도 확인 대기로 미커밋. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·파일/위젯 실행 미실행.
+
+## IMPL-375 — 게시 카드의 다음 갱신 예약
+
+- 조정기 생성 시 host refresh enqueue callback을 받을 수 있게 하고 recordPublished 후 가장 이른 nextRefresh로 단일 Task timer를 예약하도록 작성했다.
+- 이전 예약은 취소하고 context/ticket이 일치할 때만 callback을 호출한다. 설정 중인 카드는 제외하고 context 무효화/종료/deinit에서 timer를 취소한다.
+- 이미 지난 갱신 시각은 최소 1초 후, 최대 예약 간격은 30분으로 제한한다. callback은 actor를 막지 않고 host 작업을 enqueue해야 하며 실제 OS/런타임 enqueue 연결은 아직 없다.
+- IMPL-340~375 게시 재시도 확인 대기로 미커밋. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·파일/위젯 실행 미실행.
+
+## IMPL-376 — 카드 실패 후 재갱신 예약 유지
+
+- 게시 성공 카드만으로 예약을 계산하면 모든 카드가 실패했을 때 재갱신이 끊기므로, invalidContent 및 준비됐지만 게시 성공 목록에 없는 ID에 1분 재시도 시각을 둔다.
+- 일반 갱신과 실패 재시도 중 이른 시각을 사용하며 설정 중인 ID는 양쪽에서 제외한다. 없는 인스턴스/미지원 종류/설정 유지 결과는 실패 재시도에 넣지 않는다.
+- 폼 열기가 실패하면 자신의 opening ticket을 제거한 뒤 일반 예약을 다시 계산한다. context 무효화와 종료는 재시도 목록도 폐기한다.
+- 실제 OS 게시 결과/갱신 enqueue 연결과 동작 확인은 남아 있다. IMPL-340~376 게시 재시도 확인 대기로 미커밋. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·파일/위젯 실행 미실행.
+
+## IMPL-377 — 전체 갱신 실패와 재시도 간격
+
+- renderBatch는 요청 수/ID/중복을 검사한 다음 설정을 읽는다. 해당 이후 전체 실패는 현재 context/세대이며 취소되지 않은 경우에만 1분 재갱신 예약으로 연결한다. RequestFailure와 CancellationError는 제외한다.
+- 새 갱신 시작 시 기존 timer를 취소해 진행 중인 작업에 같은 예약이 재진입하지 않게 한다.
+- 재시도 대상 ID의 기존 카드 nextRefresh가 과거이면 1초 반복으로 돌아갈 수 있으므로, 재시도 시각이 있는 ID는 일반 deadline 대신 재시도 deadline만 사용한다.
+- OS host가 갱신 callback을 실행하고 게시 결과를 알리는 연결은 남아 있다. IMPL-340~377 게시 재시도 확인 대기로 미커밋. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·파일/위젯 실행 미실행.
+
+## IMPL-378 — 설정 카드 취소 동작
+
+- 설정 카드에 associatedInputs none인 취소 Action.Execute를 추가해 미완성 선택값과 관계없이 취소할 수 있도록 작성했다. 기존 Cancel 번역을 재사용한다.
+- 취소 제출은 bounded 입력/host widget ID/현재 폼 토큰만 확인하고 저장 없이 폼을 닫은 뒤 host 일반 갱신 enqueue callback을 호출한다.
+- 조정기 handleAction 결과를 saved(snapshot)/cancelled로 구분해 취소를 저장 성공으로 보고하지 않게 했다. 진행 중인 저장 액션이 있으면 기존 actionInProgress 정책을 유지한다.
+- 실제 OS action callback/일반 카드 복귀는 host 연결 후 확인해야 한다. IMPL-340~378 게시 재시도 확인 대기로 미커밋. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·파일/위젯 실행 미실행.
+
+## IMPL-379 — 실패 위젯의 대체 표시 카드
+
+- failurePayload를 추가해 갱신 실패/현재 미지원 상태를 계정 값·원본 오류·액션 없이 표시하도록 작성했다. 영어·한국어 번역을 기존 catalog에 연결했다.
+- CardBatch.failurePayloads에 invalidContent/unsupportedKind별 대체 payload를 제공한다. missingInstance는 실제 삭제 대상이므로 대체 카드를 만들지 않는다.
+- 대체 카드 게시를 정상 render 성공이나 액션 허용으로 취급하지 않도록 계약을 명시했다. 기존 실패 retry 정책은 유지한다.
+- 실제 OS의 오래된 카드 교체 및 오류 카드 게시 실패 처리는 host 연결 과제다. IMPL-340~379 게시 재시도 확인 대기로 미커밋. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·파일/위젯 실행 미실행.
+
+## IMPL-380 — 호스트 위젯 정의 및 크기 매핑
+
+- CodexBarWidgetBundle의 여섯 kind ID 및 supportedFamilies를 읽고 WindowsWidgetHostDefinition을 작성했다. 미등록 ID 및 종류에서 지원하지 않는 크기는 거부한다.
+- HostInstance는 OS 크기를 별도 보관하고 row policy 요청으로 변환한다. large는 기존 공통 ProviderWidgetFamily의 medium 행 정책을 사용하며 OS 크기를 small로 축소하지 않는다.
+- registerHostInstance가 OS definition/size/ID를 확인한 뒤 기존 registerInstance에 전달하도록 연결했다.
+- MSIX definition 선언, OS ID/크기 이벤트 공급 및 large 전용 레이아웃 적합성은 남아 있다. IMPL-340~380 게시 재시도 확인 대기로 미커밋. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·파일/위젯 실행 미실행.
+
+## IMPL-381 — 호스트 크기의 렌더 요청/결과 보존
+
+- HostInstance.renderRequest가 hostSize를 포함하도록 하고 service의 단일/batch render 및 presentation에 전달한다.
+- presentation은 설정된 종류에서 해당 hostSize를 지원하는지 확인하며, 전달된 family와 충돌하면 hostSize에서 행 정책을 결정한다. large 구분은 presentation에 별도로 남긴다.
+- 기존 hostSize 없는 내부 호출은 기존 family 동작을 유지한다. 실제 host callback은 HostInstance 경로를 사용해야 한다.
+- large 전용 레이아웃 및 OS 크기 변경 이벤트는 남아 있다. IMPL-340~381 게시 재시도 확인 대기로 미커밋. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·파일/위젯 실행 미실행.
+
+## IMPL-382 — 큰 Usage/Switcher 및 History 원본 구성 반영
+
+- LargeUsageView/SwitcherLargeUsageView/HistoryView를 읽고 큰 Usage/Switcher가 전체 quota 행과 일별 차트를 보여 주는 누락을 반영했다. hostSize large에서는 medium 행 제한을 적용하지 않는다.
+- presentation.historyChart를 History 및 큰 Usage/Switcher에 전달해 공통 PNG 카드 경로를 사용한다. History 자체는 원본처럼 quota 행을 구성하지 않는다.
+- supplement에 creditsBalance를 추가해 Usage/Switcher의 크레딧 및 Devin 추가 사용 잔액을 표시한다. History는 코드 리뷰/크레딧 대신 비용·토큰 요약을 유지한다.
+- 실제 크기별 차트 높이/레이아웃 및 OS 게시 연결은 남아 있다. IMPL-340~382 게시 재시도 확인 대기로 미커밋. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·파일/위젯 실행 미실행.
+
+## IMPL-383 — 원본 이력 차트 순서 및 높이
+
+- HistoryView 원본 순서대로 History 차트를 비용·토큰 요약 앞에 표시하고 큰 Usage/Switcher 차트는 기존 요약 뒤에 둔다.
+- 큰 History 90, 중간 History 60, 큰 Usage/Switcher 50 높이를 PNG raster와 Adaptive Card Image height에 함께 전달한다. PNG 입력 높이는 50...100으로 제한한다.
+- 기존 날짜 간격/unknown/zero 구분 및 대체 설명은 유지한다. 실제 Windows 카드 배치와 이미지 크기 동작은 미검증이다.
+- IMPL-340~383 게시 재시도 확인 대기로 미커밋. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·파일/위젯 실행 미실행.
+
+## IMPL-384 — 할당량 없이 비용만 있는 위젯 관측
+
+- CostOnlyObservation을 추가해 활성 제공자/현재 accountRevision이 일치하는 비용 관측을 별도 전달한다. quota 관측이 이미 포함된 제공자는 덮어쓰지 않으며 비용-only 중복 제공자는 오류로 처리한다.
+- 공통 비용 요약 검사 및 일별 이력 검사를 재사용하고 비용 자체 updatedAt을 entry 시각으로 사용한다. quota 창/행/credits/codeReview를 합성하지 않는다.
+- 기존 compactTokenFallback 및 비용/History 카드에 전달 가능한 snapshot 형식으로 연결했다. 실제 spend source/accountRevision adapter 공급은 남아 있다.
+- IMPL-340~384 게시 재시도 확인 대기로 미커밋. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·파일/위젯 실행 미실행.
+
+## IMPL-385 — 실제 비용 snapshot 모델의 위젯 adapter
+
+- Windows 비용 ProviderInput이 사용하는 CostUsageTokenSnapshot을 위젯 TokenCost로 변환한다. 원본 widgetTokenUsageSummary의 Codex API 추정 label/Mistral billing-day label/기간 label과 daily 매핑을 반영했다.
+- 호출자가 확인한 accountRevision을 요구하고 credential-scoped snapshot은 expected fingerprint와 일치해야 한다. fingerprint/프로젝트/세션/경로는 위젯 입력에 복사하지 않는다.
+- 일별 합계 fallback은 overflow 및 nil 관측을 확인하며 nil을 0으로 간주해 완전한 합계처럼 표시하지 않는다. 기존 비용/날짜 검사를 재사용한다.
+- runtime에서 ownership revision/expected fingerprint를 확인해 adapter를 호출하는 연결은 남아 있다. IMPL-340~385 게시 재시도 확인 대기로 미커밋. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·파일/위젯 실행 미실행.
+
+## IMPL-386 — Windows 비용 수집기와 위젯 adapter 연결
+
+- Source에 runtime이 명시적으로 제공하는 widgetAccountRevision/expectedWidgetScopeFingerprint를 추가했다. 기본 nil은 위젯 비용을 만들지 않는다.
+- 기존 수집 성공 후 adapter를 호출한다. Codex는 verifyCodexOwner 및 expected auth fingerprint 일치를 추가 요구하고, Cursor는 예상 계정 ID가 있어야 한다.
+- Scan에 widgetCosts/widgetCostFailures를 추가해 일반 비용 UI 집계와 위젯 변환 실패를 분리했다. OpenCodeX merge wrapper는 native 위젯 결과를 보존하며 별도 구독 소유권 확인 없이 합쳐진 비용을 위젯에 복사하지 않는다.
+- runtime ownership revision 공급 및 controller에서 Scan 위젯 결과를 게시 경로로 전달하는 작업은 남아 있다. IMPL-340~386 게시 재시도 확인 대기로 미커밋. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·파일/위젯 실행 미실행.
+
+## IMPL-387 — 비용 controller의 위젯 게시 상태 전달
+
+- Snapshot.widgetPublication에 withdrawn/pending/failed/available 상태를 추가하고 기존 publisher를 통해 전달한다.
+- ready/partial만 해당 Scan의 위젯 비용과 일반 수집/위젯 변환 실패 목록을 제공한다. refreshing/failed는 기존 비용을 새 게시 결과로 재사용하지 않으며 idle/stopped는 철회 상태를 제공한다.
+- UI의 기존 stale 비용 표시와 공유 정책은 유지한다. refreshing() 복사도 widgetPublication을 pending으로 바꾼다.
+- runtime에서 이 상태를 계정별 위젯 snapshot에 반영하고 OS로 게시하는 소비 경로는 남아 있다. IMPL-340~387 게시 재시도 확인 대기로 미커밋. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·파일/위젯 실행 미실행.
+
+## IMPL-388 — 런타임 위젯 비용 조회 경계
+
+- WindowsUsageRuntime.widgetCostResult가 현재 spend 상태/수집 설정 일치 및 controller.widgetPublication을 확인해 withdrawn/pending/failed/available을 반환한다.
+- 비용은 호출자가 제공한 현재 accountRevision과 일치해야 한다. 실패 제공자와 같은 provider의 다중 matching source는 합산하지 않고 unavailableProviders로 제외한다.
+- source ID/계정 라벨/원본 오류는 공개 결과에 포함하지 않는다. 수집 중/실패 상태에서 이전 비용을 새 결과로 반환하지 않는다.
+- Source의 widgetAccountRevision 공급과 실제 호스트가 이 조회를 snapshot builder로 전달하는 연결은 남아 있다. IMPL-340~388 게시 재시도 확인 대기로 미커밋. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·파일/위젯 실행 미실행.
+
+## IMPL-389 — Codex/Cursor 비용 소유권 revision 공급
+
+- runtime의 source resolve 다음에 위젯 소유권 연결을 추가했다. 단일 Codex는 verify/expected auth fingerprint, 단일 Cursor는 예상 계정 ID와 정규화 cookie가 있어야 위젯 revision을 받는다.
+- Cursor expected widget fingerprint는 공통 CookieHeaderCache 함수를 사용한다. 모든 captured source 값이 같을 때만 기존 revision을 재사용하며 소스 변경 시 새 revision으로 바꾼다.
+- 성공적으로 수집된 snapshot과 현재 owner registry에 일치하는 revision만 외부 조회로 제공한다. 다중 동일 제공자 소스 및 다른 제공자는 소유권 판단을 추정하지 않고 별도 adapter 과제로 남긴다.
+- 실제 quota 계정 revision과의 통합, 다중 계정 선택 및 OS 게시 연결은 남아 있다. IMPL-340~389 게시 재시도 확인 대기로 미커밋. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·파일/위젯 실행 미실행.
+
+## IMPL-390 — 위젯 비용 owner registry 폐기
+
+- selected account 무효화, 수집 소스 비활성화, 수집 중 설정 변경, source/calendar 재구성, 수집 예외 및 종료 시 owner registry를 비운다.
+- registry가 보관한 captured source의 credential/environment 참조와 revision을 해당 lifecycle에서 해제한다. 일반 refresh의 동일 source 재사용 및 표시 옵션만 바꾸는 재투영 경로는 유지한다.
+- 이전 source 비교의 불필요한 강제 unwrap도 제거했다. 실제 메모리/동시성 동작은 실행 확인하지 않았다.
+- IMPL-340~390 게시 재시도 확인 대기로 미커밋. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·파일/위젯 실행 미실행.
+
+## IMPL-391 — runtime 비용-only 위젯 snapshot 생성
+
+- widgetCostSnapshot은 actor 내 suspension 없이 현재 ownership revisions와 비용 결과를 읽고 WindowsWidgetSnapshotBuilder를 호출한다.
+- withdrawn/pending/failed를 그대로 전달하고 available은 snapshot/spend generation/unavailable provider 목록을 제공한다. 실패 제공자는 데이터 항목을 합성하지 않는다.
+- isWidgetCostSnapshotCurrent를 추가해 host가 게시 전 spend generation/상태/현재 수집 설정 일치를 다시 확인할 수 있게 했다. host 자신의 context 검사도 필요함을 명시했다.
+- quota 데이터와의 통합 및 실제 OS host 소비/게시 연결은 남아 있다. IMPL-340~391 게시 재시도 확인 대기로 미커밋. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·파일/위젯 실행 미실행.
+
+## IMPL-392 — runtime quota 관측 보관
+
+- Provider fetch 성공 경로에 위젯 관측 보관을 연결하고 기존 quotaAccountDiscriminator를 재사용한다. 확인되지 않은 owner 또는 같은 provider의 다른 owner 관측은 그 갱신에서 제외한다.
+- 내부 owner 비교에는 digest를 사용하고 동일 owner만 revision을 재사용한다. 과거 시각의 관측이 최신 관측을 덮어쓰지 않는다.
+- fetch 시작 context를 캡처하며 새 전체 refresh/계정 무효화/종료 시 context와 관측을 폐기한다. 취소/이전 context 성공은 위젯에 보관하지 않는다.
+- 비용 계정 revision 통합, 공개 quota snapshot 및 실제 host 게시 연결은 남아 있다. IMPL-340~392 게시 재시도 확인 대기로 미커밋. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·파일/위젯 실행 미실행.
+
+## IMPL-393 — runtime quota snapshot 조회 및 최신성
+
+- config 로드 시 digest를 캡처하고 widgetQuotaSnapshot에서 현재 저장된 config와 일치할 때만 완료된 관측을 반환한다. 새로고침 중은 pending, 무효화/종료/config 불일치는 withdrawn이다.
+- 현재 enabled provider 순서를 유지하며 최신 표시 설정으로 presentation을 재구성한 뒤 builder를 호출한다. 관측이 없는 provider는 수치 합성 없이 unavailable 목록에 남긴다.
+- isWidgetQuotaSnapshotCurrent는 context/refresh 상태/config digest를 재확인한다. context 무효화는 digest도 폐기한다.
+- 비용/대시보드 extras 통합 및 실제 host 조회/게시 연결은 남아 있다. IMPL-340~393 게시 재시도 확인 대기로 미커밋. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·파일/위젯 실행 미실행.
+
+## IMPL-394 — Codex quota와 비용 관측의 소유권 연결
+
+- quota 성공 관측에 선택 Codex 계정의 정규화된 인증 fingerprint를 내부 보관한다. token-account 경로에는 이 연결을 허용하지 않는다. fingerprint는 WidgetSnapshot에 포함하지 않는다.
+- 현재 비용 수집이 available이고 runtime revision으로 확인된 단일 source의 인증 fingerprint가 quota 관측과 일치할 때만 비용/일별 히스토리를 함께 투영한다. 확인 실패 시 quota만 유지한다.
+- 소유권 연결을 통과한 비용만 quota revision으로 변환한다. snapshot 반환과 게시 전 최신성 계약에 spend generation을 추가했다.
+- 다른 제공자 소유권 연결, 다중 계정 선택, Codex dashboard extras, 실제 Windows host 연결은 남아 있다. IMPL-340~394 스테이징 재시도 확인 대기로 미커밋/미푸시.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·실행 검증 미실행.
+
+## IMPL-395 — Codex 위젯 optional extras 연결
+
+- WindowsWidgetCodexExtrasAdapter를 추가하고 runtime quota snapshot 작성 경로에서 호출한다. 현재 optional 표시 설정과 quota 관측의 계정 revision을 사용한다.
+- 동일 fetch 결과의 성공한 credits balance만 허용한다. dashboard가 있으면 authorizedDashboard의 attach 결정 및 각 allowed effect를 요구하며 raw dashboard와 권한이 묶인 snapshot의 불일치를 거부한다.
+- displayOnly/failClosed 및 권한 없는 raw dashboard는 extras를 반환하지 않는다. review는 승인된 dashboard 값만 사용하며 가장 오래된 포함 값의 시각을 전달해 stale 판정을 유지한다.
+- 실제 Windows 호스트 게시, 다른 제공자/다중 계정 연결은 남아 있다. IMPL-340~395 스테이징 재시도 확인 대기로 미커밋/미푸시.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·실행 검증 미실행.
+
+## IMPL-396 — runtime와 위젯 카드 갱신기 연결
+
+- WindowsWidgetRuntimeBridge는 host context를 먼저 캡처한 뒤 runtime snapshot 조회, 전체 인스턴스 refresh, 현재 UI 언어 카드 준비를 순차 호출한다.
+- 준비 결과는 bridge 식별자, runtime context, spend generation을 내부 보관한다. 준비 후 및 게시 확인 전후 runtime/coordinator 최신성을 확인하며 stale 결과를 성공으로 보고하지 않는다.
+- pending/withdrawn은 account content 철회가 필요한 별도 결과로 제공한다. OS 삭제·재예약 및 계정 무효화와 OS 쓰기의 직렬화는 native host가 구현해야 한다.
+- 실제 Windows host/COM/MSIX/IPC 연결은 아직 완료되지 않았다. IMPL-340~396 스테이징 재시도 확인 대기로 미커밋/미푸시.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·실행 검증 미실행.
+
+## IMPL-397 — 위젯 게시의 표시 설정 최신성
+
+- WindowsUsagePresentationSettings에 값 비교를 추가한다. bridge는 snapshot 조회 전 표시/비용 설정과 UI 언어를 캡처해 준비 결과에 보관한다.
+- 동일 localization snapshot으로 locale/labels/RTL을 카드 갱신기에 전달한다. 최신성 확인은 actor 호출 이후 현재 표시 설정·비용 설정·언어와 비교한다.
+- 설정 변경 후 기존 준비 결과를 성공으로 기록하지 않는다. OS 쓰기와 설정/계정 변경의 직렬화는 native host에서 계속 구현해야 한다.
+- IMPL-340~397 스테이징 재시도 확인 대기로 미커밋/미푸시. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·실행 검증 미실행.
+
+## IMPL-398 — OS 위젯 inventory와 definition 계약 연결
+
+- bridge에 전체 HostInstance 목록 진입점을 추가한다. 개수와 중복 ID를 확인한 뒤 OS size 및 definition kind를 RenderRequest에 전달한다.
+- renderBatch는 저장된 instance kind와 OS expectedKind가 다르면 해당 카드에 invalidContent를 반환한다. 같은 ID에 다른 definition의 카드나 action을 생성하지 않는다.
+- 등록/삭제 callback으로 설정을 먼저 조정해야 한다는 호출 계약을 명시했다. 실제 OS inventory 조회·콜백·게시·패키징 연결은 남아 있다.
+- IMPL-340~398 스테이징 재시도 확인 대기로 미커밋/미푸시. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·실행 검증 미실행.
+
+## IMPL-399 — 위젯 호스트 재연결 inventory 복원
+
+- 설정 store에 최대 instance 수로 제한된 다중 mutation 저장을 추가했다. 같은 파일 잠금/원본 byte 비교 안에서 모든 mutation을 적용하고 한 번만 atomic write한다.
+- service는 전체 inventory의 중복/개수/기존 kind를 먼저 확인하고 새 인스턴스만 추가한다. 저장된 provider/metric/window/shared selection은 유지하며 inventory에서 빠진 항목은 삭제하지 않는다.
+- coordinator에 재연결 복원 진입점을 추가해 전후 context를 무효화한다. native host의 실제 startup/reconnect callback 호출 및 OS 게시는 남아 있다.
+- IMPL-340~399 스테이징 재시도 확인 대기로 미커밋/미푸시. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·실행 검증 미실행.
+
+## IMPL-400 — 게시된 위젯 제공자 선택의 runtime 연결
+
+- bridge에 게시 카드 action 진입점을 추가했다. bounded payload, 허용된 verb, 준비 결과의 widget ID, runtime/표시/비용/언어 최신성을 먼저 확인한다.
+- coordinator는 전달된 delivery가 현재 batch인지 추가 확인하고 기존 성공 게시/card token/settings revision 검사 및 저장을 사용한다. 준비됐지만 게시에 실패한 카드는 action 대상이 되지 않는다.
+- 저장 성공에 따른 context 무효화를 사후 stale 오류로 바꾸지 않는다. native host의 인증 callback 및 계정 무효화 직렬화 연결은 남아 있다.
+- IMPL-340~400 스테이징 재시도 확인 대기로 미커밋/미푸시. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·실행 검증 미실행.
+
+## IMPL-401 — Windows Widgets 네이티브 게시 sink
+
+- Windows/Widgets/Native/WidgetPublisher.h 및 .cpp에 실제 WidgetManager.UpdateWidget 호출을 작성했다. 준비한 Adaptive Card template/data와 빈 custom state를 전달한다.
+- context generation과 mutex로 OS 쓰기/계정 내용 철회를 직렬화한다. 새 context 시작은 이전 및 현재 inventory를 빈 카드로 교체하고 실패 ID를 반환한다. 철회 실패가 있으면 새 계정 게시를 허용하지 않는다.
+- 등록 inventory의 ID만 게시하며 256 KiB JSON 상한과 객체 파싱을 적용한다. JSON/계정 데이터는 로그로 출력하지 않는다.
+- 참고: https://learn.microsoft.com/en-us/windows/apps/develop/widgets/implement-widget-provider-win32
+- C++ Windows App SDK 빌드 대상, COM provider, 인증 IPC, Swift bridge 연결 및 실제 Windows 동작 검증은 남아 있다. 새 SDK 설치나 빌드는 실행하지 않았다.
+- IMPL-340~401 스테이징 재시도 확인 대기로 미커밋/미푸시. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
+## IMPL-402 — 네이티브 OS inventory 조회 및 삭제 처리
+
+- WidgetManager.GetWidgetInfos에서 provider 소유 WidgetContext 목록을 가져온다. 최대 128개/중복/ID 형식을 확인하며 이전 custom state는 가져오지 않는다. definition ID와 size는 반환 context에서 호출부가 읽는다.
+- 인증된 DeleteWidget callback용 ConfirmDeleted는 현재 generation에서만 내부 대상 목록을 제거한다. inventory 누락으로 삭제하지 않으며 실패 context의 게시 권한을 자동 복구하지 않는다.
+- 이전 실패와 새 inventory의 합집합을 256개로 제한해 반복 실패 시 내부 목록이 무한히 늘지 않도록 했다. 복구는 확인된 삭제 반영과 BeginContext 재시도로 진행한다.
+- 참고: https://learn.microsoft.com/en-us/windows/apps/develop/widgets/implement-widget-provider-win32
+- native COM callback/IPC/Swift 연결 및 빌드 대상은 남아 있다. IMPL-340~402 미커밋/미푸시. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. SDK 설치·빌드·테스트·실행 검증 미실행.
+
+## IMPL-403 — native IWidgetProvider callback 진입점
+
+- WidgetProvider가 IWidgetProvider의 생성/삭제/action/context 변경/활성/비활성 callback을 구현한다. required sink로 복사된 값 이벤트를 전달하며 sink 부재는 생성 실패다.
+- action은 알려진 3개 verb와 최대 4096-byte JSON 객체만 전달한다. custom state는 가져오지 않는다. callback 인수 WinRT 객체는 보관하지 않으며 inventory도 복사된 WidgetHostInstance를 반환하도록 변경했다.
+- 참고 문서의 callback 객체 수명 제한을 반영했다: https://learn.microsoft.com/en-us/windows/apps/develop/widgets/implement-widget-provider-win32
+- sink의 bounded dispatcher, COM caller 인증/class factory, customization 요청 인터페이스, IPC 및 빌드 연결은 남아 있다. 이 코드는 아직 실제 등록/실행되지 않았다.
+- IMPL-340~403 미커밋/미푸시. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 설치·빌드·테스트·실행 검증 미실행.
+
+## IMPL-404 — native 사용자 지정 요청 및 bounded callback 큐
+
+- IWidgetProvider2와 OnCustomizationRequested를 추가해 설정 화면 요청을 복사된 context 이벤트로 전달한다. 저장/취소는 기존 OnActionInvoked verb 경로를 사용한다.
+- WidgetEventQueue는 callback 값을 최대 256개 보관하고 단일 consumer가 도착 순서대로 처리하도록 한다. 초과/종료 후 Push는 명시적 오류이며 조용히 성공 처리하지 않는다.
+- Cancel은 대기 consumer를 깨우고 아직 실행하지 않은 이벤트를 폐기한다. 이미 실행 중인 작업 drain/join은 host owner 계약으로 남긴다.
+- 참고: https://learn.microsoft.com/en-us/windows/apps/develop/widgets/implement-widget-provider-win32
+- COM caller 인증/class factory, queue consumer, IPC/Swift 연결, IsCustomizable 패키지 선언 및 빌드는 남아 있다. IMPL-340~404 미커밋/미푸시. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 설치·빌드·테스트·실행 검증 미실행.
+
+## IMPL-405 — native COM 클래스 팩터리와 등록 수명
+
+- WidgetClassFactory는 동시 activation을 잠금으로 직렬화하고 동일 IWidgetProvider instance를 반환한다. null 출력, aggregation, 종료 중 activation, server lock overflow/underflow를 명시적으로 처리한다.
+- WidgetClassRegistration은 고정 CLSID로 CoRegisterClassObject를 호출하고 명시적 Revoke에서 server lock 및 HRESULT를 확인한다. 소멸 시 남은 등록의 해제를 시도한다. registry 파일/키는 직접 수정하지 않는다.
+- 고정 CLSID: 87b453c1-e69f-4cf4-a529-9e680ee69483. 향후 MSIX COM 선언과 동일해야 한다.
+- 참고: https://learn.microsoft.com/en-us/windows/win32/api/combaseapi/nf-combaseapi-coregisterclassobject
+- 실행 진입점은 caller security/consumer 준비 후 등록하고 dispatcher drain 및 COM apartment 수명을 관리해야 한다. 해당 연결·IPC·MSIX·빌드는 남아 있다.
+- IMPL-340~405 미커밋/미푸시. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 설치·빌드·테스트·실행 검증 미실행.
+
+## IMPL-406 — native/Swift 위젯 이벤트 메시지
+
+- native EncodeWidgetEvent와 WindowsWidgetHostEvent.decode는 version 1, session/request UUID, 십진 문자열 sequence 및 7종 event를 사용한다. 계정/raw custom state는 메시지에 포함하지 않는다.
+- 최대 16 KiB envelope, 4096-byte action JSON 객체, 허용된 verb, event별 필수/금지 필드, 저장 가능한 widget ID 및 definition/size를 확인한다. session 및 예상 sequence 불일치는 거부한다.
+- OS WidgetSize Small=0/Medium=1/Large=2를 명시적 문자열로 변환한다. 참고: https://learn.microsoft.com/en-us/windows/windows-app-sdk/api/winrt/microsoft.windows.widgets.widgetsize?view=windows-app-sdk-1.8
+- 인증/framing/순서 advancement/응답 correlation은 transport에 남아 있으며 실제 pipe나 consumer는 아직 연결하지 않았다. IMPL-340~406 미커밋/미푸시. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·실행 검증 미실행.
+
+## IMPL-407 — Swift host session 이벤트 소비
+
+- WindowsWidgetHostSession이 인증된 연결 하나의 coordinator/bridge/inventory/순서 번호를 소유한다. restore 및 7종 callback을 기존 등록/삭제/갱신/설정/action 처리기로 연결했다.
+- actor 재진입 중 작업 중첩은 busy로 거부한다. decode 성공 후 순서 번호를 소비하며 handler 실패 시에도 되돌리지 않아 저장된 동작의 재실행을 막는다. 응답은 requestID와 명시적 effect로 반환한다.
+- 카드 준비와 실제 게시 확인을 분리하고 성공적으로 확인된 prepared 카드만 provider 선택에 사용한다. 종료는 coordinator 작업을 취소/drain하며 네이티브 내용 철회는 host가 별도로 수행해야 한다.
+- 실제 인증 transport/framing/오류 응답과 native queue consumer 연결은 남아 있다. IMPL-340~407 미커밋/미푸시. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·실행 검증 미실행.
+
+## IMPL-408 — host session 오류 응답 및 종료 경계
+
+- receive는 accepted/rejected, requestID, consumed, nextSequence를 반환한다. busy/closed/invalidMessage/staleContext/settingsChanged/unavailable/cancelled의 고정 코드만 사용해 내부 오류 문자열을 전송하지 않는다.
+- handler에서 실패해도 이미 소비한 sequence를 응답에 남긴다. decode 실패는 요청을 소비하지 않으며 인증되지 않은 payload의 requestID를 반사하지 않는다.
+- close 시 inventory/published 상태를 비우고, 늦게 완료된 restore/create/prepare/publication이 종료된 session에 상태를 다시 보관하지 않도록 했다. 이미 완료된 설정 저장을 되돌리지는 않는다.
+- 응답 wire encoder 및 실제 transport/consumer는 남아 있다. IMPL-340~408 미커밋/미푸시. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·실행 검증 미실행.
+
+## IMPL-409 — Swift host 응답 wire 직렬화
+
+- WindowsWidgetHostResponseCodec은 version/session/request ID, accepted/consumed/nextSequence, 고정 effect/error를 직렬화한다. configuration snapshot이나 내부 오류 원문은 포함하지 않는다.
+- customization 응답만 widget ID/action token/template/data를 전달한다. 각 JSON 객체는 64 KiB, 전체 응답은 256 KiB로 제한한다. UInt64 sequence는 십진 문자열로 유지한다.
+- receiveEncoded에서 응답 전 form token 최신성을 재확인한다. 종료되거나 다른 form으로 대체됐으면 consumed staleContext로 반환한다.
+- native decoder/framing/authenticated transport/실제 consumer 연결은 남아 있다. IMPL-340~409 미커밋/미푸시. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·실행 검증 미실행.
+
+## IMPL-410 — 네이티브 응답 decoder
+
+- DecodeWidgetResponse가 256 KiB 이내 Swift 응답의 version/session/request ID, accepted/consumed, canonical UInt64 nextSequence를 확인한다. consumed에 따라 정확히 0 또는 1 증가한 순서 번호만 허용한다.
+- 오류 코드는 고정 목록만 수용하고 실패 응답의 카드/효과 필드를 거부한다. 삭제/설정 화면 응답은 원래 요청 종류 및 widget ID와 일치해야 한다.
+- 설정 폼 token은 canonical UUID 문자 형식을 확인하고 template/data는 각각 64 KiB JSON 객체로 제한한다. 관련 없는 effect의 폼 필드는 거부한다.
+- 실제 인증 transport, queue consumer 및 OS 게시 적용은 남아 있다. IMPL-340~410 미커밋/미푸시. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·실행 검증 미실행.
+
+## IMPL-411 — native/Swift 스트림 프레이밍
+
+- 양쪽 encoder/decoder에 CBW1 magic + little-endian UInt32 payload 길이 + JSON bytes 계약을 작성했다. payload는 1~256 KiB이며 부분 header/body와 연속 frame을 처리한다.
+- 읽기 chunk는 최대 payload+8 bytes, 한 번에 반환하는 frame은 최대 128개로 제한한다. 잘못된 magic/0 길이/초과 길이/중간 EOF는 terminal 상태로 바꾸며 reconnect 시 새 decoder를 요구한다.
+- 아직 실제 named pipe 읽기/쓰기·peer 인증과 연결되지 않았다. IMPL-340~411 미커밋/미푸시. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·실행 검증 미실행.
+
+## IMPL-412 — native named-pipe request/reply I/O
+
+- WidgetPipeExchange는 이미 연결·인증되고 overlapped로 열린 byte-mode pipe handle을 인수한다. 실제 ReadFile/WriteFile로 CBW1 frame을 전송하며 부분 쓰기/읽기를 완료될 때까지 진행한다.
+- 한 exchange에 30초 deadline을 적용한다. 취소/timeout은 CancelIoEx 후 GetOverlappedResult로 완료를 기다린 뒤 OVERLAPPED/event/buffer 수명을 끝낸다. 모든 실패 후 연결을 재사용하지 않으며 자동 재전송하지 않는다.
+- 참고: https://learn.microsoft.com/en-us/windows/win32/api/ioapiset/nf-ioapiset-cancelioex 및 https://learn.microsoft.com/en-us/windows/win32/api/ioapiset/nf-ioapiset-getoverlappedresult
+- pipe endpoint 개설/ACL/peer 인증/Swift server/consumer는 남아 있다. 호출부는 Cancel 후 worker join을 마쳐야 객체를 파괴할 수 있다.
+- IMPL-340~412 미커밋/미푸시. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·실행 검증 미실행.
+
+## IMPL-413 — native 이벤트 client와 단일 consumer pump
+
+- WidgetBackendClient가 요청마다 UUID를 생성하고 event encoder, 실제 pipe exchange, response correlation decoder를 연결한다. 검증된 nextSequence를 OS 효과 적용 전에 반영한다.
+- WidgetEventPump는 단일 worker에서 bounded queue를 소비해 client로 전송하고 필수 Apply callback에 결과를 전달한다. backend 거부는 오류를 전달한 뒤 연결을 종료하며 I/O/응답/적용 예외도 queue와 pipe를 취소한다. 자동 재전송은 하지 않는다.
+- owner는 COM 초기화된 worker와 collaborators 수명, Cancel/join, reconnect/inventory 복원을 책임진다. 인증 endpoint/handshake, Swift pipe server, OS effect 구현 및 실행 진입점은 남아 있다.
+- IMPL-340~413 미커밋/미푸시. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·실행 검증 미실행.
+
+## IMPL-414 — native pipe 연결과 backend process 확인
+
+- ConnectWidgetBackend는 제한된 로컬 CodexBar.Widgets pipe 이름만 열며 overlapped/identification 보안 품질을 사용한다. pipe가 제공한 PID/경로가 아닌 launcher의 신뢰된 process handle 및 예상 image 경로를 입력으로 요구한다.
+- 실제 pipe server PID, 프로세스 생성 시각, 동일 Windows session, 실행 경로, 양쪽 process 생존을 확인한 뒤 WidgetPipeExchange로 연결을 넘긴다. PID 재사용이나 이름만 같은 다른 서버는 허용하지 않는다.
+- 참고: https://learn.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-getnamedpipeserverprocessid 및 https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-getprocesstimes
+- 신뢰된 discovery/launcher 연결, 서버 endpoint/ACL 및 client 역방향 인증/handshake는 남아 있다. IMPL-340~414 미커밋/미푸시. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·실행 검증 미실행.
+
+## IMPL-415 — private pipe listener와 client process 확인
+
+- WidgetPipeListener는 현재 TokenUser SID만 포함한 protected DACL, 무작위 이름, FIRST_PIPE_INSTANCE, 최대 instance 1개, remote client 거부, overlapped byte mode로 endpoint를 생성한다.
+- Accept는 30초 연결 제한/외부 취소 이벤트와 pending connect drain을 적용한다. 연결 후 launcher가 제공한 신뢰된 client process handle과 실제 PID/생성 시각/Windows session/생존 상태를 비교한다.
+- 실패 endpoint는 닫고 재사용하지 않는다. 성공한 연결만 WidgetPipeExchange로 넘긴다. 참고: https://learn.microsoft.com/en-us/windows/win32/ipc/named-pipe-security-and-access-rights
+- 서버 receive/reply loop, Swift 호출 ABI 및 launcher/handshake 연결은 남아 있다. IMPL-340~415 미커밋/미푸시. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·실행 검증 미실행.
+
+## IMPL-416 — native 서버 요청/응답 루프
+
+- WidgetPipeExchange에 server-end 전용 ReceiveAndReply를 추가했다. 첫 byte는 취소 가능한 idle 대기, 이후 요청 frame은 30초/16 KiB 제한을 적용하고 handler 응답을 CBW1 frame으로 쓴다. client/server handle 용도 혼동을 거부한다.
+- WidgetBackendServer는 전용 worker에서 요청을 순차 소비한다. 수신/처리/응답 실패 시 연결을 취소하고 오류를 호출부에 전달한다.
+- handler 호출 자체의 Swift Task 취소/완료 및 worker join은 owner가 연결해야 한다. 네이티브 I/O 취소만으로 실행 중인 Swift 저장을 중단했다고 간주하지 않는다.
+- Swift ABI handler/launcher/handshake/OS effect 연결은 남아 있다. IMPL-340~416 미커밋/미푸시. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·실행 검증 미실행.
+
+## IMPL-417 — native server와 Swift session C callback ABI
+
+- CBWidgetRequestHandler 및 MakeWidgetSwiftHandler가 caller 소유 256 KiB output buffer를 사용해 Swift의 CodexBarWidgetHandleRequest를 호출한다. 메모리 할당/해제 소유권은 ABI 경계를 넘지 않는다.
+- WindowsWidgetRequestBridge는 입력을 Data로 복사하고 Task로 session.receiveEncoded를 호출한다. 전용 native worker만 semaphore로 기다리며 actor/UI/cooperative executor에서 이 callback을 호출하면 안 된다.
+- cancel은 진행 Task를 취소하고 late 응답을 폐기한다. context는 owner가 retain하며 cancel/session close/native worker join 후에만 release한다. 실제 앱 owner와 library build 연결은 남아 있다.
+- IMPL-340~417 미커밋/미푸시. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·실행 검증 미실행.
+
+## IMPL-418 — native 서버 owner 및 C lifecycle API
+
+- ServerOwner가 private listener, 복제한 신뢰 client process handle, cancellation event, COM 초기화 worker 및 서버 루프를 소유한다. 연결 성공 시 Swift callback handler와 실제 수신 루프를 연결한다.
+- CBWidgetServerCreate/Name/Start/Cancel/Join/Status/Destroy를 추가했다. C 경계에서 예외를 HRESULT로 바꾸며 상태는 created/running/stopped/failed와 결과 코드로 제공한다.
+- 종료는 native 취소와 join 후 파괴한다. caller는 Swift bridge/session을 먼저 취소해야 하며 join을 callback 스레드나 Swift executor에서 실행하면 안 된다.
+- DLL build/export binding, Swift owner 및 launcher/handshake/OS effect는 남아 있다. IMPL-340~418 미커밋/미푸시. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·실행 검증 미실행.
+
+## IMPL-419 — Swift native DLL export binding
+
+- WindowsWidgetNativeLibrary가 설치 resolver의 절대 CodexBarWidgetBackend.dll 경로를 받고 DLL directory/System32만 dependency 검색에 사용한다. cwd/PATH로 DLL 이름을 탐색하지 않는다.
+- CBWidgetBackendABIVersion=1 및 7개 server lifecycle export가 모두 있어야 binding을 완료한다. 누락/버전 불일치는 library를 해제하고 실패한다.
+- C callback 및 lifecycle 함수의 Swift calling convention 타입을 선언했다. server owner는 join/destroy까지 library를 강하게 보관해야 한다.
+- 실제 DLL 설치/build, Swift owner/launcher 및 OS host 실행 연결은 남아 있다. IMPL-340~419 미커밋/미푸시. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·실행 검증 미실행.
+
+## IMPL-420 — Swift native server owner
+
+- WindowsWidgetNativeServer가 설치 DLL binding, host session callback, native server 및 pipe 이름을 함께 생성/보관한다. start/status 및 blocking join/destroy는 전용 Dispatch queue에서 수행한다.
+- close는 Swift callback 취소, native I/O 취소, session 종료, worker join, native destroy, callback context 해제 순서로 진행한다. 중복 close는 같은 Task를 기다리고 명시적 실패는 호출부에 반환한다.
+- native 파괴 확인 전에는 DLL/context lease를 해제하지 않는다. 실패 시 안전하게 보관하며 owner의 재시도가 필요하다. deinit은 fallback cleanup을 요청하지만 명시적 close가 오류 보고 경로다.
+- 앱 launcher/handshake, native host 실행/build 및 OS effect 연결은 남아 있다. IMPL-340~420 미커밋/미푸시. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·실행 검증 미실행.
+
+## IMPL-421 — native/Swift 초기 세션 협상
+
+- WidgetBackendClient 생성은 인증된 pipe에서 hello를 교환한 뒤에만 완료된다. Swift receiveEncoded는 첫 메시지로 hello만 허용하고 version/session/request ID 및 frame/event 최대 크기를 확인한다.
+- hello는 최대 4096 bytes이며 event sequence를 소비하지 않는다. native는 응답의 nextSequence=0을 확인하고 불일치/실패 시 pipe를 취소한다. 인증은 앞선 OS process 확인이 담당하며 UUID만으로 인증했다고 간주하지 않는다.
+- Swift native server owner는 close 재시도 중에도 start를 다시 허용하지 않도록 stopRequested를 유지한다.
+- launcher의 양쪽 sessionID 전달, 실제 DLL/host build와 OS effect 연결은 남아 있다. IMPL-340~421 미커밋/미푸시. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·실행 검증 미실행.
+
+## IMPL-422 — native 응답 effect와 OS 게시 연결
+
+- event pump는 요청 전 publisher generation을 캡처해 Apply에 전달한다. publisher.BeginContext에 예상 generation 조건을 추가해 await/I/O 중 바뀐 context에 오래된 응답이 적용되지 않도록 한다.
+- WidgetEffectApplier는 customization 응답을 실제 WidgetManager 게시 경로에 전달한다. removed/refreshRequired는 최신 OS inventory의 기존 내용을 철회한 뒤 새 native generation과 전체 inventory로 Refresh callback을 호출한다.
+- backend 거부는 내용을 철회하고 고정 오류를 보고하며 pump가 연결을 종료한다. 철회 실패는 새 게시로 덮지 않고 오류를 전달한다.
+- 일반 카드 wire refresh/게시 확인 및 launcher/build/실제 실행 연결은 남아 있다. IMPL-340~422 미커밋/미푸시. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·실행 검증 미실행.
+
+## IMPL-423 — 일반 위젯 카드 transfer
+
+- WindowsWidgetCardTransfer는 전체 manifest와 개별 카드 payload를 각각 frame 상한 이내로 직렬화한다. ready/customizing/removed/failed 상태를 구분하고 실패 대체 카드도 전달한다.
+- HostSession은 한 개의 pending transfer만 보관하며 monotonic 120초 deadline, ticket 및 runtime/coordinator 최신성을 확인한 뒤 카드를 반환한다. 새 prepare는 이전 ticket을 교체한다.
+- acknowledgeTransfer는 실제 게시 성공 ID를 기존 coordinator에 확인한 뒤에만 actionable published 상태로 보관한다. 설정 화면 유지/실패 카드 게시 자체는 성공 ID에 포함시키면 안 된다.
+- native 제어 메시지/카드 요청·적용 및 launcher/build 연결은 남아 있다. IMPL-340~423 미커밋/미푸시. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·실행 검증 미실행.
+
+## IMPL-424 — 카드 전송 제어 명령 수신
+
+- receiveEncoded가 hello 이후 prepare/card/acknowledge를 기존 카드 transfer API로 전달한다. event와 동일한 session/request/sequence를 사용하며 유효한 요청은 처리 전에 sequence를 소비한다.
+- prepare는 서버 현재 시각/30분 stale 기준과 light/dark theme만 받는다. card는 ticket/widget ID, acknowledge는 ticket/중복 없는 bounded 게시 성공 ID 목록을 요구하며 관련 없는 필드는 거부한다.
+- 성공 응답은 payload와 correlation envelope를 함께 frame 상한 내에서 직렬화한다. 실패는 consumed 및 고정 오류 코드로 전달한다.
+- native 제어 요청/응답 decoder 및 일반 카드 OS 게시 확인 연결은 남아 있다. IMPL-340~424 미커밋/미푸시. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·실행 검증 미실행.
+
+## IMPL-425 — native 카드 제어 client
+
+- WidgetBackendClient의 PrepareCards/ReadCard/AcknowledgeCards가 Swift prepare/card/acknowledge 요청을 인코딩하고 실제 pipe exchange를 호출한다. event와 동일 mutex 및 sequence를 사용한다.
+- DecodeWidgetControl은 session/request/version/consumed/nextSequence와 payload 객체를 확인하며 성공 control 응답에 event 효과/카드 필드가 섞이면 거부한다. 실패는 기존 고정 오류·correlation 규칙을 재사용한다.
+- 응답 확인 후 sequence를 반영하며 통신/형식 오류는 client를 terminal 상태로 만들고 pipe를 취소한다. 자동 재전송하지 않는다.
+- native manifest/개별 카드 schema 처리와 OS 게시 driver, launcher/build는 남아 있다. IMPL-340~425 미커밋/미푸시. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·실행 검증 미실행.
+
+## IMPL-426 — native 일반 카드 게시 driver
+
+- WidgetCardRefresh가 전체 OS inventory와 manifest의 ID 집합/중복/상태를 확인하고 ticket별 개별 카드의 ID/상태/JSON/시각 상한을 확인한 뒤 WidgetPublisher에 전달한다.
+- customizing 카드는 기존 폼을 유지한다. ready 중 실제 OS 게시에 성공한 ID만 acknowledge하며 실패 대체 카드는 성공 ID에서 제외한다. 게시 실패는 기존 내용을 철회하며 철회 실패를 숨기지 않는다.
+- pending/withdrawn 및 전송·acknowledge 오류는 해당 generation의 내용을 철회한다. 이미 바뀐 generation은 건드리지 않는다. 다음 갱신 시각/재시도 필요/성공·실패 ID를 host에 반환한다.
+- 전체 refresh와 event를 직렬화하는 실제 host worker, 타이머, launcher/build 연결은 남아 있다. IMPL-340~426 미커밋/미푸시. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·실행 검증 미실행.
+
+## IMPL-427 — 이벤트와 카드 갱신의 단일 worker 연결
+
+- WidgetEventQueue.WaitUntil은 event/deadline/cancelled를 구분한다. 기존 WaitNext도 유지하며 큐에 이미 있는 이벤트를 정기 갱신보다 먼저 처리한다. 취소는 대기를 깨운다.
+- WidgetHostWorker는 fresh authenticated backend session을 전제로 OS inventory를 읽고 기존 내용을 철회한 뒤 각 instance를 idempotent Created로 등록하고 최초 카드를 게시한다. 이후 같은 COM worker에서 이벤트 dispatch/effect 및 전체 카드 prepare/read/acknowledge를 처리해 두 작업이 섞이지 않도록 한다.
+- 카드 결과의 wall-clock nextRefresh를 1초~30분 범위 monotonic 대기로 변환한다. 재시도 결과는 최대 60초로 줄인다. backend 거부/예외는 queue와 pipe를 취소하며 재전송하지 않는다.
+- 실제 executable에서 worker 소유/COM 초기화·등록/호출자 인증, backend account/settings 변경 신호 전달 및 launcher/build는 남아 있다. 이 클래스를 기존 EventPump와 같은 client에 함께 실행하면 안 된다. IMPL-340~427 미커밋/미푸시. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·실행 검증 미실행.
+
+## IMPL-428 — native 종료 상태와 위젯 철회
+
+- backend thread는 server 참조/신뢰한 client handle/COM apartment 정리를 마친 후 결과 HRESULT와 terminal phase를 기록한다. phase만으로 callback context나 DLL을 해제하면 안 되며 기존 join 절차를 유지한다.
+- host worker는 정상 종료와 실패 모두에서 queue/pipe를 취소하고 같은 COM 스레드에서 publisher가 알고 있는 위젯 내용을 철회한다. 삭제 처리가 아니라 내용 철회이며 실패한 ID는 publisher가 재시도용으로 유지한다.
+- ExitStatus는 원래 operation 오류와 withdrawal 오류를 별도로 보관한다. owner가 join한 뒤 읽어야 하며 철회 실패가 있으면 이를 우선 throw하고 원래 오류도 status에 보존한다. OS inventory를 읽기 전에 실패한 경우 아직 알 수 없는 위젯은 이 경로로 철회할 수 없다.
+- 실제 host owner/launcher/COM 인증/build 연결은 남아 있다. IMPL-340~428 미커밋/미푸시. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·실행 검증 미실행.
+
+## IMPL-429 — 테마·수동 갱신 wake-up
+
+- WidgetEventQueue.RequestRefresh는 mutex로 보호한 단일 pending flag로 중복 요청을 합치고 대기 중인 worker를 깨운다. 이벤트가 있으면 먼저 처리하며 request는 실제 refresh wake를 꺼낼 때만 소비한다.
+- WidgetHostWorker.RequestRefresh가 같은 worker의 전체 카드 refresh 경로를 사용한다. 진행 중 새 요청은 다음 refresh로 남고 취소 시 pending 요청을 폐기한다. 기존 event-only WaitNext는 refresh wake를 종료로 오인하지 않는다.
+- 테마 source의 thread-safe 갱신 후 또는 동일 계정 수동 갱신에만 사용하는 API다. account invalidation의 대체가 아니며 해당 protocol과 실제 UI/OS theme listener/launcher 연결은 남아 있다. IMPL-340~429 미커밋/미푸시. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·실행 검증 미실행.
+
+## IMPL-430 — Windows 테마 변경 구독
+
+- WidgetSystemTheme가 UISettings.GetColorValue(Background)로 배경 밝기를 읽고 ColorValuesChanged를 구독한다. 변경 시 thread-safe queue RequestRefresh를 호출하며 worker의 기본 생성자가 이를 카드 theme 입력으로 사용한다.
+- 구독 후 첫 값을 읽고 mutex로 상태를 보호한다. callback은 weak state를 사용하며 Close가 callback의 queue 접근을 차단한 뒤 lock 밖에서 구독을 해제한다. 읽기 오류는 저장해 worker에 전달하고 OS callback 밖으로 예외를 내보내지 않는다.
+- host worker는 COM thread에서 observer를 생성하고 종료 시 구독을 닫는다. custom theme 주입 경로는 유지한다. Windows 고대비 팔레트 전체 반영과 실제 executable/launcher/account invalidation 연결은 별도 남은 작업이다.
+- API 참고: https://learn.microsoft.com/en-us/uwp/api/windows.ui.viewmanagement.uisettings.colorvalueschanged?view=winrt-26100 . 문서 열람만 했으며 OS API 실행은 하지 않았다. IMPL-340~430 미커밋/미푸시. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·실행 검증 미실행.
+
+## IMPL-431 — 요청 경계에서 runtime 계정·설정 무효화
+
+- WindowsUsageRuntime.widgetContextStamp는 quota context, spend generation, 현재 configuration digest, 표시/비용/언어 설정, 갱신/종료 상태를 in-process 값으로 제공한다. 카드나 wire에 이 stamp를 보내지 않는다.
+- HostSession.beginOperation이 async로 stamp를 확인한다. actor 이동 전 busy를 예약하고 변경 시 published/transfer를 제거한 뒤 coordinator.invalidateContext로 설정 폼·동작 토큰·갱신 작업을 무효화한다. 모든 기존 beginOperation 호출부를 연결했다.
+- 상태 읽기 실패/취소 때도 이전 카드와 폼을 무효화하며 busy를 복구한 뒤 오류를 전달한다. runtime 상태가 바뀐 후 들어온 예전 설정 action은 기존 폼 토큰을 재사용할 수 없도록 한다.
+- 이는 요청 시작 경계의 보호다. 요청이 없는 동안 native 즉시 철회, 진행 중 runtime 변경과 OS 게시/설정 저장의 직렬화, 실제 launcher 연결은 남아 있다. IMPL-340~431 미커밋/미푸시. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·실행 검증 미실행.
+
+## IMPL-432 — runtime 위젯 무효화 알림 stream
+
+- runtime은 최대 8개 AsyncStream 구독을 허용하고 각 구독에는 최신 UUID 알림 1개만 보관한다. 최초 구독에도 재동기화 신호를 보내며 계정/설정 digest/공급자 정보는 stream에 포함하지 않는다.
+- quota context 초기화, 표시 설정, optional usage 표시 설정, 비용 설정 변경에서 알림을 발행한다. 표시할 tray row가 없어도 표시 설정 변경 알림은 보낸다.
+- 구독 해제는 continuation을 제거하고 닫으며 stream 종료 callback은 weak runtime으로 정리한다. runtime shutdown은 마지막 무효화 이후 모든 stream을 닫는다.
+- session consumer와 native 즉시 철회 전달은 후속 연결이 필요하다. 현재 stream 추가만으로 OS 내용이 즉시 지워지는 것은 아니다. IMPL-340~432 미커밋/미푸시. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·실행 검증 미실행.
+
+## IMPL-433 — session의 runtime 알림 구독
+
+- 인증된 hello 처리 또는 trusted in-process operation에서 runtime invalidation stream을 구독한다. monitor Task는 weak session을 사용하고 session close는 구독 해제/Task 취소를 수행한다. stream 자연 종료는 session을 닫는다.
+- 알림은 published/transfer/runtime stamp를 제거하고 coordinator.invalidateContext로 폼·동작 토큰·기존 작업을 무효화한다. native owner가 제공할 nonblocking onContextInvalidated callback에도 UUID를 전달한다.
+- beginOperation이 runtime actor 또는 coordinator에서 대기하는 사이 알림 revision이 바뀌면 오래된 stamp를 적용하지 않고 stale 오류를 반환한다. closed/subscriptionID 검사로 종료 후 늦은 알림을 무시한다. terminal stream Task에서 close할 수 있으므로 자기 Task 종료를 await하지 않는다.
+- callback의 native 철회 channel 연결과 진행 중 OS 게시와의 직렬화는 남아 있다. IMPL-340~433 미커밋/미푸시. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·실행 검증 미실행.
+- 최초 구독 revision을 별도 반환해 hello 완료 전 동기적으로 적용하고, stream의 같은 초기 revision만 중복 처리하지 않는다. 버퍼가 새로운 revision으로 교체된 경우에는 이를 그대로 처리한다.
+
+## IMPL-434 — native 게시 무효화 barrier와 우선 철회
+
+- WidgetPublisher.InvalidateContext는 게시와 같은 mutex 아래 ready=false/generation 증가만 수행한다. 신호 수신 스레드에서는 OS 위젯 API를 호출하지 않으며 이미 lock을 획득한 게시가 끝난 다음부터 오래된 generation 게시를 거부한다.
+- WidgetEventQueue.RequestWithdrawal은 단일 pending flag로 합치고 event/refresh/timer보다 우선 처리한다. legacy event-only consumer는 이 신호를 무시하지 않고 오류로 종료한다.
+- WidgetHostWorker.InvalidateContext가 barrier 후 queue를 깨운다. idle worker는 COM 스레드에서 현재 inventory의 기존 내용을 철회하고 새 generation으로 refresh한다. 진행 중 요청이 old generation으로 실패하면 기존 종료 경로로 철회 후 연결을 닫으며 owner의 재연결이 필요하다.
+- backend 신호의 실제 cross-process receiver와 launcher 연결은 남아 있다. 현재 메서드만으로 프로세스 간 알림 전달이 완성된 것은 아니다. IMPL-340~434 미커밋/미푸시. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·실행 검증 미실행.
+
+## IMPL-435 — 무효화 drain 중 요청 진입 차단
+
+- runtimeDidInvalidate는 coordinator의 기존 작업 취소/drain이 끝날 때까지 pending invalidation ID를 유지한다. receive/control/hello/beginOperation은 이 집합이 비어 있지 않으면 busy로 거부한다. 기존 요청의 busy 상태와 별도로 관리하므로 기존 작업 defer가 새 진입을 열지 않는다.
+- prepareTransfer는 await 전후 invalidation revision을 비교하며 transferCard와 acknowledgeTransfer는 actor 이동 후에도 원래 ticket이 session에 남아 있는지 확인한다. observer가 제거한 transfer의 local copy를 게시 성공 상태로 복원하지 않도록 한다.
+- native cross-process 알림 receiver/launcher 및 Windows 실행 검증은 남아 있다. IMPL-340~435 미커밋/미푸시. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·실행 검증 미실행.
+
+## IMPL-436 — native invalidation 이벤트 수신부
+
+- WidgetInvalidationReceiver는 신뢰한 launcher가 전달한 local auto-reset event/backend process handle을 SYNCHRONIZE 권한으로 복제해 소유한다. pipe에서 받은 숫자나 이름으로 handle을 열지 않는다.
+- 전용 non-UI thread에서 취소/백엔드 종료/무효화 이벤트를 함께 기다린다. 무효화는 worker.InvalidateContext, 백엔드 종료는 invalidation 후 worker.Cancel로 전달하며 수신 실패도 worker를 종료시킨다.
+- owner는 receiver Cancel/join 후 receiver와 worker를 해제해야 한다. event가 unnamed/auto-reset/session 전용임을 보장하는 생성·핸들 전달 코드와 Swift 발신부, 실제 receiver thread 실행 연결은 남아 있다.
+- API 참고: https://learn.microsoft.com/en-us/windows/win32/api/synchapi/nf-synchapi-waitformultipleobjects . 문서만 열람했으며 대기 API를 실행하지 않았다. IMPL-340~436 미커밋/미푸시. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·실행 검증 미실행.
+
+## IMPL-437 — Swift 무효화 이벤트 발신 owner
+
+- WindowsWidgetInvalidationSignal은 non-inheritable unnamed auto-reset event를 생성하고 SetEvent/CloseHandle/동기 handle borrow를 하나의 NSLock으로 직렬화한다. 실패한 close는 소유권을 유지해 재시도할 수 있다.
+- callback(onFailure:)는 session.onContextInvalidated와 같은 UUID callback을 제공한다. UUID를 OS로 전송하지 않고 이벤트만 signal한다. signal 실패는 필수 onFailure로 전달해 owner가 연결을 종료/복구하도록 한다.
+- launcher 전용 withBorrowedHandle은 동기 범위에서만 local handle을 빌려준다. trusted target에 SYNCHRONIZE 복제가 필요하며 local handle 숫자를 remote handle로 보내면 안 된다.
+- 실제 session/native server owner 조립, target handle duplication/bootstrap 및 receiver thread 시작은 남아 있다. IMPL-340~437 미커밋/미푸시. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·실행 검증 미실행.
+
+## IMPL-438 — backend connection 수명 조립
+
+- WindowsWidgetBackendConnection은 session UUID, invalidation signal, HostSession callback, NativeServer를 생성한다. 신호 실패는 bounded stream으로 actor에 전달되며 연결 종료를 수행한다.
+- start는 중복 시작을 거부하고 실패 시 close를 시도한다. close는 server의 session 종료/native worker drain 이후 launcher가 제공한 receiver stop/join을 기다리고 마지막에 event handle을 닫는다. 겹친 close는 같은 Task를 기다리며 실패 후 재시도할 수 있다.
+- 원래 signalFailure와 cleanupFailed를 별도로 보관한다. 동기 signal handle borrow를 제공하지만 trusted target process 선택/핸들 복제는 launcher 책임이다. stopReceiver는 실제 stop+join 및 startup 전 호출을 지원해야 한다.
+- 실제 앱의 connection 생성, trusted launcher/receiver 제어/target handle 전달은 남아 있다. IMPL-340~438 미커밋/미푸시. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·실행 검증 미실행.
+
+## IMPL-439 — native receiver 전용 thread 수명
+
+- WidgetInvalidationReceiver.Start가 std::thread를 생성하고 기존 wait loop를 실행한다. Run은 private으로 바꿔 외부 consumer와 소유 thread가 함께 실행되는 경로를 없앴다.
+- StopAndJoin은 lifecycle mutex로 start와 직렬화하고 cancellation event를 설정한 뒤 thread 종료를 기다린다. 시작 전 종료와 반복 종료를 지원하며 종료 후 시작은 거부한다.
+- 생성/실행/취소/백엔드 종료/실패 상태와 HRESULT를 저장한다. thread 생성 실패도 worker를 취소한다. destructor는 owner thread에서 마지막 join을 수행하며 worker는 receiver보다 오래 살아야 한다.
+- 실제 native launcher에서 Start/StopAndJoin을 호출하고 Swift connection의 receiver 종료 계약에 연결하는 작업은 남아 있다. IMPL-340~439 미커밋/미푸시. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·실행 검증 미실행.
+
+## IMPL-440 — Native host session runner
+
+- RunWidgetHostSession constructs the backend client, publisher, worker, receiver and COM registration on the caller's initialized MTA. It starts the receiver and runs the worker synchronously.
+- The callback requires an injected caller authenticator before enqueueing. Retained COM provider interfaces capture a shared queue, never stack or worker pointers. No permissive authentication default is supplied.
+- Cleanup cancels queue/pipe, revokes registration and joins the receiver, retaining separate operation/registration/receiver/withdrawal errors. Startup failure after construction attempts OS content withdrawal. Failures during initial collaborator construction still require launcher handling.
+- Executable entry point, COM security/caller authentication, trusted launcher/handle bootstrap and reconnect on startup invalidation remain incomplete. IMPL-340 through IMPL-440 remain uncommitted/unpushed. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. No build, test or runtime validation executed.
+
+## IMPL-441 — 최초 재동기화와 변경 알림 분리
+
+- 최초 구독 initialRevision은 기존처럼 hello 완료 전에 session/coordinator 상태를 무효화하지만 native signal callback을 호출하지 않는다. 기존 구조에서는 hello 중 설정된 auto-reset event가 receiver 시작 후 최초 등록/카드 작업과 경쟁해 새 연결 자체를 실패시킬 수 있었다.
+- native worker의 최초 BeginContext(inventory)가 이전 프로세스 내용을 철회한 다음 등록 replay/첫 카드 요청을 수행하는 순서를 유지하고 코드에 양쪽 계약을 명시했다.
+- 초기 revision 이외의 실제 runtime 변경과 session 종료는 계속 native callback을 호출한다. 구독 버퍼가 더 최신 revision으로 교체된 경우에도 초기 revision만 건너뛰므로 실제 변경 알림을 초기화로 취급하지 않는다.
+- 실제 실행 파일/인증/핸들 bootstrap/재연결 연결은 남아 있다. IMPL-340~441 미커밋/미푸시. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·실행 검증 미실행.
+
+## IMPL-442 — 내부 게시 API와 대기 후 ticket 만료 처리
+
+- HostSession.prepare/recordPublished는 actor 이동 전 revision을 캡처하고 반환/상태 보관 직전에 pending invalidation과 revision을 확인한다. wire 경로 외의 내부 호출도 무효화 후 과거 결과를 보관하지 않도록 한다.
+- transferCard와 acknowledgeTransfer는 await 후에도 monotonic deadline을 다시 확인한다. 진입 시 유효했더라도 대기 중 120초가 지난 ticket은 반환/게시 확인 성공으로 취급하지 않는다.
+- acknowledge의 사후 조건 실패는 session published/transfer와 coordinator 상태를 무효화한 뒤 오류를 전달한다. native caller의 오류 철회 경로가 실행되어야 한다.
+- 실행 파일/인증/핸들 전달/재연결 연결은 남아 있다. IMPL-340~442 미커밋/미푸시. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·실행 검증 미실행.
+
+## IMPL-443 — 종료 철회 전에 무효화 수신 스레드 drain
+
+- WidgetHostWorker.Run에 stopProducers callback을 추가하고 queue/pipe 취소 이후 terminal BeginContext 철회 이전에 호출한다. session runner가 여기에 receiver.StopAndJoin을 연결한다.
+- 취소 직전에 시작된 receiver.InvalidateContext가 늦게 publisher generation을 바꿔 종료 철회와 경쟁하던 경로에서, receiver thread가 종료된 뒤 철회를 수행하도록 한다.
+- producer 종료 오류는 ExitStatus.producerShutdown 및 runner.receiverCleanup에 보존한다. 실패하더라도 내용 철회를 시도하며 원래 작업 오류와 철회 오류도 유지한다. runner의 후속 StopAndJoin은 startup 실패/재시도용으로 유지한다.
+- 실제 실행 파일/인증/핸들 bootstrap/재연결은 남아 있다. IMPL-340~443 미커밋/미푸시. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·실행 검증 미실행.
+
+## IMPL-444 — trusted host로 무효화 이벤트 handle 복제
+
+- signal owner가 lock으로 local handle 수명을 보호하는 동안 DuplicateHandle을 호출한다. target에는 SYNCHRONIZE만 부여하고 상속을 끈다. SetEvent/ResetEvent 권한을 넘기지 않는다.
+- connection은 시작 전 bootstrap용 API를 제공하며 local trusted process handle 주소를 받아 RemoteWaitHandle 값으로 반환한다. 반환값은 target handle table에서만 유효하며 local CloseHandle 대상으로 사용하면 안 된다.
+- target이 receiver에 복제/인계한 원본 remote handle을 닫아야 한다. bootstrap 실패 시 launcher가 새로 생성한 host를 종료해 미인계 handle을 정리하는 책임을 명시했다. 실제 launcher 인증/전달/실패 회수 연결은 남아 있다.
+- API 참고: https://learn.microsoft.com/ko-kr/windows/win32/api/handleapi/nf-handleapi-duplicatehandle . 문서 열람만 수행했다. IMPL-340~444 미커밋/미푸시. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·실행 검증 미실행.
+
+## IMPL-445 — 무효화 이벤트의 단일 수신자 제한
+
+- signal owner의 mutex 아래 target handle 복제 성공 여부를 기록하고 이후 복제를 alreadyTransferred로 거부한다. DuplicateHandle 실패는 아직 수신자를 만들지 않았으므로 재시도할 수 있다.
+- connection의 raw handle borrow API를 제거하고 signal 내부 borrow를 private으로 제한해 무제한 복제 우회 경로를 없앴다. 현재 소스의 사용처는 signal 내부 복제만 남도록 변경했다.
+- auto-reset 이벤트의 신호를 서로 다른 host receiver가 나눠 소비하지 않도록 하며 bootstrap 전달 실패/재연결은 기존 host 정리 후 새 connection/event를 사용해야 한다.
+- 실제 launcher/인증/bootstrap/재연결 구현은 남아 있다. IMPL-340~445 미커밋/미푸시. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·실행 검증 미실행.
+
+## IMPL-446 — bootstrap 대상과 native server 접속 대상 결합
+
+- connection은 trusted launcher의 process handle을 local 소유 handle로 복제하고 이벤트 target 복제와 native server 시작에 같은 process object를 사용한다. PID/닫힌 handle 값 재사용에 의존하지 않는다.
+- start에서 별도 대상 주소를 받는 인자를 제거했다. bootstrap 없이 start는 missingHost로 거부하고 bootstrap/start 시 process 생존을 확인한다. 필요한 권한은 PROCESS_DUP_HANDLE/QUERY_LIMITED_INFORMATION/SYNCHRONIZE다.
+- native server가 handle을 복제할 때까지 local HostProcess 수명을 유지한다. 실제 설치 경로/서명/실행 파일 인증은 launcher 책임이며 생존 확인 자체를 인증으로 취급하지 않는다.
+- trusted launcher/실행 파일/bootstrap 전달/재연결은 남아 있다. IMPL-340~446 미커밋/미푸시. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·실행 검증 미실행.
+
+## IMPL-447 — 초기 연결 정보 schema
+
+- WindowsWidgetBootstrap.encode와 DecodeWidgetBootstrap은 version/session UUID/local pipe name/target invalidation handle을 4KiB 이하 JSON으로 처리한다. handle은 정밀도 손실을 피하기 위해 canonical decimal string을 사용하고 native pointer 범위/0/최댓값을 거부한다.
+- native decoder는 필드 수/고정 pipe prefix·문자/UUID 정규형을 확인한다. decode만으로 handle을 소유하거나 닫지 않는다. 신뢰한 bootstrap 채널이 확인된 뒤에만 handle ownership을 받아야 한다.
+- connection.prepareBootstrap이 server pipeName 읽기와 target handle 복제/인코딩을 연결한다. 복제 후 전달 실패는 기존 host/connection을 정리해야 하며 다른 대상으로 재사용하지 않는다.
+- 인증된 private 전달 채널, native backend trust anchor, 실제 executable에서 decoder→connector→runner 연결은 남아 있다. IMPL-340~447 미커밋/미푸시. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·실행 검증 미실행.
+
+## IMPL-448 — native bootstrap에서 session runner 연결
+
+- WidgetBootstrappedHost는 인증된 bootstrap 전달 이후에만 생성하도록 계약을 두고 decoder, 전달 event handle 소유, 별도 trusted backend process handle 복제, 기존 pipe connector, session runner를 연결한다.
+- backend 경로/process 신뢰 근거는 payload에서 가져오지 않고 launcher가 별도로 제공한다. COM callback authenticator는 Run에서 필수로 전달한다.
+- 외부 Cancel은 queue와 pipe를 함께 취소한다. Run 중복/취소 후 실행을 거부하며 caller는 Run thread를 join한 후 owner를 해제해야 한다. handle 인계 후 constructor 실패도 RAII로 event를 정리한다. decode 이전 실패는 신뢰한 launcher의 bootstrap 실패 정리가 필요하다.
+- private launcher channel/실행 파일 진입점/COM 보안 초기화·인증/reconnect는 남아 있다. IMPL-340~448 미커밋/미푸시. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·실행 검증 미실행.
+
+## IMPL-449 — session 중복 종료의 drain 완료 보장
+
+- HostSession.close는 closed 플래그만 보고 조기 반환하지 않고 공유 shutdownTask를 기다린다. 최초 호출은 상태/토큰 제거 후 actor가 suspend하기 전에 Task를 저장한다.
+- Task는 runtime 구독 해제와 coordinator.shutdown을 순서대로 수행하며 self 대신 collaborator를 보관한다. runtime stream 종료와 native server close가 겹쳐도 양쪽이 같은 정리 완료를 기다리게 한다.
+- observation Task 자체는 기다리지 않는다. stream terminal callback이 close를 기다리는 경우 자기 대기를 만들지 않으며 late callback은 closed/subscriptionID 검사로 차단된다.
+- launcher/실행 파일/인증/bootstrap 전달/재연결 연결은 남아 있다. IMPL-340~449 미커밋/미푸시. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·실행 검증 미실행.
+
+## IMPL-450 — native Windows 헤더 매크로 충돌 방지
+
+- backend client/COM class factory/publisher/event response/control response의 numeric_limits::max() 호출을 (numeric_limits::max)()로 변경했다. Windows 헤더의 함수형 max 매크로 설정에 영향받지 않도록 한다.
+- client/bootstrap/event codec/class factory/receiver가 직접 사용하는 limits, mutex, atomic, string/string_view, cstdint, utility 헤더를 명시했다. 외부 C++/WinRT 헤더의 간접 include에 의존하는 부분을 줄였다.
+- 이 변경은 소스 수준 수정이며 Windows 컴파일 호환성 확인 결과가 아니다. 실제 build 구성/실행 파일/인증/bootstrap 전달/재연결은 남아 있다. IMPL-340~450 미커밋/미푸시. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·실행 검증 미실행.
+
+## IMPL-451 — native backend DLL MSBuild 대상
+
+- CodexBarWidgetBackend.vcxproj는 WidgetBackendABI.cpp를 DynamicLibrary로 구성한다. Debug/Release x64/ARM64, v143 C++20, Unicode/UTF-8, DLL CRT 및 runtimeobject/windowsapp/ole32/advapi32 링크를 명시한다. SDK는 설치된 Windows 10 SDK 선택이며 재현 가능한 toolchain pin은 배포 통합 시 필요하다.
+- CanonicalWidgetGuid를 WidgetGuid.h로 분리해 pipe listener가 응답 codec/WidgetProvider/App SDK 위젯 UI header를 간접 포함하지 않도록 한다. backend DLL은 Windows SDK C++/WinRT transport 코드만 컴파일하도록 구성했다.
+- host executable/App SDK dependency 선택·프로젝트, packaging DLL 포함/CRT 배포, SDK/toolchain lock은 남아 있다. 새 도구 설치/패키지 복원/MSBuild 실행은 하지 않았다. IMPL-340~451 미커밋/미푸시. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·실행 검증 미실행.
+
+## IMPL-452 — backend 빌드 wrapper
+
+- Build-WidgetBackend.ps1은 Windows에서 명시적 MSBuild.exe 절대 경로와 SDK 버전을 받아 x64/ARM64 Debug/Release 프로젝트를 Build한다. 의존성 다운로드/복원/정리/재빌드 명령은 넣지 않았다.
+- 실행별 UUID 출력/중간 디렉터리를 사용해 과거 binary를 성공 결과로 오인하지 않도록 하며 실패 출력도 보존한다. MSBuild 속성 문법과 충돌하는 repository 경로 문자를 거부한다.
+- 성공 시 DLL 존재 확인과 build receipt만 남긴다. receipt의 validation은 NOT_RUN이며 테스트/ABI 확인/서명/릴리스 승인을 의미하지 않는다. 출력 디렉터리를 .gitignore에 추가했다.
+- wrapper 자체도 실행하지 않았다. host executable/SDK 의존성/배포 통합/인증/bootstrap/reconnect는 남아 있다. IMPL-340~452 미커밋/미푸시. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·실행 검증 미실행.
+
+## IMPL-453 — widget backend DLL 패키징 계약
+
+- New-CodexBarDistributionManifest에 WidgetBackendDLL 명시적 입력을 추가했다. 파일명을 고정하고 root runtime 대상으로 등록해 기존 architecture/PE 검사 및 import dependency 큐를 사용한다. RuntimeFiles와 중복 지정하면 기존 destination 중복 거부가 적용된다.
+- first-party helper는 root CodexBarWidgetBackend.dll/runtime을 서명 대상으로 분류한다. optional backend가 있으면 서명 대상 개수도 1 증가하며 중복/잘못된 kind를 거부한다. 기존 signing request/sign/install은 같은 helper를 사용한다.
+- host executable/Widgets 등록/SDK 런타임 배포까지 완료되기 전 backend 포함은 명시적 opt-in이다. DLL 포함만으로 widget feature 배포 준비가 완료되었다고 보지 않는다.
+- 패키징/PE 검사/서명/설치 스크립트는 실행하지 않았다. IMPL-340~453 미커밋/미푸시. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·실행 검증 미실행.
+
+## IMPL-454 — 부분 철회 실패 시 대상 보존
+
+- BeginContext는 inventory/이전 known ID union과 실패 목록 reserve를 OS 쓰기 전에 준비한다. 준비 단계 실패 시 기존 known 목록은 유지하고 새 게시를 비활성화한다.
+- 첫 WriteBlank 전에 known을 전체 대상 union으로 교체한다. 예기치 않은 예외로 중간 종료해도 미처리/실패 ID를 terminal cleanup에서 찾을 수 있도록 한다.
+- 철회에 성공했고 새 inventory에 없는 ID만 iterator erase로 제거한다. 마지막에 새 set을 재할당하지 않아 OS 쓰기 후 목록 재구성 실패로 재시도 대상이 사라지는 경로를 없앴다. 128 inventory/256 retained union 상한은 유지한다.
+- 실제 launcher/실행 파일/인증/bootstrap/reconnect는 남아 있다. IMPL-340~454 미커밋/미푸시. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·실행 검증 미실행.
+
+## IMPL-455 — 빌드 기록과 artifact 바이트 연결
+
+- build wrapper는 생성된 DLL이 nonempty regular file/512MiB 이하인지 확인하고 write/delete sharing을 거부한 stream으로 SHA256과 크기를 기록하도록 작성했다. MSBuild 실행 파일 버전도 기록한다.
+- receipt provenanceStatus는 LOCAL_BUILD_NOT_ATTESTED, validation은 NOT_RUN이다. hash는 바이트 식별값이며 신뢰한 빌드 증명/서명/테스트 완료를 뜻하지 않는다.
+- OutDir/IntDir 인자는 forward slash로 전달해 공백 경로가 native argument로 인용될 때 마지막 역슬래시가 닫는 따옴표에 영향을 주는 문제를 피하도록 한다.
+- 빌드/해시 계산/스크립트 실행은 하지 않았다. launcher/host executable/인증/bootstrap/reconnect 연결은 남아 있다. IMPL-340~455 미커밋/미푸시. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
+## IMPL-456 — native backend 종료 감지와 connection 정리
+
+- server.start 성공 후 connection은 1초 간격의 취소 가능한 Task로 native status를 읽도록 작성했다. terminal phase 2/3이면 원래 상태/HRESULT를 보관하고 기존 close 경로로 연결한다.
+- 상태 조회 실패/예상 밖 phase도 serverStatusUnavailable로 보관하고 연결 정리를 시작한다. 종료 상태를 받은 뒤에도 server.close의 join/destroy 절차를 생략하지 않는다.
+- explicit close/deinit은 monitor를 취소한다. monitor의 Task는 weak connection을 사용하고 자체 close에서 자기 Task 완료를 기다리지 않는다. 재연결은 새 connection을 소유하는 launcher의 후속 작업이다.
+- 관찰 Task를 포함한 앱/코드 실행은 하지 않았다. 실제 launcher/executable/인증/bootstrap/reconnect는 남아 있다. IMPL-340~456 미커밋/미푸시. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
+## IMPL-457 — native server 관찰과 예비 종료 순서
+
+- NativeServer.status는 stopRequested를 queue 진입 전과 결과 반환 전에 확인한다. 종료가 시작된 뒤 이전 status 응답을 정상 상태로 반환하지 않는다. 실제 pointer 조회는 기존 serial queue에서만 수행한다.
+- deinit fallback은 이미 만들어진 close Task가 있으면 먼저 그 완료를 기다린다. 성공하면 추가 cancel/session-close를 실행하지 않고, 실패가 확정된 경우에만 State.close를 순차 재시도한다.
+- explicit close에서 오류를 받는 기존 API와 native destruction 실패 시 DLL/context를 보존하는 lease는 유지한다.
+- 실제 launcher/executable/인증/bootstrap/reconnect는 남아 있다. IMPL-340~457 미커밋/미푸시. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·실행 검증 미실행.
+
+## IMPL-458 — 패키징 입력과 widget build receipt 일치
+
+- Read-CodexBarWidgetBuildReceipt helper는 16KiB 이하 receipt의 version/component/Release/architecture/크기/SHA256을 확인하고 명시적 artifact input의 바이트와 비교하도록 작성했다. receipt에 들어 있는 artifactPath를 파일 읽기 권한으로 사용하지 않는다.
+- manifest producer는 WidgetBackendDLL과 receipt를 함께 요구하고 RuntimeFiles에서 같은 이름을 직접 넣는 경로를 거부한다. helper는 빌드/패키징 전용이며 설치 lifecycle tools에는 포함하지 않는다.
+- local receipt는 위변조 방지된 provenance/테스트/서명 증명이 아니다. 배포 파일 hash 및 서명 검사는 기존 후속 단계에서 별도로 필요하다. 입력 확인 이후 파일 변경 방지도 기존 배포 처리 계약을 따른다.
+- helper/패키징/해시 계산을 실행하지 않았다. 실제 host/launcher/인증/bootstrap/reconnect는 남아 있다. IMPL-340~458 미커밋/미푸시. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
+## IMPL-459 — native COM process 보안 초기화
+
+- InitializeWidgetComSecurity는 현재 process TokenUser SID를 bounded buffer로 읽어 local COM execute 권한만 포함한 ACL과 absolute SECURITY_DESCRIPTOR를 구성한다. owner/group/DACL을 명시한다.
+- CoInitializeSecurity는 packet privacy, identify impersonation, disable activate-as-activator를 사용한다. 다른 코드가 먼저 보안 정책을 정한 RPC_E_TOO_LATE도 오류로 전달한다. 전용 host process에서 COM 초기화 후/WinRT 객체 생성 전 1회 호출해야 한다.
+- 이는 process 기본 접근 제한이며 Windows Widgets caller 자체의 인증이 아니다. 실제 executable 호출/콜백 caller 인증 및 OS host와의 호환성 확인은 남아 있다.
+- API 참고: https://learn.microsoft.com/en-us/windows/win32/api/combaseapi/nf-combaseapi-coinitializesecurity . 문서 열람만 수행했다. IMPL-340~459 미커밋/미푸시. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·실행 검증 미실행.
+
+## IMPL-460 — COM 초기화부터 native host 실행까지 연결
+
+- RunWidgetHostProcess는 전용 process의 MTA 초기화, InitializeWidgetComSecurity, WidgetBootstrappedHost 생성/실행을 순서대로 호출하고 host 정리가 끝난 뒤 apartment를 해제한다. startup HRESULT와 session 결과를 구분한다.
+- CancellationCallback은 host/COM 객체 주소 대신 shared queue/pipe/cancellation flag를 캡처한다. 외부 제어 코드가 콜백을 보관하더라도 host 해제 후 dangling pointer를 접근하지 않는다. 실행 전 취소도 shared flag로 감지한다.
+- 프로세스당 1회 호출 계약이며 재연결은 새 process를 사용해야 한다. bootstrap을 인증하는 private launcher 채널, 호출자 인증 구현, 실제 executable main과 handle 인계 전 실패 처리는 남아 있다.
+- IMPL-340~460 미커밋/미푸시. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·실행 검증 미실행.
+
+## IMPL-461 — handshake·collaborator 생성 실패의 내용 철회
+
+- session runner는 publisher를 handshake 전 생성하고 client/worker/receiver/class factory 생성을 외부 try 범위로 이동했다. 초기 객체 생성 실패도 operation HRESULT 보관과 queue/pipe 취소, OS inventory 철회로 이어진다.
+- 기존 worker 실행 뒤 등록 해제/receiver join 오류 분리는 유지한다. 외부 catch 전에 내부 RAII 객체가 정리되어 receiver가 살아 있는 상태로 추가 철회를 시작하지 않도록 한다.
+- WidgetManager 생성 자체 또는 runner 이전 pipe connector 실패는 아직 이 철회 범위 밖이며 상위 process/launcher의 처리 대상이다.
+- 실제 executable/호출자 인증/private bootstrap/reconnect 연결은 남아 있다. IMPL-340~461 미커밋/미푸시. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·실행 검증 미실행.
+
+## IMPL-462 — Native COM callback caller authentication
+
+- WidgetCallerAuthenticator가 별도 신뢰 판별을 거친 최대 8개 프로세스 핸들을 query/synchronize 권한으로 복제 보관한다. 같은 Windows session과 생존 상태를 요구하고 중복 PID를 거부한다.
+- 원래 COM callback thread에서 RPC_CALL_ATTRIBUTES_V2_W / RPC_QUERY_CLIENT_PID로 호출자 정보를 조회한다. 로컬 호출·packet privacy·non-null session 및 살아 있는 신뢰 프로세스와의 PID 일치를 요구한다. 조회 실패에는 허용 fallback이 없다.
+- ClientPID는 소유 핸들이 아니므로 닫지 않는다. 살아 있는 프로세스 객체 핸들을 유지하여 PID 재사용을 거부한다. 실제 Widgets broker package/image 신뢰 판별은 launcher의 별도 미구현 계약이다.
+- RunWidgetHostProcessWithTrustedCallers를 추가하여 기존 callback 실행 경로에 연결했다. Rpcrt4.lib 연결 지시를 포함한다. 실제 Windows Widgets COM transport가 이 조회를 지원하는지는 미검증이다.
+- API 근거: https://learn.microsoft.com/en-us/windows/win32/api/rpcasync/nf-rpcasync-rpcserverinqcallattributesw 및 https://learn.microsoft.com/en-us/windows/win32/api/rpcasync/ns-rpcasync-rpc_call_attributes_v2_w
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·실행 검증 미실행. IMPL-340~462는 Git 재시도 사용자 확인 대기로 미커밋·미푸시.
+
+## IMPL-463 — Explicit bootstrap event ownership at process entry
+
+- RunWidgetHostProcess 및 trusted-callers wrapper가 winrt::handle을 값으로 받아 진입부터 이벤트를 소유한다. 콜백 누락, 호출자 인증 객체 생성 실패, COM 초기화 실패에도 RAII 정리가 적용된다.
+- WidgetBootstrappedHost는 event 멤버를 첫 번째로 이동한 후 bootstrap을 파싱한다. JSON handle 값은 별도 인증된 채널이 전달한 소유 핸들과 일치하는지만 비교한다. 불일치한 JSON 숫자를 CloseHandle하지 않는다.
+- private launcher는 인증된 채널에서 이미 소유하는 핸들을 std::move로 넘겨야 하며 전송 후 다시 닫으면 안 된다. 실제 launcher/채널 연결은 미구현이다.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 검증 미실행. Git 재시도 사용자 확인 대기로 IMPL-340~463 미커밋·미푸시.
+
+## IMPL-464 — Widget backend provenance gate across dependency insertion
+
+- 기존 manifest는 명시적 WidgetBackendDLL 및 RuntimeFiles 입력에서만 receipt 경로를 제한했다. 이후 재귀 import 탐색은 같은 이름의 DLL을 검색 경로에서 추가하거나 시스템 정책으로 분류할 수 있었다.
+- Add-ManifestFile에서 backend 이름을 공통 처리한다. 루트 runtime 배치, 명시적 artifact 경로 일치, build receipt 확인을 요구한다. resource 하위 경로로 같은 이름을 추가하는 입력도 거부한다.
+- import가 backend를 요구하면 이미 명시적 runtime 목록에 포함되어 있어야 한다. 검색 경로나 system policy를 대체 공급 경로로 사용하지 않는다. 의존성 추가 완료 후 first-party 구성을 다시 확인한다.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. PowerShell 스크립트 및 검증 미실행. Git 재시도 사용자 확인 대기로 IMPL-340~464 미커밋·미푸시.
+
+## IMPL-465 — Observable widget connection lifecycle
+
+- WindowsWidgetBackendConnection에 session ID, phase, 종료 원인을 담은 Sendable lifecycle snapshot 및 단일 launcher 소비자용 bufferingNewest(1) AsyncStream을 추가했다. 자격증명·계정 정보나 임의 오류 문자열은 포함하지 않는다.
+- 준비/시작/서빙/종료 중/정리 실패/종료 완료 전이를 발행한다. native terminal status, status 조회 실패, invalidation 전달 실패, startup 실패와 요청 종료를 구분한다.
+- 성공적인 명시적 close 뒤 최종 snapshot을 발행하고 stream을 종료한다. 정리 실패 시 stream을 유지하여 close 재시도 결과를 전달하며, 최초 종료 원인은 보존한다. stream 취소 자체가 연결 소유권을 해제하지 않는다.
+- launcher의 실제 구독, backoff 및 새 host/connection 생성은 미구현이다. serving은 native server.start 반환을 의미하며 Widgets UI 등록/렌더 성공 증거가 아니다.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 검증 미실행. Git 재시도 사용자 확인 대기로 IMPL-340~465 미커밋·미푸시.
+
+## IMPL-466 — Cleanup after bootstrap failure and serialized fallback
+
+- 원격 이벤트 핸들 복제 후 bootstrap encode 실패는 해당 connection을 종료하며 bootstrapEncodingFailed 원인을 남긴다. 실패한 payload를 같은 connection에서 다시 준비하지 않는다.
+- start의 host 생존 확인을 공통 startup 실패 처리 범위 안으로 이동하여 준비 후 host가 종료된 경우에도 정리 및 lifecycle 종료 경로를 수행한다.
+- deinit의 예비 정리는 기존 close Task가 있으면 완료를 기다린다. 성공하면 반환하고, 실패가 확정된 뒤에만 순차적으로 정리를 재시도한다.
+- stopReceiver 계약에 미전달 bootstrap의 원격 이벤트 회수 또는 전용 host 종료 대기를 명시했다. 실제 launcher 구현 및 원격 회수 프로토콜은 여전히 남아 있으며 backend가 원격 handle 숫자를 로컬에서 닫지 않는다.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 검증 미실행. Git 재시도 사용자 확인 대기로 IMPL-340~466 미커밋·미푸시.
+
+## IMPL-467 — Widget customization strings for all existing Windows languages
+
+- 설정 폼과 provider selector가 이미 사용하는 localization key 11개를 영어/한국어 외 21개 기존 언어 catalog에 추가했다. 설정 제목/저장/측정 항목/사용 기간/잔여 credit/오늘 비용/30일 비용/제공자/제공자 전환/세션/주간이다.
+- ar, ca, de, es, fa, fr, gl, id, it, ja, nl, pl, pt-BR, ru, sv, th, tr, uk, vi, zh-Hans, zh-Hant가 대상이다. 취소는 기존 Cancel 번역과 RTL은 기존 snapshot 연결을 사용한다.
+- 카드 상태 및 차트 설명 전체의 다국어 완성을 의미하지 않는다. 실제 Windows 글꼴/폭/RTL 렌더 및 원어민 번역 검수는 미실행이다.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 검증 미실행. Git 재시도 사용자 확인 대기로 IMPL-340~467 미커밋·미푸시.
+
+## IMPL-468 — Localized widget availability and refresh states
+
+- 영어/한국어 외 기존 지원 언어 21개에 widget_noData, disabled, waiting, stale, unknown, refreshFailed, unavailableWidget 문구를 추가했다.
+- 기존 card labels 및 오류 카드 생성이 같은 catalog snapshot을 사용하므로 정상 데이터가 없는 상태도 설정 언어를 따른다. 원본 Localizable.strings에는 동일한 widget 전용 키가 없어 Windows catalog에 번역을 작성했다.
+- 차트 범례/수치 설명 전체 번역 및 원어민·Windows 화면 검수는 남아 있다.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 검증 미실행. Git 재시도 사용자 확인 대기로 IMPL-340~468 미커밋·미푸시.
+
+## IMPL-469 — Locale-aware percentage and history count display
+
+- 기존 날짜·통화는 locale formatter를 사용하지만 quota/code review/burn 백분율은 소수 문자열 뒤에 ASCII %를 붙였다. 해당 표시를 percent NumberFormatter로 변경하여 기호 위치와 간격을 locale에 맡긴다.
+- 모델의 percentage points를 100으로 나눈 fraction으로 전달한다. burn margin은 별도 signed formatter를 사용한다. history 누락 일수/불명 관측 개수도 표시와 이미지 대체 텍스트 모두 지역 숫자 형식을 사용한다.
+- formatter가 생성할 수 있는 ALM/LRM/RLM(U+061C/U+200E/U+200F)을 text의 제어 문자 거부에서 예외로 허용한다. 다른 제어 문자는 기존처럼 거부한다.
+- Windows Foundation의 언어별 formatter 및 RTL 렌더 결과는 미검증이다. 날짜 범위 day key의 지역 표시와 나머지 번역은 후속 범위이다.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 검증 미실행. Git 재시도 사용자 확인 대기로 IMPL-340~469 미커밋·미푸시.
+
+## IMPL-470 — Localized history date captions without day shifts
+
+- history caption의 raw YYYY-MM-DD 범위를 선택 언어의 medium 날짜 표시로 변환했다. 저장·정렬·집계 키는 변경하지 않는다.
+- 기존 strict Gregorian 날짜 parser를 모듈 내부에서 공유하고 표시 formatter를 UTC로 고정하여 지역 시간대 때문에 하루가 앞당겨지는 것을 방지한다. 잘못된 날짜는 invalidContent로 거부한다.
+- 첫날과 마지막 날이 같으면 날짜 한 번만 표시하며, 같은 caption을 이미지 대체 텍스트에 사용한다.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 지역 달력/시간대 및 실제 화면 검증 미실행. Git 재시도 사용자 확인 대기로 IMPL-340~470 미커밋·미푸시.
+
+## IMPL-471 — Semantic metric titles rendered with card localization
+
+- WindowsWidgetMetric에 Title enum을 추가하고 credits/extra balance/today/30-day/provider-specific period를 구분한다. 기존 label은 유지하여 기존 데이터 소비 계약을 보존한다.
+- AdaptiveCard는 영문 label을 직접 쓰는 대신 title 의미를 localized Labels로 변환한다. 알 수 없는 제공자 고유 기간은 원문을 보존하고 Codex API estimate에는 비청구 추정임을 명시한다.
+- 추가 사용 잔액 및 API 추정 안내는 en/ko 키를 추가하고 나머지 언어는 기존 fallback을 사용한다. 일반 credits/today/30-day는 IMPL-467의 기존 언어별 문구를 사용한다.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드/테스트/렌더 검증 미실행. Git 재시도 사용자 확인 대기로 IMPL-340~471 미커밋·미푸시.
+
+## IMPL-472 — Localized estimate-versus-billed distinction
+
+- widget_extraUsageBalance 및 widget_apiEstimate를 영어/한국어 외 21개 지원 언어 catalog에 추가했다. API 추정 비용을 실제 청구액으로 오해하지 않도록 각 문구에 해당 구분을 포함했다.
+- 기존 semantic metric title 및 isAPIEstimate 분기와 연결되며 금액·통화·계산 방식은 변경하지 않는다.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 원어민 번역 검수·빌드·Windows 화면 검증 미실행. Git 재시도 사용자 확인 대기로 IMPL-340~472 미커밋·미푸시.
+
+## IMPL-473 — Localized usage and depletion labels
+
+- 영어/한국어 외 21개 지원 언어에 사용/잔여/갱신/리셋/코드 리뷰/토큰/가득 참/소진/최대값 9개 widget label을 추가했다.
+- 기존 locale snapshot과 card formatter 연결을 사용한다. 사용량 데이터, 계산, 갱신 정책은 변경하지 않았다. burn pace 및 history 범례 번역은 남아 있다.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 원어민 검수·빌드·Windows 화면 검증 미실행. Git 재시도 사용자 확인 대기로 IMPL-340~473 미커밋·미푸시.
+
+## IMPL-474 — Localized burn pace states and accessible legend
+
+- 영어/한국어 외 21개 지원 언어에 conserving/onPace/overPace/weeklyBlocked/runsOut/afterReset/burnLegend 7개 문구를 추가했다.
+- 평균 소진·이상적 속도·예상 추이의 선 종류 구분을 번역했으며 기존 카드 본문과 이미지 대체 텍스트가 함께 사용한다. 예측 계산은 변경하지 않았다.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 원어민 검수·빌드·Windows 화면 검증 미실행. Git 재시도 사용자 확인 대기로 IMPL-340~474 미커밋·미푸시.
+
+## IMPL-475 — Localized history labels and missing-versus-zero legend
+
+- 영어/한국어 외 기존 언어 21개에 historyCost/historyTokens/historyMissing/historyUnknown/historyLegend를 추가했다.
+- 빈 날짜, 값이 없는 관측, 실제 0을 구분하는 범례를 카드 설명과 이미지 대체 텍스트에 공급한다. 차트 집계/그리기 알고리즘은 변경하지 않는다.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 원어민 검수·번역 완전성 검사·빌드·Windows 화면 검증 미실행. Git 재시도 사용자 확인 대기로 IMPL-340~475 미커밋·미푸시.
+
+## IMPL-476 — Localized common quota row titles
+
+- quota 행의 Session/Weekly/Code review 공통 제목을 현재 카드 locale labels로 표시한다. ID나 기간만으로 제공자 제목을 추정하지 않고 정확히 일치하는 공통 문구만 변환한다.
+- 모델·요청량·별도 요금제 등 제공자가 정의한 제목은 원문을 유지한다. 입력 데이터, 행 정렬 및 quota 계산은 변경하지 않는다.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드/테스트/화면 검증 미실행. Git 재시도 사용자 확인 대기로 IMPL-340~476 미커밋·미푸시.
+
+## IMPL-477 — Honor widget reset clock/countdown preference
+
+- runtime에서 이미 캡처하던 WindowsUsagePresentationSettings.resetTimesShowAbsolute를 coordinator/card batch/AdaptiveCard까지 전달했다. quota와 burn reset 줄에 적용한다. 직접 호출 API 기본값은 기존 absolute 동작을 보존한다.
+- countdown 선택은 기존 tray UsageFormatter.resetLine을 사용하여 남은 시간/지금 초기화 표현을 공유한다. 해당 formatter의 기존 지역화 fallback 한계도 공유하며 새로 완전 번역을 주장하지 않는다.
+- countdown을 실제 표시한 미래 reset은 payload의 다음 갱신을 기존 시점과 60초/남은 시간 중 빠른 값으로 조정한다. OS의 실제 갱신 시각 보장은 아니다. 100년 초과 간격은 정수 변환 위험을 피하고 absolute 날짜를 표시한다.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드/테스트/화면 검증 미실행. Git 재시도 사용자 확인 대기로 IMPL-340~477 미커밋·미푸시.
+
+## IMPL-478 — Bound complete card responses before publication
+
+- 소스상 refresh 예약 및 native 전송은 이미 payload.nextRefresh를 사용하므로 변경하지 않았다.
+- template/data 각 256KiB 제한만으로는 JSON escaping과 response envelope를 합친 256KiB frame 제한을 보장하지 못한다. requireTransferable이 실제 template/data/widgetID/refresh와 최대 길이 sequence/fixed UUID envelope를 직렬화하여 전체 한도를 적용하도록 작성했다.
+- card batch의 개별 ready 생성 범위에서 이 조건을 적용해 oversized card를 기존 invalidContent 오류 카드로 전환한다. 오류 카드에도 같은 조건을 적용한다. 전송 마지막 encode 제한은 유지한다.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 새 production guard를 실행한 것이 아니며 빌드/테스트/검증 미실행이다. Git 재시도 사용자 확인 대기로 IMPL-340~478 미커밋·미푸시.
+
+## IMPL-479 — Lossless indexed PNG for widget charts
+
+- WindowsPNGEncoder에 opt-in indexed encoding을 추가하고 burn/history chart에서 선택했다. 256개 이하의 실제 RGB 색을 순서대로 PLTE에 기록하고 8-bit index scanline을 사용한다. 양자화·리사이즈는 하지 않는다.
+- 256색을 넘거나 palette overhead로 이득이 없는 경우 기존 RGB encoding으로 돌아간다. 다른 share card 호출 기본값은 유지한다. Data slice의 startIndex를 기준으로 scanline을 읽는다.
+- PNG color type 3 및 PLTE-before-IDAT 구조 근거: https://www.w3.org/TR/png-3/#11PLTE
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 실제 PNG 생성·디코드·픽셀 비교·용량 측정·빌드 미실행. Git 재시도 사용자 확인 대기로 IMPL-340~479 미커밋·미푸시.
+
+## IMPL-480 — Runtime ownership and shutdown of the widget backend
+
+- WindowsUsageRuntime이 단일 WindowsWidgetBackendConnection을 소유하는 factory 및 명시적 async close 경로를 추가했다. shutdown 이후 생성과 기존 연결이 남은 동안의 새 연결 생성을 거부한다.
+- 기존 runtime.shutdown에서 quota 무효화/구독 종료 후 backend close를 기다린다. 정리 실패 시 owner 및 widgetBackendCleanupFailed를 유지하여 재시도할 수 있게 했다.
+- 겹치는 close waiter는 객체 identity를 확인한 뒤 owner를 비운다. 오래된 waiter가 새 연결을 해제하지 않는다. 정상 close가 완료된 뒤에만 교체 연결 생성이 가능하다.
+- 실제 launcher의 factory 호출, 설치 DLL 경로 신뢰 확인, host 실행·bootstrap 인증 및 closeReceiver 구현은 여전히 남아 있다. 앱에서 위젯이 동작한다고 주장하지 않는다.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드/테스트/실행 검증 미실행. Git 재시도 사용자 확인 대기로 IMPL-340~480 미커밋·미푸시.
+
+## IMPL-481 — Stable app-owned widget configuration service
+
+- WindowsUsageRuntime이 WindowsWidgetService/ConfigurationStore를 소유한다. backend factory는 임의 service를 연결마다 받지 않고 같은 service를 전달한다.
+- 기본 위치는 실제 configStore.fileURL의 부모 아래 WindowsWidgets/settings.json이다. 기존 Windows config 기본 위치 및 portable/config override root를 따른다. 런타임 초기화에 widgetSettingsURL을 명시해 설치별 경로를 주입할 수 있다.
+- 생성 시 파일 접근은 없고 기존 store의 최초 load/save가 읽기·생성을 담당한다. 인증정보는 widget 설정에 새로 추가하지 않는다.
+- launcher 호출·bootstrap 인증·호스트 실행은 남아 있다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드/테스트/실행 검증 미실행. Git 재시도 사용자 확인 대기로 IMPL-340~481 미커밋·미푸시.
+
+## IMPL-482 — Shared runtime shutdown completion
+
+- 기존 shuttingDown guard는 최초 shutdown이 await 중일 때 두 번째 호출을 즉시 반환시켰다. shutdownTask를 저장하고 모든 호출이 그 완료를 기다리도록 변경했다.
+- 기존 정리 본문을 performShutdown으로 옮겨 위젯 연결 close, spend, refresh, CLI reset의 순서를 유지한다. shuttingDown은 첫 suspension 전에 설정된다.
+- 호출자 Task 취소가 resource teardown을 중단하지 않도록 별도 Task를 사용하며 성공/실패 기록은 기존 경로를 따른다. widget close 실패는 기존 diagnostic에 남으며 완전 정리 성공으로 해석하지 않는다.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드/테스트/실행 검증 미실행. Git 재시도 사용자 확인 대기로 IMPL-340~482 미커밋·미푸시.
+
+## IMPL-483 — Surface widget cleanup failure at application shutdown
+
+- WindowsMain의 runtime/session 종료 대기 후 shutdown semaphore를 알리기 전에 widgetBackendCleanupFailed를 읽어 실패 진단을 stderr에 기록한다.
+- 기존 PATH helper 및 system session timeout 진단 방식과 맞춘다. 계정/파일 경로/원시 오류 정보는 기록하지 않으며 새로운 종료 코드나 성공 판정을 도입하지 않는다.
+- 일반 종료의 완료 대기와 OS session end의 기존 2초 한도는 유지한다. 실제 host 실행 연결은 여전히 남아 있다.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드/테스트/실행 검증 미실행. Git 재시도 사용자 확인 대기로 IMPL-340~483 미커밋·미푸시.
+
+## IMPL-484 — Release self-terminated backend ownership
+
+- runtime factory가 생성한 backend lifecycle stream을 단일 소비자로 관찰한다. closed는 owner/관찰 Task를 해제하여 다음 연결 생성을 허용하고 최종 lifecycle snapshot은 유지한다.
+- cleanupFailed는 진단을 남기고 owner를 유지한다. 이후 close 재시도로 closed가 오면 해제한다. 객체 identity guard가 지연된 이전 연결 이벤트/close waiter로부터 새 연결을 보호한다.
+- 관찰 Task는 runtime/connection을 weak로 캡처한다. launcher는 stream을 경쟁 소비하지 않고 runtime.widgetBackendLifecycle snapshot을 읽는 계약으로 변경했다. 실제 재시작 정책과 host 실행은 남아 있다.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드/테스트/실행 검증 미실행. Git 재시도 사용자 확인 대기로 IMPL-340~484 미커밋·미푸시.
+
+## IMPL-485 — Bounded transport handshake readiness
+
+- backend lifecycle의 serving을 listening으로 구체화하고 handshakeAccepted를 분리했다. session은 인증된 transport hello 수락 여부만 제공하며 OS widget 등록/렌더 성공을 뜻하지 않는다.
+- 기존 1초 native 상태 monitor에서 session handshake를 관찰한다. 최초 수락만 lifecycle로 발행한다. 별도 관찰 stream이나 스레드는 추가하지 않았다.
+- 서버 시작 반환부터 monotonic 30초 내 handshake가 없으면 handshakeTimedOut 원인을 기록하고 기존 close 경로를 수행한다. 실제 Windows 환경에서 timeout 적정성과 연결 순서 검증은 남아 있다.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드/테스트/실행 검증 미실행. Git 재시도 사용자 확인 대기로 IMPL-340~485 미커밋·미푸시.
+
+## IMPL-486 — Recover from widget settings revision conflicts
+
+- store는 이미 exclusive sidecar 및 expected bytes 비교로 협력 writer 간 덮어쓰기를 거부한다. 이 저장 계약은 변경하지 않았다.
+- coordinator는 action save의 changed 오류에서 같은 context의 stale 폼/카드를 무효화한다. 실패한 mutation은 재실행하지 않는다.
+- native EffectApplier/HostWorker는 인증된 event 응답에서 consumed=true, error=settingsChanged, kind=Action인 경우에만 철회 후 최신 inventory/card refresh를 수행하고 연결을 유지한다. 다른 거부와 철회/refresh 실패는 기존 종료 경로를 유지한다.
+- legacy generic EventPump는 임의 Apply callback의 복구 보장을 알 수 없으므로 기존 종료 동작을 유지한다.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드/테스트/실행 검증 미실행. Git 재시도 사용자 확인 대기로 IMPL-340~486 미커밋·미푸시.
+
+## IMPL-487 — Installed package evidence for retained widget callers
+
+- WidgetCallerPackage helper가 GetPackageFullName으로 프로세스 신원을 읽고 현재 사용자 FindPackagesForUser 결과의 정확한 full name/family와 대조한다. Store/System signature kind 및 non-development 설치를 요구하고 실행 이미지가 package 설치 위치 아래인지 확인한다.
+- trusted-callers process wrapper가 기존 authenticator의 복제 보관 핸들을 COM 초기화 후, host 등록 전 검증하도록 연결했다. 원래 RPC PID/생존/session 확인은 유지한다.
+- expected package family는 설치 정책에서 공급해야 하며 bootstrap/콜백으로 전달받아 신뢰하면 안 된다. 실제 지원 Windows 버전별 Widgets broker family/실행 프로세스 발견·배포 정책은 미확정이며 이 helper만으로 전체 신뢰 체인이 완성되지 않는다.
+- API 근거: https://learn.microsoft.com/en-us/windows/win32/api/appmodel/nf-appmodel-getpackagefullname 및 https://learn.microsoft.com/en-us/uwp/api/windows.applicationmodel.packagesignaturekind 및 https://learn.microsoft.com/en-us/uwp/api/windows.management.deployment.packagemanager.findpackagesforuser
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드/실행/패키지 조회 검증 미실행. Git 재시도 사용자 확인 대기로 IMPL-340~487 미커밋·미푸시.
+
+## IMPL-488 — Bounded installed-policy widget caller discovery
+
+- Toolhelp process snapshot에서 설치 정책에 지정된 leaf 실행 파일 이름을 찾고 동일 Windows session, package full name/family/signature/location, 실제 process image leaf, 생존 상태를 요구한다.
+- snapshot 최대 16,384개/후보 정책 최대 8개/보관 process 최대 8개로 제한한다. 일치하는 이름만 가진 다른 패키지는 제외하며 정상 후보가 없으면 거부한다. PID만 보관하지 않고 process handle을 보관한다.
+- RunWidgetHostProcessWithInstalledCallerPolicy가 COM 초기화 후 발견→authenticator 생성→package 확인→host 등록 순서를 연결한다. 실행 중 broker 교체는 새 host 연결이 필요하다.
+- 정책의 실제 Windows 버전별 package family/실행 파일 목록 확정 및 신뢰된 배포, executable/인증 bootstrap 채널은 여전히 남아 있다.
+- Toolhelp API 근거: https://learn.microsoft.com/en-us/windows/win32/api/tlhelp32/nf-tlhelp32-process32nextw
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드/프로세스 조회/실행 검증 미실행. Git 재시도 사용자 확인 대기로 IMPL-340~488 미커밋·미푸시.
+
+## IMPL-489 — Windows high-contrast chart colors
+
+- read-only SPI_GETHIGHCONTRAST 및 COLOR_WINDOW/COLOR_WINDOWTEXT snapshot을 추가했다. 시스템 설정을 변경하지 않으며 API가 제공하는 scheme buffer는 LocalFree로 해제한다. 조회 실패는 renderer 오류로 전달한다.
+- history/burn 차트가 고대비에서 사용자 시스템 색을 사용한다. burn gradient는 생략하며 선 종류와 history baseline 표식 위치 등 기존 색 외 구분을 유지한다.
+- 현재 각 이미지 생성 시 색을 캡처한다. batch 도중 시스템 색 변경의 일관성 및 native theme-change 수신에 대한 실기기 확인은 남아 있다.
+- API 근거: https://learn.microsoft.com/en-us/windows/win32/api/winuser/ns-winuser-highcontrastw 및 https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-getsyscolor
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 시스템 API 조회/PNG 생성/빌드/실행 검증 미실행. Git 재시도 사용자 확인 대기로 IMPL-340~489 미커밋·미푸시.
+
+## IMPL-490 — One high-contrast snapshot per card delivery
+
+- card batch에서 고대비 palette 조회 결과를 한 번 캡처해 내부 AdaptiveCard 및 history/burn renderer에 전달한다. 같은 delivery의 이미지마다 OS 색을 다시 읽지 않는다.
+- 조회 실패도 Result로 보관하며 실제 차트 생성 시에만 전달한다. 따라서 차트가 없는 카드까지 시스템 색 조회 오류로 실패시키지 않는다.
+- 공개 단일 카드/이미지 생성 API는 호출 시 한 번 캡처하는 기존 사용 형태를 유지하며 내부 overload는 주입된 snapshot을 사용한다. native 테마 변경 이벤트 및 이미 게시한 카드의 갱신은 별도 연결을 따른다.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드/색 조회/이미지 생성/검증 미실행. Git 재시도 사용자 확인 대기로 IMPL-340~490 미커밋·미푸시.
+
+## IMPL-491 — Refresh widgets on contrast and palette changes
+
+- WidgetSystemTheme에 AccessibilitySettings.HighContrastChanged 구독을 추가해 기존 coalescing event queue로 refresh를 요청한다.
+- UISettings.ColorValuesChanged는 dark/light bool이 바뀌지 않아도 refresh를 요청한다. 같은 밝기의 다른 전경색/고대비 palette가 무시되지 않도록 했다.
+- close는 shared state를 먼저 closed로 표시한 뒤 lock 밖에서 두 구독을 해제한다. callback은 weak state와 기존 queue lifetime을 사용한다.
+- API 근거: https://learn.microsoft.com/en-us/uwp/api/windows.ui.viewmanagement.accessibilitysettings.highcontrastchanged
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 이벤트 수신/빌드/실행 검증 미실행. Git 재시도 사용자 확인 대기로 IMPL-340~491 미커밋·미푸시.
+
+## IMPL-492 — Aggregate native host completion status
+
+- WidgetHostProcessResult.CompletionStatus()를 추가했다. 시작 실패, 세션 누락, 등록/수신기/producer 정리, 카드 철회, 작업 및 수신 오류를 모두 판정한다.
+- 정상 취소만 S_OK로 처리하며 backend 종료는 ERROR_BROKEN_PIPE로 구별한다. 수신기가 Created/Running/Failed인 채 반환된 불완전 상태는 성공으로 처리하지 않는다.
+- 상세 오류 필드는 유지하고 통합 판정은 정리 실패를 우선한다. 실제 host executable의 exit code 연결은 여전히 남아 있다.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드/테스트/실행 검증 미실행. Git 재시도 사용자 확인 대기로 IMPL-340~492 미커밋·미푸시.
+
+## IMPL-493 — Release host resources despite retained cancellation callbacks
+
+- WidgetBootstrappedHost.CancellationCallback이 queue/pipe/cancellation state를 강하게 캡처하던 부분을 weak reference로 변경했다. 외부 launcher가 콜백을 계속 보관해도 종료한 호스트의 파이프 핸들을 소유하지 않는다.
+- 호출마다 세 참조를 모두 잠근 뒤 취소하며, 호스트가 이미 사라졌으면 no-op이다. 취소 진행 중 획득한 참조는 해당 호출이 끝날 때까지 유지한다.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드/수명/동시성 검증 미실행. Git 재시도 사용자 확인 대기로 IMPL-340~493 미커밋·미푸시.
+
+## IMPL-494 — Match bootstrap pipe names to listener generation
+
+- Swift bootstrap encoder와 native decoder의 파이프 suffix를 36자 소문자 canonical UUID로 제한했다. 기존 허용 문자 나열로는 통과하던 불완전한 UUID와 임의 하이픈 문자열을 거부한다.
+- WidgetPipeListener의 실제 이름 생성 규칙에 맞췄으며 session ID와 pipe nonce가 별도라는 기존 계약은 유지한다. 이름 형식은 인증을 대체하지 않는다.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드/파서 실행/검증 미실행. Git 재시도 사용자 확인 대기로 IMPL-340~494 미커밋·미푸시.
+
+## IMPL-495 — Preserve cancellation requested before host startup
+
+- WidgetHostCancellation이 callback 등록 이전의 취소를 저장하며, 등록 시 즉시 전달한다. callback invocation/destruction은 mutex 밖에서 수행하고 실행 중 참조를 유지한다.
+- installed-caller-policy 실행 함수에 shared cancellation slot overload를 연결했다. 성공/실패 반환 시 slot을 clear하며 취소 상태는 유지한다. 재연결은 새 slot을 사용한다.
+- Microsoft 공식 C++/WinRT 위젯 provider 구성 문서를 읽었다: https://learn.microsoft.com/en-us/windows/apps/develop/widgets/implement-widget-provider-win32 . App SDK 프로젝트/host entrypoint/launcher 실제 연결은 미완료이며 SDK 설치 및 restore는 하지 않았다.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드/동시성/실행 검증 미실행. Git 재시도 사용자 확인 대기로 IMPL-340~495 미커밋·미푸시.
+
+## IMPL-496 — Rediscover plugins on manual tray refresh
+
+- 트레이 onRefresh가 refreshIncludingPluginDiscovery를 호출하도록 연결했다. 앱 시작 시 1회 검색에 머물던 plugin registry를 수동 새로 고침에서 갱신한다.
+- 진행 중 조회가 있으면 registry를 즉시 교체하지 않고 다음 직렬 refresh 시작 시 검색한다. 연속 요청은 boolean pending flag로 합치고 현재 조회 종료 시 반복 조건에 반영한다.
+- 자동 주기 refresh의 검색 비용은 유지하며, 기존 plugin fetch/approval 경로를 사용한다. 설치/승인/설정 native UI는 별도 미완료다.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 플러그인 검색/실행/빌드/검증 미실행. Git 재시도 사용자 확인 대기로 IMPL-340~496 미커밋·미푸시.
+
+## IMPL-497 — Surface plugin discovery failures in the tray
+
+- registry load result 중 error 건수를 별도 RenderEntry로 전달해 트레이에 표시한다. 검색 디렉터리 오류/manifest 및 중복 ID 등 로더가 기록한 실패가 조용히 누락되지 않도록 했다.
+- 표시 시 언어와 숫자 format을 적용하며 한국어/영어 안내를 추가했다. 다른 언어는 기존 영어 fallback을 사용한다. 오류 원문 및 경로는 표시하지 않는다.
+- 수동 재검색에 성공하면 다음 render entry에서 실패 안내가 사라진다. 상세 오류 UI 및 설치/승인 UI는 남아 있다.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 검색/렌더링/빌드/검증 미실행. Git 재시도 사용자 확인 대기로 IMPL-340~497 미커밋·미푸시.
+
+## IMPL-498 — Windows plugin approval review contract
+
+- WindowsPluginApprovalReview와 runtime review/approve 메서드를 추가했다. 검토 token, plugin ID, source hash, 승인 범위를 보관하고 동시 refresh 중에는 거부한다.
+- 저장 전 token/registry/현재 설정의 binding/최대 1MiB bounded 파일 SHA256을 대조한다. typedConfirmationOrigins 전체를 정확히 입력해야 하며 저장 실패/변경 시 재검토가 필요하다. 저장 후 수동 재검색 경로로 연결한다.
+- 기존 영구 승인 모델은 source hash가 아닌 권한 binding 기준임을 주석에 바로잡았다. source hash는 이번 검토와 저장 사이의 변경 판정에 사용한다.
+- native 승인 화면 및 메뉴 호출부는 아직 미연결이다. 실제 승인 파일을 쓰거나 플러그인을 실행하지 않았다.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드/실행/검증 미실행. Git 재시도 사용자 확인 대기로 IMPL-340~498 미커밋·미푸시.
+
+## IMPL-499 — Native plugin approval dialog
+
+- 읽기 전용 스크롤 영역에 plugin ID/name, origins, auth/header, secret 이름, capabilities, cookie domains, typed origins를 표시하는 Win32 modal을 작성했다. 비밀정보 값은 사용하지 않는다.
+- metadata control/bidi 문자를 가시 escape로 표시하고 60k UTF-16 초과 review는 생성을 거부한다. 주소 입력은 16k로 제한하고 필수 주소와 정확히 비교한다.
+- 기본 버튼/초기 focus는 Cancel이다. 승인 버튼에서 명시적으로 승인하면 주소 배열만 반환하며 persistence는 runtime이 담당한다. 한국어/영어 문구를 추가했다.
+- 실제 tray 메뉴/request mailbox 연결과 Windows 접근성/DPI/키보드 검증은 남아 있다.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. UI/빌드/실행 검증 미실행. Git 재시도 사용자 확인 대기로 IMPL-340~499 미커밋·미푸시.
+
+## IMPL-500 — Wire plugin approval into the tray
+
+- 발견된 plugin ID별 권한 검토 submenu를 추가하고 request UUID 및 load/save 단계가 일치하는 mailbox만 UI 스레드에서 소비한다. 최대 256개를 표시하며 초과 안내를 남긴다.
+- WindowsMain이 runtime review/approve 메서드와 reply를 연결한다. 승인 dialog 취소 시 저장하지 않고 승인 시 runtime 재검사 후 저장/refresh하며 성공·실패 안내를 표시한다.
+- 기존 editor drain 재진입 방지를 사용하고 dialog 동안 command/hotkey/page popup을 막는다. 권한 화면은 원문 오류나 비밀정보를 출력하지 않는다.
+- 256개 초과 탐색, 설치/설정/승인 철회 UI, 전체 editor 공존·종료·DPI 동작 검증은 남아 있다.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드/UI/승인 실행 검증 미실행. Git 재시도 사용자 확인 대기로 IMPL-340~500 미커밋·미푸시.
+
+## IMPL-501 — Revoke plugin permissions from the native review
+
+- 권한 검토 dialog에 저장된 권한 철회 버튼을 추가했다. 승인과 철회를 구분하는 Decision으로 UI 결과를 전달한다.
+- request mailbox의 저장 단계와 WindowsMain callback을 통해 runtime revokeReviewedPlugin으로 연결한다. 검토 token/조회 중 여부를 검사한 뒤 해당 ID의 approval store 항목을 제거하고 재검색/재조회한다.
+- 철회 시 주소 입력이나 source hash 재검사를 요구하지 않는다. 다만 검토 화면 진입은 현재 유효한 plugin/binding이 필요하므로 깨진 manifest/삭제된 plugin의 orphan 승인 정리는 아직 별도 경로가 필요하다.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 실제 권한 철회/빌드/UI/검증 미실행. Git 재시도 사용자 확인 대기로 IMPL-340~501 미커밋·미푸시.
+
+## IMPL-502 — Revoke orphaned plugin approvals
+
+- approval store에 key/instance ID가 일치하는 permission binding 목록 조회 API를 추가했다. 트레이는 발견한 plugin ID와 저장된 approval ID의 합집합을 표시한다.
+- plugin/config/binding을 읽을 수 없어도 저장된 binding이 있으면 철회 전용 snapshot을 반환한다. native dialog에서 상태를 설명하고 승인 버튼/주소 입력을 비활성화한다.
+- runtime 승인 경로도 approvalAvailable 및 실제 review URL을 요구한다. 철회 전용 snapshot으로 새 권한을 부여할 수 없다.
+- 저장소 자체가 손상되어 decode 불가한 경우 목록은 기존 store의 fail-closed 동작에 따라 비어 있다. 목록 UI paging과 저장소 손상 복구는 별도 작업이다.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 실제 승인 조회/철회/빌드/UI/검증 미실행. Git 재시도 사용자 확인 대기로 IMPL-340~502 미커밋·미푸시.
+
+## IMPL-503 — Page through all plugin permission entries
+
+- 처음 256개만 표시하던 승인 메뉴를 256개 단위 페이지로 변경하고 이전/다음 및 전체 중 현재 범위 표시를 추가했다. 발견된 plugin과 저장된 승인 ID 전체를 순서대로 접근한다.
+- 페이지 명령은 현재 메뉴에서 생성한 target만 허용하며 실행 후 기존 command map을 폐기한다. 기존 pagePopupMessage로 anchor를 유지해 메뉴를 다시 연다. 하위 메뉴 자동 펼침은 구현하지 않았다.
+- 목록 축소 시 마지막 유효 페이지로 clamp하고 빈 목록은 첫 페이지로 초기화한다. request 진행 중 이동을 막고 PostMessage 실패 시 page를 복원한다.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드/UI/페이지 이동 검증 미실행. Git 재시도 사용자 확인 대기로 IMPL-340~503 미커밋·미푸시.
+
+## IMPL-504 — Acknowledge permission persistence without waiting for providers
+
+- 승인/철회는 approval store 쓰기가 끝나면 반환하고, 재검색 flag와 별도 Task를 통해 기존 직렬 refresh 경로를 요청한다. 공급자 네트워크 지연 때문에 저장 응답이 지연되지 않도록 했다.
+- refresh 자체의 shutdown/중복 실행 guard 및 pending discovery 처리를 유지한다. 파일 SHA256 확인용 handle은 검사가 끝나면 닫혀 저장/네트워크 작업 동안 유지되지 않는다.
+- 저장 성공은 승인 파일 persistence 성공만 의미하며 공급자 조회 성공을 보장하지 않는다.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 네트워크/저장/UI/빌드/검증 미실행. Git 재시도 사용자 확인 대기로 IMPL-340~504 미커밋·미푸시.
+
+## IMPL-505 — Preserve unreadable or corrupted approval stores
+
+- approval store의 조회와 변경용 읽기를 분리했다. 조회는 읽기/형식 오류 시 승인 없음으로 처리하지만 record/remove는 오류를 전달하고 save를 호출하지 않는다.
+- 파일 없음만 최초 빈 저장소로 취급한다. dictionary key와 binding instance ID 불일치도 손상으로 거부한다. 공용 Core 저장소 변경이므로 Windows 외 호출부에도 같은 보존 동작이 적용된다.
+- 저장소 자동 삭제/초기화는 추가하지 않았다. 프로세스 간 동시 변경/잠금 및 손상 복구 UI는 별도 미완료다.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 손상 파일/IO/빌드/테스트 검증 미실행. Git 재시도 사용자 확인 대기로 IMPL-340~505 미커밋·미푸시.
+
+## IMPL-506 — Serialize Windows approval mutations across processes
+
+- record/remove가 프로세스 내부 NSLock 외에 Windows .lock sidecar handle을 share mode 0으로 보유한 채 읽기→변경→atomic replace를 수행하도록 했다.
+- 잠금 경쟁은 즉시 busy 오류로 반환하며 기다리거나 기존 파일을 초기화하지 않는다. 잠금 파일의 directory/reparse point를 거부하고 종료 시 handle만 해제한다.
+- 이 저장소 API를 사용하는 협력적 Windows writer 간 직렬화이며 외부 직접 파일 편집은 보호 범위 밖이다. macOS 경로는 기존 NSLock 동작을 유지한다.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 실제 잠금/경쟁/파일 IO/빌드/테스트 검증 미실행. Git 재시도 사용자 확인 대기로 IMPL-340~506 미커밋·미푸시.
+
+## IMPL-507 — Reject stale permission review writes
+
+- approval store에 expected binding을 요구하는 conditional record/remove overload를 추가했다. Windows 파일 잠금 안에서 읽기/비교/저장을 수행한다.
+- Windows review가 실제 저장된 이전 binding을 보관하며 승인/철회 모두 조건부 API를 사용한다. 같은 ID의 기록이 검토 후 바뀌면 재검토 오류를 반환한다. 다른 ID의 변경은 유지한다.
+- 기존 unconditional API는 기존 호출부 호환성을 위해 유지했다. 비교는 binding 값 기준이므로 같은 값으로 바뀌었다 돌아오는 ABA 이력은 구별하지 않는다.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 저장/동시성/빌드/테스트 검증 미실행. Git 재시도 사용자 확인 대기로 IMPL-340~507 미커밋·미푸시.
+
+## IMPL-508 — Configure whether a reviewed plugin is enabled
+
+- review snapshot에 실제 enabled 상태를 추가하고 setReviewedPluginEnabled를 작성했다. token/조회 중 여부/기존 enabled 값 일치를 검사하며 first-party provider는 이 API에서 거부한다.
+- 활성화에는 발견된 plugin 및 현재 binding의 기존 승인을 요구한다. 비활성화는 plugin 로드 실패 상태에도 허용한다. config를 읽을 수 없으면 변경하지 않는다.
+- 최신 config에서 해당 provider.enabled만 변경해 저장하고 재검색/refresh를 요청한다. 활성 여부 UI 버튼/callback은 아직 미연결이다. config 외부 동시 쓰기는 기존 config store 경계를 따른다.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 실제 config 저장/빌드/UI/검증 미실행. Git 재시도 사용자 확인 대기로 IMPL-340~508 미커밋·미푸시.
+
+## IMPL-509 — Toggle plugin usage in the native review dialog
+
+- 검토 창에 활성화/비활성화 버튼 및 사용 상태 안내를 추가했다. 미승인 plugin은 활성 버튼을 잠그고 권한 승인 안내를 표시한다. 사용 중이면 비활성화할 수 있다.
+- Decision.setEnabled와 request mailbox, WindowsMain callback을 runtime setReviewedPluginEnabled에 연결했다. 저장 결과는 공통 plugin 설정 저장 안내로 표시한다.
+- 버튼 영역을 분리해 dialog 높이를 늘렸다. DPI/작은 화면/키보드 접근성은 아직 실행 검증하지 않았다. 승인을 먼저 저장한 경우 검토 창을 다시 열어 활성화한다.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 실제 활성/비활성/config 저장/빌드/UI 검증 미실행. Git 재시도 사용자 확인 대기로 IMPL-340~509 미커밋·미푸시.
+
+## IMPL-510 — Distinguish plugin configuration from availability
+
+- native review의 상태 안내에서 설정 읽기 실패를 disabled로 표시하지 않도록 분리했다. enabled지만 code/binding 불가 또는 승인이 없는 경우도 각각 안내한다.
+- orphan review의 문구를 실제 기능에 맞춰 수정했다. 새 승인은 불가하지만 기존 권한 철회 및 읽을 수 있는 enabled 설정의 비활성화는 가능하다.
+- ProviderConfig(id:)의 enabled 기본값 nil 계약을 소스에서 확인했다. 컴파일/실행 검증을 수행한 것은 아니다.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드/UI/검증 미실행. Git 재시도 사용자 확인 대기로 IMPL-340~510 미커밋·미푸시.
+
+## IMPL-511 — Plugin settings and secret edit contract
+
+- manifest plain/secure 필드 기반 snapshot과 replace/remove patch를 추가했다. snapshot은 일반값 및 secret 저장 여부만 반환하며 실제 secret은 runtime 비교 상태에만 보관한다.
+- runtime은 검토 token/source hash/현재 설정 일치를 검사한 뒤 알려진 키만 변경한다. 수정한 키의 이전 plain/secure 중복 값을 제거하고 현재 kind에 맞게 저장한다. 값은 16KiB 및 NUL 금지로 제한한다.
+- endpoint/auth policy를 approvalBinding으로 확인하고 기존 protected config writer로 저장한다. 권한은 자동 승인하지 않으며 이전 승인 review를 폐기하고 재검색한다.
+- native 입력 dialog/menu/cancel 정리 및 디스크 source 변경 재검사 연결은 남아 있다. 원본 manifest에는 plain/secure 외 별도 필수값/선택지 schema가 없음을 소스로 확인했다.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 설정/비밀정보 저장/빌드/UI/검증 미실행. Git 재시도 사용자 확인 대기로 IMPL-340~511 미커밋·미푸시.
+
+## IMPL-512 — Check plugin source before settings persistence
+
+- settings review에 source URL을 추가하고 저장 시 registry URL/hash와 디스크 파일 SHA256을 대조한다. 승인 저장과 같은 bounded 파일 읽기 helper를 사용한다.
+- 일치하는 review token은 source 검사 전에 소비해 실패 시에도 비교용 secret snapshot이 runtime에 남지 않도록 했다. cancelPluginSettingsReview 및 shutdown 시 검토 상태 해제를 추가했다.
+- Swift 값의 참조 해제이며 메모리의 secure zeroization을 보장하지 않는다. native settings editor/cancel callback 연결은 여전히 남아 있다.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 파일 읽기/설정 저장/빌드/검증 미실행. Git 재시도 사용자 확인 대기로 IMPL-340~512 미커밋·미푸시.
+
+## IMPL-513 — Native plugin settings editor
+
+- 최대 32개 manifest 필드를 combo로 선택하고 각 필드에 유지/변경/삭제를 지정하는 Win32 modal을 작성했다. 항목 이동 시 patch를 보관하며 Save는 전체 patch만 반환한다.
+- secure 값은 기존 내용을 표시하지 않으며 새 입력은 password masking을 적용한다. 필드 변경 시 edit를 먼저 비운 뒤 masking을 바꾼다. metadata control/bidi escape와 입력 16KiB 제한을 적용했다.
+- 기본 focus/button은 Cancel이며 비어 있는 secret은 명시적 Replace에서만 빈 값으로 저장한다. 취소는 patch 참조를 해제하지만 메모리 zeroization은 보장하지 않는다.
+- 메뉴/runtime save/cancel 연결 및 DPI/접근성/입력 동작 검증은 남아 있다.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. UI/빌드/실행 검증 미실행. Git 재시도 사용자 확인 대기로 IMPL-340~513 미커밋·미푸시.
+
+## IMPL-514 — Connect native plugin settings to the tray
+
+- 플러그인 메뉴의 각 ID 하위에 권한 검토와 설정 항목을 배치했다. 설정되지 않은 endpoint 때문에 권한 binding을 만들 수 없어도 설정 편집에 진입한다. 미발견 plugin의 설정 항목은 비활성화한다.
+- 기존 request mailbox에 settings snapshot을 추가하고 UI 스레드에서 dialog를 연다. save/cancel을 WindowsMain을 통해 runtime으로 전달한다. 취소/빈 patch/실패 시 비교용 secret review를 해제한다.
+- 페이지 이동과 메뉴 생성 실패 시 settings 명령도 함께 폐기한다. editor 재진입은 기존 plugin dialog 및 공통 drain guard를 따른다.
+- UI/비밀정보 저장/오류/키보드/종료 동작은 미검증이며 설치 기능은 여전히 남아 있다.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드/테스트/UI/실제 저장 검증 미실행. Git 재시도 사용자 확인 대기로 IMPL-340~514 미커밋·미푸시.
+
+## IMPL-515 — Preserve settings combo index integrity
+
+- 필드 및 유지/변경/삭제 combo 삽입 반환값이 예상 index와 정확히 같아야 dialog 생성을 계속한다. CB_ERR/CB_ERRSPACE 또는 예상하지 않은 정렬로 항목-키 매핑이 바뀌는 경우를 거부한다.
+- 최초 필드 선택과 mode 복원 실패도 거부한다. 잘못된 mode 상태로 값을 저장하는 대신 취소한다.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. Win32 실패 주입/UI/빌드/검증 미실행. Git 재시도 사용자 확인 대기로 IMPL-340~515 미커밋·미푸시.
+
+## IMPL-516 — Install a new local plugin from frozen source bytes
+
+- 선택 파일을 최대 1MiB+1 bounded loop로 읽고 private DACL staging 파일에 고정한 뒤 기존 loader로 manifest를 읽는다. 같은 staged 파일을 최종 위치로 move하며 기존 파일을 교체하지 않는다.
+- 신규 Windows installer 사이에 .install.lock 공유 금지 handle을 사용한다. 원본 ID/발견된 ID/기존 config 및 승인 ID와 충돌하면 거부한다. 신규 설치가 이전 활성/승인을 자동 상속하지 않도록 했다.
+- runtime installPlugin은 설치 후 재검색을 예약한다. 자동 승인/활성화는 하지 않는다. 파일 선택 UI, 기존 plugin 교체/재설치, 외부 config/비협력 installer 경쟁 경계는 남아 있다.
+- staging 임시 디렉터리 정리는 runtime 코드로 작성했으며 이번 작업에서 실제 플러그인/파일을 설치하거나 삭제하지 않았다.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 설치/manifest 실행/빌드/검증 미실행. Git 재시도 사용자 확인 대기로 IMPL-340~516 미커밋·미푸시.
+
+## IMPL-517 — Install local plugins from the tray
+
+- plugin 관리 submenu가 비어 있어도 로컬 파일 설치 항목을 표시한다. JS/TS 선택용 Win32 file dialog에서 취소와 오류를 구분하며 CWD를 바꾸거나 최근 파일 목록에 추가하지 않는다.
+- 설치 request UUID→WindowsMain→runtime installPlugin→installed reply를 연결했다. 파일 선택 중 중복 plugin 명령/기본 editor reply drain을 막고 종료·취소 시 pending 요청을 정리한다.
+- 설치 완료 안내는 설정/권한 검토/활성화의 다음 단계를 설명한다. 선택된 경로와 원문 오류는 출력하지 않는다. UI 설치 실패 세부 분류 및 기존 plugin 교체/재설치는 아직 남아 있다.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드/테스트/파일 선택/UI/실제 설치 검증 미실행. Git 재시도 사용자 확인 대기로 IMPL-340~517 미커밋·미푸시.
+
+## IMPL-518 — Actionable plugin installation failures
+
+- 선택 파일 접근/형식/크기, refresh·설치 잠금 경쟁, plugin load 실패, 공급자 ID/기존 설정/파일명 충돌, 저장 폴더 및 앱 설정 오류를 고정 설치 오류로 구분했다.
+- WindowsMain→request mailbox→UI에 설치 전용 실패를 전달하고 한국어/영어 복구 안내를 추가했다. 기존 일반 설정 오류의 무조건 refresh 재시도 안내를 사용하지 않는다. 원문 오류/경로/스크립트 내용은 노출하지 않는다.
+- 잠금 열기 실패도 실제 sharing/lock violation만 busy로 판정한다. move 도중 기존 파일 생성 경쟁은 filename 충돌로 구분한다.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드/파일 오류/설치/UI/검증 미실행. Git 재시도 사용자 확인 대기로 IMPL-340~518 미커밋·미푸시.
+
+## IMPL-519 — Reviewed plugin replacement backend
+
+- 신규 설치의 bounded source reader와 .install.lock을 재사용하도록 분리하고 WindowsPluginReplacementPlan을 추가했다. 같은 provider ID와 같은 JS/TS 형식의 새 파일을 private staging에서 읽어 고정된 bytes/hash로 검토한다.
+- 검토 token, 이전/새 source hash, 기존 provider config digest와 approval binding을 보관한다. 저장 시 config 및 이전 파일 일치를 요구한다. 설정 비교용 비밀값은 digest로만 보관한다.
+- commit은 기존 파일을 providers/.backups/<UUID>/에 private DACL로 백업한 뒤 승인 기록을 조건부 제거하고 provider.enabled=false를 저장한 다음 새 source를 게시한다. 승인·설정 변경 이후 실패는 별도 stateChangedBeforeFailure로 반환한다. 실패한 사용자의 권한 철회를 자동 복원하지 않는다.
+- 취소/종료 시 replacement plan을 해제하며 교체 성공/실패 후 재검색을 예약한다. 기존 plugin 설정값은 보존한다.
+- native 교체 파일 선택/명시적 검토 확인/callback 및 backup 복구 UI는 아직 미연결이다. 설치 API를 사용하지 않는 외부 파일/config 편집과의 완전한 transaction은 보장하지 않는다.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드/manifest 실행/백업/교체/승인/UI/검증 미실행. Git 재시도 사용자 확인 대기로 IMPL-340~519 미커밋·미푸시.
+
+## IMPL-520 — Connect reviewed plugin replacement to the tray
+
+- 발견된 plugin별 파일 교체 메뉴를 추가하고 공통 파일 선택기를 교체 제목으로 재사용한다. prepare/load와 commit/save 단계의 request UUID를 기존 mailbox에 연결했다.
+- native 확인창에서 ID, 기존/새 SHA256, 백업·비활성화·권한 철회·설정값 보존을 설명한다. 기본값은 No이며 명시적 Yes에서만 runtime commit을 호출한다. 취소 및 실패 시 보관한 검토 source를 해제한다.
+- 결과는 교체 완료, 상태 변경, 형식 불일치, 경쟁/사용 중, 승인·설정 변경 후 실패로 구분하고 한국어/영어 안내를 제공한다. raw error/path/source는 표시하지 않는다.
+- 현재 발견된 유효 plugin의 동일 ID/같은 JS 또는 TS 형식 교체에 한정한다. orphan 재설치 및 backup 복구 UI는 미완료다. 빌드·UI 동작·실제 파일 교체를 검증한 것은 아니다.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드/테스트/UI/실제 백업·교체·승인 변경 검증 미실행. Git 재시도 사용자 확인 대기로 IMPL-340~520 미커밋·미푸시.
+
+## IMPL-521 — Reinstall missing plugins while preserving saved settings
+
+- runtime이 읽은 config의 사용자 plugin ID 목록을 tray mailbox에 게시하고 발견/승인 ID와 합쳐 표시한다. 파일·승인 없이 설정만 남은 plugin도 재설치 항목에 접근할 수 있다.
+- 기존 registry source가 없고 config 또는 승인 기록이 있는 ID는 별도 재설치 검토로 처리한다. 고정된 새 source의 manifest ID를 선택한 ID와 대조하고, 설치 잠금 아래에서 기존 destination/동일 ID 발견 여부를 다시 확인한다.
+- 명시적 확인 뒤 승인 기록을 조건부 철회하고 사용 설정을 끈 다음 private staging 파일을 덮어쓰기 없는 move로 게시한다. 기존 설정값과 비밀정보는 보존하며 자동 활성화/승인은 하지 않는다.
+- 재설치 확인·완료·파일명 충돌·상태 변경 후 실패 안내를 한국어/영어로 추가했다. 이전 파일이 없으므로 백업을 만들었다는 안내는 표시하지 않는다.
+- 손상된 파일이 destination을 차지하면 덮어쓰지 않는다. 다른 파일명으로 설치해도 이전 손상 파일을 자동 제거하지 않는다. 비협력 외부 파일/config 변경과의 완전한 transaction 및 backup 복구 UI는 남아 있다.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드/테스트/UI/manifest 실행/실제 재설치/저장 검증 미실행. Git 재시도 사용자 확인 대기로 IMPL-340~521 미커밋·미푸시.
+
+## IMPL-522 — Reviewed plugin removal from the Windows tray
+
+- 원본 PreferencesPluginsPane/UsageStore+UserPlugins/UserProviderPluginManager의 삭제 범위를 읽고 Windows 메뉴→review token→기본 No 확인창→runtime 저장→결과 mailbox를 연결했다. 설정/승인만 남은 ID의 저장 데이터 제거도 지원한다.
+- 검토에는 대상 source filename/hash와 관련 transpile cache 수를 표시한다. cache는 정확한 source stem + 64자리 hash + sucrase 버전 형식으로 고르고 최대 512개/각 8MiB를 제한한다. prefix만 같은 다른 plugin cache를 제거하지 않는다.
+- commit에서 installation lock 아래 cache 목록을 재대조하고 모든 파일을 read/delete handle로 연다. reparse point/디렉터리를 거부하고 source/cache hash를 비교하며 파일의 write/delete 공유를 허용하지 않는다. 확인 후 경로가 다른 파일로 바뀌는 경쟁을 방지하도록 작성했다.
+- file handle 확보 후 최신 provider config digest와 승인 binding을 대조하고 조건부 승인 철회→해당 config/secret 제거→handle 기반 파일 삭제로 진행한다. 관련 presentation/copy/활성 ID를 무효화하고 재검색을 예약한다. 중간 실패는 부분 제거 상태로 안내하며 성공으로 숨기지 않는다.
+- 한국어/영어 확인·완료·상태 변경·사용 중·접근 오류·부분 실패 안내를 추가했다. 기존 source backup은 삭제하지 않고 확인창에도 보존 사실을 표시한다. 이번 작업은 삭제 코드를 작성한 것이며 실제 파일·설정·비밀정보를 삭제하지 않았다.
+- Windows plugin plan-utilization 이력 수집/저장이 아직 연결되지 않아 해당 이력 정리도 남아 있다. ID를 읽지 못하는 손상 plugin 파일 삭제, orphan의 원본 파일명을 모르는 캐시 정리, backup 복구 UI, 비협력 외부 config 변경과의 transaction은 미완료다. W14 전체 완료로 판정하지 않는다.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드/테스트/UI/Win32 handle/실제 삭제·저장 검증 미실행. Git 재시도 사용자 확인 대기로 IMPL-340~522 미커밋·미푸시.
+
+## IMPL-523 — Remove failed plugin files without guessing provider ownership
+
+- plugin 관리 메뉴에 로드 실패 파일 삭제 항목을 추가하고 설치 폴더에서 파일 선택기를 연다. 설치/교체/실패 파일 삭제는 동일 picker lifecycle을 사용하되 각각 다른 request 단계와 callback으로 전달한다.
+- 설치 폴더 바로 아래 .js/.ts 일반 파일만 대상으로 삼는다. read handle로 소스를 고정한 상태에서 fresh discovery 결과가 해당 경로의 실패 항목인지 확인한다. ID 파싱 실패와 유효하지만 중복 ID로 거부된 파일도 공급자 ID 추정 없이 처리한다.
+- 실패 파일은 최대 64MiB까지 bounded hash를 작성한다. 확인 뒤 실패 상태와 hash를 다시 대조하고 삭제 handle로 재개방할 때도 hash를 비교한다. 정상 로드 파일/폴더 밖 파일/reparse point는 이 경로에서 거부한다.
+- 원본의 invalid plugin 삭제와 같이 파일만 제거한다. 공급자 config·secret·승인·캐시를 읽거나 삭제하지 않으며 확인/완료/부분 실패 안내에도 보존 범위를 명시한다. 잘못된 파일명에서 공급자 ID를 추정하지 않는다.
+- 삭제 성공/실패 후 재검색을 예약하고 cancel/shutdown에서는 pending review를 해제한다. 한국어/영어 안내와 file-only 성공 응답을 추가했다. 실제 파일을 선택·삭제하거나 plugin manifest를 실행하지 않았다.
+- 외부 비협력 프로그램이 다른 중복 파일을 동시에 바꾸는 등 폴더 전체 상태 변화까지 하나의 transaction으로 잠그지는 않는다. 64MiB 초과 파일, 남은 backup 복구/이력 수집·삭제 연결 및 Windows 검증은 남아 있다.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드/테스트/UI/Win32 file handle/실제 파일 삭제 검증 미실행. Git 재시도 사용자 확인 대기로 IMPL-340~523 미커밋·미푸시.
+
+## IMPL-524 — Restore plugin source backups through the tray
+
+- plugin 관리 메뉴의 백업 복원 항목에서 providers/.backups 폴더를 시작 위치로 파일을 선택한다. backup generation UUID 바로 아래 소스만 허용하고 backup 폴더/generation/파일의 reparse point를 거부한다.
+- private staging의 고정된 bytes로 manifest와 hash를 읽고 first-party ID 충돌을 거부한다. fresh discovery에서 같은 ID의 현재 source를 찾으면 동일 JS/TS 형식으로 교체하며, 없으면 기존 파일명 충돌을 거부한 채 재설치한다. config/승인/메뉴 항목을 이미 삭제한 provider도 backup 자체 ID로 준비할 수 있다.
+- 현재 source hash와 config digest/승인 binding을 검토하고 기존 replacement commit 경로를 재사용한다. 현재 파일이 있으면 새 backup을 보존하며 사용 설정을 끄고 권한을 철회한다. 저장값은 현재 상태를 보존하고 자동 승인/활성화하지 않는다.
+- 복원/재설치 확인창과 완료 안내를 한국어/영어로 추가했다. source-only backup이므로 이미 삭제한 설정·비밀정보를 복구하지 않는다는 점을 명시하고 이전 source가 없는 경우 현재 파일을 백업했다는 안내를 하지 않는다.
+- 설치/교체 후보의 TypeScript 변환 캐시를 해당 작업의 staging 하위로 옮겨, 취소된 검토의 replacement-<hash> 캐시가 공용 plugin cache에 추가로 누적되지 않도록 작성했다. 정리는 이 호출이 만든 staging에 한정하며 기존 cache/backup은 자동 삭제하지 않는다.
+- 실제 복원/설치/파일 선택/manifest 실행은 하지 않았다. 기존 손상 destination의 자동 덮어쓰기, source 형식 변경, 외부 비협력 파일/config 변경 전체 transaction 및 plugin 이력 수집·삭제 연결은 남아 있다.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드/테스트/UI/실제 backup·복원·설정 저장 검증 미실행. Git 재시도 사용자 확인 대기로 IMPL-340~524 미커밋·미푸시.
+
+## IMPL-525 — Shared plan-utilization history model and Windows persistence
+
+- 원본 UsageStore+PlanUtilization의 기록 API와 모든 호출부는 UsageProvider를 받으며, UsageStore+UserPlugins의 사용자 plugin fetch에는 이력 수집 호출이 없다. 이전 IMPL-522~524에서 사용자 plugin 이력 수집 자체를 미구현 필수 경로처럼 기록한 설명을 정정한다. plugin 삭제의 기존 이력 파일 정리 계약은 별도로 남아 있으며, WIN-020 공통 plan-utilization 기능은 계속 필수 범위다.
+- PlanUtilizationHistoryCore에 version 1 provider 문서, unscoped/account별 series, preferredAccountKey와 sessionEquivalentWindowPairIdentities를 추가했다. 시간은 기존과 같이 저장소에서 ISO-8601로 인코딩한다. 계정 선택/이력 adoption은 이 모델이 추정하지 않고 runtime에서 결정하도록 분리했다.
+- 원본의 295~305분 session/10070~10090분 weekly 정규화, 시간당 peak, 120초 이상 reset 경계 차이, 같은 시간의 reset 전후 peak 보존, series당 최대 24*730개 표본을 reducer로 옮겼다. 정렬/동률/뒤늦은 표본 삽입과 nil reset metadata 규칙을 유지하도록 작성했다.
+- WindowsPlanUtilizationHistoryStore는 LocalAppData의 plan-utilization-history/<provider>.json에 기록한다. provider별 sidecar 공유 금지 handle 아래 최신 파일을 읽어 병합하고 protected DACL atomic writer로 게시하며 게시 직전 raw bytes 변경도 확인한다. 오래된 메모리 전체 snapshot을 덮어쓰는 cache는 두지 않았다.
+- 손상/미지원 버전/접근 오류를 빈 이력으로 간주해 덮어쓰지 않는다. 32MiB 파일, account 1024개, bucket당 series 128개 등의 입력 한도를 두었으며 실패는 호출자에게 전달한다. schema와 decoder에 계정 PII/비밀정보를 새로 추가하지 않는다.
+- 이 단계는 공통 모델·저장소 구현이다. 실제 공급자별 sample projection, Codex/Claude 소유권 연결, generic window pair identity 전환, runtime 수집, 이력 조회/차트/session-equivalent UI, migration 및 삭제 lifecycle 연결은 아직 남아 있다. 원본과 같은 실행 결과를 검증한 것은 아니다.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드/테스트/reducer fixture/파일 저장/잠금/실제 계정 검증 미실행. Git 재시도 사용자 확인 대기로 IMPL-340~525 미커밋·미푸시.
+
+## IMPL-526 — Project provider history samples and connect runtime collection
+
+- PlanUtilizationHistoryProjection을 추가해 Codex의 session/weekly/monthly slot 분류, Claude session/weekly/opus, OpenCode Go monthly, MiMo/StepFun/Ollama의 monthly sentinel, Antigravity의 완전한 Gemini session/weekly pair를 원본 기록 경로에 맞춰 투영하도록 작성했다. generic provider는 standard lane 우선·named lane 중복/unknown usage를 구분한다.
+- generic window pair의 resolved/incomplete/ambiguous 전환, UTF-8 길이 prefix identity, unresolved weekly 시작 상태와 변경된 session/weekly series만 분리하는 규칙을 Document.record에 연결했다. Antigravity의 provider-wide legacy weekly에서 Gemini pair로 시작할 때의 이력 구분도 옮겼다. Mac UserDefaults의 legacy identity migration은 아직 연결하지 않았다.
+- WindowsUsageRuntime의 공급자 조회 성공 경로에서 표본을 만들어 Windows 저장소에 기록하도록 연결했다. alwaysTracksPlanUtilization descriptor와 historicalTrackingEnabled 설정을 구분하고, 수집 generation/활성 provider/최신 provider config digest가 요청 당시와 맞아야 저장한다.
+- token account UUID 기반 scope, 기존 CodexHistoricalOwnershipContext의 canonical key, Claude의 안정된 active-account UUID 또는 OAuth history owner, 다른 공급자의 provider-scoped email/organization hash와 원본 unscoped 경로를 사용한다. 다른 provider identity를 읽지 않는다. Claude의 조회 전후 계정 관찰이 달라지거나 필요한 소유권을 확보하지 못하면 표본을 저장하지 않는다.
+- 성공한 quota 응답을 이력 오류로 바꾸지 않으며 메뉴에 한국어/영어 저장 오류 또는 계정 식별 보류 안내를 별도로 표시한다. 계정 무효화 시 이전 안내를 해제한다. 소유권이 없는 다른 계정의 history를 자동 adoption하는 경로는 추가하지 않았다.
+- 이력 조회/차트/session-equivalent forecast UI, 계정 이력 migration/adoption의 원본 정책, 삭제 lifecycle, CLI/동시 계정 consumer 및 성능 검증은 남아 있다. 작성한 collection은 실행 검증 완료나 기능 동등성 입증이 아니다.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드/테스트/실제 계정 조회/이력 저장/GUI/성능 검증 미실행. Git 재시도 사용자 확인 대기로 IMPL-340~526 미커밋·미푸시.
+
+## Git publication recovery — 2026-09-15
+
+- 사용자가 매 구현 후 커밋·푸시를 다시 명시했다. 이전 자동 승인 검토 시간 초과 뒤 보류된 IMPL-340~526의 staging/commit/push를 재시도하는 권한으로 적용한다.
+- 누적된 Windows widget backend·tray plugin 관리·plan-utilization 이력 코드 및 관련 문서를 한 복구 커밋으로 기록한다. 이후 구현은 단위별로 커밋하고 origin/main에 푸시한다.
+- 빌드·테스트·lint·실행 검증은 계속 보류한다. 커밋/푸시에는 검증 훅을 실행하지 않고 [skip ci]를 사용한다. 원격 반영 성공 여부는 Git 응답으로 별도 기록하며 코드 검증과 구분한다.

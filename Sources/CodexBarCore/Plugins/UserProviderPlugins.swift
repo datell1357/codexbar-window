@@ -1,5 +1,8 @@
 import Crypto
 import Foundation
+#if os(Windows)
+import WinSDK
+#endif
 #if canImport(FoundationNetworking)
 import FoundationNetworking
 #endif
@@ -100,30 +103,108 @@ public final class ProviderPluginApprovalStore: @unchecked Sendable {
         self.fileURL = fileURL
     }
 
+    /// Permission metadata only; no source, settings values, or credentials are stored here.
+    public func recordedBindings() -> [ProviderPluginApprovalBinding] {
+        self.lock.withLock {
+            self.load().compactMap { key, binding in
+                key == binding.instanceID.rawValue ? binding : nil
+            }.sorted { $0.instanceID.rawValue < $1.instanceID.rawValue }
+        }
+    }
+
     public func isApproved(_ binding: ProviderPluginApprovalBinding) -> Bool {
         self.lock.withLock { self.load()[binding.instanceID.rawValue] == binding }
     }
 
     public func record(_ binding: ProviderPluginApprovalBinding) throws {
-        try self.lock.withLock {
-            var approvals = self.load()
+        try self.withMutationLock {
+            var approvals = try self.loadForMutation()
             approvals[binding.instanceID.rawValue] = binding
             try self.save(approvals)
         }
     }
 
     public func remove(instanceID: ProviderInstanceID) throws {
-        try self.lock.withLock {
-            var approvals = self.load()
+        try self.withMutationLock {
+            var approvals = try self.loadForMutation()
             approvals[instanceID.rawValue] = nil
             try self.save(approvals)
         }
     }
 
+    /// Conditional writes prevent a stale permission review from overwriting another writer's decision.
+    public func record(_ binding: ProviderPluginApprovalBinding, replacing expected: ProviderPluginApprovalBinding?) throws {
+        try self.withMutationLock {
+            var approvals = try self.loadForMutation()
+            guard approvals[binding.instanceID.rawValue] == expected else {
+                throw ProviderPluginError.load("Plugin approval changed; reopen the permission review")
+            }
+            approvals[binding.instanceID.rawValue] = binding
+            try self.save(approvals)
+        }
+    }
+
+    public func remove(instanceID: ProviderInstanceID, expected: ProviderPluginApprovalBinding?) throws {
+        try self.withMutationLock {
+            var approvals = try self.loadForMutation()
+            guard approvals[instanceID.rawValue] == expected else {
+                throw ProviderPluginError.load("Plugin approval changed; reopen the permission review")
+            }
+            approvals[instanceID.rawValue] = nil
+            try self.save(approvals)
+        }
+    }
+
+    private func withMutationLock<T>(_ operation: () throws -> T) throws -> T {
+        try self.lock.withLock {
+            #if os(Windows)
+            guard self.fileURL.isFileURL, !self.fileURL.path.contains("\0") else {
+                throw ProviderPluginError.load("Plugin approval storage path is invalid")
+            }
+            let parent = self.fileURL.deletingLastPathComponent()
+            try FileManager.default.createDirectory(at: parent, withIntermediateDirectories: true)
+            let lockURL = parent.appendingPathComponent(self.fileURL.lastPathComponent + ".lock")
+            let handle = lockURL.path.withCString(encodedAs: UTF16.self) {
+                CreateFileW($0, DWORD(GENERIC_READ | GENERIC_WRITE), 0, nil, DWORD(OPEN_ALWAYS),
+                    DWORD(FILE_ATTRIBUTE_NORMAL | FILE_FLAG_OPEN_REPARSE_POINT), nil)
+            }
+            guard let handle, handle != INVALID_HANDLE_VALUE else {
+                let code = GetLastError()
+                if code == ERROR_SHARING_VIOLATION || code == ERROR_LOCK_VIOLATION {
+                    throw ProviderPluginError.load("Plugin approval storage is busy; retry the change")
+                }
+                throw ProviderPluginError.load("Plugin approval storage lock could not be opened")
+            }
+            defer { CloseHandle(handle) }
+            var info = BY_HANDLE_FILE_INFORMATION()
+            guard GetFileType(handle) == DWORD(FILE_TYPE_DISK), GetFileInformationByHandle(handle, &info) != 0,
+                  info.dwFileAttributes & DWORD(FILE_ATTRIBUTE_DIRECTORY | FILE_ATTRIBUTE_REPARSE_POINT) == 0 else {
+                throw ProviderPluginError.load("Plugin approval storage lock is not a regular file")
+            }
+            // Keep the sidecar: deleting it would let another writer lock a different file object.
+            // Every cooperating Windows writer holds this handle across read, mutation and atomic replace.
+            #endif
+            return try operation()
+        }
+    }
+
     private func load() -> [String: ProviderPluginApprovalBinding] {
-        guard let data = try? Data(contentsOf: self.fileURL),
-              let payload = try? JSONDecoder().decode(Payload.self, from: data)
-        else { return [:] }
+        // Unreadable or malformed permissions must never grant access.
+        (try? self.loadForMutation()) ?? [:]
+    }
+
+    private func loadForMutation() throws -> [String: ProviderPluginApprovalBinding] {
+        let data: Data
+        do {
+            data = try Data(contentsOf: self.fileURL)
+        } catch let error as CocoaError where error.code == .fileReadNoSuchFile {
+            // A first-run store is empty. Other IO errors must not be mistaken for an empty store.
+            return [:]
+        }
+        let payload = try JSONDecoder().decode(Payload.self, from: data)
+        guard payload.approvals.allSatisfy({ $0.key == $0.value.instanceID.rawValue }) else {
+            throw ProviderPluginError.load("Plugin approval storage contains inconsistent provider identifiers")
+        }
         return payload.approvals
     }
 

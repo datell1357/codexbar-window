@@ -1,5 +1,381 @@
 # Windows 전용 제품 작업 현황
 
+- Git 반영 규칙: 매 구현 단위마다 커밋 및 origin/main 푸시. IMPL-340~526 누적분은 사용자 재지시에 따라 복구 커밋으로 반영하며, 검증 보류 상태를 유지한다.
+
+- IMPL-526: 공급자별 plan-utilization 표본/구간 identity 전환을 저장소와 조회 성공 경로에 연결. 계정·설정 변경 표본 제외, 수집 오류 별도 안내. CODE_WRITTEN_UNVERIFIED.
+
+- IMPL-525: WIN-020의 공통 이력 schema/시간당 peak reducer 및 Windows 보호 파일 저장소 작성. 공급자 수집·계정 소유권·조회 UI는 미연결. W14 plugin 이력 수집 범위 설명 정정. CODE_WRITTEN_UNVERIFIED.
+
+- IMPL-524: 소스 백업 선택→복원 검토→교체/재설치 연결. 삭제 후 공급자 항목이 없어도 backup ID로 복원하며 설정 복구와 구분. CODE_WRITTEN_UNVERIFIED.
+
+- IMPL-523: ID 파싱 실패/중복 ID 등 로드 실패 plugin 파일의 선택→해시 검토→파일만 삭제 경로 연결. 설정·승인·캐시 보존. CODE_WRITTEN_UNVERIFIED.
+
+- IMPL-522: plugin 삭제 검토→명시적 확인→파일/캐시·승인·설정·secret 제거 및 부분 실패 안내 연결. 이력 정리/손상 파일 삭제는 남아 있음. CODE_WRITTEN_UNVERIFIED.
+
+- IMPL-521: 설정/승인 기록만 남은 plugin을 메뉴에서 재설치하고 기존 파일명 충돌을 거부하도록 연결. CODE_WRITTEN_UNVERIFIED.
+
+- IMPL-520: plugin 파일 교체 메뉴→파일 선택→명시적 검토 확인→백업/교체 runtime 연결. CODE_WRITTEN_UNVERIFIED.
+
+- IMPL-519: plugin 교체 검토/백업/승인 해제/비활성화/게시 backend 작성. UI 미연결. CODE_WRITTEN_UNVERIFIED.
+
+- IMPL-518: plugin 설치 오류를 단계별 고정 enum/한국어·영어 복구 안내로 연결. CODE_WRITTEN_UNVERIFIED.
+
+- IMPL-517: 빈 plugin 목록에서도 local file 설치 메뉴→파일 선택→runtime 설치→완료 안내 연결. CODE_WRITTEN_UNVERIFIED.
+
+- IMPL-516: Windows 신규 local plugin 설치 staging/ID 충돌 방지/runtime 경로 작성. 파일 선택 UI 미연결. CODE_WRITTEN_UNVERIFIED.
+
+- IMPL-515: plugin settings combo 삽입/선택 실패를 거부해 표시 순서와 설정 키 일치 보존. CODE_WRITTEN_UNVERIFIED.
+
+- IMPL-514: 플러그인별 설정 메뉴→native editor→runtime save/cancel 연결. CODE_WRITTEN_UNVERIFIED.
+
+- IMPL-513: plugin 설정 선택/유지/변경/삭제 native editor 작성. 메뉴/저장 callback 미연결. CODE_WRITTEN_UNVERIFIED.
+
+- IMPL-512: plugin 설정 저장에 디스크 source hash 대조 및 검토 cancel/shutdown 정리 추가. CODE_WRITTEN_UNVERIFIED.
+
+- IMPL-511: plugin plain/secure 설정 snapshot/patch/runtime 저장 경로 추가. native editor 미연결. CODE_WRITTEN_UNVERIFIED.
+
+- IMPL-510: 플러그인 사용 설정 불명/로드 불가/승인 필요 상태를 구분해 표시. CODE_WRITTEN_UNVERIFIED.
+
+- IMPL-509: plugin 활성/비활성 버튼과 상태 안내를 native dialog→runtime 저장 경로에 연결. CODE_WRITTEN_UNVERIFIED.
+
+- IMPL-508: plugin review 사용 여부 snapshot 및 활성/비활성 runtime 저장 API 추가. UI 토글 연결 미완료. CODE_WRITTEN_UNVERIFIED.
+
+- IMPL-507: Windows 승인/철회에서 검토 당시 binding과 저장 시 binding을 잠금 안에서 비교. CODE_WRITTEN_UNVERIFIED.
+
+- IMPL-506: Windows approval store record/remove의 read-modify-write에 공유 금지 sidecar lock 연결. CODE_WRITTEN_UNVERIFIED.
+
+- IMPL-505: approval store 읽기 실패/손상 시 변경 저장을 거부해 기존 기록 덮어쓰기 방지. CODE_WRITTEN_UNVERIFIED.
+
+- IMPL-504: 승인/철회 저장 응답을 공급자 refresh 완료 대기와 분리하고 파일 handle 범위 축소. CODE_WRITTEN_UNVERIFIED.
+
+- IMPL-503: 플러그인 승인 메뉴에 256개 단위 이전/다음 페이지와 범위 표시 연결. CODE_WRITTEN_UNVERIFIED.
+
+- IMPL-502: 삭제/로드 실패 plugin의 저장된 승인도 메뉴와 철회 전용 review에 연결. CODE_WRITTEN_UNVERIFIED.
+
+- IMPL-501: 권한 검토 dialog의 철회 버튼→runtime 승인 기록 제거→재조회 연결. CODE_WRITTEN_UNVERIFIED.
+
+- IMPL-500: 플러그인 권한 submenu→runtime review→native dialog→approval save→refresh 연결. CODE_WRITTEN_UNVERIFIED.
+
+- IMPL-499: 플러그인 권한 검토/typed origin 입력용 Win32 dialog 작성. 메뉴 연결 미완료. CODE_WRITTEN_UNVERIFIED.
+
+- IMPL-498: 플러그인 승인 검토 snapshot/일회성 token/파일 및 권한 변경 검사와 저장 runtime 경로 추가. UI 연결 미완료. CODE_WRITTEN_UNVERIFIED.
+
+- IMPL-497: 플러그인 검색 실패 건수/재검색 안내를 트레이 rendering에 연결. CODE_WRITTEN_UNVERIFIED.
+
+- IMPL-496: 트레이 수동 refresh에 플러그인 재검색 연결, 진행 중 refresh 후 요청 coalescing. CODE_WRITTEN_UNVERIFIED.
+
+- IMPL-495: 호스트 시작 전 취소 요청을 보존하는 cancellation slot 및 실행 overload 추가. CODE_WRITTEN_UNVERIFIED.
+
+- IMPL-494: Swift/native bootstrap 파이프 이름을 생성기와 같은 canonical UUID 형식으로 제한. CODE_WRITTEN_UNVERIFIED.
+
+- IMPL-493: 외부 취소 콜백의 queue/pipe/state 소유를 weak reference로 변경해 종료 후 핸들 보유 방지. CODE_WRITTEN_UNVERIFIED.
+
+- IMPL-492: 위젯 호스트 시작/수신/작업/정리 결과의 통합 종료 판정 추가. CODE_WRITTEN_UNVERIFIED.
+
+- IMPL-491: native theme observer가 고대비 on/off와 dark/light 분류가 같은 색 변경에도 카드 갱신을 요청한다. 두 이벤트 구독을 close에서 해제한다. IMPL-340~491 미커밋. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
+- IMPL-490: card batch가 고대비 palette 또는 조회 실패를 한 번 캡처해 모든 이미지에 전달한다. 조회 실패는 차트가 필요한 카드에서만 반영한다. IMPL-340~490 미커밋. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
+- IMPL-489: history/burn PNG가 Windows 고대비 상태와 시스템 전경/배경색을 읽어 적용한다. 고대비에서는 gradient 채움을 생략하고 선 종류/표식 위치로 구분한다. 실제 색 전환/렌더 검증 미실행. IMPL-340~489 미커밋. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
+- IMPL-488: 설치 정책의 실행 파일 이름/package family로 같은 Windows session의 프로세스를 찾아 핸들을 보관하고 RPC caller 인증에 연결했다. 실제 버전별 정책과 executable/bootstrap 통합은 남아 있다. IMPL-340~488 미커밋. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
+- IMPL-487: trusted-callers host 진입에서 프로세스 package full name/current-user 설치 family/Store 또는 System 서명/실행 이미지 위치를 대조한다. 실제 Windows broker family 정책·발견 및 호환성은 남아 있다. IMPL-340~487 미커밋. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
+- IMPL-486: 설정 revision 충돌 시 오래된 폼/카드를 무효화하고 native worker가 최신 snapshot을 다시 표시한다. consumed settingsChanged action만 연결을 유지하며 저장 재실행은 하지 않는다. IMPL-340~486 미커밋. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
+- IMPL-485: backend listening과 인증된 hello 수락 상태를 구분했다. 기존 native monitor가 30초 내 handshake 수락을 요구하고 미수락 시 원인을 남겨 연결을 정리한다. OS 등록/렌더 완료는 별도이다. IMPL-340~485 미커밋. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
+- IMPL-484: runtime이 backend lifecycle stream을 소비해 자체 정상 종료된 owner를 해제하고 최종 snapshot을 보존한다. 정리 실패는 owner를 유지하며 이전 연결 이벤트가 새 연결을 변경하지 못하게 한다. IMPL-340~484 미커밋. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
+- IMPL-483: 앱 종료 대기 완료 전 runtime의 widget cleanup 실패를 stderr에 보고하도록 연결했다. 기존 OS 종료 시간 제한/사용자 종료 대기는 유지한다. IMPL-340~483 미커밋. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
+- IMPL-482: runtime.shutdown의 중복 호출이 같은 teardown Task 완료를 기다리도록 변경했다. widget close를 포함한 기존 정리 순서를 유지하며 호출자 취소와 자원 정리를 분리한다. IMPL-340~482 미커밋. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
+- IMPL-481: runtime이 설정 root 아래 WindowsWidgets/settings.json store/service를 소유하고 모든 backend 재연결에 같은 service를 전달한다. 설치별 경로 주입도 지원하며 초기화만으로 파일은 만들지 않는다. IMPL-340~481 미커밋. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
+- IMPL-480: WindowsUsageRuntime에 단일 widget backend factory/close 소유권을 추가하고 기존 shutdown에 연결했다. 정리 실패 owner는 보관하여 중복 host 생성을 막고 재시도 상태를 남긴다. 실제 launcher는 미구현이다. IMPL-340~480 미커밋. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
+- IMPL-479: 위젯 차트 PNG에 정확한 256색 이하 palette encoding을 연결했다. 색/해상도 변경 없이 index를 저장하며 색이 많거나 이득이 없으면 RGB를 유지한다. PNG 디코드 검증 미실행. IMPL-340~479 미커밋. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
+- IMPL-478: card batch 생성 시 template/data/metadata/envelope 전체 JSON 크기를 제한한다. 초과 카드는 ready 대신 기존 오류 카드로 분류하며 다른 카드 전송을 유지한다. IMPL-340~478 미커밋. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
+- IMPL-477: resetTimesShowAbsolute 설정을 runtime→coordinator→card batch→quota/burn reset 표시로 전달했다. countdown은 tray 공통 formatter를 사용하고 다음 갱신을 최대 60초 또는 reset 시점으로 당긴다. IMPL-340~477 미커밋. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
+- IMPL-476: quota 행의 정확한 공통 제목 Session/Weekly/Code review를 localized labels로 표시한다. 제공자 고유 제목과 데이터/행 순서는 유지한다. IMPL-340~476 미커밋. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
+- IMPL-475: history 일별 비용/토큰/누락/불명 관측/범례 5개 문구를 나머지 지원 언어 21개에 추가했다. 데이터 없음과 실제 0의 구분을 포함한다. IMPL-340~475 미커밋. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
+- IMPL-474: burn pace 상태/주간 제한/예상 소진/리셋 이후/선 종류 범례를 21개 언어에 추가했다. history 범례 번역과 실제 화면 검수는 남아 있다. IMPL-340~474 미커밋. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
+- IMPL-473: used/remaining/updated/resets/codeReview/tokens/full/spent/maximum 기본 문구를 나머지 지원 언어 21개에 추가했다. 번역·화면 검수는 미실행이다. IMPL-340~473 미커밋. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
+- IMPL-472: 추가 사용 잔액/API 추정 비용·실제 청구액 아님 안내를 나머지 지원 언어 21개에 추가했다. 번역 및 Windows 화면 검수 미실행. IMPL-340~472 미커밋. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
+- IMPL-471: metric 제목을 typed 의미로 전달하여 카드의 credits/today/30일 비용 번역을 사용한다. 제공자 고유 기간과 API 추정·비청구 구분을 유지한다. 추가 잔액/추정 안내는 en/ko 우선 등록했다. IMPL-340~471 미커밋. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
+- IMPL-470: history 날짜 범위를 선택 언어의 날짜 형식으로 표시하고 UTC day key를 유지한다. 단일 날짜는 중복 범위를 생략하며 이미지 대체 텍스트에도 같은 caption을 사용한다. IMPL-340~470 미커밋. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
+- IMPL-469: quota/code review/burn 수치에 locale percent formatter를 적용하고 history 누락/불명 개수를 지역 숫자 형식으로 표시한다. locale 방향성 mark 3종을 text 경계에서 허용한다. IMPL-340~469 미커밋. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
+- IMPL-468: 위젯 데이터 없음/제공자 비활성/대기/오래됨/사용 불가/갱신 실패/위젯 오류 문구를 21개 언어에 추가했다. 차트 및 수치 설명 번역은 남아 있다. IMPL-340~468 미커밋. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
+- IMPL-467: 영어/한국어 외 기존 지원 언어 21개에 위젯 설정·제공자 선택·측정 항목·기간 문구 11개씩 번역을 추가했다. 카드 상태/차트 문구 및 실제 화면 검수는 남아 있다. IMPL-340~467 미커밋. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
+- IMPL-466: bootstrap 인코딩 실패와 준비 후 host 종료를 connection 정리 경로에 연결했다. deinit은 기존 close 작업을 기다리고 실패한 경우에만 순차 정리를 재시도한다. 원격 event 회수 launcher 계약은 미구현이다. IMPL-340~466 미커밋. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
+- IMPL-465: backend connection에 bounded lifecycle stream/snapshot을 추가하고 시작·serving·종료·정리 실패와 최초 종료 원인을 전달한다. launcher 소비/재연결 구현은 남아 있다. IMPL-340~465 미커밋. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
+- IMPL-464: widget backend receipt 확인을 manifest 공통 파일 추가 함수에 연결했다. import에서 발견한 backend를 검색 경로나 시스템 DLL 선언으로 대신 공급하지 못하게 하고, 의존성 추가 후 first-party 구성도 확인한다. 스크립트 미실행. IMPL-340~464 미커밋. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
+- IMPL-463: host 진입 함수가 인증된 채널로부터 event RAII 소유권을 명시적으로 받는다. JSON의 handle 숫자로 소유권을 만들지 않고 일치만 확인하며, COM/호출자 인증/파싱 실패도 전달받은 owner가 정리한다. IMPL-340~463 미커밋. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
+- IMPL-462: 원래 COM 콜백 스레드에서 RPC 호출자 PID/로컬 인증 상태를 조회하고 launcher가 신뢰 확인한 살아 있는 process handle 집합과 대조하는 구현 및 process runner 연결을 추가했다. 실제 Widgets broker 신뢰 판별·호환성은 남아 있다. IMPL-340~462 미커밋. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
+- IMPL-461: native runner가 handshake/worker/receiver/factory 생성 실패도 같은 취소·OS 내용 철회 범위로 처리한다. WidgetManager 생성 자체 실패는 상위 startup 오류로 남는다. IMPL-340~461 미커밋. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
+- IMPL-460: native process 실행 함수가 MTA/COM 보안/bootstrapped host/session 실행/COM 해제를 연결했다. 종료 콜백은 host 주소 없이 queue/pipe/shared flag만 보관한다. 실제 executable·인증 채널은 남아 있다. IMPL-340~460 미커밋. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
+- IMPL-459: 전용 native host용 COM process 보안 초기화 함수를 작성했다. 현재 사용자 local execute ACL/absolute descriptor/packet privacy를 설정한다. executable 호출과 실제 Widgets caller 인증·호환성 확인은 남아 있다. IMPL-340~459 미커밋. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
+- IMPL-458: widget DLL manifest 입력에 Release build receipt의 아키텍처/크기/해시 일치 확인을 연결했다. receipt 내부 경로는 신뢰하지 않고 명시적 입력만 읽는다. 스크립트 미실행. IMPL-340~458 미커밋. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
+- IMPL-457: native server 상태 조회는 종료 전후 gate를 확인하고 deinit 정리는 기존 close Task 완료를 먼저 기다린다. 예비 정리의 중복 실행을 줄였다. IMPL-340~457 미커밋. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
+- IMPL-456: backend connection이 native terminal 상태를 관찰해 session/server/receiver/event 정리를 호출한다. 상태 조회 오류도 별도 기록 후 종료한다. 관찰 코드는 실행하지 않았다. IMPL-340~456 미커밋. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
+- IMPL-455: build wrapper receipt에 DLL 크기/SHA256/MSBuild 파일 버전과 미증명 provenance 상태를 추가했다. native 인자 경로의 끝 역슬래시 인용 문제도 보완했다. 스크립트 미실행. IMPL-340~455 미커밋. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
+- IMPL-454: publisher가 OS 철회 전 전체 대상과 실패 결과 용량을 확보하고 예외 시 미처리/실패 ID를 유지하도록 변경했다. 성공한 obsolete ID만 재시도 목록에서 제거한다. IMPL-340~454 미커밋. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
+- IMPL-453: 배포 manifest의 명시적 widget backend DLL 입력 및 first-party 서명 대상 분류를 연결했다. 기존 PE/아키텍처/의존성 처리에 참여하며 위젯 배포 완료를 의미하지 않는다. IMPL-340~453 미커밋. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
+- IMPL-452: Windows 전용 backend MSBuild wrapper를 작성했다. 명시적 MSBuild/SDK와 실행별 새 출력 경로를 사용하며 build receipt와 검증 결과를 구분한다. 스크립트 미실행. IMPL-340~452 미커밋. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
+- IMPL-451: backend DLL용 v143 MSBuild 프로젝트(x64/ARM64)를 추가하고 pipe listener의 widget UI 헤더 의존성을 분리했다. host executable/App SDK 프로젝트·패키징 연결은 남아 있다. IMPL-340~451 미커밋. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
+- IMPL-450: native numeric_limits max 호출을 Windows max 매크로와 충돌하지 않는 표현으로 변경하고 직접 사용하는 표준 헤더를 명시했다. 빌드 호환성은 미검증이다. IMPL-340~450 미커밋. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
+- IMPL-449: session의 겹친 close 호출이 같은 구독 해제/coordinator shutdown Task 완료를 기다리도록 변경했다. native server가 정리 완료 전에 다음 종료 단계로 넘어가는 경로를 보완했다. IMPL-340~449 미커밋. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
+- IMPL-448: native bootstrap owner가 decoder→인증된 backend connector→session runner를 연결하고 event/process/queue/pipe 소유권을 관리한다. private launcher 채널 인증·COM 보안·executable 진입점은 남아 있다. IMPL-340~448 미커밋. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
+- IMPL-447: Swift bootstrap encoder/native decoder 및 connection.prepareBootstrap을 추가했다. session/pipe/remote event handle을 4KiB 이하 고정 schema로 전달한다. 인증된 전달 채널/실행 진입점 연결은 남아 있다. IMPL-340~447 미커밋. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
+- IMPL-446: connection이 bootstrap target process handle을 복제 보관하고 같은 process로만 native server를 시작하도록 연결했다. 다른 start target 주입을 제거했다. IMPL-340~446 미커밋. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
+- IMPL-445: auto-reset 무효화 이벤트의 target 복제를 1회로 제한하고 raw handle borrow 진입을 내부로 제한했다. 재연결은 새 connection/event가 필요하다. IMPL-340~445 미커밋. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
+- IMPL-444: backend connection이 시작 전 trusted host process로 이벤트를 SYNCHRONIZE 권한만 복제하는 API를 제공한다. remote handle을 별도 값 타입으로 구분한다. launcher 인증/bootstrap 전달/실패 회수는 남아 있다. IMPL-340~444 미커밋. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
+- IMPL-443: native runner가 worker 종료 철회 전에 receiver StopAndJoin을 수행하도록 연결했다. producer 종료 오류와 철회 오류를 분리 보관한다. IMPL-340~443 미커밋. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
+- IMPL-442: 내부 prepare/recordPublished 반환 전 무효화 세대를 확인하고 transfer read/ack의 대기 후 만료 시각을 다시 확인한다. 만료된 ack는 coordinator 상태도 무효화한다. IMPL-340~442 미커밋. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
+- IMPL-441: 최초 구독의 내부 무효화는 hello 전에 적용하되 native 이벤트를 보내지 않는다. native 최초 inventory 철회가 이를 담당하며 이후 실제 변경 알림은 계속 전달한다. IMPL-340~441 미커밋. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
+- IMPL-440: Native session runner connects the backend client, publisher, worker, receiver and COM registration. Executable, caller authentication and trusted launcher remain incomplete. IMPL-340 through IMPL-440 uncommitted/unpushed. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
+- IMPL-439: native receiver가 전용 thread Start/StopAndJoin 및 상태/HRESULT를 소유한다. 중복 시작·종료 후 시작을 거부하고 thread 생성 실패도 worker 취소로 전달한다. launcher의 실제 호출/핸들 전달 연결은 남아 있다. IMPL-340~439 미커밋. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
+- IMPL-438: backend connection actor가 signal/session/native server를 조립하고 신호 실패 시 연결 종료, server drain→receiver stop/join→event close 순서를 연결한다. trusted launcher/receiver 제어 구현은 남아 있다. IMPL-340~438 미커밋. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
+- IMPL-437: Swift invalidation signal owner가 unnamed auto-reset event 생성·SetEvent·닫기를 lock으로 보호하고 session callback 형태를 제공한다. trusted launcher의 target handle 복제와 실제 소유 연결은 남아 있다. IMPL-340~437 미커밋. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
+- IMPL-436: native invalidation receiver가 신뢰한 실행부의 이벤트/백엔드 process handle을 기다려 게시 무효화와 종료를 worker에 전달한다. 실제 핸들 전달·발신부·receiver 스레드 소유 연결은 남아 있다. IMPL-340~436 미커밋. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
+- IMPL-435: session 무효화 작업이 drain되는 동안 새 요청 진입을 막고, await 후 transfer ticket/revision을 재확인해 이전 카드 전송 상태가 복원되지 않도록 했다. native 알림 receiver/launcher는 남아 있다. IMPL-340~435 미커밋. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
+- IMPL-434: native invalidation이 publisher generation/게시 가능 상태를 잠금 아래 변경하고, 최우선 queue 신호로 COM worker의 내용 철회·새 갱신에 연결된다. backend 신호를 실제 받는 통신 receiver/launcher는 남아 있다. IMPL-340~434 미커밋. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
+- IMPL-433: session이 runtime invalidation stream을 구독해 카드/ticket/설정 토큰을 무효화하고 native owner용 callback을 호출한다. runtime 종료 시 session을 닫는다. native callback 전달 구현/게시 직렬화는 남아 있다. IMPL-340~433 미커밋. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
+- IMPL-432: runtime quota context/표시·optional usage·비용 설정 변경에 bounded invalidation stream을 추가했다. 초기 구독 시 재동기화 신호를 보내고 종료 때 stream을 닫는다. session consumer/native 철회 전달은 남아 있다. IMPL-340~432 미커밋. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
+- IMPL-431: widget 요청 시작 시 runtime 계정/config/표시·비용·언어 설정 상태를 비교해 기존 카드/ticket/설정 폼 토큰을 무효화한다. native 즉시 철회 알림 및 진행 중 계정 변경과 OS 게시 직렬화는 남아 있다. IMPL-340~431 미커밋. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
+- IMPL-430: native worker 기본 theme를 Windows UISettings 색상 변경 구독에 연결했다. 배경 밝기에 따라 light/dark를 선택하고 변경 시 큐에 refresh를 요청한다. 실제 executable/고대비 전용 팔레트/계정 invalidation 연결은 남아 있다. IMPL-340~430 미커밋. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
+- IMPL-429: 테마/동일 계정 수동 갱신을 위한 thread-safe RequestRefresh를 event queue와 host worker에 연결했다. 중복 요청은 합치고 진행 중 도착한 요청은 다음 갱신으로 유지한다. 실제 UI/OS theme listener 및 계정 invalidation protocol 연결은 남아 있다. IMPL-340~429 미커밋. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
+- IMPL-428: backend terminal 상태를 server/COM 정리 이후 기록하고, host worker 종료 시 알고 있는 위젯 내용을 철회한다. 동작 오류와 철회 오류를 따로 보관하며 DLL 해제 전 join은 계속 필수다. IMPL-340~428 미커밋. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
+- IMPL-427: native host worker가 초기 OS inventory 등록, event effect 적용, prepare/card/acknowledge, monotonic 갱신 대기를 같은 스레드에서 직렬화한다. 실제 프로세스 시작/COM 등록·인증/계정 변경 신호 연결은 남아 있다. IMPL-340~427 미커밋. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
+- IMPL-426: native 일반 카드 refresh driver가 manifest/개별 카드 확인, OS 게시, 성공 ID acknowledge를 연결한다. 설정 폼은 유지하고 오래된 전송 실패가 새 generation을 철회하지 않도록 한다. 실제 host worker/타이머/launcher/build 연결은 남아 있다. IMPL-340~426 미커밋. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
+- IMPL-425: native PrepareCards/ReadCard/AcknowledgeCards를 실제 pipe와 control response decoder에 연결했다. 이벤트와 mutex/sequence를 공유한다. 카드 payload 적용/launcher/build는 남아 있다. IMPL-340~425 미커밋. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
+- IMPL-424: prepare/card/acknowledge 제어 명령을 host session wire 경로에 연결했다. 이벤트와 sequence를 공유하고 ticket·필드·상한을 확인한다. native 호출/일반 카드 게시/launcher/build는 남아 있다. IMPL-340~424 미커밋. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
+- IMPL-423: 일반 카드 manifest/개별 payload/게시 확인을 하나의 120초 transfer ticket으로 연결했다. native 제어 요청/카드 적용/launcher/build는 남아 있다. IMPL-340~423 미커밋. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
+- IMPL-422: backend effect를 native 설정 폼 게시/삭제/내용 철회/전체 갱신 요청에 연결했다. 요청 전 native generation을 캡처해 늦은 응답을 거부한다. 일반 카드 wire 갱신/launcher/build는 남아 있다. IMPL-340~422 미커밋. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
+- IMPL-421: native client/Swift session에 초기 hello 협상을 연결했다. session/version/frame/event 상한 확인 후 event sequence 0을 시작한다. launcher/build/OS effect는 남아 있다. IMPL-340~421 미커밋. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
+- IMPL-420: Swift actor가 native server/DLL/callback context를 소유하고 start/status/close를 전용 Dispatch queue로 연결한다. launcher/handshake/build 연결은 남아 있다. IMPL-340~420 미커밋. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
+- IMPL-419: Swift native DLL binding에서 ABI version/필수 export를 확인하고 제한된 DLL 검색 경로를 사용하도록 작성했다. server owner/launcher/build 연결은 남아 있다. IMPL-340~419 미커밋. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
+- IMPL-418: native 서버 owner와 생성/name/start/cancel/join/status/destroy C API를 작성했다. 전용 COM worker에서 listener→server→Swift callback을 연결한다. Swift DLL binding/launcher/build는 남아 있다. IMPL-340~418 미커밋. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
+- IMPL-417: native server handler와 Swift session 사이 C callback ABI를 작성했다. 입력 복사/고정 출력 buffer/Task 취소·context 수명 계약을 연결한다. 라이브러리 빌드·launcher 연결은 남아 있다. IMPL-340~417 미커밋. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
+- IMPL-416: native 서버 receive/reply loop를 실제 pipe I/O에 연결했다. idle 연결 유지/부분 frame 제한/handler 응답 framing을 처리한다. Swift ABI·취소 연동·launcher 연결은 남아 있다. IMPL-340~416 미커밋. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
+- IMPL-415: 현재 사용자 ACL/로컬 전용/private pipe listener 및 예상 client process 확인을 작성했다. 서버 수신 루프/Swift ABI/launcher 연결은 남아 있다. IMPL-340~415 미커밋. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
+- IMPL-414: native pipe connector가 신뢰된 backend process handle의 PID/생성시각/실행경로/Windows session과 실제 서버를 비교한다. discovery/서버 ACL·역방향 인증은 남아 있다. IMPL-340~414 미커밋. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
+- IMPL-413: native queue→event encoder→pipe exchange→response decoder를 client/pump로 연결했다. 응답 순서를 적용 후 OS 효과를 전달하며 실패는 재전송하지 않는다. 인증 endpoint/Swift server/OS effect 연결은 남아 있다. IMPL-340~413 미커밋. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
+- IMPL-412: native overlapped named-pipe request/reply I/O를 작성했다. 부분 전송/30초 deadline/취소 drain/terminal 실패를 처리한다. endpoint 개설·인증·서버 연결은 남아 있다. IMPL-340~412 미커밋. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
+- IMPL-411: native/Swift에 CBW1 길이 프레임과 분할/연속 수신 decoder를 작성했다. 손상/상한/중간 EOF는 terminal 오류다. 실제 인증 pipe 연결은 남아 있다. IMPL-340~411 미커밋. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
+- IMPL-410: native 응답 decoder에서 session/request/sequence와 effect별 필드를 검사한다. 설정 폼은 원래 customization 요청에만 대응한다. 실제 transport/consumer 연결은 남아 있다. IMPL-340~410 미커밋. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
+- IMPL-409: host 응답 JSON 직렬화와 session receiveEncoded를 연결했다. 설정 폼만 제한된 template/data/token으로 전달하며 저장 설정 원문은 제외한다. native decoder/transport 연결은 남아 있다. IMPL-340~409 미커밋. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
+- IMPL-408: host session 응답에 고정 오류 코드/요청 소비 여부/다음 sequence를 추가하고 종료 후 늦은 결과의 재보관을 차단했다. wire encoder/transport 연결은 남아 있다. IMPL-340~408 미커밋. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
+- IMPL-407: Swift host session에서 decoded OS 이벤트를 생성/삭제/크기/설정/action 처리기로 연결했다. 요청 순서와 단일 작업·게시 결과를 관리한다. 실제 transport/네이티브 consumer 연결은 남아 있다. IMPL-340~407 미커밋. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
+- IMPL-406: native 이벤트 JSON encoder와 Swift decoder를 작성했다. protocol/session/sequence/종류별 필드/size/상한을 검사한다. 인증 transport/consumer 연결은 남아 있다. IMPL-340~406 미커밋. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
+- IMPL-405: native COM singleton factory 및 클래스 등록/해제 수명 관리를 작성했다. 실행 진입점/보안/dispatcher/IPC/MSIX 연결은 남아 있다. IMPL-340~405 미커밋. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
+- IMPL-404: native IWidgetProvider2 사용자 지정 요청과 최대 256개 이벤트 큐를 작성했다. consumer/COM 인증/IPC 연결은 남아 있다. IMPL-340~404 미커밋. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
+- IMPL-403: native IWidgetProvider의 6개 기본 callback을 작성하고 OS callback 객체를 값으로 복사해 전달한다. COM 인증/dispatcher/IPC/빌드는 남아 있다. IMPL-340~403 미커밋. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
+- IMPL-402: native publisher에 실제 OS inventory 조회와 확인된 삭제 반영을 추가했다. 누적 철회 대상은 256개로 제한한다. COM/IPC 연결은 남아 있다. IMPL-340~402 미커밋. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
+- IMPL-401: C++/WinRT WidgetManager 게시/철회 sink를 작성했다. 계정 context 변경과 OS 쓰기를 mutex로 직렬화하며 철회 실패 시 새 게시를 거부한다. COM/IPC/빌드 연결은 남아 있다. IMPL-340~401 미커밋. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
+- IMPL-400: 위젯 제공자 선택을 runtime bridge의 계정/설정 최신성 및 coordinator의 정확한 게시 batch/token 검사에 연결했다. native callback 연결은 남아 있다. IMPL-340~400 미커밋. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
+- IMPL-399: 호스트 재연결 inventory를 한 번의 revision-checked 저장으로 복원하고 기존 설정을 유지한다. 누락 목록으로 삭제하지 않는다. native callback 연결은 남아 있다. IMPL-340~399 미커밋. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
+- IMPL-398: OS 인스턴스 목록을 bridge에 전달하고 definition kind가 저장된 설정과 일치하는지 렌더링 경계에서 검사한다. native host 콜백/배포 연결은 남아 있다. IMPL-340~398 미커밋. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
+- IMPL-397: 위젯 준비 결과에 표시/비용 설정 및 UI 언어를 묶고 게시 최신성 확인에 반영했다. native host 연결은 남아 있다. IMPL-340~397 미커밋. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
+- IMPL-396: runtime quota snapshot에서 localized 카드 갱신기로 이어지는 bridge를 작성했다. context/generation 확인 및 게시 확인 경로를 제공한다. native OS 게시 직렬화는 남아 있다. IMPL-340~396 미커밋. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
+- IMPL-395: 동일 fetch 결과의 Codex credits/review를 dashboard 권한과 optional 표시 설정에 따라 quota snapshot에 연결했다. 실제 OS 호스트 연결은 남아 있다. IMPL-340~395 미커밋. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
+- IMPL-394: Codex의 확인된 동일 인증 fingerprint에 한해 quota snapshot에 비용/히스토리를 연결했다. 게시 최신성에는 spend generation도 요구한다. 다른 제공자/대시보드 extras/OS 호스트 연결은 남아 있다. IMPL-340~394 미커밋. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
+- IMPL-393: runtime quota 관측을 WidgetSnapshot으로 반환하고 config digest/context 최신성 조건을 연결했다. 비용 통합/OS 게시는 남아 있다. IMPL-340~393 게시 확인 대기. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
+- IMPL-392: runtime quota 성공 결과를 기존 계정 식별 규칙으로 위젯 관측에 보관한다. 다중/미확인 owner는 제외하고 이전 context 응답을 거부한다. snapshot/OS 연결은 남아 있다. IMPL-340~392 게시 확인 대기. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
+- IMPL-391: runtime 비용 결과를 실제 WidgetSnapshot builder에 연결하고 spend generation 최신성 조회를 추가했다. quota 통합/OS 소비는 남아 있다. IMPL-340~391 게시 확인 대기. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
+- IMPL-390: 계정/소스/수집 설정 무효화 및 종료 시 위젯 비용 owner registry를 폐기한다. 표시 옵션만 재투영하는 경로는 유지한다. IMPL-340~390 게시 확인 대기. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
+- IMPL-389: 단일 Codex/Cursor 비용 소스에 runtime revision과 기존 소유권 조건을 연결했다. 동일 source만 revision을 재사용한다. 다중 계정/다른 제공자/OS 게시 연결은 남아 있다. IMPL-340~389 게시 확인 대기. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
+- IMPL-388: 런타임에서 비용 controller 결과를 읽는 위젯 전용 경계를 작성했다. 현재 revision 일치/실패·중복 제공자 제외/상태 철회를 적용한다. 호스트 소비 미연결. IMPL-340~388 게시 확인 대기. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
+- IMPL-387: 비용 controller snapshot에 위젯 게시 상태/결과/소스별 실패를 연결했다. pending/failed는 이전 비용을 새 결과로 전달하지 않는다. runtime 소비 미연결. IMPL-340~387 게시 확인 대기. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
+- IMPL-386: 비용 수집기에 명시적 계정 revision의 위젯 비용 변환을 연결하고 Scan에 별도 결과/실패를 보관한다. revision 공급/위젯 게시 소비는 남아 있다. IMPL-340~386 게시 확인 대기. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
+- IMPL-385: CostUsageTokenSnapshot → 위젯 TokenCost adapter를 작성했다. scope fingerprint 일치 조건과 account revision 입력을 요구한다. runtime ownership 공급 미연결. IMPL-340~385 게시 확인 대기. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
+- IMPL-384: 계정 확인된 비용-only 관측을 위젯 snapshot에 추가했다. 기존 quota 관측을 덮어쓰지 않으며 quota 0을 합성하지 않는다. source adapter 미연결. IMPL-340~384 게시 확인 대기. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
+- IMPL-383: History 차트를 요약 앞에 배치하고 원본의 90/60/50 높이를 종류·크기에 맞춰 적용했다. native 렌더링 미검증. IMPL-340~383 게시 확인 대기. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
+- IMPL-382: 원본 large Usage/Switcher의 전체 행/크레딧/이력 구성을 연결하고 History의 불필요한 quota 행을 제외했다. 실 화면 크기 미검증. IMPL-340~382 게시 확인 대기. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
+- IMPL-381: OS 크기를 RenderRequest/Presentation까지 보존하고 종류별 지원 크기를 render에서 다시 확인한다. large 전용 배치/OS 연결은 남아 있다. IMPL-340~381 게시 확인 대기. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
+- IMPL-380: 원본 위젯 정의 ID/지원 크기를 Windows 호스트 매핑으로 작성하고 등록 경로에 연결했다. MSIX 선언/실제 callback 미연결. IMPL-340~380 게시 확인 대기. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
+- IMPL-379: 실패 위젯을 대체할 계정/수치 없는 안내 카드 payload를 batch에 연결했다. 실패는 성공/액션 카드로 취급하지 않는다. 실제 host 교체 미연결. IMPL-340~379 게시 확인 대기. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
+- IMPL-378: 설정 카드 취소 버튼/토큰 검사/폼 닫기/일반 갱신 enqueue를 연결하고 saved/cancelled 결과를 구분했다. host 미연결. IMPL-340~378 게시 확인 대기. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
+- IMPL-377: 전체 renderBatch 실패의 재갱신을 연결하고 기존 지난 deadline이 1분 재시도를 앞당기지 않도록 작성했다. 실행 미검증. IMPL-340~377 게시 확인 대기. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
+- IMPL-376: 카드 생성/게시 실패 항목의 1분 재갱신과 설정 폼 열기 실패 후 예약 복구를 작성했다. OS callback 미연결. IMPL-340~376 게시 확인 대기. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
+- IMPL-375: 게시된 카드 nextRefresh를 단일 취소 가능한 timer/host wake callback에 연결했다. 설정 중인 카드는 예약 대상에서 제외한다. host callback 미연결. IMPL-340~375 게시 확인 대기. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
+- IMPL-374: 설정 중인 위젯은 일반 카드 게시 대상에서 제외하고 customizing 결과를 반환한다. 폼 열기/닫기로 기존 delivery를 무효화한다. OS 게시 경로 미연결. IMPL-340~374 게시 확인 대기. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
+- IMPL-373: 설정 폼 열기/닫기/제출을 조정기에 연결했다. 같은 위젯 최신 열기만 유효하며 context 폐기 시 폼도 폐기한다. OS 이벤트 미연결. IMPL-340~373 게시 확인 대기. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
+- IMPL-372: 종류별 위젯 설정 Adaptive Card 및 bounded 제출 해석을 작성했다. 한국어/영어 label 연결. 조정기/OS 폼 이벤트 미연결. IMPL-340~372 게시 확인 대기. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
+- IMPL-371: 위젯 종류별 provider/metric/window 사용자 설정 저장 경로를 작성했다. 기존 ID/종류와 revision을 유지한다. 설정 UI/OS 이벤트 미연결. IMPL-340~371 게시 확인 대기. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
+- IMPL-370: 위젯 추가/삭제 이벤트의 설정 저장 및 context 무효화 경로를 작성했다. 중복 등록은 기존 선택을 유지한다. 실제 OS 이벤트 미연결. IMPL-340~370 게시 확인 대기. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
+- IMPL-369: presentation에 요청 크기를 보존하고 작은 카드의 보조 지표/시각/범례 표시를 압축했다. 실제 높이/레이아웃 미검증. IMPL-340~369 게시 확인 대기. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
+- IMPL-368: 위젯 label 30개를 기존 언어 catalog에 연결하고 한국어/영어 및 RTL 카드 입력을 작성했다. 다른 언어의 새 문구는 영어 fallback. IMPL-340~368 게시 확인 대기. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
+- IMPL-367: 번다운 PNG 및 단일/통합 카드 표시를 연결했다. 평균 소진/이상선/추정선과 주간 상한 차트 숨김을 작성했다. OS 레이아웃/렌더링 미검증. IMPL-340~367 게시 확인 대기. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
+- IMPL-366: 원본 BurnGeom의 평균 소진 기하/페이스/리셋/소진 예상 계산을 Windows로 옮기고 세션·주간 입력에 연결했다. 차트/카드 연결은 남아 있다. IMPL-340~366 게시 확인 대기. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
+- IMPL-365: History 카드에 일별 막대 PNG와 날짜 범위/최댓값/누락·알 수 없음 표시를 연결했다. 기존 PNG encoder 재사용, 밝은/어두운 theme 입력 지원. 실제 host 미검증. IMPL-340~365 게시 확인 대기. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
+- IMPL-364: 게시 성공 카드 보관 및 액션 수명 관리를 갱신 조정기에 연결했다. context 폐기/종료 시 액션 취소·drain을 작성했다. OS 호출 미연결. IMPL-340~364 게시 확인 대기. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
+- IMPL-363: 갱신 delivery에서 카드 payload/토큰/설정 revision 묶음을 생성하고 callback 입력에 연결했다. 실제 OS 게시 및 보관 lifecycle 미연결. IMPL-340~363 게시 확인 대기. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
+- IMPL-362: Switcher 카드 선택 UI와 Action.Execute 저장 라우팅을 작성했다. 카드 토큰/위젯 ID/표시 선택지/설정 revision을 확인한다. 실제 host callback 미연결. IMPL-340~362 게시 확인 대기. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
+- IMPL-361: Usage/Metric 위젯의 Adaptive Card template/data 생성기를 작성했다. switcher/history/burn-down 템플릿과 실제 host 연결은 남아 있다. IMPL-340~361 게시 확인 대기. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
+- IMPL-360: 직렬화 snapshot 수신을 갱신 조정기에 연결했다. decode/context 확인 후 기존 취소/세대 관리 경로로 전달한다. 실제 transport 미연결. IMPL-340~360 게시 확인 대기. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
+- IMPL-359: 버전/context ID/2 MiB 제한이 있는 위젯 snapshot JSON codec을 작성했다. 실제 IPC/host 미연결. IMPL-340~359 게시 확인 대기. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
+- IMPL-358: Codex 위젯 크레딧/코드 리뷰 입력에 계정 revision 및 dashboard attachment 구분을 반영했다. 실제 adapter 미연결. IMPL-340~358 게시 확인 대기. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
+- IMPL-357: 동일 계정 비용 입력의 일별 이력을 위젯 snapshot에 연결하고 날짜/중복/수치/기간 제한을 History와 공유했다. runtime 미연결. IMPL-340~357 게시 확인 대기. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
+- IMPL-356: 계정 revision이 일치하는 token 비용 요약을 위젯 snapshot에 연결했다. IMPL-340~356 게시 확인 대기. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
+- IMPL-355: 선택적 정보가 켜진 Devin의 추가 사용 잔액을 위젯 snapshot에 연결했다. IMPL-340~355 게시 확인 대기. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
+- IMPL-354: Codex 세션/주간/월간 시간 창 의미 분류를 위젯 snapshot에 연결했다. IMPL-340~354 게시 확인 대기. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
+- IMPL-353: Antigravity summary/legacy extra 행을 위젯 snapshot에 연결했다. runtime 미연결. IMPL-340~353 게시 확인 대기. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
+- IMPL-352: 위젯 snapshot 생성에 Claude 공통 표시 정책의 추가 사용 한도 행을 연결했다. runtime 미연결. IMPL-340~352 게시 확인 대기. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
+- IMPL-351: 계정 revision 일치 결과의 quota-only 위젯 snapshot 생성기를 작성했다. runtime 호출 미연결. IMPL-340~351 게시 확인 대기. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
+- IMPL-350: 위젯 context 무효화와 이전 context snapshot 요청 거부를 추가했다. host 이벤트 미연결. IMPL-340~350 게시 확인 대기. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
+- IMPL-349: 위젯 갱신 요청 세대/취소/drain coordinator를 작성했다. OS 게시 미연결. IMPL-340~349 게시 확인 대기. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
+- IMPL-348: 위젯 코드 리뷰/토큰 비용 보조 정보와 compact fallback 조건을 연결했다. IMPL-340~348 게시 확인 대기. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
+- IMPL-347: 동일 설정/데이터로 다중 위젯을 계산하는 batch 경로와 개별 오류를 추가했다. IMPL-340~347 게시 확인 대기. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
+- IMPL-346: 위젯 설정 저장/표시 모델/공용 provider 변경 서비스 계층을 연결했다. 실제 OS host 미연결. IMPL-340~346 게시 확인 대기. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
+- IMPL-345: 위젯 6종의 표시 모델 단일 진입점을 연결했다. 실제 호스트 미연결. IMPL-340~345 게시 확인 대기. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
+- IMPL-344: Usage 위젯 크기별 행 제한과 Antigravity 모델군별 우선 선택을 연결했다. IMPL-340~344 게시 확인 대기. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
+- IMPL-343: Usage 위젯의 Codex legacy 시간 창 복원 및 주간 상한을 연결했다. IMPL-340~343 게시 확인 대기. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
+- IMPL-342: Usage 위젯의 사용/잔여 비율 및 리셋 표시 행을 작성했다. IMPL-340~342 게시 확인 대기. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
+- IMPL-341: History 차트에 날짜 offset/누락 일수 정보를 추가했다. IMPL-340과 함께 커밋 재시도 확인 대기. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
+- IMPL-340: History 위젯의 날짜/비용/토큰 차트 투영을 작성했다. 화면 미연결. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
 - IMPL-339: Burn Down 세션/주간 선택, 주간 소진 상한과 갱신 희망 시점을 작성했다. 호스트/차트 미연결. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
 
 - IMPL-338: Metric 3종의 숫자/통화/토큰/추정치 표시 모델을 작성했다. 화면 미연결. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.

@@ -14,6 +14,7 @@ function Test-CodexBarFirstPartyFile([string] $RelativePath, [string] $Kind) {
     $relative = $RelativePath.Replace('/', '\')
     if ($relative -ieq 'CodexBarWindows.exe') { return $Kind -eq 'application' }
     if ($relative -ieq 'CodexBarCLI.exe') { return $Kind -eq 'cli' }
+    if ($relative -ieq 'CodexBarWidgetBackend.dll') { return $Kind -eq 'runtime' }
     if ($Kind -ne 'resource') { return $false }
     if ([IO.Path]::GetFileName($relative) -ieq 'Set-CodexBarUserPath.ps1') { return $true }
     foreach ($name in Get-CodexBarLifecycleFileNames) {
@@ -28,8 +29,16 @@ function Assert-CodexBarFirstPartyFiles([object[]] $Files, [string] $PathPropert
     foreach ($name in Get-CodexBarLifecycleFileNames) { $null = $required.Add('tools\' + $name) }
     $expectedCount = $required.Count + 1
     $pathScripts = 0
+    $widgetBackends = 0
     foreach ($file in $Files) {
         $relative = ([string] $file.$PathProperty).Replace('/', '\')
+        if ($relative -ieq 'CodexBarWidgetBackend.dll') {
+            if ([string] $file.kind -ne 'runtime' -or $widgetBackends -ne 0) {
+                throw 'Widget backend must be one root runtime DLL.'
+            }
+            $widgetBackends++
+            continue
+        }
         if (Test-CodexBarFirstPartyFile $relative ([string] $file.kind)) {
             if ([IO.Path]::GetFileName($relative) -ieq 'Set-CodexBarUserPath.ps1') { $pathScripts++ }
             elseif (-not $required.Remove($relative)) { throw 'Duplicate first-party file.' }
@@ -38,5 +47,5 @@ function Assert-CodexBarFirstPartyFiles([object[]] $Files, [string] $PathPropert
     if ($required.Count -ne 0 -or $pathScripts -ne 1) {
         throw 'Distribution must include app, CLI, one PATH resource and the complete tools contract.'
     }
-    return $expectedCount
+    return ($expectedCount + $widgetBackends)
 }
