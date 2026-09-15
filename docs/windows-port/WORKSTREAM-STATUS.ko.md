@@ -1,5 +1,7 @@
 # Windows 전용 제품 작업 현황
 
+- IMPL-539: 확인된 plugin ID의 사용 이력 파일을 삭제 검토·잠금·내용 대조·파일 삭제에 포함. 삭제 후 해당 이력 cache/lease와 대기 알림 무효화, 한국어·영어 확인 문구 연결. ID를 모르는 로드 실패 파일과 일반 token 계정 삭제는 기존 보존 범위 유지. CODE_WRITTEN_UNVERIFIED.
+
 - IMPL-538: quota/pace 경고의 owner·설정·구간별 delivery lease와 native 표시/overlay 유효성 연결. 성공한 owner 관측 뒤 평가, 비동기 후 owner 재대조, Claude pace의 token/email 우회 차단, 지연 알림 ETA 절대 시각 및 만료 처리 작성. CODE_WRITTEN_UNVERIFIED.
 
 - IMPL-537: 일반 세션 소진/복구 알림의 owner 경계와 대기 알림 lease 연결. 계정 변경 후 첫 관측은 baseline, 현재 config/owner 확인 후 알림 계산, 비활성화·설정 끄기·종료·새 상태에서 이전 알림 무효화. 이력 수집 여부와 독립. CODE_WRITTEN_UNVERIFIED.

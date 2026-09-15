@@ -14,6 +14,7 @@ public struct WindowsPluginRemovalReview: Sendable {
     let sourceFilename: String?
     let sourceHash: String?
     let cacheCount: Int
+    let historyFilename: String?
 }
 
 public enum WindowsPluginRemovalFailure: String, Error, Sendable {
@@ -23,6 +24,7 @@ public enum WindowsPluginRemovalFailure: String, Error, Sendable {
     static func classify(_ error: Error) -> Self {
         if let failure = error as? Self { return failure }
         if let failure = error as? WindowsPluginInstallFailure, failure == .busy { return .busy }
+        if let failure = error as? WindowsPlanUtilizationHistoryStore.Failure, failure == .busy { return .busy }
         return .unavailable
     }
 }
@@ -39,28 +41,37 @@ struct WindowsPluginRemovalPlan: Sendable {
     let review: WindowsPluginRemovalReview
     private let source: Artifact?
     private let caches: [Artifact]
+    private let history: Artifact?
+    private let historyStore: WindowsPlanUtilizationHistoryStore?
 
     static func prepare(instanceID: ProviderInstanceID, installed: UserProviderPlugin?) throws -> Self {
         guard instanceID.firstPartyProvider == nil else { throw WindowsPluginRemovalFailure.changed }
         return try WindowsPluginInstaller.withInstallationLock {
-            guard let installed else {
-                guard !UserProviderPluginLoader().discover().contains(where: { $0.instanceID == instanceID }) else {
+            let historyStore = WindowsPlanUtilizationHistoryStore()
+            return try historyStore.withExclusiveAccess(providerID: instanceID) {
+                let history = try self.describeHistoryIfPresent(store: historyStore, providerID: instanceID)
+                guard let installed else {
+                    guard !UserProviderPluginLoader().discover().contains(where: { $0.instanceID == instanceID }) else {
+                        throw WindowsPluginRemovalFailure.changed
+                    }
+                    return Self(review: WindowsPluginRemovalReview(token: UUID(), instanceID: instanceID,
+                        sourceFilename: nil, sourceHash: nil, cacheCount: 0,
+                        historyFilename: history?.url.lastPathComponent), source: nil, caches: [],
+                        history: history, historyStore: historyStore)
+                }
+                guard installed.manifest.id == instanceID,
+                      installed.fileURL.deletingLastPathComponent().standardizedFileURL ==
+                        UserProviderPluginLoader.defaultProvidersDirectory.standardizedFileURL else {
                     throw WindowsPluginRemovalFailure.changed
                 }
+                let source = try self.describe(installed.fileURL, byteLimit: UserProviderPlugin.maximumSourceBytes)
+                guard source.hash == installed.sourceHash else { throw WindowsPluginRemovalFailure.changed }
+                let caches = try self.cacheURLs(for: source.url).map { try self.describe($0, byteLimit: 8 * 1024 * 1024) }
                 return Self(review: WindowsPluginRemovalReview(token: UUID(), instanceID: instanceID,
-                    sourceFilename: nil, sourceHash: nil, cacheCount: 0), source: nil, caches: [])
+                    sourceFilename: source.url.lastPathComponent, sourceHash: source.hash, cacheCount: caches.count,
+                    historyFilename: history?.url.lastPathComponent),
+                    source: source, caches: caches, history: history, historyStore: historyStore)
             }
-            guard installed.manifest.id == instanceID,
-                  installed.fileURL.deletingLastPathComponent().standardizedFileURL ==
-                    UserProviderPluginLoader.defaultProvidersDirectory.standardizedFileURL else {
-                throw WindowsPluginRemovalFailure.changed
-            }
-            let source = try self.describe(installed.fileURL, byteLimit: UserProviderPlugin.maximumSourceBytes)
-            guard source.hash == installed.sourceHash else { throw WindowsPluginRemovalFailure.changed }
-            let caches = try self.cacheURLs(for: source.url).map { try self.describe($0, byteLimit: 8 * 1024 * 1024) }
-            return Self(review: WindowsPluginRemovalReview(token: UUID(), instanceID: instanceID,
-                sourceFilename: source.url.lastPathComponent, sourceHash: source.hash, cacheCount: caches.count),
-                source: source, caches: caches)
         }
     }
 
@@ -76,8 +87,8 @@ struct WindowsPluginRemovalPlan: Sendable {
             // A failed load has no trustworthy provider identity. Match the original's
             // file-only deletion contract; never infer config or cache ownership by filename.
             return Self(review: WindowsPluginRemovalReview(token: UUID(), instanceID: nil,
-                sourceFilename: sourceURL.lastPathComponent, sourceHash: source.hash, cacheCount: 0),
-                source: source, caches: [])
+                sourceFilename: sourceURL.lastPathComponent, sourceHash: source.hash, cacheCount: 0,
+                historyFilename: nil), source: source, caches: [], history: nil, historyStore: nil)
         }
     }
 
@@ -98,31 +109,66 @@ struct WindowsPluginRemovalPlan: Sendable {
     /// until deletion, so a path replacement cannot redirect a confirmed removal to new bytes.
     func commit(beforeRemoval: () throws -> Void) throws {
         try WindowsPluginInstaller.withInstallationLock {
-            if let source = self.source, self.review.instanceID == nil {
-                _ = try Self.describeFailedSource(source.url, expectedHash: source.hash)
-            } else if let source = self.source {
-                guard try Self.cacheURLs(for: source.url) == self.caches.map(\.url) else {
-                    throw WindowsPluginRemovalFailure.changed
+            if let store = self.historyStore, let providerID = self.review.instanceID {
+                try store.withExclusiveAccess(providerID: providerID) {
+                    try self.commitPinned(beforeRemoval: beforeRemoval)
                 }
             } else {
-                guard let instanceID = self.review.instanceID,
-                      !UserProviderPluginLoader().discover().contains(where: { $0.instanceID == instanceID }) else {
+                try self.commitPinned(beforeRemoval: beforeRemoval)
+            }
+        }
+    }
+
+    private func commitPinned(beforeRemoval: () throws -> Void) throws {
+        if let source = self.source, self.review.instanceID == nil {
+            _ = try Self.describeFailedSource(source.url, expectedHash: source.hash)
+        } else if let source = self.source {
+            guard try Self.cacheURLs(for: source.url) == self.caches.map(\.url) else {
+                throw WindowsPluginRemovalFailure.changed
+            }
+        } else {
+            guard let instanceID = self.review.instanceID,
+                  !UserProviderPluginLoader().discover().contains(where: { $0.instanceID == instanceID }) else {
+                throw WindowsPluginRemovalFailure.changed
+            }
+        }
+        var files: [PinnedFile] = []
+        for artifact in self.source.map({ [$0] }) ?? [] {
+            files.append(try PinnedFile(artifact.url, byteLimit: artifact.byteLimit, deleting: true,
+                expectedHash: artifact.hash))
+        }
+        for artifact in self.caches {
+            files.append(try PinnedFile(artifact.url, byteLimit: artifact.byteLimit, deleting: true,
+                expectedHash: artifact.hash))
+        }
+        if let store = self.historyStore, let providerID = self.review.instanceID {
+            if let history = self.history {
+                guard history.url == store.fileURL(providerID: providerID) else {
                     throw WindowsPluginRemovalFailure.changed
                 }
+                files.append(try PinnedFile(history.url, byteLimit: history.byteLimit, deleting: true,
+                    expectedHash: history.hash))
+            } else if try Self.describeHistoryIfPresent(store: store, providerID: providerID) != nil {
+                // A file created after review was not included in the user's confirmation.
+                throw WindowsPluginRemovalFailure.changed
             }
-            var files: [PinnedFile] = []
-            for artifact in self.source.map({ [$0] }) ?? [] {
-                files.append(try PinnedFile(artifact.url, byteLimit: artifact.byteLimit, deleting: true,
-                    expectedHash: artifact.hash))
-            }
-            for artifact in self.caches {
-                files.append(try PinnedFile(artifact.url, byteLimit: artifact.byteLimit, deleting: true,
-                    expectedHash: artifact.hash))
-            }
-            // Conditional approval revocation and protected config removal happen first.
-            try beforeRemoval()
-            for file in files { try file.remove() }
         }
+        // Conditional approval revocation and protected config removal happen first.
+        try beforeRemoval()
+        for file in files { try file.remove() }
+    }
+
+    private static func describeHistoryIfPresent(store: WindowsPlanUtilizationHistoryStore,
+                                                providerID: ProviderInstanceID) throws -> Artifact? {
+        guard providerID.firstPartyProvider == nil else { throw WindowsPluginRemovalFailure.changed }
+        let url = store.fileURL(providerID: providerID)
+        let attributes = url.path.withCString(encodedAs: UTF16.self) { GetFileAttributesW($0) }
+        if attributes == DWORD(INVALID_FILE_ATTRIBUTES) {
+            let code = GetLastError()
+            if code == ERROR_FILE_NOT_FOUND || code == ERROR_PATH_NOT_FOUND { return nil }
+            throw WindowsPluginRemovalFailure.unavailable
+        }
+        return try self.describe(url, byteLimit: WindowsPlanUtilizationHistoryStore.maximumFileBytes)
     }
 
     private static func describe(_ url: URL, byteLimit: Int) throws -> Artifact {

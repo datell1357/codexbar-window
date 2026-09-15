@@ -5079,3 +5079,13 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - 외부 credential/config 변경을 OS 전체에서 즉시 감지하거나 이미 표시된 OS balloon을 회수했다는 뜻은 아니다. Windows credential-file 근거의 지속 Claude binding, 이력 삭제 lifecycle, 동시 계정 소비, Windows 제품 graph/패키징 및 전체 실행 검증은 남아 있다.
 - CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·컴파일·lint·실제 provider/계정·Windows 알림/overlay/UI·성능 검증 미실행.
 - 직전 IMPL-537은 ce91b5615로 origin/main 푸시가 성공했다. IMPL-538도 별도 구현 커밋·푸시 후 Git 결과를 보고한다.
+
+## IMPL-539 — Include reviewed plugin history in provider removal
+
+- 원본 UserProviderPluginManager.delete(historyDirectory:)와 PreferencesPluginsPane의 삭제 계약에 따라 플러그인의 정확한 ID에 해당하는 plan-utilization-history/<id>.json을 Windows 삭제 계획에 포함했다. 일반 token 계정 제거와 플러그인 제거는 서로 다른 계약이며, 일반 계정 삭제에 이력 삭제 동작을 추가하지 않았다.
+- 삭제 검토에서 소스·cache와 함께 이력 파일의 존재 여부 및 raw bytes SHA-256을 보관한다. 정상 JSON으로 decode할 필요 없이 기존 history store의 32MiB 제한 아래 파일을 다룬다. 한국어·영어 확인 창에 검토한 이력 파일 또는 발견되지 않았음을 표시한다.
+- 삭제 실행은 plugin installation lock과 기존 provider history lock을 같은 순서로 잡는다. 검토한 이력이 사라지거나 내용이 달라지면 중단하며, 없던 파일이 새로 생긴 경우도 설정·권한 제거 전에 중단한다. 검토한 소스·cache·이력의 열린 핸들은 변경/이름 교체를 허용하지 않는 상태로 보관하고, 설정·권한 제거 후 파일 삭제를 수행한다. leaf reparse file은 기존 핸들 검사에서 거절하며 모든 상위 경로를 보호했다는 주장은 하지 않는다.
+- 삭제한 provider의 runtime history context/조회 cache/burn cache/notice 및 session·quota·pace 대기 알림을 무효화한다. 이력 lock 사용 중 실패는 재시도 가능한 busy 안내로 연결하고, 설정·권한 제거 이후 실패는 기존 부분 삭제 결과로 보고한다. 전체 삭제를 하나의 filesystem transaction으로 되돌리는 구현은 아니다.
+- 공급자를 신뢰할 수 없는 로드 실패 파일의 삭제는 이력 파일을 탐색하거나 삭제하지 않는다. 이전 소스 백업도 유지하며, 소스 재설치/백업 복원으로 이미 삭제한 이력을 복구할 수 있다고 안내하지 않는다. 실제 사용자 데이터 삭제는 실행하지 않았다.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·컴파일·lint·실제 파일/잠금/경합/부분 실패·Windows 삭제 UI 검증 미실행. 플러그인의 새 이력 수집, Windows credential-file 기반 Claude binding, 동시 계정 소비 및 Windows 제품 graph/패키징과 전체 실행 검증은 남아 있다.
+- 직전 IMPL-538은 577889a00으로 origin/main 푸시가 성공했다. IMPL-539도 별도 구현 커밋·푸시 후 Git 결과를 보고한다.

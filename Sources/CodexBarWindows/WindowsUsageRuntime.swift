@@ -2747,6 +2747,11 @@ public actor WindowsUsageRuntime {
                     if case let .presentation(presentation) = $0 { return presentation.instanceID == id }
                     return false
                 }
+                self.planHistoryContexts.removeValue(forKey: id)?.validity.invalidate()
+                self.planHistoryReadSelections.removeValue(forKey: id)
+                self.planHistoryBurnCaches.removeValue(forKey: id)
+                self.planUtilizationHistoryNotices.removeValue(forKey: id)
+                self.invalidateSessionQuotaOwner(id)
                 self.accountInvalidationPublisher(id)
                 self.publishRenderEntries(settings: WindowsUsagePresentationSettings.load())
             }

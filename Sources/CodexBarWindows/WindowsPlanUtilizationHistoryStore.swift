@@ -150,6 +150,12 @@ struct WindowsPlanUtilizationHistoryStore: Sendable {
         throw Failure.tooLarge
     }
 
+    /// Allows a reviewed provider removal to coordinate with ordinary history reads and writes.
+    /// The caller owns its exact-file checks and must keep deletion inside this scope.
+    func withExclusiveAccess<T>(providerID: ProviderInstanceID, operation: () throws -> T) throws -> T {
+        try self.withLock(providerID: providerID, operation: operation)
+    }
+
     private func withLock<T>(providerID: ProviderInstanceID, operation: () throws -> T) throws -> T {
         try FileManager.default.createDirectory(at: self.directory, withIntermediateDirectories: true)
         let lockURL = self.directory.appendingPathComponent(providerID.rawValue + ".lock")
