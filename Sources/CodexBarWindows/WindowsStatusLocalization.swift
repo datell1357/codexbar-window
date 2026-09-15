@@ -286,6 +286,11 @@ enum WindowsStatusLocalization {
             "Status Page": "Statusseite",
         ],
         "en": [
+            "plan_history_changed": "The selected account or settings changed. Refresh usage and open history again.",
+            "plan_history_noCurrentUsage": "Refresh this provider successfully before opening its usage history.",
+            "plan_history_busy": "Usage history is busy. Try opening it again shortly.",
+            "plan_history_invalidData": "Usage history has an unsupported, damaged or oversized file. It was not replaced.",
+            "plan_history_loadFailed": "Usage history could not be read. Check access to its saved data.",
             "plan_history_ownerUnavailable": "Usage history is paused until this account can be identified.",
             "plan_history_saveFailed": "Usage history could not be saved. Check access to the history file and its format.",
             "plugin_restoreBackupTitle": "Restore a plugin source backup…",
@@ -1087,6 +1092,11 @@ enum WindowsStatusLocalization {
             "Status Page": "ステータスページ",
         ],
         "ko": [
+            "plan_history_changed": "선택한 계정이나 설정이 바뀌었습니다. 사용량을 새로 고친 뒤 이력을 다시 여세요.",
+            "plan_history_noCurrentUsage": "이 공급자의 사용량을 성공적으로 조회한 뒤 이력을 여세요.",
+            "plan_history_busy": "사용량 이력을 다른 작업에서 사용하고 있습니다. 잠시 후 다시 여세요.",
+            "plan_history_invalidData": "사용량 이력 파일의 형식이 지원되지 않거나 손상되었거나 크기 제한을 넘었습니다. 기존 파일은 덮어쓰지 않았습니다.",
+            "plan_history_loadFailed": "사용량 이력을 읽지 못했습니다. 저장된 데이터의 접근 권한을 확인하세요.",
             "plan_history_ownerUnavailable": "이 계정을 식별할 수 있을 때까지 사용량 이력 수집을 보류합니다.",
             "plan_history_saveFailed": "사용량 이력을 저장하지 못했습니다. 이력 파일의 접근 권한과 형식을 확인하세요.",
             "plugin_restoreBackupTitle": "플러그인 소스 백업 복원…",

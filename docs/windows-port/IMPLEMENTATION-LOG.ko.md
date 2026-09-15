@@ -4951,3 +4951,14 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - 이번 범위는 차트 데이터 변환이다. Windows runtime의 현재 계정과 일치하는 조회 token, native chart 창/선택·접근성, session-equivalent forecast, migration 및 삭제 lifecycle은 남아 있다. 원본과 같은 실행 결과를 검증한 것은 아니다.
 - CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·컴파일·UI·fixture 비교·성능 검증 미실행.
 - Git 보류 복구: IMPL-340~526은 4135f98d0으로 커밋되어 origin/main 푸시가 성공했다. IMPL-527도 사용자 지시에 따라 별도 구현 커밋과 푸시 대상으로 처리하며 최종 Git 결과를 보고한다.
+
+## IMPL-528 — Load history for the currently observed Windows account
+
+- WindowsPlanUtilizationHistorySnapshot/Result를 추가했다. UI에 전달하는 값은 공급자 ID, 불투명 context token, 표시 제목/개인정보 숨김 상태, 관측/조회 시각, 차트 series와 유효성 callback이다. 계정 저장 키와 credential digest는 runtime 밖으로 전달하지 않는다.
+- 공급자 조회 성공 시 실제 저장 소유권과 provider config digest에 묶인 context를 만들고 WindowsTrayMenuEntry에 token을 게시한다. 수집 generation에 별도 context generation을 추가해 계정 변경 중 도착한 이전 요청이 새 조회 문맥을 복구하지 않도록 작성했다.
+- planUtilizationHistorySnapshot은 새 공급자 probe 없이 저장소를 읽는다. 읽기 전후 현재 enabled/config digest, 선택 token account, Codex reconciliation, Claude profile/관측 UUID와 소유권을 대조한다. 문서의 preferredAccountKey나 다른 계정 bucket을 대체값으로 사용하지 않는다.
+- 새로고침 시작·계정 무효화·수집 설정 변경·종료에서 기존 context와 snapshot lease를 무효화한다. 표시 설정 변경은 전달한 snapshot lease를 무효화하고 다시 열 때 현재 개인정보 숨김 상태를 사용한다. 수집 비활성화는 기존 이력의 삭제나 조회 금지로 처리하지 않는다.
+- 빈 이력은 빈 series snapshot으로 반환하고, 상태 변경/성공한 현재 조회 없음/잠금 사용 중/형식·크기 오류/읽기 실패는 한국어·영어 안내로 구분한다. raw error, 저장 경로, owner key를 메시지에 넣지 않는다.
+- 외부 브라우저/CLI 계정의 변경은 설정·프로필·Codex 소유권으로 관찰되는 범위와 후속 provider refresh에서 반영된다. snapshot의 유효성 callback 자체가 실시간 외부 인증 변경 감시를 수행하는 것은 아니다. native chart 대화상자 및 tray load/reply 연결, migration/session-equivalent forecast/삭제 lifecycle은 남아 있다.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·컴파일·실제 계정/설정 읽기·파일 저장·UI·성능 검증 미실행.
+- 직전 IMPL-527은 a04cb541e으로 origin/main 푸시가 성공했다. 이번 IMPL-528도 별도 커밋·푸시하며 결과는 Git 응답으로 보고한다.

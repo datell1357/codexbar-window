@@ -857,7 +857,19 @@ public actor WindowsUsageRuntime {
     // is kept here, so a stale owner cannot score another account.
     private let planUtilizationHistoryStore = WindowsPlanUtilizationHistoryStore()
     private var planUtilizationHistoryNotices: [ProviderInstanceID: String] = [:]
-    private enum PlanHistoryOwner { case scoped(String), unscoped, unavailable }
+    private enum PlanHistoryOwner: Equatable { case scoped(String), unscoped, unavailable }
+    private struct PlanHistoryContext {
+        let token: UUID
+        let owner: PlanHistoryOwner
+        let providerRevision: Data?
+        let result: ProviderFetchResult
+        let title: String
+        let claudeAccountUUID: String?
+        let claudeProfileIdentifier: String?
+        let validity: WindowsSnapshotValidity
+    }
+    private var planHistoryContexts: [ProviderInstanceID: PlanHistoryContext] = [:]
+    private var planHistoryContextGeneration = UUID()
     private let historicalUsageHistoryStore: HistoricalUsageHistoryStore
     private var codexHistoricalDataset: CodexHistoricalDataset?
     private var codexHistoricalDatasetAccountKey: String?
@@ -932,6 +944,7 @@ public actor WindowsUsageRuntime {
         self.predictivePaceWarningGeneration &+= 1
         if !settings.notificationsEnabled { self.predictivePaceWarningKeys.removeAll(keepingCapacity: true) }
         if settings.historicalTrackingEnabled != self.lastHistoricalTrackingEnabled {
+            self.invalidatePlanHistoryContexts()
             self.historicalTrackingGeneration &+= 1
             self.lastHistoricalTrackingEnabled = settings.historicalTrackingEnabled
             if !settings.historicalTrackingEnabled {
@@ -1884,6 +1897,7 @@ public actor WindowsUsageRuntime {
     }
 
     private func invalidateSelectedAccountState(_ providerID: ProviderInstanceID) {
+        self.invalidatePlanHistoryContexts()
         self.clearWidgetQuotaContext()
         self.spendGeneration &+= 1
         self.collectedSpendSources = nil
@@ -2493,6 +2507,7 @@ public actor WindowsUsageRuntime {
 
     public func presentationSettingsDidChange() async {
         guard !self.shuttingDown else { return }
+        for context in self.planHistoryContexts.values { context.validity.invalidate() }
         self.emitWidgetInvalidation()
         guard !self.renderEntries.isEmpty else { return }
         self.publishRenderEntries(settings: WindowsUsagePresentationSettings.load())
@@ -3046,6 +3061,7 @@ public actor WindowsUsageRuntime {
     }
 
     private func performRefresh() async {
+        self.invalidatePlanHistoryContexts()
         self.hookRefreshAccounts.removeAll()
         self.hookUnresolvedAccountCount = 0
         self.pendingHookRefresh = nil
@@ -3456,6 +3472,9 @@ public actor WindowsUsageRuntime {
         let copyEntries = self.statusMenuEntries.map { entry in
             var updated = entry
             updated.usageCopyText = copyRows[entry.providerID]
+            if let provider = UsageProvider(rawValue: entry.providerID) {
+                updated.planHistoryContextToken = self.planHistoryContexts[provider.instanceID]?.token
+            }
             if let provider = UsageProvider(rawValue: entry.providerID),
                let support = TokenAccountSupportCatalog.support(for: provider),
                let data = self.latestProviderConfigs[provider.instanceID]?.tokenAccounts,
@@ -3483,6 +3502,7 @@ public actor WindowsUsageRuntime {
             return
         }
         self.shuttingDown = true
+        self.invalidatePlanHistoryContexts()
         // All callers await the same cleanup, including the widget receiver/server join.
         // Caller cancellation must not cancel resource teardown halfway through.
         let task = Task { await self.performShutdown() }
@@ -3733,31 +3753,120 @@ public actor WindowsUsageRuntime {
             includeVisibleAccounts: codexVisibleAccount != nil)
     }
 
+    private func invalidatePlanHistoryContexts() {
+        self.planHistoryContextGeneration = UUID()
+        for context in self.planHistoryContexts.values { context.validity.invalidate() }
+        self.planHistoryContexts.removeAll(keepingCapacity: true)
+        self.planUtilizationHistoryNotices.removeAll(keepingCapacity: true)
+    }
+
+    /// Loads only the owner represented by a currently published menu token. No provider
+    /// probe is performed here and preferredAccountKey is never used as a fallback owner.
+    func planUtilizationHistorySnapshot(
+        providerID: ProviderInstanceID, contextToken: UUID) -> WindowsPlanUtilizationHistoryResult
+    {
+        guard !self.shuttingDown, !Task.isCancelled,
+              let provider = providerID.firstPartyProvider else { return .unavailable(.noCurrentUsage) }
+        guard let context = self.planHistoryContexts[providerID], context.token == contextToken else {
+            return .unavailable(.changed)
+        }
+        let privacy = WindowsUsagePresentationSettings.load().hidePersonalInfo
+        let isValid = context.validity.capture()
+        do {
+            guard try self.planHistoryContextMatches(context, provider: provider) else {
+                self.invalidatePlanHistoryContexts()
+                return .unavailable(.changed)
+            }
+            let document = try self.planUtilizationHistoryStore.load(providerID: providerID)
+            let histories: [PlanUtilizationHistoryCore.Series]
+            switch context.owner {
+            case let .scoped(key): histories = document.histories(accountKey: key)
+            case .unscoped: histories = document.histories(accountKey: nil)
+            case .unavailable: return .unavailable(.noCurrentUsage)
+            }
+            let now = Date()
+            let series = try PlanUtilizationHistoryChart.make(provider: provider, histories: histories,
+                snapshot: context.result.usage, referenceDate: now)
+            // IO can overlap edits from another process even though this actor never suspends.
+            guard isValid(), privacy == WindowsUsagePresentationSettings.load().hidePersonalInfo,
+                  try self.planHistoryContextMatches(context, provider: provider) else {
+                self.invalidatePlanHistoryContexts()
+                return .unavailable(.changed)
+            }
+            let title = privacy ? ProviderDescriptorRegistry.descriptor(for: provider).metadata.displayName : context.title
+            return .snapshot(.init(providerID: providerID, contextToken: contextToken,
+                title: String(title.replacingOccurrences(of: "\0", with: "").prefix(240)),
+                hidePersonalInfo: privacy, usageCapturedAt: context.result.usage.updatedAt,
+                loadedAt: now, series: series,
+                isCurrent: {
+                    isValid() && privacy == WindowsUsagePresentationSettings.load().hidePersonalInfo
+                }))
+        } catch let error as WindowsPlanUtilizationHistoryStore.Failure {
+            switch error {
+            case .busy: return .unavailable(.busy)
+            case .changed: return .unavailable(.changed)
+            case .tooLarge, .invalidData: return .unavailable(.invalidData)
+            case .unavailable: return .unavailable(.loadFailed)
+            }
+        } catch is PlanUtilizationHistoryCore.Failure {
+            return .unavailable(.invalidData)
+        } catch {
+            self.invalidatePlanHistoryContexts()
+            return .unavailable(.loadFailed)
+        }
+    }
+
+    private func planHistoryContextMatches(_ expected: PlanHistoryContext, provider: UsageProvider) throws -> Bool {
+        let id = provider.instanceID
+        guard !self.shuttingDown, !Task.isCancelled,
+              self.planHistoryContexts[id]?.token == expected.token else { return false }
+        guard let config = try self.configStore.load(), config.enabledProviders().contains(id),
+              try self.pluginProviderRevision(config.providerConfig(for: id)) == expected.providerRevision else { return false }
+        let accounts = try TokenAccountCLIContext(
+            selection: TokenAccountCLISelection(label: nil, index: nil, allAccounts: false),
+            config: config, verbose: false)
+        let tokenAccount = try accounts.resolvedAccounts(for: provider).first
+        var codexContext: CodexAccountContextSnapshot?
+        var visibleAccount: CodexVisibleAccount?
+        if provider == .codex {
+            let current = accounts.codexAccountContextSnapshot()
+            if tokenAccount == nil {
+                let projection = current.visibleAccounts
+                visibleAccount = projection.visibleAccounts.first { $0.id == projection.activeVisibleAccountID }
+                codexContext = visibleAccount.map { current.selecting(activeSource: $0.selectionSource) }
+            } else { codexContext = current }
+        }
+        let environment = accounts.environment(base: ProcessInfo.processInfo.environment, provider: provider,
+            account: tokenAccount, codexActiveSourceOverride: visibleAccount?.selectionSource,
+            codexAccountContext: codexContext)
+        if provider == .claude,
+           ClaudeOAuthCredentialsStore.credentialsProfileIdentifier(environment: environment) != expected.claudeProfileIdentifier {
+            return false
+        }
+        let owner = self.planUtilizationHistoryOwner(provider: provider, result: expected.result,
+            tokenAccount: tokenAccount, codexVisibleAccount: visibleAccount, codexAccountContext: codexContext,
+            environment: environment, claudeAccountUUIDBefore: expected.claudeAccountUUID,
+            claudeAccountUUIDAfter: provider == .claude ? ClaudeAccountProfile.accountUuid(environment: environment) : nil)
+        return owner == expected.owner && owner != .unavailable
+    }
+
     private func recordPlanUtilizationSampleIfNeeded(
         provider: UsageProvider, result: ProviderFetchResult, config: CodexBarConfig,
         tokenAccount: ProviderTokenAccount?, codexVisibleAccount: CodexVisibleAccount?,
         codexAccountContext: CodexAccountContextSnapshot?, environment: [String: String],
-        claudeAccountUUIDBefore: String?, claudeAccountUUIDAfter: String?, generation: UInt64)
+        claudeAccountUUIDBefore: String?, claudeAccountUUIDAfter: String?, generation: UInt64,
+        contextGeneration: UUID, title: String)
     {
         let id = provider.instanceID
         guard !self.shuttingDown, !Task.isCancelled, generation == self.historicalTrackingGeneration,
+              contextGeneration == self.planHistoryContextGeneration,
               self.latestEnabledProviderIDs?.contains(id) == true else { return }
-        let alwaysTracks = ProviderDescriptorRegistry.descriptor(for: provider).history.alwaysTracksPlanUtilization
-        guard alwaysTracks || (WindowsPredictivePaceWarningSettings.load().historicalTrackingEnabled &&
-            generation == self.historicalTrackingGeneration) else {
-            self.planUtilizationHistoryNotices.removeValue(forKey: id)
-            return
-        }
-        let projection = PlanUtilizationHistoryProjection.make(provider: provider, snapshot: result.usage, capturedAt: Date())
-        guard !projection.samples.isEmpty else {
-            self.planUtilizationHistoryNotices.removeValue(forKey: id)
-            return
-        }
         do {
             // Configuration may change while the provider request is in flight.
             let current = try self.configStore.loadOrCreateDefault()
-            guard try self.pluginProviderRevision(current.providerConfig(for: id)) ==
-                self.pluginProviderRevision(config.providerConfig(for: id)) else { return }
+            let revision = try self.pluginProviderRevision(config.providerConfig(for: id))
+            guard current.enabledProviders().contains(id),
+                  try self.pluginProviderRevision(current.providerConfig(for: id)) == revision else { return }
             let owner = self.planUtilizationHistoryOwner(provider: provider, result: result,
                 tokenAccount: tokenAccount, codexVisibleAccount: codexVisibleAccount,
                 codexAccountContext: codexAccountContext, environment: environment,
@@ -3768,6 +3877,24 @@ public actor WindowsUsageRuntime {
             case .unscoped: accountKey = nil
             case .unavailable:
                 self.planUtilizationHistoryNotices[id] = "plan_history_ownerUnavailable"
+                return
+            }
+            self.planHistoryContexts[id]?.validity.invalidate()
+            self.planHistoryContexts[id] = PlanHistoryContext(token: UUID(), owner: owner,
+                providerRevision: revision, result: result, title: title,
+                claudeAccountUUID: claudeAccountUUIDAfter,
+                claudeProfileIdentifier: provider == .claude
+                    ? ClaudeOAuthCredentialsStore.credentialsProfileIdentifier(environment: environment) : nil,
+                validity: WindowsSnapshotValidity())
+            // Stopping collection must not erase or make an existing, owner-matched history unreadable.
+            let alwaysTracks = ProviderDescriptorRegistry.descriptor(for: provider).history.alwaysTracksPlanUtilization
+            guard alwaysTracks || WindowsPredictivePaceWarningSettings.load().historicalTrackingEnabled else {
+                self.planUtilizationHistoryNotices.removeValue(forKey: id)
+                return
+            }
+            let projection = PlanUtilizationHistoryProjection.make(provider: provider, snapshot: result.usage, capturedAt: Date())
+            guard !projection.samples.isEmpty else {
+                self.planUtilizationHistoryNotices.removeValue(forKey: id)
                 return
             }
             try self.planUtilizationHistoryStore.record(providerID: id, samples: projection.samples,
@@ -4325,6 +4452,7 @@ public actor WindowsUsageRuntime {
         predictivePaceWarningGeneration: UInt64,
         historicalTrackingGeneration: UInt64) async -> [String]
     {
+        let historyContextGeneration = self.planHistoryContextGeneration
         do {
             let account: ProviderTokenAccount? = if codexVisibleAccount == nil {
                 try context.resolvedAccounts(for: provider).first
@@ -4433,7 +4561,8 @@ public actor WindowsUsageRuntime {
                     codexAccountContext: retainedCodexContext, environment: env,
                     claudeAccountUUIDBefore: claudeAccountUUIDBefore,
                     claudeAccountUUIDAfter: provider == .claude ? ClaudeAccountProfile.accountUuid(environment: env) : nil,
-                    generation: historicalTrackingGeneration)
+                    generation: historicalTrackingGeneration,
+                    contextGeneration: historyContextGeneration, title: title)
                 await self.recordCodexHistoricalSampleIfNeeded(
                     provider: provider,
                     snapshot: result.usage,

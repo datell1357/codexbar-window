@@ -26,6 +26,8 @@ public struct WindowsTrayMenuEntry: Sendable, Equatable {
     public let errorCopyText: String?
     public var tokenAccountSelection: WindowsTokenAccountSelectionSnapshot? = nil
     public var usageCopyText: String? = nil
+    /// Opaque token for history belonging to the current successful provider observation.
+    public var planHistoryContextToken: UUID? = nil
     /// Public provider state for this refresh; never account usage or identity.
     public var serviceStatus: HookProviderStatus? = nil
     public var serviceComponents: [WindowsProviderStatusComponent]? = nil
