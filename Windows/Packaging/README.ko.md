@@ -215,3 +215,17 @@ Restore-CodexBarUninstall.ps1의 RestoreRegistration 옵션은 파일과 참조 
 Register-CodexBarInstallation은 이제 관리 tools뿐 아니라 실제 앱·CLI의 크기/hash/서명/timestamp를 확인하고 파일 handle을 작업 종료까지 유지한다. 앱 파일이 없거나 바뀐 상태를 관리 사본만으로 등록하지 않는다. 전체 runtime DLL/resource 정상 동작이나 실제 설치 적합성까지 증명하는 것은 아니다.
 
 복구 기록에 RESTORING_REGISTRATION 및 registrationState를 남긴다. 단계별 파일 잠금은 있으나 전체 단계를 하나의 transaction으로 만들지는 않으며 단계 사이 동시 변경은 남아 있다. 이번 작업에서는 등록·복원·서명 확인·PowerShell·빌드·테스트를 실행하지 않았다.
+
+## IMPL-542: 위젯 host 전체 payload 입력
+
+New-CodexBarDistributionManifest.ps1에 WidgetHostEXE와 WidgetHostBuildReceipt 입력을 추가했다. 둘을 함께 지정하고 WidgetBackendDLL/WidgetBackendBuildReceipt도 제공해야 한다. host는 Release 및 같은 architecture의 schemaVersion 2 receipt를 요구하고, backend는 기존 schemaVersion 1을 사용한다. host receipt는 exe byte identity와 caller policy/packages.config hash, self-contained component 배포 방식 및 전체 payload를 기술한다. 서명된 빌드 증거는 아니다.
+
+입력 생성기는 명시적으로 선택한 host exe의 디렉터리에서 payload 상대 경로를 해석한다. EXE·runtime DLL·WinMD·manifest/resource·NuGet 라이선스를 종류별로 포함하며 DLL에는 기존 PE/의존성 경로를 적용한다. receipt 내부 절대 경로를 복사 대상으로 사용하지 않는다. host가 들어간 입력 JSON에는 widgetHostPayload가 필수이며, input manifest 최대 크기도 조립기의 4 MiB 제한에 맞춘다. 일반 앱/CLI/Swift runtime/resource/license 입력은 별도로 필요하며 payload 파일을 중복해서 넣지 않는다.
+
+Read-CodexBarWidgetPayload.ps1은 빌드 및 배포 입력을 위한 공유 helper다. 최대 4096개 파일·파일당 512 MiB·상대 경로 및 hash 형식·종류·필수 host/Widgets DLL/WinMD/3개 라이선스를 요구한다. 알 수 없는 산출물과 누락을 자동으로 무시하지 않는다. 이 helper는 설치된 프로그램의 lifecycle tool 목록에 추가할 필요가 없는 빌드/조립 전용 코드다.
+
+조립기는 payload 전체의 포함/종류를 대조하고 실제 복사 후 열린 파일의 bytes/hash가 build receipt와 같을 때만 최종 inventory에 COPIED_BYTES_MATCH_LOCAL_BUILD_RECORD를 기록한다. 변경이나 누락이 있으면 성공 inventory를 남기지 않으며 부분 출력은 보존한다. 이 상태는 실행 가능성이나 등록 성공의 증거가 아니다. 기존 source 경로/파일 경합과 Windows 동작 경계도 계속 미검증이다.
+
+CodexBarWidgetHost.exe는 backend를 동반한 유일한 root first-party application으로 서명 대상에 포함된다. 따라서 기본 17개 대상에 widget backend와 host가 함께 있으면 first-party 대상은 19개다. 서명 요청·서명·설치에서 기존 공유 first-party 판정을 사용하며 서명 후 hash는 실제 서명된 파일로 다시 기록한다. 사전 서명 payload hash 목록을 최종 inventory의 서명 후 파일 계약으로 재사용하지 않는다.
+
+현재 widget 구성 요소 입력은 명시적으로 선택하는 단계다. MSIX package identity·COM/6종 위젯 및 proxy/stub 선언·OS cold activation·확인된 broker 정책과 실제 Windows 배포는 남아 있다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 이 변경에서 스크립트·빌드·복사·서명·설치·검증은 실행하지 않았다.

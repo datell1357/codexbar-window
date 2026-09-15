@@ -1,5 +1,7 @@
 # Windows 전용 제품 작업 현황
 
+- IMPL-542: host v2 빌드 receipt에 runtime/metadata/resource/라이선스 payload를 기록하고 배포 입력·복사 byte 대조·first-party 서명 대상에 연결. backend v1 계약 유지, 누락/종류 변경/byte 불일치 시 완료 inventory 미작성. MSIX/OS activation은 남아 있음. CODE_WRITTEN_UNVERIFIED.
+
 - IMPL-541: packaged 앱 시작→native child 생성→backend listener→상속 파이프 전달→handshake/종료 관측→정리·재시도 연결. 제한된 handle·환경변수 상속, 같은 package/image/session 대조, 강제 종료/실패 owner 보존 작성. cold OS activation·MSIX/배포 연결은 남아 있음. CODE_WRITTEN_UNVERIFIED.
 
 - IMPL-540: 기존 native 위젯 runner를 포함하는 C++/WinRT host exe 프로젝트·고정 NuGet 목록·빌드 receipt 경로 작성. 같은 package/session/backend image를 확인하는 상속 파이프 수신, Swift 시작 frame, 취소/종료 연결 추가. 실제 앱 launcher·OS activation·MSIX 등록은 남아 있음. CODE_WRITTEN_UNVERIFIED.

@@ -5111,3 +5111,13 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - shutdown은 launcher task를 취소하고 완료를 기다린 뒤 남은 connection/launcher 정리를 순차 재시도한다. connection 정리가 성공해도 native launcher가 남아 있으면 전체 widget cleanup 실패 상태를 유지한다. 이 source 상태가 실제 프로세스/잠금/취소 성공을 증명하지는 않는다.
 - cold OS activation과 MSIX COM/6종 widget 등록, 확인된 Windows broker 정책, host/runtime/license 배포 inventory·서명, 사용자-facing 진단과 전체 WinUI/Windows-only 제품 graph는 남아 있다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·컴파일·lint·실제 child/pipe/COM/Job/환경변수/패키지/UI 검증 미실행.
 - 직전 IMPL-540은 eaf268006으로 origin/main 푸시가 성공했다. IMPL-541도 별도 구현 커밋·푸시 후 Git 결과를 보고한다.
+
+## IMPL-542 — Carry the complete widget host payload into distribution and signing
+
+- host 빌드 receipt를 schemaVersion 2로 확장하고 실제 MSBuild output의 상대 경로·종류·크기·SHA-256을 payload에 기록하는 helper를 추가했다. 복원된 Widgets/Base/C++/WinRT 라이선스를 새 output의 전용 경로로 복사하도록 작성했다. root host PDB/ILK/LIB/EXP만 제외하며 알려지지 않은 파일·reparse·한도 초과·필수 파일 누락은 성공 receipt로 처리하지 않는다.
+- 빌드·입력 생성·조립에서 공유하는 Read-CodexBarWidgetPayload 계약을 추가했다. host exe, Widgets DLL/WinMD와 3개 라이선스의 존재·비어 있지 않음을 요구하고 상대 경로·중복·종류·hash·크기 한도를 연결했다. 빌드 산출물 수집이나 helper는 실행하지 않았다.
+- New-CodexBarDistributionManifest에 명시적 host EXE/receipt 입력을 추가했다. backend DLL/receipt를 함께 요구하고 v2 host receipt와 실제 선택한 exe의 identity를 대조하도록 작성했다. receipt의 절대 경로를 신뢰하지 않고 선택한 exe의 디렉터리에서 전체 payload를 포함하며 DLL은 기존 PE/import 처리 경로를 따른다. 기존 backend v1 receipt 계약은 유지한다.
+- 입력 JSON의 widgetHostPayload에 기록된 모든 파일이 같은 종류로 포함되어야 조립을 진행한다. 복사 후 열린 파일의 실제 크기·hash가 payload와 다르면 완료 inventory를 쓰지 않으며 부분 출력은 보존한다. producer에도 consumer와 같은 4 MiB input 한도를 적용했다.
+- host exe를 root first-party application으로 서명 판정에 포함하고 backend 없는 host를 거절하도록 작성했다. 공유 서명/설치 계약은 기존 17개 대상에 backend/host가 있을 때 19개를 요구한다. 최종 서명 후 inventory에는 다시 계산한 실제 hash를 사용하며 사전 서명 payload hash를 그대로 적용하지 않는다.
+- LOCAL_BUILD_NOT_ATTESTED 및 COPIED_BYTES_MATCH_LOCAL_BUILD_RECORD는 source에 정의한 기록 상태일 뿐 실제 빌드·복사·서명·OS 등록 성공을 보고하는 값이 아니다. MSIX COM/6종 widget/proxy-stub 선언, cold activation·broker 정책·사용자 진단·전체 Windows-only 제품 graph와 실행 검증은 남아 있다.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. PowerShell·NuGet restore·MSBuild·컴파일·테스트·lint·배포 조립·서명·설치·실제 Windows 검증 미실행. 직전 IMPL-541은 02b8798d3으로 origin/main 푸시가 성공했다. IMPL-542도 별도 구현 커밋·푸시 후 Git 결과를 보고한다.

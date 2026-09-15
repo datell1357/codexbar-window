@@ -9,6 +9,8 @@ param(
     [string[]] $RuntimeSearchDirectories = @(),
     [string] $WidgetBackendDLL,
     [string] $WidgetBackendBuildReceipt,
+    [string] $WidgetHostEXE,
+    [string] $WidgetHostBuildReceipt,
     [string] $SystemPolicyFile,
     [Parameter(Mandatory = $true)][string[]] $ResourceDirectories,
     [Parameter(Mandatory = $true)][string] $LicenseDirectory,
@@ -19,6 +21,7 @@ $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'Read-CodexBarFirstPartyFiles.ps1')
 . (Join-Path $PSScriptRoot 'Read-CodexBarPEImports.ps1')
 . (Join-Path $PSScriptRoot 'Read-CodexBarWidgetBuildReceipt.ps1')
+. (Join-Path $PSScriptRoot 'Read-CodexBarWidgetPayload.ps1')
 . (Join-Path $PSScriptRoot 'Read-CodexBarSystemPolicy.ps1')
 . (Join-Path $PSScriptRoot 'Read-CodexBarBuildProvenance.ps1')
 $provenance = Read-CodexBarBuildProvenance ([pscustomobject] @{
@@ -38,6 +41,21 @@ $systemLibraries = Read-CodexBarSystemPolicy $systemPolicy $Architecture
 $entries = [Collections.Generic.List[object]]::new()
 $destinations = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
 $expectedMachine = if ($Architecture -eq 'x64') { 0x8664 } else { 0xAA64 }
+$widgetHostReceipt = $null
+$widgetHostPayloadFiles = $null
+if (-not [string]::IsNullOrWhiteSpace($WidgetHostEXE) -or -not [string]::IsNullOrWhiteSpace($WidgetHostBuildReceipt)) {
+    if ([string]::IsNullOrWhiteSpace($WidgetHostEXE) -or [string]::IsNullOrWhiteSpace($WidgetHostBuildReceipt) -or
+        [string]::IsNullOrWhiteSpace($WidgetBackendDLL) -or [string]::IsNullOrWhiteSpace($WidgetBackendBuildReceipt) -or
+        [IO.Path]::GetFileName($WidgetHostEXE) -ine 'CodexBarWidgetHost.exe') {
+        throw 'Widget host requires its exact EXE, schema-2 build receipt, backend DLL and backend receipt.'
+    }
+    $widgetHostReceipt = Assert-CodexBarWidgetBuildReceipt $WidgetHostBuildReceipt $WidgetHostEXE $Architecture 'CodexBarWidgetHost' -PassThru
+    $widgetHostPayloadFiles = Read-CodexBarWidgetPayload $widgetHostReceipt.payload
+    $hostEntry = $widgetHostPayloadFiles['CodexBarWidgetHost.exe']
+    if ($hostEntry.bytes -ne $widgetHostReceipt.artifactSize -or $hostEntry.sha256 -cne $widgetHostReceipt.artifactSHA256) {
+        throw 'Widget host payload and executable receipt disagree.'
+    }
+}
 
 function Add-ManifestFile([string] $Source, [string] $Destination, [string] $Kind) {
     if ($entries.Count -ge 10000) { throw 'Distribution file limit reached.' }
@@ -46,6 +64,15 @@ function Add-ManifestFile([string] $Source, [string] $Destination, [string] $Kin
         throw 'Manifest inputs must be regular files.'
     }
     # Apply this gate to every insertion path, including recursively discovered imports.
+    if ([IO.Path]::GetFileName($Destination) -ieq 'CodexBarWidgetHost.exe') {
+        if ($Destination -ine 'CodexBarWidgetHost.exe' -or $Kind -ne 'application' -or $null -eq $widgetHostReceipt) {
+            throw 'The widget host requires an explicit root application input and payload receipt.'
+        }
+        $explicitHost = Get-Item -LiteralPath $WidgetHostEXE -Force
+        if (-not [StringComparer]::OrdinalIgnoreCase.Equals($file.FullName, $explicitHost.FullName)) {
+            throw 'Discovered widget host differs from the explicitly selected artifact.'
+        }
+    }
     if ([IO.Path]::GetFileName($Destination) -ieq 'CodexBarWidgetBackend.dll') {
         if ($Destination -ine 'CodexBarWidgetBackend.dll' -or $Kind -ne 'runtime' -or
             [string]::IsNullOrWhiteSpace($WidgetBackendDLL) -or
@@ -106,7 +133,7 @@ function Add-ManifestTree([string] $Directory, [string] $Prefix, [string] $Kind)
 
 Add-ManifestFile (Join-Path $BuildDirectory 'CodexBarWindows.exe') 'CodexBarWindows.exe' 'application'
 Add-ManifestFile (Join-Path $BuildDirectory 'CodexBarCLI.exe') 'CodexBarCLI.exe' 'cli'
-# Explicit opt-in until the host executable and widget registration are integrated.
+# Explicit component inputs while MSIX registration remains a separate packaging step.
 # It remains a first-party signed binary while using the runtime PE/dependency checks.
 if (-not [string]::IsNullOrWhiteSpace($WidgetBackendDLL)) {
     if ([IO.Path]::GetFileName($WidgetBackendDLL) -ine 'CodexBarWidgetBackend.dll') {
@@ -114,6 +141,20 @@ if (-not [string]::IsNullOrWhiteSpace($WidgetBackendDLL)) {
     }
     if ([string]::IsNullOrWhiteSpace($WidgetBackendBuildReceipt)) { throw 'Widget backend build receipt is required.' }
     Add-ManifestFile $WidgetBackendDLL 'CodexBarWidgetBackend.dll' 'runtime'
+}
+if ($null -ne $widgetHostReceipt) {
+    # Resolve relative to the explicitly supplied EXE, never outputDirectory/artifactPath inside the receipt.
+    $hostRoot = (Get-Item -LiteralPath $WidgetHostEXE -Force).Directory.FullName
+    foreach ($entry in $widgetHostReceipt.payload.files) {
+        $relative = ([string] $entry.path).Replace('/', '\')
+        $source = $hostRoot
+        foreach ($component in $relative.Split([char] '\')) {
+            $source = Join-Path $source $component
+            $item = Get-Item -LiteralPath $source -Force
+            if ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) { throw 'Linked widget payload inputs are unsupported.' }
+        }
+        Add-ManifestFile $source $relative.Replace('\', '/') ([string] $entry.kind)
+    }
 }
 if ($RuntimeFiles.Count -eq 0 -or $ResourceDirectories.Count -eq 0) { throw 'Explicit runtime and resource inputs are required.' }
 if ([string]::IsNullOrWhiteSpace($WidgetBackendDLL) -and -not [string]::IsNullOrWhiteSpace($WidgetBackendBuildReceipt)) {
@@ -216,9 +257,11 @@ $manifest = [ordered] @{
     dependencies = @($dependencies.ToArray())
     files = @($entries.ToArray() | Sort-Object destination)
 }
+if ($null -ne $widgetHostReceipt) { $manifest.widgetHostPayload = $widgetHostReceipt.payload }
 $json = $manifest | ConvertTo-Json -Depth 6
-if (-not $PSCmdlet.ShouldProcess('New distribution input manifest', 'Write explicit runtime and resource file list')) { return }
 $bytes = [Text.UTF8Encoding]::new($false).GetBytes($json)
+if ($bytes.Length -gt 4194304) { throw 'Distribution input manifest exceeds the staging reader limit of 4 MiB.' }
+if (-not $PSCmdlet.ShouldProcess('New distribution input manifest', 'Write explicit runtime and resource file list')) { return }
 $stream = [IO.File]::Open([IO.Path]::GetFullPath($OutputManifest), [IO.FileMode]::CreateNew, [IO.FileAccess]::Write)
 try { $stream.Write($bytes, 0, $bytes.Length) } finally { $stream.Dispose() }
 Write-Output 'Input manifest created. Dependency completeness, signatures and runtime behavior remain unverified.'

@@ -36,7 +36,7 @@ host는 파이프의 서버 PID를 조회해 살아 있는 process handle을 보
 ## 아직 필요한 연결
 
 - 앱이 실행 중일 때의 process launcher/상속/bootstrap/종료/재연결은 아래 IMPL-541에서 연결했다. 앱이 꺼진 상태의 OS activation 처리는 아직 미구현이다.
-- MSIX COM/위젯 6종 선언과 실제 Windows broker 정책, 패키지 identity, first-party signing/distribution inventory 연결이 필요하다. 현재 이 exe를 기존 배포 조립기로 자동 수집하지 않는다.
+- MSIX COM/위젯 6종 선언과 실제 Windows broker 정책, 패키지 identity 연결이 필요하다. host와 전체 빌드 payload의 명시적 배포 입력 및 first-party signing 연결은 아래 IMPL-542에 작성했다.
 - 프로젝트는 SDK component self-contained payload/activation manifest 생성 targets를 사용한다. Base 2.0.4의 자체 targets는 Widgets proxy/stub 자동 등록을 제외하므로, 이것만으로 Windows Widgets의 COM activation이 완성됐다고 보지 않는다. MSIX 등록 및 runtime DLL/metadata/라이선스의 최종 배포 구성을 별도로 연결해야 한다.
 - Windows SDK/C++/WinRT/App SDK 버전 조합, 실제 빌드·패키지 설치·COM 호출·파이프 인증·timeout·취소·부분 실패·x64/ARM64와 위젯 화면은 모두 미검증이다.
 
@@ -53,3 +53,13 @@ runtime은 backend handshake와 child의 실제 종료 상태를 확인하도록
 정상 종료 요청은 launch pipe를 닫는 것이다. 실행 중인 host의 종료를 10초 기다리고 이후 해당 child Job만 종료한 뒤 최대 5초 더 기다린다. 실행 전 취소된 suspended child도 해당 Job에서 종료한다. forced 여부와 실제 exit code는 resource cleanup 성공과 별도로 기록하며, 앱 종료 시 강제 종료가 있었으면 OS widget 철회를 확인하지 못했다는 진단을 남긴다. cleanup 실패 시 DLL과 native owner는 유지되어 잘못된 함수 포인터나 process handle 재사용을 피한다.
 
 현재 source에서 연결한 것은 앱이 실행 중일 때의 packaged host 시작·전달·관측·정리·재시도다. 앱이 닫힌 상태의 OS activation, 실제 MSIX COM/위젯 선언과 broker 정책, 배포 inventory/서명 연결 및 사용자-facing 위젯 진단 표면은 남아 있다. 이 launcher 또는 runtime 경로를 실제로 실행하지 않았으며 CODE_WRITTEN_UNVERIFIED다.
+
+## IMPL-542: 빌드 payload와 배포·서명 입력
+
+Build-WidgetHost.ps1은 MSBuild가 남긴 배포 파일을 읽어 schemaVersion 2 host receipt의 payload에 상대 경로·종류·크기·SHA-256을 기록하도록 확장했다. host exe, component runtime DLL, WinMD/manifest/resource 파일과 Widgets·Base·C++/WinRT의 복원된 NuGet 라이선스 3개를 포함한다. root의 host PDB/ILK/LIB/EXP만 빌드 전용 파일로 제외하며, 알 수 없는 확장자·중복 경로·reparse 항목·한도 초과·필수 DLL/WinMD/라이선스 누락은 성공 receipt를 만들지 않는다. 어떤 산출물이 실제로 생성되는지는 Windows 빌드에서 확인해야 한다.
+
+배포 입력 생성기의 WidgetHostEXE와 WidgetHostBuildReceipt를 backend DLL/receipt와 함께 명시하면, 선택한 exe의 디렉터리에서 receipt에 기록된 파일을 같은 상대 경로로 가져오도록 작성했다. receipt에 적힌 outputDirectory나 artifactPath를 복사 경로로 사용하지 않는다. host receipt v1은 exe만 기술하므로 이 경로에서는 받지 않으며, 이후 명시적 Windows 빌드에서 v2 receipt를 생성해야 한다. backend receipt v1 계약은 유지한다. 기존 RuntimeFiles·ResourceDirectories·LicenseDirectory는 계속 필요하며 widget payload에 이미 있는 파일을 중복 입력하지 않는다.
+
+공유 payload 계약은 빌드 기록·입력 생성·조립에서 같은 경로/종류/필수 파일 규칙을 사용한다. 조립기는 전체 payload의 포함 여부를 먼저 대조하고, 복사 후 열어 보관한 파일의 크기·hash가 기록과 다르면 완료 inventory를 쓰지 않는다. 실패한 부분 출력은 보존한다. CodexBarWidgetHost.exe는 root first-party application으로 서명 대상에 포함되며 backend 없이 포함할 수 없다. 서명 후 inventory는 변경된 실제 파일을 기준으로 기존 서명 경로에서 다시 작성한다.
+
+LOCAL_BUILD_NOT_ATTESTED와 COPIED_BYTES_MATCH_LOCAL_BUILD_RECORD는 로컬 빌드 기록 및 복사 byte 일치 상태다. MSIX 등록·OS activation·서명 성공·실행 성공을 뜻하지 않는다. 현재 모든 변경은 CODE_WRITTEN_UNVERIFIED이며 build/restore/PowerShell/서명/설치/검증을 실행하지 않았다. 앱이 닫힌 상태의 OS activation, MSIX COM/6종 widget 선언과 proxy/stub 등록, 실제 broker 정책 및 사용자-facing 위젯 진단은 남아 있다.

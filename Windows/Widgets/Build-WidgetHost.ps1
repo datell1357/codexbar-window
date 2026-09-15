@@ -10,6 +10,8 @@ param(
 )
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot 'Read-WidgetHostBuildOutput.ps1')
+. (Join-Path $PSScriptRoot '..\Packaging\Read-CodexBarWidgetPayload.ps1')
 if ([Environment]::OSVersion.Platform -ne [PlatformID]::Win32NT) { throw 'This build requires Windows.' }
 if ([version] $WindowsSdkVersion -lt [version] '10.0.22000.0') { throw 'The host targets Windows 11 or later.' }
 function Get-BuildTool([string] $Path, [string] $Name) {
@@ -109,8 +111,21 @@ try {
     try { $hash = ([BitConverter]::ToString($sha.ComputeHash($stream))).Replace('-', '').ToLowerInvariant() }
     finally { $sha.Dispose() }
 } finally { $stream.Dispose() }
+$licenseRoot = Join-Path $binaryRoot 'licenses\windows-widget-host'
+[void][IO.Directory]::CreateDirectory($licenseRoot)
+foreach ($license in @(
+    @('Microsoft.WindowsAppSDK.Widgets.2.0.5\license.txt', 'Microsoft.WindowsAppSDK.Widgets.txt'),
+    @('Microsoft.WindowsAppSDK.Base.2.0.4\license.txt', 'Microsoft.WindowsAppSDK.Base.txt'),
+    @('Microsoft.Windows.CppWinRT.2.0.250303.1\LICENSE', 'Microsoft.Windows.CppWinRT.txt')
+)) {
+    [IO.File]::Copy((Join-Path $packageRoot $license[0]), (Join-Path $licenseRoot $license[1]), $false)
+}
+$payload = Read-WidgetHostBuildOutput $binaryRoot
+$payloadFiles = Read-CodexBarWidgetPayload $payload
+$hostPayload = $payloadFiles['CodexBarWidgetHost.exe']
+if ($hostPayload.bytes -ne $size -or $hostPayload.sha256 -cne $hash) { throw 'Host bytes changed while recording its payload.' }
 $receipt = [ordered] @{
-    schemaVersion = 1
+    schemaVersion = 2
     component = 'CodexBarWidgetHost'
     architecture = $Architecture
     configuration = $Configuration
@@ -126,11 +141,12 @@ $receipt = [ordered] @{
     artifactSize = $size
     artifactSHA256 = $hash
     outputDirectory = $binaryRoot
+    payload = $payload
     deployment = 'SELF_CONTAINED_COMPONENTS_PACKAGE_REGISTRATION_REQUIRED'
     provenanceStatus = 'LOCAL_BUILD_NOT_ATTESTED'
     buildFinishedUtc = [DateTime]::UtcNow.ToString('o')
     validation = 'NOT_RUN'
 }
 $receiptPath = Join-Path $runRoot 'build-receipt.json'
-[IO.File]::WriteAllText($receiptPath, ($receipt | ConvertTo-Json -Depth 4), $utf8)
+[IO.File]::WriteAllText($receiptPath, ($receipt | ConvertTo-Json -Depth 6), $utf8)
 [pscustomobject] @{ ArtifactPath = $exe.FullName; OutputDirectory = $binaryRoot; ReceiptPath = $receiptPath }

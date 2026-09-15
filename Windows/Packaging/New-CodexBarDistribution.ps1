@@ -10,6 +10,7 @@ $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'Read-CodexBarPEImports.ps1')
 . (Join-Path $PSScriptRoot 'Read-CodexBarSystemPolicy.ps1')
 . (Join-Path $PSScriptRoot 'Read-CodexBarBuildProvenance.ps1')
+. (Join-Path $PSScriptRoot 'Read-CodexBarWidgetPayload.ps1')
 if ([Environment]::OSVersion.Platform -ne [PlatformID]::Win32NT) { throw 'Windows is required.' }
 $manifestFile = Get-Item -LiteralPath $InputManifest -Force
 if ($manifestFile.PSIsContainer -or $manifestFile.Length -gt 4194304) { throw 'Invalid input manifest.' }
@@ -21,6 +22,12 @@ $provenance = Read-CodexBarBuildProvenance $manifest.provenance
 $files = @($manifest.files)
 if ($files.Count -lt 4 -or $files.Count -gt 10000) { throw 'Invalid distribution file count.' }
 $null = Assert-CodexBarFirstPartyFiles $files 'destination'
+$widgetPayload = $null
+if ($null -ne $manifest.PSObject.Properties['widgetHostPayload']) {
+    $widgetPayload = Read-CodexBarWidgetPayload $manifest.widgetHostPayload
+} elseif (@($files | Where-Object { $_.destination -ieq 'CodexBarWidgetHost.exe' }).Count -ne 0) {
+    throw 'A widget host distribution requires its complete build payload contract.'
+}
 $outputRoot = [IO.Path]::GetFullPath($OutputDirectory)
 if (Test-Path -LiteralPath $outputRoot) { throw 'Output already exists. Choose a new directory; nothing is overwritten.' }
 $seen = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
@@ -57,6 +64,15 @@ foreach ($file in $files) {
 if (-not $seen.Contains('CodexBarWindows.exe') -or -not $seen.Contains('CodexBarCLI.exe') -or
     -not $hasRuntime -or -not $hasLicense -or -not $hasOperations) {
     throw 'Manifest must include app, CLI, runtime DLLs, licenses and the operations resource.'
+}
+if ($null -ne $widgetPayload) {
+    $preparedByDestination = [Collections.Generic.Dictionary[string,object]]::new([StringComparer]::OrdinalIgnoreCase)
+    foreach ($file in $prepared) { $preparedByDestination.Add($file.Destination, $file) }
+    foreach ($path in $widgetPayload.Keys) {
+        if (-not $preparedByDestination.ContainsKey($path) -or $preparedByDestination[$path].Kind -cne $widgetPayload[$path].kind) {
+            throw 'Distribution omits or reclassifies a required widget payload file.'
+        }
+    }
 }
 # Re-read current input images rather than trusting a producer's dependency status string.
 $policy = $null
@@ -125,11 +141,18 @@ try {
         $held.Position = 0
         $hasher = [Security.Cryptography.SHA256]::Create()
         try { $digest = $hasher.ComputeHash($held) } finally { $hasher.Dispose() }
+        $digestText = [BitConverter]::ToString($digest).Replace('-', '').ToLowerInvariant()
+        if ($null -ne $widgetPayload -and $widgetPayload.ContainsKey($file.Destination)) {
+            $expected = $widgetPayload[$file.Destination]
+            if ($held.Length -ne $expected.bytes -or $digestText -cne $expected.sha256) {
+                throw 'Copied widget payload differs from the build receipt. Staging is incomplete.'
+            }
+        }
         $inventory.Add([pscustomobject] @{
             path = $file.Destination.Replace('\', '/')
             kind = $file.Kind
             bytes = $held.Length
-            sha256 = [BitConverter]::ToString($digest).Replace('-', '').ToLowerInvariant()
+            sha256 = $digestText
         })
     }
     $record = [ordered] @{
@@ -143,6 +166,7 @@ try {
         systemPolicy = $policy
         files = @($inventory.ToArray())
     }
+    if ($null -ne $widgetPayload) { $record.widgetHostPayloadStatus = 'COPIED_BYTES_MATCH_LOCAL_BUILD_RECORD' }
     $json = $record | ConvertTo-Json -Depth 6
     [IO.File]::WriteAllText((Join-Path $outputRoot 'distribution-inventory.json'), $json,
         [Text.UTF8Encoding]::new($false))
