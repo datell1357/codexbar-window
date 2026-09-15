@@ -35,7 +35,21 @@ host는 파이프의 서버 PID를 조회해 살아 있는 process handle을 보
 
 ## 아직 필요한 연결
 
-- 앱의 실제 process launcher, 제한된 handle 상속 목록, bootstrap 전달, stopReceiver에서 host 종료를 기다리는 경로, 재연결 및 앱이 꺼진 상태의 OS activation 처리는 아직 미구현이다.
+- 앱이 실행 중일 때의 process launcher/상속/bootstrap/종료/재연결은 아래 IMPL-541에서 연결했다. 앱이 꺼진 상태의 OS activation 처리는 아직 미구현이다.
 - MSIX COM/위젯 6종 선언과 실제 Windows broker 정책, 패키지 identity, first-party signing/distribution inventory 연결이 필요하다. 현재 이 exe를 기존 배포 조립기로 자동 수집하지 않는다.
 - 프로젝트는 SDK component self-contained payload/activation manifest 생성 targets를 사용한다. Base 2.0.4의 자체 targets는 Widgets proxy/stub 자동 등록을 제외하므로, 이것만으로 Windows Widgets의 COM activation이 완성됐다고 보지 않는다. MSIX 등록 및 runtime DLL/metadata/라이선스의 최종 배포 구성을 별도로 연결해야 한다.
 - Windows SDK/C++/WinRT/App SDK 버전 조합, 실제 빌드·패키지 설치·COM 호출·파이프 인증·timeout·취소·부분 실패·x64/ARM64와 위젯 화면은 모두 미검증이다.
+
+## IMPL-541: 앱 launcher 연결
+
+WindowsUsageRuntime.start는 패키지 설치 경로를 확인하고 host exe/backend DLL이 함께 있는 경우 native launcher를 시작한다. unpackaged 실행과 구성 요소가 빠진 설치는 별도 상태로 남기며 트레이를 종료하지 않는다. WindowsWidgetNativeLauncher는 blocking native 호출을 전용 Dispatch queue로 보내고, child process handle을 독립적으로 복제해 actor 호출 사이에도 같은 process object를 보관한다.
+
+backend DLL에 추가한 launcher는 host image를 연 상태로 유지하고 CreateProcessW로 suspended child를 만든다. 상속 목록은 이미 연결한 전용 pipe client와 NUL 출력 handle 두 개다. 같은 package·설치 image·session을 대조하고 Job Object에 넣은 뒤 runtime이 backend listener를 시작한다. 이어서 child를 재개하고 IMPL-540의 CBL1 frame을 전송한다. 처음부터 PATH나 임의 PID로 host를 찾지 않는다.
+
+provider 인증 환경변수·shell 설정·DLL search override를 그대로 상속하지 않는다. Windows API에서 얻은 SystemRoot/WINDIR/System32 PATH와 명시한 사용자/시스템 폴더 변수만 새 Unicode environment block에 넣는다. bootstrap 데이터는 명령줄과 로그에 쓰지 않는다.
+
+runtime은 backend handshake와 child의 실제 종료 상태를 확인하도록 연결했다. 실패 시 5/15/60/300초 간격으로 새 owner를 만들며, 60초 이상 handshake가 유지된 뒤에만 backoff를 초기화한다. 이전 owner 정리가 실패하면 재시작을 중단하고 그 owner를 보관한다. 앱 shutdown은 시작/재시도 작업을 취소하고 같은 cleanup 결과를 기다린다.
+
+정상 종료 요청은 launch pipe를 닫는 것이다. 실행 중인 host의 종료를 10초 기다리고 이후 해당 child Job만 종료한 뒤 최대 5초 더 기다린다. 실행 전 취소된 suspended child도 해당 Job에서 종료한다. forced 여부와 실제 exit code는 resource cleanup 성공과 별도로 기록하며, 앱 종료 시 강제 종료가 있었으면 OS widget 철회를 확인하지 못했다는 진단을 남긴다. cleanup 실패 시 DLL과 native owner는 유지되어 잘못된 함수 포인터나 process handle 재사용을 피한다.
+
+현재 source에서 연결한 것은 앱이 실행 중일 때의 packaged host 시작·전달·관측·정리·재시도다. 앱이 닫힌 상태의 OS activation, 실제 MSIX COM/위젯 선언과 broker 정책, 배포 inventory/서명 연결 및 사용자-facing 위젯 진단 표면은 남아 있다. 이 launcher 또는 runtime 경로를 실제로 실행하지 않았으며 CODE_WRITTEN_UNVERIFIED다.

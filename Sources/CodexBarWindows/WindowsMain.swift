@@ -637,6 +637,10 @@ private final class WindowsTrayApplication: @unchecked Sendable {
                 FileHandle.standardError.write(Data(
                     "CodexBar: widget backend cleanup is incomplete; the widget host may still need to exit.\n".utf8))
             }
+            if await self.runtime.widgetHostShutdownWasForced {
+                FileHandle.standardError.write(Data(
+                    "CodexBar: a widget host required forced termination; OS widget withdrawal was not confirmed.\n".utf8))
+            }
             self.shutdownSignal.signal()
         }
         if !host.shutdownCLIPathHelper(timeout: host.isSystemSessionEnding ? 0 : 2) {

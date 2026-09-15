@@ -5100,3 +5100,14 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - component self-contained targets의 사용과 위젯 OS 등록 완료는 구분한다. 확인한 Base targets는 Widgets proxy/stub 자동 등록을 제외한다. 실제 MSIX COM/6종 widget 선언·broker 정책·runtime/license 배포·signing inventory, 앱 launcher와 재연결·OS activation 및 WinUI/전체 Windows-only 제품 graph는 남아 있다.
 - CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. NuGet restore·MSBuild·컴파일·테스트·lint·manifest 평가·실제 패키지/pipe/COM/UI 검증 미실행. guidelines/COMMITS.md는 현재 저장소에 없어 제공된 핵심 커밋 규칙을 적용했다.
 - 직전 IMPL-539는 007751465로 origin/main 푸시가 성공했다. IMPL-540도 별도 구현 커밋·푸시 후 Git 결과를 보고한다.
+
+## IMPL-541 — Launch and own the packaged native widget host from the application
+
+- backend DLL에 WidgetHostLaunch 및 C ABI launcher exports를 추가하고 기존 DLL 프로젝트에 포함했다. server ABI version 1은 유지하며 launcher는 추가 exports를 요구한다. 같은 package root의 sibling CodexBarWidgetHost.exe만 선택하고 source image를 열린 상태로 유지하며 suspended child를 만든다. child의 package full name·image·Windows session 및 생존 상태를 대조한다.
+- 사용자 SID ACL·로컬 전용·새 GUID endpoint의 outbound byte pipe를 만들고, 이미 연결한 client와 NUL 출력만 STARTUPINFOEX handle list로 상속한다. 자식은 전용 Job Object에 속하며 bootstrap 전달 실패/앱 종료 시 다른 프로세스를 PID로 찾아 종료하지 않는다. provider 비밀·shell 설정 등을 그대로 상속하지 않고 명시한 Windows 환경값만 전달한다.
+- Swift WindowsWidgetInstallation은 현재 package root와 실제 앱 image에서 host/DLL 위치를 구한다. launcher wrapper는 native 생성/전송/대기/폐기를 전용 Dispatch queue에 직렬화하며, process handle을 따로 복제해 await 사이의 수명과 연결한다. 실패한 native 정리는 State lease로 DLL과 owner를 보존하고 재시도한다.
+- WindowsUsageRuntime.start에서 launcher를 시작하고 connection.prepareLaunchDelivery→backend server start→child resume/frame delivery를 연결했다. unpackaged·구성 요소 누락·시작 실패·handshake 연결·재시도·정리 실패 상태를 구분한다. 실제 child 상태와 connection lifecycle을 관측하고 5/15/60/300초 backoff를 적용하며 60초 건강한 연결 후에만 초기화한다.
+- 정상 정리는 기존 backend callback/worker drain과 launch pipe EOF 및 child exit wait를 따른다. 실행 중 host를 10초 기다린 후 필요하면 해당 Job을 종료하고 5초 더 기다린다. suspended child 취소도 동일 owner 범위다. native exit code와 forced 여부는 cleanup 성공과 별도로 보관하며 강제 종료 시 OS widget 철회 미확인 진단을 남긴다. 정리 실패 owner가 있으면 새 host를 시작하지 않는다.
+- shutdown은 launcher task를 취소하고 완료를 기다린 뒤 남은 connection/launcher 정리를 순차 재시도한다. connection 정리가 성공해도 native launcher가 남아 있으면 전체 widget cleanup 실패 상태를 유지한다. 이 source 상태가 실제 프로세스/잠금/취소 성공을 증명하지는 않는다.
+- cold OS activation과 MSIX COM/6종 widget 등록, 확인된 Windows broker 정책, host/runtime/license 배포 inventory·서명, 사용자-facing 진단과 전체 WinUI/Windows-only 제품 graph는 남아 있다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·컴파일·lint·실제 child/pipe/COM/Job/환경변수/패키지/UI 검증 미실행.
+- 직전 IMPL-540은 eaf268006으로 origin/main 푸시가 성공했다. IMPL-541도 별도 구현 커밋·푸시 후 Git 결과를 보고한다.

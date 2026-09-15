@@ -47,6 +47,8 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="WidgetBackendABI.cpp" />
+    <ClCompile Include="WidgetLaunchABI.cpp" />
+    <ClInclude Include="WidgetHostLaunch.h" />
     <ClInclude Include="WidgetBackendABI.h" />
     <ClInclude Include="WidgetBackendServer.h" />
     <ClInclude Include="WidgetSwiftHandler.h" />

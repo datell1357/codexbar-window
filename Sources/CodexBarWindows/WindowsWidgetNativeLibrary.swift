@@ -18,6 +18,37 @@ final class WindowsWidgetNativeLibrary: @unchecked Sendable {
         UnsafeMutablePointer<Int32>?) -> Int32
     private typealias Version = @convention(c) () -> UInt32
 
+    // Immutable C entry points; the launcher State retains this DLL for their whole lifetime.
+    struct LaunchExports: @unchecked Sendable {
+        typealias Create = @convention(c) (UnsafePointer<UInt16>?, UInt32,
+            UnsafeMutablePointer<UnsafeMutableRawPointer?>?) -> Int32
+        typealias Process = @convention(c) (UnsafeMutableRawPointer?,
+            UnsafeMutablePointer<UnsafeMutableRawPointer?>?) -> Int32
+        typealias Deliver = @convention(c) (UnsafeMutableRawPointer?, UnsafePointer<UInt8>?, UInt32) -> Int32
+        typealias Status = @convention(c) (UnsafeMutableRawPointer?, UnsafeMutablePointer<UInt32>?,
+            UnsafeMutablePointer<UInt32>?, UnsafeMutablePointer<UInt32>?) -> Int32
+        let create: Create
+        let process: Process
+        let deliver: Deliver
+        let stop: Operation
+        let status: Status
+        let destroy: Operation
+    }
+
+    /// Older ABI-v1 server DLLs remain usable for server-only callers; launching requires these exports too.
+    func launchExports() throws -> LaunchExports {
+        func resolve<T>(_ name: String, as type: T.Type) throws -> T {
+            guard let address = name.withCString({ GetProcAddress(self.module, $0) }) else { throw Failure.missingExport }
+            return unsafeBitCast(address, to: type)
+        }
+        return try LaunchExports(create: resolve("CBWidgetLaunchCreate", as: LaunchExports.Create.self),
+            process: resolve("CBWidgetLaunchProcess", as: LaunchExports.Process.self),
+            deliver: resolve("CBWidgetLaunchDeliver", as: LaunchExports.Deliver.self),
+            stop: resolve("CBWidgetLaunchStop", as: Operation.self),
+            status: resolve("CBWidgetLaunchStatus", as: LaunchExports.Status.self),
+            destroy: resolve("CBWidgetLaunchDestroy", as: Operation.self))
+    }
+
     private let module: HMODULE
     let create: Create
     let name: Name

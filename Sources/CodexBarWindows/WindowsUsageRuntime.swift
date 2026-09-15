@@ -76,6 +76,131 @@ public actor WindowsUsageRuntime {
     private(set) var widgetBackendLifecycle: WindowsWidgetBackendConnection.Lifecycle?
     private(set) var widgetBackendCleanupFailed = false
 
+    enum WidgetHostLaunchState: Sendable {
+        case stopped, notPackaged, missingComponents, starting, connected, waitingToRetry, failed, cleanupFailed
+    }
+    private(set) var widgetHostLaunchState: WidgetHostLaunchState = .stopped
+    private(set) var widgetHostExit: WindowsWidgetNativeLauncher.Status?
+    private(set) var widgetHostStartupError: Int32?
+    private(set) var widgetHostShutdownWasForced = false
+    private var widgetLauncher: WindowsWidgetNativeLauncher?
+    private var widgetLaunchTask: Task<Void, Never>?
+
+    private func startWidgetHostIfAvailable() {
+        guard !self.shuttingDown, self.widgetLaunchTask == nil else { return }
+        self.widgetLaunchTask = Task { [weak self] in
+            guard let self else { return }
+            await self.runWidgetHostLaunches()
+        }
+    }
+
+    private func runWidgetHostLaunches() async {
+        let installation: WindowsWidgetInstallation
+        do {
+            guard let resolved = try WindowsWidgetInstallation.resolve() else {
+                self.widgetHostLaunchState = .notPackaged
+                return
+            }
+            installation = resolved
+        } catch WindowsWidgetInstallation.Failure.componentsMissing {
+            self.widgetHostLaunchState = .missingComponents
+            return
+        } catch {
+            self.widgetHostLaunchState = .failed
+            return
+        }
+        var failures = 0
+        while !self.shuttingDown, !Task.isCancelled {
+            var ownedConnection: WindowsWidgetBackendConnection?
+            var ownedLauncher: WindowsWidgetNativeLauncher?
+            self.widgetHostLaunchState = .starting
+            self.widgetHostStartupError = nil
+            do {
+                let launcher = try await WindowsWidgetNativeLauncher.create(installation: installation)
+                ownedLauncher = launcher
+                self.widgetLauncher = launcher
+                guard !self.shuttingDown, !Task.isCancelled else { throw CancellationError() }
+                let connection = try self.makeWidgetBackendConnection(installedDLL: installation.backend,
+                    stopReceiver: { _ = try await launcher.close() })
+                ownedConnection = connection
+                let process = try await launcher.retainProcess()
+                // Retain the independently duplicated local process object across the actor await.
+                defer { withExtendedLifetime(process) {} }
+                let frame = try await connection.prepareLaunchDelivery(processHandleAddress: process.address)
+                guard !self.shuttingDown, !Task.isCancelled else { throw CancellationError() }
+                try await connection.start()
+                guard !self.shuttingDown, !Task.isCancelled else { throw CancellationError() }
+                try await launcher.deliver(frame)
+                var healthySince: ContinuousClock.Instant?
+                while !self.shuttingDown, !Task.isCancelled {
+                    let native = try await launcher.status()
+                    if native.phase == 2 {
+                        self.widgetHostExit = native
+                        break
+                    }
+                    let lifecycle = await connection.lifecycleSnapshot()
+                    if lifecycle.phase == .closed || lifecycle.phase == .closing || lifecycle.phase == .cleanupFailed { break }
+                    if lifecycle.phase == .handshakeAccepted {
+                        self.widgetHostLaunchState = .connected
+                        if healthySince == nil { healthySince = .now }
+                        if let healthySince, ContinuousClock.now >= healthySince.advanced(by: .seconds(60)) { failures = 0 }
+                    }
+                    try await Task.sleep(for: .seconds(1))
+                }
+            } catch {
+                if !self.shuttingDown, !Task.isCancelled {
+                    self.widgetHostLaunchState = .failed
+                    if let failure = error as? WindowsWidgetNativeLauncher.Failure, case let .native(code) = failure {
+                        self.widgetHostStartupError = code
+                    }
+                }
+            }
+            let cleaned = await self.closeOwnedWidgetLaunch(connection: ownedConnection, launcher: ownedLauncher)
+            guard cleaned else {
+                self.widgetHostLaunchState = .cleanupFailed
+                self.widgetBackendCleanupFailed = true
+                return // A competing host must not start while this owner still requires cleanup.
+            }
+            guard !self.shuttingDown, !Task.isCancelled else { break }
+            self.widgetHostLaunchState = .waitingToRetry
+            let delays = [5, 15, 60, 300]
+            let delay = delays[min(failures, delays.count - 1)]
+            failures = min(failures + 1, delays.count - 1)
+            do { try await Task.sleep(for: .seconds(delay)) }
+            catch { break }
+        }
+        self.widgetHostLaunchState = .stopped
+    }
+
+    private func closeOwnedWidgetLaunch(connection: WindowsWidgetBackendConnection?,
+                                       launcher: WindowsWidgetNativeLauncher?) async -> Bool {
+        var connectionClosed = connection == nil
+        var launcherClosed = launcher == nil
+        if let connection {
+            do { try await connection.close(); connectionClosed = true }
+            catch { connectionClosed = false }
+        }
+        if let launcher {
+            do {
+                let status = try await launcher.close()
+                self.widgetHostExit = status
+                self.widgetHostShutdownWasForced = self.widgetHostShutdownWasForced || status.forced
+                launcherClosed = true
+                if self.widgetLauncher === launcher { self.widgetLauncher = nil }
+            } catch { launcherClosed = false }
+        }
+        // Host exit can unblock an earlier server/receiver cleanup failure. Retry sequentially only.
+        if !connectionClosed, launcherClosed, let connection {
+            do { try await connection.close(); connectionClosed = true }
+            catch { connectionClosed = false }
+        }
+        if connectionClosed, let connection, self.widgetBackendConnection === connection {
+            self.widgetBackendLifecycle = await connection.lifecycleSnapshot()
+            self.releaseWidgetBackendConnection()
+        }
+        return connectionClosed && launcherClosed
+    }
+
     /// The trusted launcher uses this factory; a second host must wait for the previous connection to close.
     /// This creates only the backend owner. Authentication, host launch and bootstrap delivery remain external.
     func makeWidgetBackendConnection(installedDLL: URL,
@@ -2579,6 +2704,7 @@ public actor WindowsUsageRuntime {
     public func start() async {
         guard !self.shuttingDown, !self.started else { return }
         self.started = true
+        self.startWidgetHostIfAvailable()
         self.refreshSettings = WindowsRefreshSettings.load()
         self.scheduleGeneration &+= 1
         let generation = self.scheduleGeneration
@@ -3531,6 +3657,7 @@ public actor WindowsUsageRuntime {
             return
         }
         self.shuttingDown = true
+        self.widgetLaunchTask?.cancel()
         self.warningDeliveryLeases.clearThresholds()
         self.warningDeliveryLeases.clearPace()
         for validity in self.sessionQuotaNotificationValidity.values { validity.invalidate() }
@@ -3570,8 +3697,15 @@ public actor WindowsUsageRuntime {
         self.spendState = .stopped
         self.clearWidgetQuotaContext()
         self.finishWidgetInvalidations()
+        if let task = self.widgetLaunchTask { await task.value }
+        self.widgetLaunchTask = nil
+        if self.widgetLauncher != nil {
+            let cleaned = await self.closeOwnedWidgetLaunch(connection: self.widgetBackendConnection, launcher: self.widgetLauncher)
+            if !cleaned { self.widgetBackendCleanupFailed = true }
+        }
         do { try await self.closeWidgetBackendConnection() }
         catch { self.widgetBackendCleanupFailed = true }
+        if self.widgetLauncher != nil { self.widgetBackendCleanupFailed = true }
         self.widgetCostOwners = [:]
         if let controller = self.spendController { await controller.stop() }
         self.spendController = nil
