@@ -5152,3 +5152,16 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - SHA-256으로 고정한 SDK fragment를 DTD와 external resolver가 꺼진 XML reader에서 읽어 package-level Extensions로 가져온다. SDK의 추가 interface 등록은 CodexBar 기능 구현 완료를 뜻하지 않는다. 별도 configuration 예제와 MSIX-MANIFEST.ko.md에 placeholder/발행자/OS 선언값 및 파일 경로 계약을 기록했다.
 - 실제 이미지·locale/PRI 산출물, MSIX file mapping/MakeAppx·package 서명·설치/업데이트/제거, broker 정책·OS COM/위젯 표시와 Windows-only 전체 제품 graph는 남아 있다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. PowerShell/manifest 평가·컴파일·빌드·테스트·lint·실제 Windows·서명·설치 검증 미실행.
 - 직전 IMPL-544는 b4f142ef2로 origin/main 푸시가 성공했다. IMPL-545도 사용자 승인에 따라 hook 비활성화 및 [skip ci] 커밋·푸시 후 실제 Git 결과를 보고한다.
+
+
+## IMPL-546 — Map inventoried Windows payload into a new unsigned MSIX package
+
+- New-CodexBarMSIXPackage.ps1에 명시적인 배포/configuration/Windows SDK MakeAppx 경로와 새 출력 디렉터리 입력을 추가했다. 같은 입력으로 manifest를 새로 생성하고 인벤토리의 모든 payload와 그 manifest만 mapping에 연결한다. 폴더 전체를 자동 패키징하지 않는다.
+- schema/status/provenance/first-party 계약, 경로·중복·예약된 footprint 이름·파일 수/크기/hash를 대조하도록 작성했다. 인벤토리/configuration/tool/payload 및 새 manifest/mapping stream을 MakeAppx 종료와 receipt 기록까지 유지한다. 전체 경로 race나 SDK 실행 성공을 증명하지는 않는다.
+- pack /f /p /h SHA256 /no를 사용하고 SDK 기본 semantic 검사를 생략하지 않는다. 기존 출력은 거절하며 실패한 부분 출력은 보존한다. MakeAppx 실패나 비어 있는 패키지를 완료 상태로 기록하지 않는다.
+- 로컬 receipt는 인벤토리/configuration/manifest/mapping/tool/package hash와 선언된 provenance·입력 수/크기·exit code를 기록한다. PACKAGED_UNSIGNED_RUNTIME_UNVERIFIED와 signing/installation/runtimeValidation NOT_RUN을 분리했으며, 이 기록을 생성하는 스크립트 자체는 실행하지 않았다.
+- MSIX-PACKAGE.ko.md에 future Windows invocation, WhatIf 경계, 로컬 mapping의 절대 경로, SDK 옵션 근거, 입력 파일 한도, 내부 바이너리 서명과 컨테이너 서명 구분을 문서화했다. 이미지·locale/PRI·실제 SDK/서명/설치/update/COM/위젯/Windows-only 제품 graph는 남아 있다.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. PowerShell/manifest 평가·MakeAppx·빌드·테스트·lint·서명·설치·Windows 실행 검증 미실행.
+- 게시 상태: IMPL-544 b4f142ef2까지 origin/main에 반영됐다. IMPL-545는 자동 커밋 승인 검토가 첫 시도와 허용된 한 번의 재시도 모두 시간 초과되어 staged 상태다. IMPL-546은 source 작성만 했으며 미staged/미커밋/미푸시다. 추가 커밋·푸시 재시도 승인 요청은 아직 답변 대기 중이다. 기존 index와 파일을 보존했고 새로운 성공을 추정하지 않는다.
+
+- 게시 재개: 사용자의 명시적 재시도 승인 후 IMPL-545를 7326623b1로 커밋하고 origin/main 푸시를 완료했다. 위 시간 초과·대기 설명은 당시 이력이며 해당 차단은 해소됐다. IMPL-546은 별도 커밋·푸시 후 Git 결과를 보고한다.

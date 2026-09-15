@@ -235,3 +235,10 @@ CodexBarWidgetHost.exe는 backend를 동반한 유일한 root first-party applic
 New-CodexBarMSIXManifest.ps1은 기존 distribution inventory와 명시적 configuration에서 AppxManifest.xml을 새 파일로 작성하도록 추가했다. 앱 entry point, native host COM class, 6종 위젯 ID/크기·다중 인스턴스·customization, 실제 SDK proxy/stub 및 runtime class 선언을 연결한다. 참조 파일의 kind/bytes/hash와 고정된 SDK fragment를 대조하고, script 실행 종료까지 해당 읽기 handle을 보관한다.
 
 [입력/등록 계약](MSIX-MANIFEST.ko.md)과 [configuration 예제](MSIX-configuration.example.json)에 발행자·버전·OS·리소스·이미지 필드를 기록했다. MSIX 이미지를 자동 생성하거나 placeholder를 정상 산출물로 처리하지 않는다. 기존 출력은 덮어쓰지 않으며 MakeAppx/MakePri·서명·등록·설치는 다음 연결이다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 이번 작업에서는 새 생성기나 검증을 실행하지 않았다.
+
+
+## 인벤토리 기반 MSIX 패키지 생성
+
+New-CodexBarMSIXPackage.ps1은 같은 배포/configuration으로 새 manifest를 작성하고 모든 인벤토리 파일을 명시적 mapping에 넣어 선택한 SDK MakeAppx에 전달하도록 구현했다. /no로 덮어쓰기를 거절하고 기본 SDK 검사는 유지한다. package/receipt는 새 출력 디렉터리에만 작성하며 실패 출력은 보존한다. 자세한 입력·파일 연결·상태·미구현 경계는 [MSIX 패키지 계약](MSIX-PACKAGE.ko.md)을 따른다.
+
+receipt의 PACKAGED_UNSIGNED_RUNTIME_UNVERIFIED는 나중에 Windows 명령이 성공했을 때 기록하는 상태다. 현재는 CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION이며 스크립트·SDK·빌드·테스트·서명·설치·실행 검증을 하지 않았다. 실제 리소스/PRI, package 서명/설치/업데이트/제거 및 Windows 제품 전체의 검증은 남아 있다.
