@@ -3894,6 +3894,43 @@ public actor WindowsUsageRuntime {
         }
     }
 
+    /// Select legacy metadata only for the current provider/owner in the Windows settings suite.
+    /// OAuth owners and Windows Claude UUID/profile owners never inherit identity-keyed history implicitly.
+    private func planHistoryAccountMigration(
+        provider: UsageProvider, result: ProviderFetchResult, accountKey: String?,
+        tokenAccount: ProviderTokenAccount?, claudeAccountUUID: String?
+    ) -> PlanUtilizationAccountMigration? {
+        guard provider != .codex else { return nil }
+        let hasClaudeUUID: Bool
+        if let value = claudeAccountUUID?.trimmingCharacters(in: .whitespacesAndNewlines) {
+            hasClaudeUUID = UUID(uuidString: value) != nil
+        } else { hasClaudeUUID = false }
+        let opaqueClaude = provider == .claude && (result.strategyKind == .oauth
+            || (result.strategyKind == .cli && hasClaudeUUID))
+        var legacyEmailKey: String?
+        if provider == .claude, !opaqueClaude, tokenAccount == nil || result.strategyKind == .cli,
+           let email = result.usage.identity(for: .claude)?.accountEmail?
+            .trimmingCharacters(in: .whitespacesAndNewlines).lowercased(), !email.isEmpty {
+            legacyEmailKey = SHA256.hash(data: Data(("claude:email:" + email).utf8))
+                .map { String(format: "%02x", $0) }.joined()
+        }
+        var legacyPairs: [String: String] = [:]
+        if provider != .claude, provider != .antigravity {
+            let defaults = UserDefaults(suiteName: WindowsRefreshSettings.suiteName) ?? .standard
+            if let values = defaults.dictionary(forKey: "SessionEquivalentHistoryWindowPairsV2") {
+                for key in Set([accountKey ?? "__unscoped__", "__unscoped__"]) {
+                    if let value = values[provider.rawValue + "|" + key] as? String,
+                       !value.isEmpty, value.utf8.count <= 8192, !value.contains("\0") {
+                        legacyPairs[key] = value
+                    }
+                }
+            }
+        }
+        return PlanUtilizationAccountMigration(provider: provider,
+            adoptUnscoped: accountKey != nil && !opaqueClaude,
+            legacyClaudeEmailKey: legacyEmailKey, legacyPairIdentities: legacyPairs)
+    }
+
     /// Migration needs the current account topology as well as the selected owner's key.
     /// Recompute it before publication so an external account switch cannot authorize an old merge.
     private func codexPlanHistoryMigrationOwnership(_ expected: PlanHistoryContext) throws
@@ -4006,16 +4043,23 @@ public actor WindowsUsageRuntime {
             if provider == .codex, tokenAccount == nil {
                 migrationOwnership = try self.codexPlanHistoryMigrationOwnership(historyContext)
             } else { migrationOwnership = nil }
+            let accountMigration = self.planHistoryAccountMigration(provider: provider, result: result,
+                accountKey: accountKey, tokenAccount: tokenAccount, claudeAccountUUID: claudeAccountUUIDAfter)
             try self.planUtilizationHistoryStore.record(providerID: id, samples: projection.samples,
                 accountKey: accountKey, updatePreferred: codexVisibleAccount?.isActive ?? true,
                 identityTransition: projection.identityTransition,
-                codexMigrationOwnership: migrationOwnership,
+                codexMigrationOwnership: migrationOwnership, accountMigration: accountMigration,
                 beforePublish: {
                     guard try self.planHistoryContextMatches(historyContext, provider: provider) else {
                         throw WindowsPlanUtilizationHistoryStore.Failure.changed
                     }
                     if migrationOwnership != nil,
                        try self.codexPlanHistoryMigrationOwnership(historyContext) != migrationOwnership {
+                        throw WindowsPlanUtilizationHistoryStore.Failure.changed
+                    }
+                    guard self.planHistoryAccountMigration(provider: provider, result: result,
+                        accountKey: accountKey, tokenAccount: tokenAccount,
+                        claudeAccountUUID: claudeAccountUUIDAfter) == accountMigration else {
                         throw WindowsPlanUtilizationHistoryStore.Failure.changed
                     }
                 })

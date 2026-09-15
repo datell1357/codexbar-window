@@ -53,6 +53,7 @@ struct WindowsPlanUtilizationHistoryStore: Sendable {
                 accountKey: String?, updatePreferred: Bool,
                 identityTransition: PlanUtilizationHistoryCore.IdentityTransition = .fixed,
                 codexMigrationOwnership: CodexHistoricalOwnershipContext? = nil,
+                accountMigration: PlanUtilizationAccountMigration? = nil,
                 beforePublish: (() throws -> Void)? = nil) throws -> PlanUtilizationHistoryCore.Document {
         try self.withLock(providerID: providerID) {
             let fileURL = self.fileURL(providerID: providerID)
@@ -64,6 +65,12 @@ struct WindowsPlanUtilizationHistoryStore: Sendable {
                     throw Failure.changed
                 }
                 document = try CodexPlanUtilizationHistoryMigration.materialize(document, ownership: ownership)
+            }
+            if let migration = accountMigration {
+                guard codexMigrationOwnership == nil, providerID.firstPartyProvider == migration.provider else {
+                    throw Failure.changed
+                }
+                document = try migration.materialize(document, accountKey: accountKey)
             }
             try document.record(samples, accountKey: accountKey, updatePreferred: updatePreferred,
                 identityTransition: identityTransition)

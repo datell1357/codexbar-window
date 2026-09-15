@@ -1,5 +1,7 @@
 # Windows 전용 제품 작업 현황
 
+- IMPL-534: 비-Codex 계정 이력 및 legacy session/weekly pair metadata 이관 연결. Claude 이메일 키 이관과 OAuth/UUID owner 분리, unscoped adoption의 Claude veto, pair 충돌 무효화 및 Windows legacy defaults 선택 읽기 작성. CODE_WRITTEN_UNVERIFIED.
+
 - IMPL-533: Codex의 legacy email/canonical/opaque 및 unscoped 이력 이관 규칙을 Core로 이전하고 Windows의 새 표본 저장에 연결. 저장 직전 현재 계정과 이관 근거를 재대조하도록 작성. Claude/generic 이관·삭제 lifecycle·동시 계정 소비 및 실행 검증은 남아 있음. CODE_WRITTEN_UNVERIFIED.
 
 - IMPL-532: 열린 트레이의 사용량/예측 게시 변경에 따라 메뉴와 복사·상세·이력·계정 명령을 함께 다시 구성하는 경로 작성. 위치 유지, 중복 게시 무시, 하위 메뉴 탐색 중 갱신 유예, 닫기/선택 우선 처리. Windows 메뉴 동작 검증 미실행. CODE_WRITTEN_UNVERIFIED.

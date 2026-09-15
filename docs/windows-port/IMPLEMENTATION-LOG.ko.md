@@ -5021,3 +5021,14 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - 이번 연결은 새 표본을 기록하는 경로다. 신규 유효 표본 없이 읽기만 하는 legacy 이력의 materialization, Claude/generic 계정 및 window-pair migration, 삭제 lifecycle, 동시 계정 소비, 실제 충돌·중단 복구·수치 일치 검증은 남아 있다. W05/WIN-020 완료가 아니다.
 - CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·컴파일·lint·이력 이관 실행·실제 계정·Windows UI 검증 미실행.
 - 직전 IMPL-532는 459738947로 origin/main 푸시가 성공했다. IMPL-533도 별도 구현 커밋·푸시 후 Git 결과를 보고한다.
+
+## IMPL-534 — Carry account history and window-pair identities through adoption
+
+- 원본 UsageStore+PlanUtilization/SessionEquivalents의 비-Codex 이관 규칙을 PlanUtilizationAccountMigration으로 옮겼다. token/identity owner가 확정된 일반 공급자의 unscoped 이력을 대상 계정에 병합하고, 원본의 시간별 reducer와 표본 상한을 사용한다.
+- Claude는 기존 scoped bucket이 하나라도 있거나 preferred sentinel이 unscoped인 경우 미지정 이력 adoption을 보류한다. 이메일 기반 owner에서는 legacy 이메일-only hash를 현재 조직/plan 구분 키로 옮기되 다른 bucket은 유지한다. Windows runtime의 OAuth 또는 CLI UUID/profile owner에는 이 이메일/미지정 이력을 자동 이관하지 않는다.
+- generic 공급자의 이력과 함께 session/weekly pair metadata를 이동한다. 문서에 이미 저장된 값이 legacy defaults보다 우선하며, target legacy 값은 target 이력이 있을 때 adoption에 참여한다. source/target identity가 다르면 원본 invalidated marker를 기록해 다음 reconcile에서 이전 세션/주간 표본을 새 pair의 학습값으로 사용하지 않도록 작성했다.
+- 현재 provider/owner 및 unscoped에 해당하는 유효 문자열만 Windows 설정 suite의 SessionEquivalentHistoryWindowPairsV2에서 선택한다. 잘못된 타입·빈 값·NUL·8KiB 초과 legacy 값은 사용하지 않으며, Mac defaults/Keychain을 탐색하거나 legacy 설정을 지우지 않는다.
+- provider lock 아래 최신 문서에서 migration과 새 관측 기록을 한 번의 보호된 파일 교체로 게시한다. 게시 직전 현재 owner/config 및 선택한 legacy metadata가 여전히 같은지 대조하고, 바뀌면 게시를 중단한다. migration 오류를 빈 이력으로 덮어쓰지 않는다.
+- 이번 연결도 유효한 새 표본을 저장하는 경로다. 수집 없이 읽기만 하는 legacy 이력 이관, Claude OAuth/UUID 간 명시적 binding migration, 이력 삭제 lifecycle, 동시 계정 소비, Windows 이관/실패 복구/예측 수치 검증은 남아 있다. Mac 설정 파일을 Windows에 가져오는 전체 import 기능을 완료했다는 뜻은 아니다.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·컴파일·lint·실제 이력/계정·Windows UI 검증 미실행.
+- 직전 IMPL-533은 5d4f0a933으로 origin/main 푸시가 성공했다. IMPL-534도 별도 구현 커밋·푸시 후 Git 결과를 보고한다.
