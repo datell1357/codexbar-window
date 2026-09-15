@@ -40,4 +40,6 @@ receipt에는 원본 인벤토리/configuration/manifest/mapping/tool/package의
 
 ## 남은 연결
 
-실제 이미지·locale/PRI 작성, SDK의 localized resource 처리와 Unicode mapping 읽기, manifest schema와 전체 DLL 의존성·SDK 등록 계약, 패키지 서명자 subject 연결, 설치·업데이트·제거·COM activation·Widgets·x64/ARM64 실행 검증은 남아 있다. 기본 SDK 검사가 실패하면 해당 원인을 수정해야 하며 검사를 자동으로 생략하지 않는다. 이 문서는 코드 구현 상태이며 실제 MSIX 산출물이나 배포 가능 판정이 아니다.
+실제 이미지·locale/PRI 작성, SDK의 localized resource 처리와 Unicode mapping 읽기, manifest schema와 전체 DLL 의존성·SDK 등록 계약, 설치·업데이트·제거·COM activation·Widgets·x64/ARM64 실행 검증은 남아 있다. 기본 SDK 검사가 실패하면 해당 원인을 수정해야 하며 검사를 자동으로 생략하지 않는다. 이 문서는 코드 구현 상태이며 실제 MSIX 산출물이나 배포 가능 판정이 아니다.
+
+패키지 바이트와 embedded Publisher를 연결하는 서명 요청 및 새 사본의 SDK 서명/기록 코드는 [MSIX 서명 인계](MSIX-SIGNING.ko.md)에 추가했다. 이 연결 역시 실행하지 않았으며 실제 서명·인증서 신뢰·설치 검증을 완료한 것은 아니다.

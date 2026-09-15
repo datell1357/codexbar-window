@@ -242,3 +242,10 @@ New-CodexBarMSIXManifest.ps1은 기존 distribution inventory와 명시적 confi
 New-CodexBarMSIXPackage.ps1은 같은 배포/configuration으로 새 manifest를 작성하고 모든 인벤토리 파일을 명시적 mapping에 넣어 선택한 SDK MakeAppx에 전달하도록 구현했다. /no로 덮어쓰기를 거절하고 기본 SDK 검사는 유지한다. package/receipt는 새 출력 디렉터리에만 작성하며 실패 출력은 보존한다. 자세한 입력·파일 연결·상태·미구현 경계는 [MSIX 패키지 계약](MSIX-PACKAGE.ko.md)을 따른다.
 
 receipt의 PACKAGED_UNSIGNED_RUNTIME_UNVERIFIED는 나중에 Windows 명령이 성공했을 때 기록하는 상태다. 현재는 CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION이며 스크립트·SDK·빌드·테스트·서명·설치·실행 검증을 하지 않았다. 실제 리소스/PRI, package 서명/설치/업데이트/제거 및 Windows 제품 전체의 검증은 남아 있다.
+
+
+## MSIX 컨테이너 서명 인계
+
+Read-CodexBarMSIXBuild는 실제 unsigned package와 로컬 build receipt, embedded manifest/Publisher 및 SHA256 block map을 연결한다. New-CodexBarMSIXSigningRequest는 이 값들로 새 요청을 작성하며, Sign-CodexBarMSIXPackage는 같은 바이트를 다시 대조한 뒤 선택한 CurrentUser/My 인증서로 새 사본만 서명하도록 구현했다. 내부 바이너리 서명과 MSIX 서명은 별개이며, 실제 실행하지 않았다.
+
+입력/WhatIf/출력 보존/SDK 옵션/서명 후 기록 및 미검증 경계는 [MSIX 서명 인계](MSIX-SIGNING.ko.md)를 따른다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. SDK·인증서·timestamp 서비스·서명·설치·검증 실행은 하지 않았고, Windows 제품 전체의 설치/update/기능 검증과 릴리스 판단은 남아 있다.

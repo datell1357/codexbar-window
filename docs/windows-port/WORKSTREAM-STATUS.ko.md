@@ -1,5 +1,7 @@
 # Windows 전용 제품 작업 현황
 
+- IMPL-547: 실제 MSIX/receipt·embedded identity에 묶인 서명 요청, 명시적 인증서/SDK를 통한 새 사본 서명·timestamp·서명 후 hash 기록 경로 작성. 코드만 작성했고 인증서/SDK/서명/실행 미검증. IMPL-545·546 각각 커밋·푸시 완료. CODE_WRITTEN_UNVERIFIED.
+
 - IMPL-546: 배포 인벤토리 전체 파일 및 새 manifest의 mapping, 명시적 SDK MakeAppx 실행 경로, 실패 출력 보존과 unsigned package receipt 작성. CODE_WRITTEN_UNVERIFIED. 실행하지 않았으며 사용자 재시도 승인 후 545의 origin/main 푸시 완료(7326623b1), 546은 별도 커밋·푸시 진행.
 
 - IMPL-545: SDK 등록 fragment/WinMD를 빌드 payload에 포함하고 MSIX manifest 생성기에 앱·host COM·6종 위젯·SDK proxy/stub/runtime class·이미지/PRI 입력 연결. 기존 출력 보존, 참조 파일 inventory 대조 작성. 실제 package 생성/등록/검증은 남아 있음. CODE_WRITTEN_UNVERIFIED.

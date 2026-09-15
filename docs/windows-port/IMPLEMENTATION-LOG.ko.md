@@ -5165,3 +5165,15 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - 게시 상태: IMPL-544 b4f142ef2까지 origin/main에 반영됐다. IMPL-545는 자동 커밋 승인 검토가 첫 시도와 허용된 한 번의 재시도 모두 시간 초과되어 staged 상태다. IMPL-546은 source 작성만 했으며 미staged/미커밋/미푸시다. 추가 커밋·푸시 재시도 승인 요청은 아직 답변 대기 중이다. 기존 index와 파일을 보존했고 새로운 성공을 추정하지 않는다.
 
 - 게시 재개: 사용자의 명시적 재시도 승인 후 IMPL-545를 7326623b1로 커밋하고 origin/main 푸시를 완료했다. 위 시간 초과·대기 설명은 당시 이력이며 해당 차단은 해소됐다. IMPL-546은 별도 커밋·푸시 후 Git 결과를 보고한다.
+
+
+## IMPL-547 — Bind MSIX signing to package bytes and embedded identity
+
+- 사용자 재시도 승인 후 IMPL-545 7326623b1 및 IMPL-546 0541d09b6을 각각 커밋·푸시했다. 기존 대기/staging 상태를 보존해 두 묶음을 분리했으며 hook 비활성화·[skip ci] 정책을 유지했다.
+- Read-CodexBarMSIXBuild helper에 unsigned package/receipt 바이트 대조, bounded ZIP metadata 읽기, DTD/external resolver 금지 XML, embedded identity/manifest hash와 SHA256 block-map 계약을 추가했다. 이미 signed 입력·bundle·모호한 archive 경로는 거절하도록 작성했다. caller-owned stream 목록을 finally에서 닫으며 helper를 실행하지 않았다.
+- New-CodexBarMSIXSigningRequest는 package/receipt/manifest/block map/source inventory hash와 embedded Publisher/버전/architecture, 선언된 provenance를 새 JSON 요청에 연결한다. 인증서 접근·서명 없이 MSIX_SIGNING_REQUEST_ONLY로 기록하며 output은 package 폴더 밖의 CreateNew 파일이다.
+- Sign-CodexBarMSIXPackage는 서명 직전 같은 helper로 요청을 다시 대조하고 명시한 CurrentUser/My thumbprint의 유효한 code-signing 인증서와 정확한 Subject/Publisher 일치를 요구한다. WhatIf는 인증서·SDK·출력 접근 전의 읽기 단계까지만 수행하도록 작성했다.
+- 원본 package stream에서 새 출력 사본을 만든 뒤 hash를 대조하고 명시적 SDK SignTool의 SHA256/RFC3161 timestamp 서명·검증 경로를 연결했다. 두 SDK 명령의 exit 0, Authenticode signer/timestamp, signature footprint와 불변 manifest/block map을 요구하며 실패 출력은 삭제하지 않는다. 이러한 조건을 실제 Windows에서 확인한 것은 아니다.
+- 서명 후 held package의 새 hash와 서명 요청/빌드/source identity를 SIGNED_MSIX_RUNTIME_UNVERIFIED receipt에 기록한다. installation/runtimeValidation은 NOT_RUN이며 source attestation·내부 바이너리별 서명·설치 가능성·릴리스 상태와 구분했다. MSIX-SIGNING.ko.md에 invocation 및 DN 표현/PKI/SIP/경로 race 경계를 기록했다.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. PowerShell·XML/package 평가·빌드·테스트·lint·SDK·인증서/private key·timestamp 서비스·서명·설치·Windows 실행 검증 미실행. MSIX 설치/update/제거, 실제 리소스/PRI·Windows 위젯/COM·Windows-only 제품 graph 및 전체 검증은 남아 있다.
+- 직전 푸시 확인은 IMPL-546 0541d09b6이다. IMPL-547도 별도 구현 커밋·푸시 후 실제 Git 결과를 보고한다.
