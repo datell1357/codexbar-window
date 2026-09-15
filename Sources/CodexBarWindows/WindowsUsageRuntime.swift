@@ -870,6 +870,8 @@ public actor WindowsUsageRuntime {
     }
     private var planHistoryContexts: [ProviderInstanceID: PlanHistoryContext] = [:]
     private var planHistoryContextGeneration = UUID()
+    private var planHistoryReadSelections: [ProviderInstanceID: WindowsPlanUtilizationHistoryStore.Selection] = [:]
+    private var planHistoryBurnCaches: [ProviderInstanceID: SessionEquivalentBurnCacheCore] = [:]
     private let historicalUsageHistoryStore: HistoricalUsageHistoryStore
     private var codexHistoricalDataset: CodexHistoricalDataset?
     private var codexHistoricalDatasetAccountKey: String?
@@ -2580,7 +2582,10 @@ public actor WindowsUsageRuntime {
     }
 
     public func noteMenuOpened(at date: Date = Date()) {
+        guard !self.shuttingDown else { return }
         self.lastMenuOpenedAt = date
+        // Re-evaluate learned estimates and remaining time even when automatic fetches are disabled.
+        self.publishRenderEntries(settings: WindowsUsagePresentationSettings.load())
         guard self.refreshSettings.frequency.usesAdaptivePolicy,
               self.refreshSettings.frequency != .adaptiveAgentAware
         else { return }
@@ -3061,7 +3066,7 @@ public actor WindowsUsageRuntime {
     }
 
     private func performRefresh() async {
-        self.invalidatePlanHistoryContexts()
+        self.invalidatePlanHistoryContexts(preserveForecastCaches: true)
         self.hookRefreshAccounts.removeAll()
         self.hookUnresolvedAccountCount = 0
         self.pendingHookRefresh = nil
@@ -3090,6 +3095,8 @@ public actor WindowsUsageRuntime {
             self.retryPendingAntigravityRemovals(config: config)
             let enabledIDs = Set(config.enabledProviders())
             self.latestEnabledProviderIDs = enabledIDs
+            self.planHistoryReadSelections = self.planHistoryReadSelections.filter { enabledIDs.contains($0.key) }
+            self.planHistoryBurnCaches = self.planHistoryBurnCaches.filter { enabledIDs.contains($0.key) }
             self.predictivePaceWarningKeys = self.predictivePaceWarningKeys.filter {
                 enabledIDs.contains($0.provider.instanceID)
             }
@@ -3438,6 +3445,8 @@ public actor WindowsUsageRuntime {
 
     private func publishRenderEntries(settings: WindowsUsagePresentationSettings) {
         guard !self.shuttingDown else { return }
+        let forecastNow = Date()
+        let forecastWorkDays = WindowsPredictivePaceWarningSettings.load().weeklyProgressWorkDays
         var copyRows: [String: String] = [:]
         let rendered = self.renderEntries.flatMap { entry -> [String] in
             switch entry {
@@ -3450,7 +3459,10 @@ public actor WindowsUsageRuntime {
                     showOptionalUsage: settings.showOptionalCreditsAndExtraUsage,
                     usageBarsShowUsed: settings.usageBarsShowUsed,
                     resetTimesShowAbsolute: settings.resetTimesShowAbsolute)
-                var rows = updated.rows()
+                let forecast = self.planHistoryForecastForPresentation(
+                    providerID: presentation.instanceID, now: forecastNow, workDays: forecastWorkDays)
+                var rows = updated.rows(now: forecastNow, sessionEquivalentForecast: forecast,
+                    forecastWorkDays: forecastWorkDays)
                 if let notice = self.planUtilizationHistoryNotices[presentation.instanceID] {
                     rows.append(WindowsStatusLocalization.text(notice))
                 }
@@ -3753,11 +3765,72 @@ public actor WindowsUsageRuntime {
             includeVisibleAccounts: codexVisibleAccount != nil)
     }
 
-    private func invalidatePlanHistoryContexts() {
+    private func invalidatePlanHistoryContexts(preserveForecastCaches: Bool = false) {
         self.planHistoryContextGeneration = UUID()
         for context in self.planHistoryContexts.values { context.validity.invalidate() }
         self.planHistoryContexts.removeAll(keepingCapacity: true)
         self.planUtilizationHistoryNotices.removeAll(keepingCapacity: true)
+        if !preserveForecastCaches {
+            self.planHistoryReadSelections.removeAll(keepingCapacity: true)
+            self.planHistoryBurnCaches.removeAll(keepingCapacity: true)
+        }
+    }
+
+    private func loadPlanHistorySelection(providerID: ProviderInstanceID, accountKey: String?) throws
+        -> WindowsPlanUtilizationHistoryStore.Selection
+    {
+        let previous = self.planHistoryReadSelections[providerID]
+        let selection = try self.planUtilizationHistoryStore.loadSelection(providerID: providerID,
+            accountKey: accountKey, previous: previous)
+        if let previous, previous.revision != selection.revision || previous.accountKey != selection.accountKey {
+            self.planHistoryContexts[providerID]?.validity.invalidate()
+        }
+        self.planHistoryReadSelections[providerID] = selection
+        return selection
+    }
+
+    private func cachedPlanHistoryForecast(provider: UsageProvider, context: PlanHistoryContext,
+        selection: WindowsPlanUtilizationHistoryStore.Selection, now: Date, workDays: Int?) -> SessionEquivalentForecastCore? {
+        var cache = self.planHistoryBurnCaches[provider.instanceID] ?? SessionEquivalentBurnCacheCore()
+        let selectionIdentity = selection.accountKey.map { "account:" + $0 } ?? "unscoped"
+        let forecast = cache.forecast(provider: provider, snapshot: context.result.usage,
+            histories: selection.histories, historyRevision: selection.revision, selectionIdentity: selectionIdentity,
+            persistedHistoryIdentity: selection.pairIdentity, now: now, workDays: workDays)
+        self.planHistoryBurnCaches[provider.instanceID] = cache
+        return forecast
+    }
+
+    private func planHistoryForecastForPresentation(providerID: ProviderInstanceID, now: Date,
+        workDays: Int?) -> SessionEquivalentForecastCore? {
+        guard let provider = providerID.firstPartyProvider, let context = self.planHistoryContexts[providerID],
+              PlanUtilizationHistoryProjection.forecastWindows(provider: provider, snapshot: context.result.usage) != nil else {
+            self.planHistoryReadSelections.removeValue(forKey: providerID)
+            self.planHistoryBurnCaches.removeValue(forKey: providerID)
+            return nil
+        }
+        do {
+            guard try self.planHistoryContextMatches(context, provider: provider) else {
+                self.invalidatePlanHistoryContexts(); return nil
+            }
+            let key: String?
+            switch context.owner {
+            case let .scoped(value): key = value
+            case .unscoped: key = nil
+            case .unavailable: return nil
+            }
+            let selection = try self.loadPlanHistorySelection(providerID: providerID, accountKey: key)
+            guard workDays == WindowsPredictivePaceWarningSettings.load().weeklyProgressWorkDays,
+                  try self.planHistoryContextMatches(context, provider: provider) else {
+                self.invalidatePlanHistoryContexts(); return nil
+            }
+            return self.cachedPlanHistoryForecast(provider: provider, context: context,
+                selection: selection, now: now, workDays: workDays)
+        } catch {
+            // A missing/unreadable current file must never reuse a previous owner's estimate.
+            self.planHistoryReadSelections.removeValue(forKey: providerID)
+            self.planHistoryBurnCaches.removeValue(forKey: providerID)
+            return nil
+        }
     }
 
     /// Loads only the owner represented by a currently published menu token. No provider
@@ -3771,30 +3844,25 @@ public actor WindowsUsageRuntime {
             return .unavailable(.changed)
         }
         let privacy = WindowsUsagePresentationSettings.load().hidePersonalInfo
-        let isValid = context.validity.capture()
         let forecastWorkDays = WindowsPredictivePaceWarningSettings.load().weeklyProgressWorkDays
         do {
             guard try self.planHistoryContextMatches(context, provider: provider) else {
                 self.invalidatePlanHistoryContexts()
                 return .unavailable(.changed)
             }
-            let document = try self.planUtilizationHistoryStore.load(providerID: providerID)
-            let histories: [PlanUtilizationHistoryCore.Series]
-            let historyIdentity: String?
+            let accountKey: String?
             switch context.owner {
-            case let .scoped(key):
-                histories = document.histories(accountKey: key)
-                historyIdentity = document.sessionEquivalentWindowPairIdentities[key]
-            case .unscoped:
-                histories = document.histories(accountKey: nil)
-                historyIdentity = document.sessionEquivalentWindowPairIdentities["__codexbar_unscoped__"]
+            case let .scoped(key): accountKey = key
+            case .unscoped: accountKey = nil
             case .unavailable: return .unavailable(.noCurrentUsage)
             }
+            let selection = try self.loadPlanHistorySelection(providerID: providerID, accountKey: accountKey)
+            let isValid = context.validity.capture()
             let now = Date()
-            let series = try PlanUtilizationHistoryChart.make(provider: provider, histories: histories,
+            let series = try PlanUtilizationHistoryChart.make(provider: provider, histories: selection.histories,
                 snapshot: context.result.usage, referenceDate: now)
-            let forecast = SessionEquivalentForecastCore.make(provider: provider, snapshot: context.result.usage,
-                histories: histories, persistedHistoryIdentity: historyIdentity, now: now, workDays: forecastWorkDays)
+            let forecast = self.cachedPlanHistoryForecast(provider: provider, context: context,
+                selection: selection, now: now, workDays: forecastWorkDays)
             // IO can overlap edits from another process even though this actor never suspends.
             guard isValid(), privacy == WindowsUsagePresentationSettings.load().hidePersonalInfo,
                   forecastWorkDays == WindowsPredictivePaceWarningSettings.load().weeklyProgressWorkDays,

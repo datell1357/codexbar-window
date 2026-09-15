@@ -4986,3 +4986,15 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - 원본 idle/cache/migration 테스트의 소스는 요구사항 파악을 위해 읽었지만 실행하지 않았다. 일반 트레이 weekly 행 연결, 이력 revision/idle 시간별 burn cache 갱신, legacy 계정·pair migration/adoption, 삭제 lifecycle 및 Windows 동작·수치 일치 검증은 남아 있다.
 - CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·컴파일·실제 이력 읽기/계산 실행·UI·성능 검증 미실행.
 - 직전 IMPL-529는 ee720096e로 origin/main 푸시가 성공했다. IMPL-530도 별도 구현 커밋으로 푸시하고 Git 결과를 보고한다.
+
+## IMPL-531 — Cache learned session burn and render forecasts in tray usage
+
+- SessionEquivalentBurnCacheCore를 추가했다. provider, 읽은 이력 revision, 선택 owner identity, window pair identity, 현재 session reset, named weekly ID, idle 상태의 60초 bucket을 key로 사용한다. 유효 표본이 부족한 nil 추정치도 key와 함께 cache하고, 남은 주간 한도·시간·근무일 계산은 요청마다 다시 적용한다.
+- Windows 저장소에 선택 계정 전용 read cache를 추가했다. provider 잠금 아래 매번 bounded 파일 내용을 읽고 SHA-256 revision을 비교한 후 owner와 revision이 모두 같을 때만 이전 해석 결과를 재사용한다. 파일이 사라지거나 바뀌면 새 문서를 읽으며 손상/권한 오류를 빈 문서로 덮어쓰지 않는다. 이 cache는 record의 저장 입력으로 사용할 수 없다.
+- runtime의 표시 및 이력 창 조회가 동일한 선택 이력/burn cache 경로를 사용한다. 공급자 원본 응답과 설정·소유권을 대조하고 파일 읽기 실패 시 이전 추정치를 제거한다. 발견한 이력 변경은 열려 있는 이전 chart lease도 무효화한다.
+- 일반 새로고침은 read/burn cache를 재사용할 수 있지만 계정 변경·수집 설정 변경·종료에서는 제거한다. 비활성 공급자의 cache를 정리하며, 메모리에 저장하는 문서는 전체 계정 목록이 아니라 선택한 owner의 이력이다.
+- WindowsUsagePresentation.rows에 선택적인 forecast 입력을 추가해 그 forecast가 적용되는 주간 행 바로 아래 예상 남은 세션 한도와 리셋까지의 5시간 구간 수를 표시한다. Claude secondary/Codex primary·secondary와 named weekly ID를 구분해 다른 metric에 붙이지 않는다. 동일 rows를 사용하는 상세/복사에도 포함된다.
+- 메뉴 열림 알림에서 수집이 수동 설정이어도 추정치/시간 표시를 재계산해 게시한다. 원본의 idle 분 단위 재평가를 cache key에 적용했다. 현재 Win32 popup은 열릴 때 항목을 구성하므로 이미 열린 메뉴에는 이 비동기 재게시를 즉시 반영하지 못한다. 최신 게시 결과는 다음 popup 구성 또는 상세 조회에 사용하며, 원본의 열린 화면 갱신에 대한 UI 연결은 남아 있다.
+- 직접 실행해 cache hit/idle 전환/수치/메모리·I/O 비용을 검증하지 않았다. 파일 전체 read/hash 비용, 열린 메뉴 갱신, legacy migration/adoption, 삭제 lifecycle 및 Windows 실행 검증은 계속 남아 있다. W05/WIN-020 완료로 판정하지 않는다.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·컴파일·실제 cache/파일/계정/UI 실행·성능 검증 미실행.
+- 직전 IMPL-530은 58b2ec9da로 origin/main 푸시가 성공했다. IMPL-531도 별도 커밋·푸시 후 Git 결과를 보고한다.

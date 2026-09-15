@@ -1,5 +1,6 @@
 #if os(Windows)
 import CodexBarCore
+import Crypto
 import Foundation
 import WinSDK
 
@@ -13,6 +14,15 @@ struct WindowsPlanUtilizationHistoryStore: Sendable {
     }
     let directory: URL
 
+    /// Read-only cache for one owner. It is never accepted by record() as a document to publish.
+    struct Selection: Sendable {
+        let providerID: ProviderInstanceID
+        let accountKey: String?
+        let revision: Data?
+        let histories: [PlanUtilizationHistoryCore.Series]
+        let pairIdentity: String?
+    }
+
     init(directory: URL = Self.defaultDirectory) { self.directory = directory }
 
     func fileURL(providerID: ProviderInstanceID) -> URL {
@@ -22,6 +32,19 @@ struct WindowsPlanUtilizationHistoryStore: Sendable {
     func load(providerID: ProviderInstanceID) throws -> PlanUtilizationHistoryCore.Document {
         try self.withLock(providerID: providerID) {
             try self.decode(self.readRaw(self.fileURL(providerID: providerID)))
+        }
+    }
+
+    func loadSelection(providerID: ProviderInstanceID, accountKey: String?, previous: Selection?) throws -> Selection {
+        try self.withLock(providerID: providerID) {
+            let raw = try self.readRaw(self.fileURL(providerID: providerID))
+            let revision = raw.map { Data(SHA256.hash(data: $0)) }
+            if let previous, previous.providerID == providerID, previous.accountKey == accountKey,
+               previous.revision == revision { return previous }
+            let document = try self.decode(raw)
+            return Selection(providerID: providerID, accountKey: accountKey, revision: revision,
+                histories: document.histories(accountKey: accountKey),
+                pairIdentity: document.sessionEquivalentWindowPairIdentities[accountKey ?? "__codexbar_unscoped__"])
         }
     }
 

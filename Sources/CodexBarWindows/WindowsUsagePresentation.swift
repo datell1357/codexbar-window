@@ -44,11 +44,20 @@ public struct WindowsUsagePresentation: Sendable {
     /// Renders the same semantic lanes and optional details used by the native
     /// menu descriptor. Charts remain retained in `snapshot.details`; the text
     /// tray intentionally does not pretend to provide a chart surface.
-    public func rows(now: Date = Date()) -> [String] {
+    public func rows(now: Date = Date(), sessionEquivalentForecast: SessionEquivalentForecastCore? = nil,
+                     forecastWorkDays: Int? = nil) -> [String] {
         let descriptor = self.provider.map { ProviderDescriptorRegistry.descriptor(for: $0) }
         let metadata = descriptor?.metadata
         let presentation = descriptor?.presentation
         var rows = [self.hidePersonalInfo ? (self.privacyTitle ?? self.title) : self.title]
+        func appendForecast(window: RateWindow, lane: String, windowID: String? = nil) {
+            // Claude's fixed pair belongs to secondary; Codex's duration lanes use primary/secondary only.
+            if self.provider == .claude, lane != "secondary" { return }
+            if self.provider == .codex, lane != "primary", lane != "secondary" { return }
+            guard let forecast = sessionEquivalentForecast,
+                  forecast.applies(to: window, windowID: windowID) else { return }
+            rows.append(contentsOf: WindowsSessionEquivalentForecastText.lines(forecast, workDays: forecastWorkDays).prefix(2))
+        }
         let labels = if let metadata {
             presentation?.rateWindowLabels(metadata: metadata, snapshot: self.snapshot, now: now)
                 ?? ProviderRateWindowLabels(primary: metadata.sessionLabel, secondary: metadata.weeklyLabel, tertiary: metadata.opusLabel ?? "Sonnet", showsTertiary: metadata.supportsOpus)
@@ -57,12 +66,15 @@ public struct WindowsUsagePresentation: Sendable {
         }
         if let primary = self.snapshot.primary {
             rows.append(self.rateRow(label: labels.primary, window: primary, now: now, detailAsReset: presentation?.menu.usesPrimaryDescriptionAsDetail(snapshot: self.snapshot) == true))
+            appendForecast(window: primary, lane: "primary")
         }
         if let secondary = self.snapshot.secondary {
             rows.append(self.rateRow(label: labels.secondary, window: secondary, now: now))
+            appendForecast(window: secondary, lane: "secondary")
         }
         if labels.showsTertiary, let tertiary = self.snapshot.tertiary {
             rows.append(self.rateRow(label: labels.tertiary, window: tertiary, now: now))
+            appendForecast(window: tertiary, lane: "tertiary")
         }
         let selectedExtras = presentation?.extraRateWindows(snapshot: self.snapshot) ?? []
         let extras = selectedExtras + (self.snapshot.extraRateWindows ?? []).filter { candidate in
@@ -70,6 +82,7 @@ public struct WindowsUsagePresentation: Sendable {
         }
         for extra in extras {
             rows.append(self.rateRow(label: extra.title, window: extra.window, now: now, usageKnown: extra.usageKnown))
+            if extra.usageKnown { appendForecast(window: extra.window, lane: "named", windowID: extra.id) }
         }
         if let credits = self.result?.credits, presentation?.menuCard.showsCreditsSection != false, self.showOptionalUsage {
             if credits.balanceReadSucceeded {
