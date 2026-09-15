@@ -1,0 +1,70 @@
+{
+  "schemaVersion": 1,
+  "identity": {
+    "name": "CodexBar.Windows",
+    "publisher": "REPLACE_WITH_CERTIFICATE_SUBJECT",
+    "version": "0.1.0.0"
+  },
+  "minimumWindowsVersion": "10.0.22000.0",
+  "maximumTestedWindowsVersion": "REPLACE_WITH_DECLARED_MAXIMUM_WINDOWS_VERSION",
+  "displayName": "CodexBar",
+  "description": "AI provider usage and spending",
+  "publisherDisplayName": "REPLACE_WITH_PUBLISHER_DISPLAY_NAME",
+  "languages": ["en-US", "ko-KR"],
+  "visualAssets": {
+    "storeLogo": "ApplicationAssets/StoreLogo.png",
+    "square150Logo": "ApplicationAssets/Square150x150Logo.png",
+    "square44Logo": "ApplicationAssets/Square44x44Logo.png"
+  },
+  "providerIcon": "WidgetAssets/ProviderIcon.png",
+  "widgets": [
+    {
+      "id": "CodexBarSwitcherWidget",
+      "displayName": "Provider switcher",
+      "description": "Switch between selected AI providers.",
+      "icon": "WidgetAssets/ProviderIcon.png",
+      "screenshot": "WidgetAssets/Switcher.png",
+      "altText": "Selected provider usage and provider switching controls."
+    },
+    {
+      "id": "CodexBarUsageWidget",
+      "displayName": "Usage",
+      "description": "Usage limits and reset times for a selected provider.",
+      "icon": "WidgetAssets/ProviderIcon.png",
+      "screenshot": "WidgetAssets/Usage.png",
+      "altText": "Provider usage bars and reset times."
+    },
+    {
+      "id": "CodexBarHistoryWidget",
+      "displayName": "Usage history",
+      "description": "Historical usage for a selected provider.",
+      "icon": "WidgetAssets/ProviderIcon.png",
+      "screenshot": "WidgetAssets/History.png",
+      "altText": "Provider usage history chart."
+    },
+    {
+      "id": "CodexBarCompactWidget",
+      "displayName": "Compact metric",
+      "description": "A compact view of a selected usage metric.",
+      "icon": "WidgetAssets/ProviderIcon.png",
+      "screenshot": "WidgetAssets/Metric.png",
+      "altText": "A selected provider metric in a compact widget."
+    },
+    {
+      "id": "CodexBarBurnDownWidget",
+      "displayName": "Burn down",
+      "description": "Usage pace and forecast for a selected account.",
+      "icon": "WidgetAssets/ProviderIcon.png",
+      "screenshot": "WidgetAssets/BurnDown.png",
+      "altText": "Account usage pace and forecast chart."
+    },
+    {
+      "id": "CodexBarCombinedBurnDownWidget",
+      "displayName": "Combined burn down",
+      "description": "A combined view of supported account forecasts.",
+      "icon": "WidgetAssets/ProviderIcon.png",
+      "screenshot": "WidgetAssets/CombinedBurnDown.png",
+      "altText": "Combined usage pace and forecasts for selected accounts."
+    }
+  ]
+}

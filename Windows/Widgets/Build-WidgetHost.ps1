@@ -120,6 +120,18 @@ foreach ($license in @(
 )) {
     [IO.File]::Copy((Join-Path $packageRoot $license[0]), (Join-Path $licenseRoot $license[1]), $false)
 }
+$registrationRoot = Join-Path $binaryRoot 'resources\windows-widget-host'
+[void][IO.Directory]::CreateDirectory($registrationRoot)
+[IO.File]::Copy((Join-Path $packageRoot 'Microsoft.WindowsAppSDK.Widgets.2.0.5\runtimes-framework\package.appxfragment'),
+    (Join-Path $registrationRoot 'Microsoft.WindowsAppSDK.Widgets.appxfragment'), $false)
+# The SDK's native WinMD reference is Private=false. Carry its exact metadata explicitly,
+# accepting an MSBuild-produced copy only when its bytes match the restored component.
+$metadataSource = Join-Path $packageRoot 'Microsoft.WindowsAppSDK.Widgets.2.0.5\metadata\Microsoft.Windows.Widgets.winmd'
+$metadataTarget = Join-Path $binaryRoot 'Microsoft.Windows.Widgets.winmd'
+if (Test-Path -LiteralPath $metadataTarget) {
+    if ((Get-FileHash -LiteralPath $metadataSource -Algorithm SHA256).Hash -cne
+        (Get-FileHash -LiteralPath $metadataTarget -Algorithm SHA256).Hash) { throw 'Widget metadata differs from the restored SDK.' }
+} else { [IO.File]::Copy($metadataSource, $metadataTarget, $false) }
 $payload = Read-WidgetHostBuildOutput $binaryRoot
 $payloadFiles = Read-CodexBarWidgetPayload $payload
 $hostPayload = $payloadFiles['CodexBarWidgetHost.exe']

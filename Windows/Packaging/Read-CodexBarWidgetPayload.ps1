@@ -31,7 +31,7 @@ function Read-CodexBarWidgetPayload($Payload) {
             }
         } elseif ($relative.StartsWith('licenses\windows-widget-host\', [StringComparison]::OrdinalIgnoreCase)) {
             if ($file.kind -cne 'license' -or $size -le 0) { throw 'Invalid widget license entry.' }
-        } elseif ($file.kind -cne 'resource' -or [IO.Path]::GetExtension($relative) -notin @('.winmd', '.pri', '.mui', '.png', '.json', '.manifest')) {
+        } elseif ($file.kind -cne 'resource' -or [IO.Path]::GetExtension($relative) -notin @('.winmd', '.pri', '.mui', '.png', '.json', '.manifest', '.appxfragment')) {
             throw 'Unexpected file in widget host payload.'
         }
         if ($result.ContainsKey($relative)) { throw 'Duplicate widget payload path.' }

@@ -5142,3 +5142,13 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - OS host는 이미 실행 중이므로 ResumeThread를 생략한다. EOF/10초 대기 후 필요한 경우 보관한 정확한 host process에만 종료를 요청하고 5초 더 기다린다. child는 기존 Job을 사용하며 실제 성공한 종료 요청 뒤에만 forced를 기록한다. native exit와 cleanup/철회 결과는 별도로 유지한다.
 - MSIX COM/6종 widget/proxy-stub 선언과 실제 broker 정책, package update/restart 전환·사용자 진단·OS 재활성화·전체 Windows-only 제품 graph는 남아 있다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 컴파일·빌드·테스트·lint·패키지/manifest 평가·실제 pipe/process/userenv/COM/Widgets/동시 요청/종료/x64/ARM64 검증 미실행.
 - 직전 IMPL-543은 55b57a6ea로 origin/main 푸시가 성공했다. IMPL-544도 사용자 승인에 따라 hook 비활성화 및 [skip ci] 커밋·푸시 후 실제 Git 결과를 보고한다.
+
+## IMPL-545 — Compose the MSIX widget and SDK runtime registration manifest
+
+- 실제 고정 NuGet Widgets 2.0.5의 runtimes-framework/package.appxfragment를 메모리에서 읽어 proxy/stub 및 in-process runtime class 등록 소스와 원본 hash를 확인했다. 패키지는 설치/실행하지 않았다. WindowsWidgetHostDefinition의 6종 ID/크기 및 WidgetClassFactory의 CLSID를 manifest 생성 계약에 연결했다.
+- Build-WidgetHost에 SDK fragment resource 복사를 추가하고 Private=false WinMD reference의 정확한 metadata를 output에 명시적으로 포함하도록 작성했다. 이미 생성된 WinMD는 복원된 SDK source와 hash가 다르면 거절한다. v2 build receipt 형식은 유지하고 payload reader에 appxfragment를 허용했다.
+- New-CodexBarMSIXManifest는 기존 staged/signed inventory와 별도 configuration을 읽어 새 AppxManifest.xml을 작성한다. 앱/CLI/host/backend/Widgets DLL/WinMD/3개 라이선스와 참조 image/PRI/SDK fragment의 kind/bytes/hash를 대조하고 해당 stream을 종료까지 유지한다. 기존 출력은 CreateNew로 보존하며 인증서/출력 폴더/이미지를 임의 생성하지 않는다.
+- DOM 생성으로 package identity/Windows.Desktop target/앱 full-trust entry point, host exe COM server, 같은 CLSID의 WidgetProvider activation, 6종 크기·AllowMultiple·IsCustomizable·기본/명암 테마를 작성했다. ms-resource 참조는 준비된 resources.pri를 요구한다. 실제 resource key/이미지 decoding·디자인 적합성을 검증한 것은 아니다.
+- SHA-256으로 고정한 SDK fragment를 DTD와 external resolver가 꺼진 XML reader에서 읽어 package-level Extensions로 가져온다. SDK의 추가 interface 등록은 CodexBar 기능 구현 완료를 뜻하지 않는다. 별도 configuration 예제와 MSIX-MANIFEST.ko.md에 placeholder/발행자/OS 선언값 및 파일 경로 계약을 기록했다.
+- 실제 이미지·locale/PRI 산출물, MSIX file mapping/MakeAppx·package 서명·설치/업데이트/제거, broker 정책·OS COM/위젯 표시와 Windows-only 전체 제품 graph는 남아 있다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. PowerShell/manifest 평가·컴파일·빌드·테스트·lint·실제 Windows·서명·설치 검증 미실행.
+- 직전 IMPL-544는 b4f142ef2로 origin/main 푸시가 성공했다. IMPL-545도 사용자 승인에 따라 hook 비활성화 및 [skip ci] 커밋·푸시 후 실제 Git 결과를 보고한다.

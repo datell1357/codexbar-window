@@ -85,3 +85,11 @@ cold start에서 backend는 CreateEnvironmentBlock으로 Windows가 제공한 �
 인증된 OS host는 job 없이 이미 실행 중이므로 ResumeThread를 호출하지 않는다. EOF 뒤 10초를 기다리고 필요하면 보관한 정확한 host process만 종료 요청한 후 5초 더 기다린다. 기존 child는 자기 Job을 사용한다. 성공한 종료 요청 뒤에만 forced 상태를 기록하며 실제 exit/cleanup/철회 결과는 별도로 남긴다. 인증 전에 실패한 연결은 채널만 닫고 상대 프로세스를 종료하지 않는다. 정리 실패 owner가 남아 있으면 다음 host를 받지 않는다.
 
 이것은 OS-started host의 접속/소유권/기존 bootstrap 연결을 작성한 상태다. 실제 MSIX COM server·6종 widget·proxy/stub 선언과 package identity, 실제 Windows broker 정책, package update/restart 전환, OS 재활성화/여러 동시 요청/timeout·종료·UI·x64/ARM64 검증은 남아 있다. 아직 Windows Widgets에서 등록·시작 성공을 확인하지 않았다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+
+## IMPL-545: 패키지 등록 선언 연결
+
+host 빌드 output에 Widgets 2.0.5의 등록 fragment와 정확한 WinMD를 포함하도록 작성했다. fragment는 resources/windows-widget-host/Microsoft.WindowsAppSDK.Widgets.appxfragment로 배포 payload에 들어간다. 기존 v2 receipt 형식은 유지하며 일반 배포 reader에 appxfragment resource를 허용했다.
+
+[MSIX manifest 생성기](../Packaging/New-CodexBarMSIXManifest.ps1)는 현재 native CLSID와 6종 ID/지원 크기를 연결하고, SDK fragment 원본 hash를 요구해 package-level proxy/stub 및 in-process class 선언을 가져온다. 위젯 선택 화면의 아이콘/screenshot과 명암 테마, optional ms-resource/PRI 입력도 연결했다. [세부 계약](../Packaging/MSIX-MANIFEST.ko.md)에 준비할 입력과 남은 배포 작업을 기록했다.
+
+MSIX COM/위젯/SDK 등록 XML을 작성하는 코드가 추가됐으며 실제 package 생성·서명·OS 등록·위젯 시작 성공은 확인하지 않았다. 실제 이미지·locale/PRI·MakeAppx file mapping 및 package 배포/lifecycle·broker 정책·Windows 검증은 남아 있다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.

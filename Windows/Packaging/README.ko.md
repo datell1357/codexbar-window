@@ -229,3 +229,9 @@ Read-CodexBarWidgetPayload.ps1은 빌드 및 배포 입력을 위한 공유 help
 CodexBarWidgetHost.exe는 backend를 동반한 유일한 root first-party application으로 서명 대상에 포함된다. 따라서 기본 17개 대상에 widget backend와 host가 함께 있으면 first-party 대상은 19개다. 서명 요청·서명·설치에서 기존 공유 first-party 판정을 사용하며 서명 후 hash는 실제 서명된 파일로 다시 기록한다. 사전 서명 payload hash 목록을 최종 inventory의 서명 후 파일 계약으로 재사용하지 않는다.
 
 현재 widget 구성 요소 입력은 명시적으로 선택하는 단계다. MSIX package identity·COM/6종 위젯 및 proxy/stub 선언·OS cold activation·확인된 broker 정책과 실제 Windows 배포는 남아 있다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 이 변경에서 스크립트·빌드·복사·서명·설치·검증은 실행하지 않았다.
+
+## IMPL-545: MSIX manifest 생성
+
+New-CodexBarMSIXManifest.ps1은 기존 distribution inventory와 명시적 configuration에서 AppxManifest.xml을 새 파일로 작성하도록 추가했다. 앱 entry point, native host COM class, 6종 위젯 ID/크기·다중 인스턴스·customization, 실제 SDK proxy/stub 및 runtime class 선언을 연결한다. 참조 파일의 kind/bytes/hash와 고정된 SDK fragment를 대조하고, script 실행 종료까지 해당 읽기 handle을 보관한다.
+
+[입력/등록 계약](MSIX-MANIFEST.ko.md)과 [configuration 예제](MSIX-configuration.example.json)에 발행자·버전·OS·리소스·이미지 필드를 기록했다. MSIX 이미지를 자동 생성하거나 placeholder를 정상 산출물로 처리하지 않는다. 기존 출력은 덮어쓰지 않으며 MakeAppx/MakePri·서명·등록·설치는 다음 연결이다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 이번 작업에서는 새 생성기나 검증을 실행하지 않았다.

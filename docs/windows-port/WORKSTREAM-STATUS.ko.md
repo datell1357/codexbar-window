@@ -1,5 +1,7 @@
 # Windows 전용 제품 작업 현황
 
+- IMPL-545: SDK 등록 fragment/WinMD를 빌드 payload에 포함하고 MSIX manifest 생성기에 앱·host COM·6종 위젯·SDK proxy/stub/runtime class·이미지/PRI 입력 연결. 기존 출력 보존, 참조 파일 inventory 대조 작성. 실제 package 생성/등록/검증은 남아 있음. CODE_WRITTEN_UNVERIFIED.
+
 - IMPL-544: -Embedding host의 backend 발견/1회 깨우기, package/user/session/image 양방향 대조 및 native admission→기존 bootstrap/COM runner 연결. 앱은 OS host 입장을 기다리고 취소·정리 실패 owner를 보존. MSIX 등록/실제 OS 실행은 남아 있음. CODE_WRITTEN_UNVERIFIED.
 
 - IMPL-543: runtime 생성 전 Windows 사용자/session별 파일 소유권 확보, 새 항목 user DACL·directory pin·독점 열기·실패/점유 구분 연결. cleanup 후 process exit까지 lease 유지. OS-started widget의 실제 bootstrap/admission은 남아 있음. CODE_WRITTEN_UNVERIFIED.
