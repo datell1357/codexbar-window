@@ -5032,3 +5032,14 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - 이번 연결도 유효한 새 표본을 저장하는 경로다. 수집 없이 읽기만 하는 legacy 이력 이관, Claude OAuth/UUID 간 명시적 binding migration, 이력 삭제 lifecycle, 동시 계정 소비, Windows 이관/실패 복구/예측 수치 검증은 남아 있다. Mac 설정 파일을 Windows에 가져오는 전체 import 기능을 완료했다는 뜻은 아니다.
 - CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·컴파일·lint·실제 이력/계정·Windows UI 검증 미실행.
 - 직전 IMPL-533은 5d4f0a933으로 origin/main 푸시가 성공했다. IMPL-534도 별도 구현 커밋·푸시 후 Git 결과를 보고한다.
+
+## IMPL-535 — Materialize existing history without collecting a new sample
+
+- 이력 창 및 트레이 예측의 선택 이력 읽기에 IMPL-533/534의 계정·구간 metadata 이관을 연결했다. 현재 context와 provider owner를 확인해 읽기용 이관 입력을 만들고, 실제 게시 직전에 같은 계정 topology/config/legacy metadata인지 다시 비교한다.
+- Windows store의 loadSelection은 provider lock 아래 기존 JSON이 있을 때만 최신 문서를 이관한다. 새로운 usage observation을 추가하지 않으며 provider history JSON이 없으면 빈 선택 결과를 반환한다. 기존 lock/directory 준비 동작은 유지한다.
+- 새 표본 저장과 이관을 위한 게시가 동일한 provider/account 검사 및 보호된 파일 교체 helper를 사용하도록 정리했다. 기존 파일 내용이 바뀌거나 owner 대조가 실패하면 게시를 중단하고 caller에 실패를 전달한다. 손상된 파일을 빈 문서로 덮어쓰지 않는다.
+- 선택 read cache는 파일 SHA-256뿐 아니라 현재 Codex ownership 또는 비-Codex adoption/pair 입력도 비교한다. 이관이 발생하면 실제로 게시한 bytes의 revision을 반환하며, runtime의 기존 lease/cache 경로가 이전 이력 창과 burn 추정치를 갱신한다. 저장은 이 선택 cache를 원본 문서로 사용하지 않는다.
+- 기존 history 수집 중지 설정을 변경하지 않았으며, 새 표본을 기다리지 않고 이미 존재하는 이력을 사용할 수 있도록 작성한 단계다. 실제 UI 재조회, 파일 권한/잠금/경합, 계정 전환, read cache 비용은 Windows에서 확인해야 한다.
+- Claude OAuth/UUID 간 binding migration, 이력 삭제 lifecycle, 동시 계정 소비, 전체 설정/이력 import 및 Windows 실행 검증은 남아 있다. W05/WIN-020 전체 완료가 아니다.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·컴파일·lint·실제 이력/계정·Windows UI·성능 검증 미실행.
+- 직전 IMPL-534는 3b52261cf로 origin/main 푸시가 성공했다. IMPL-535도 별도 구현 커밋·푸시 후 Git 결과를 보고한다.

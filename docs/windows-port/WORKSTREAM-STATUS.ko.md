@@ -1,5 +1,7 @@
 # Windows 전용 제품 작업 현황
 
+- IMPL-535: 새 관측 없이 기존 이력을 여는 경로에도 계정/pair 이관 연결. 파일·owner·이관 근거가 같은 경우에만 read cache 재사용, 이관 후 실제 게시 데이터 revision을 전달하고 이전 chart lease 무효화. 없는 provider history JSON은 만들지 않음. CODE_WRITTEN_UNVERIFIED.
+
 - IMPL-534: 비-Codex 계정 이력 및 legacy session/weekly pair metadata 이관 연결. Claude 이메일 키 이관과 OAuth/UUID owner 분리, unscoped adoption의 Claude veto, pair 충돌 무효화 및 Windows legacy defaults 선택 읽기 작성. CODE_WRITTEN_UNVERIFIED.
 
 - IMPL-533: Codex의 legacy email/canonical/opaque 및 unscoped 이력 이관 규칙을 Core로 이전하고 Windows의 새 표본 저장에 연결. 저장 직전 현재 계정과 이관 근거를 재대조하도록 작성. Claude/generic 이관·삭제 lifecycle·동시 계정 소비 및 실행 검증은 남아 있음. CODE_WRITTEN_UNVERIFIED.

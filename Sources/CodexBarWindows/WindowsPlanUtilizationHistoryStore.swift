@@ -21,6 +21,8 @@ struct WindowsPlanUtilizationHistoryStore: Sendable {
         let revision: Data?
         let histories: [PlanUtilizationHistoryCore.Series]
         let pairIdentity: String?
+        let codexMigrationOwnership: CodexHistoricalOwnershipContext?
+        let accountMigration: PlanUtilizationAccountMigration?
     }
 
     init(directory: URL = Self.defaultDirectory) { self.directory = directory }
@@ -35,16 +37,32 @@ struct WindowsPlanUtilizationHistoryStore: Sendable {
         }
     }
 
-    func loadSelection(providerID: ProviderInstanceID, accountKey: String?, previous: Selection?) throws -> Selection {
+    /// Materializes existing history only; it neither creates a missing history file nor adds observations.
+    func loadSelection(providerID: ProviderInstanceID, accountKey: String?, previous: Selection?,
+                       codexMigrationOwnership: CodexHistoricalOwnershipContext? = nil,
+                       accountMigration: PlanUtilizationAccountMigration? = nil,
+                       beforePublish: (() throws -> Void)? = nil) throws -> Selection {
         try self.withLock(providerID: providerID) {
-            let raw = try self.readRaw(self.fileURL(providerID: providerID))
-            let revision = raw.map { Data(SHA256.hash(data: $0)) }
+            let fileURL = self.fileURL(providerID: providerID)
+            let raw = try self.readRaw(fileURL)
+            var revision = raw.map { Data(SHA256.hash(data: $0)) }
             if let previous, previous.providerID == providerID, previous.accountKey == accountKey,
-               previous.revision == revision { return previous }
-            let document = try self.decode(raw)
+               previous.revision == revision, previous.codexMigrationOwnership == codexMigrationOwnership,
+               previous.accountMigration == accountMigration { return previous }
+            var document = try self.decode(raw)
+            if raw != nil {
+                let before = document
+                document = try self.materialize(document, providerID: providerID, accountKey: accountKey,
+                    codexOwnership: codexMigrationOwnership, accountMigration: accountMigration)
+                if document != before {
+                    let data = try self.publish(document, to: fileURL, previous: raw, beforePublish: beforePublish)
+                    revision = Data(SHA256.hash(data: data))
+                }
+            }
             return Selection(providerID: providerID, accountKey: accountKey, revision: revision,
                 histories: document.histories(accountKey: accountKey),
-                pairIdentity: document.sessionEquivalentWindowPairIdentities[accountKey ?? "__codexbar_unscoped__"])
+                pairIdentity: document.sessionEquivalentWindowPairIdentities[accountKey ?? "__codexbar_unscoped__"],
+                codexMigrationOwnership: codexMigrationOwnership, accountMigration: accountMigration)
         }
     }
 
@@ -60,32 +78,47 @@ struct WindowsPlanUtilizationHistoryStore: Sendable {
             let previous = try self.readRaw(fileURL)
             var document = try self.decode(previous)
             let before = document
-            if let ownership = codexMigrationOwnership {
-                guard providerID == .codex, let accountKey, accountKey == ownership.canonicalKey else {
-                    throw Failure.changed
-                }
-                document = try CodexPlanUtilizationHistoryMigration.materialize(document, ownership: ownership)
-            }
-            if let migration = accountMigration {
-                guard codexMigrationOwnership == nil, providerID.firstPartyProvider == migration.provider else {
-                    throw Failure.changed
-                }
-                document = try migration.materialize(document, accountKey: accountKey)
-            }
+            document = try self.materialize(document, providerID: providerID, accountKey: accountKey,
+                codexOwnership: codexMigrationOwnership, accountMigration: accountMigration)
             try document.record(samples, accountKey: accountKey, updatePreferred: updatePreferred,
                 identityTransition: identityTransition)
             guard document != before else { return document }
-            let encoder = JSONEncoder()
-            encoder.dateEncodingStrategy = .iso8601
-            encoder.outputFormatting = [.sortedKeys]
-            let data = try encoder.encode(document)
-            guard data.count <= Self.maximumFileBytes else { throw Failure.tooLarge }
-            try WindowsCredentialFileWriter.writePrivate(data, to: fileURL, beforePublish: { _ in
-                guard try self.readRaw(fileURL) == previous else { throw Failure.changed }
-                try beforePublish?()
-            })
+            _ = try self.publish(document, to: fileURL, previous: previous, beforePublish: beforePublish)
             return document
         }
+    }
+
+    private func materialize(_ document: PlanUtilizationHistoryCore.Document,
+                             providerID: ProviderInstanceID, accountKey: String?,
+                             codexOwnership: CodexHistoricalOwnershipContext?,
+                             accountMigration: PlanUtilizationAccountMigration?) throws
+        -> PlanUtilizationHistoryCore.Document
+    {
+        if let ownership = codexOwnership {
+            guard accountMigration == nil, providerID == .codex,
+                  let accountKey, accountKey == ownership.canonicalKey else { throw Failure.changed }
+            return try CodexPlanUtilizationHistoryMigration.materialize(document, ownership: ownership)
+        }
+        if let migration = accountMigration {
+            guard providerID.firstPartyProvider == migration.provider else { throw Failure.changed }
+            return try migration.materialize(document, accountKey: accountKey)
+        }
+        return document
+    }
+
+    private func publish(_ document: PlanUtilizationHistoryCore.Document, to fileURL: URL,
+                         previous: Data?, beforePublish: (() throws -> Void)?) throws -> Data {
+        try document.validate()
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        encoder.outputFormatting = [.sortedKeys]
+        let data = try encoder.encode(document)
+        guard data.count <= Self.maximumFileBytes else { throw Failure.tooLarge }
+        try WindowsCredentialFileWriter.writePrivate(data, to: fileURL, beforePublish: { _ in
+            guard try self.readRaw(fileURL) == previous else { throw Failure.changed }
+            try beforePublish?()
+        })
+        return data
     }
 
     private func decode(_ data: Data?) throws -> PlanUtilizationHistoryCore.Document {

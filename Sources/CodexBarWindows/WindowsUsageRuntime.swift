@@ -3776,12 +3776,21 @@ public actor WindowsUsageRuntime {
         }
     }
 
-    private func loadPlanHistorySelection(providerID: ProviderInstanceID, accountKey: String?) throws
+    private func loadPlanHistorySelection(providerID: ProviderInstanceID, accountKey: String?,
+                                          context: PlanHistoryContext) throws
         -> WindowsPlanUtilizationHistoryStore.Selection
     {
         let previous = self.planHistoryReadSelections[providerID]
+        let inputs = try self.planHistoryReadMigrationInputs(providerID: providerID, accountKey: accountKey, context: context)
         let selection = try self.planUtilizationHistoryStore.loadSelection(providerID: providerID,
-            accountKey: accountKey, previous: previous)
+            accountKey: accountKey, previous: previous,
+            codexMigrationOwnership: inputs.codexOwnership, accountMigration: inputs.accountMigration,
+            beforePublish: {
+                guard try self.planHistoryReadMigrationInputs(providerID: providerID,
+                    accountKey: accountKey, context: context) == inputs else {
+                    throw WindowsPlanUtilizationHistoryStore.Failure.changed
+                }
+            })
         if let previous, previous.revision != selection.revision || previous.accountKey != selection.accountKey {
             self.planHistoryContexts[providerID]?.validity.invalidate()
         }
@@ -3818,7 +3827,7 @@ public actor WindowsUsageRuntime {
             case .unscoped: key = nil
             case .unavailable: return nil
             }
-            let selection = try self.loadPlanHistorySelection(providerID: providerID, accountKey: key)
+            let selection = try self.loadPlanHistorySelection(providerID: providerID, accountKey: key, context: context)
             guard workDays == WindowsPredictivePaceWarningSettings.load().weeklyProgressWorkDays,
                   try self.planHistoryContextMatches(context, provider: provider) else {
                 self.invalidatePlanHistoryContexts(); return nil
@@ -3856,7 +3865,7 @@ public actor WindowsUsageRuntime {
             case .unscoped: accountKey = nil
             case .unavailable: return .unavailable(.noCurrentUsage)
             }
-            let selection = try self.loadPlanHistorySelection(providerID: providerID, accountKey: accountKey)
+            let selection = try self.loadPlanHistorySelection(providerID: providerID, accountKey: accountKey, context: context)
             let isValid = context.validity.capture()
             let now = Date()
             let series = try PlanUtilizationHistoryChart.make(provider: provider, histories: selection.histories,
@@ -3892,6 +3901,35 @@ public actor WindowsUsageRuntime {
             self.invalidatePlanHistoryContexts()
             return .unavailable(.loadFailed)
         }
+    }
+
+    private struct PlanHistoryReadMigrationInputs: Equatable {
+        let codexOwnership: CodexHistoricalOwnershipContext?
+        let accountMigration: PlanUtilizationAccountMigration?
+    }
+
+    private func planHistoryReadMigrationInputs(providerID: ProviderInstanceID, accountKey: String?,
+                                               context: PlanHistoryContext) throws -> PlanHistoryReadMigrationInputs {
+        let expectedOwner: PlanHistoryOwner = accountKey.map { .scoped($0) } ?? .unscoped
+        guard let provider = providerID.firstPartyProvider, context.owner == expectedOwner,
+              try self.planHistoryContextMatches(context, provider: provider) else {
+            throw WindowsPlanUtilizationHistoryStore.Failure.changed
+        }
+        if provider == .codex {
+            return PlanHistoryReadMigrationInputs(
+                codexOwnership: try self.codexPlanHistoryMigrationOwnership(context), accountMigration: nil)
+        }
+        guard let config = try self.configStore.load(), config.enabledProviders().contains(providerID),
+              try self.pluginProviderRevision(config.providerConfig(for: providerID)) == context.providerRevision else {
+            throw WindowsPlanUtilizationHistoryStore.Failure.changed
+        }
+        let accounts = try TokenAccountCLIContext(
+            selection: TokenAccountCLISelection(label: nil, index: nil, allAccounts: false),
+            config: config, verbose: false)
+        let tokenAccount = try accounts.resolvedAccounts(for: provider).first
+        return PlanHistoryReadMigrationInputs(codexOwnership: nil,
+            accountMigration: self.planHistoryAccountMigration(provider: provider, result: context.result,
+                accountKey: accountKey, tokenAccount: tokenAccount, claudeAccountUUID: context.claudeAccountUUID))
     }
 
     /// Select legacy metadata only for the current provider/owner in the Windows settings suite.
