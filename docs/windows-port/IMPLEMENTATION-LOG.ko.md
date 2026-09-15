@@ -5089,3 +5089,14 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - 공급자를 신뢰할 수 없는 로드 실패 파일의 삭제는 이력 파일을 탐색하거나 삭제하지 않는다. 이전 소스 백업도 유지하며, 소스 재설치/백업 복원으로 이미 삭제한 이력을 복구할 수 있다고 안내하지 않는다. 실제 사용자 데이터 삭제는 실행하지 않았다.
 - CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·컴파일·lint·실제 파일/잠금/경합/부분 실패·Windows 삭제 UI 검증 미실행. 플러그인의 새 이력 수집, Windows credential-file 기반 Claude binding, 동시 계정 소비 및 Windows 제품 graph/패키징과 전체 실행 검증은 남아 있다.
 - 직전 IMPL-538은 577889a00으로 origin/main 푸시가 성공했다. IMPL-539도 별도 구현 커밋·푸시 후 Git 결과를 보고한다.
+
+## IMPL-540 — Add a native widget host executable and private launch delivery
+
+- Windows/Widgets/Native/Host에 x64/ARM64 C++/WinRT Application 프로젝트와 asInvoker manifest를 추가했다. 기존 WidgetProvider·WidgetPublisher·host process/session runner를 exe 진입점에 포함하며 backend ABI DLL 프로젝트는 유지한다. Microsoft의 현재 위젯 문서와 실제 NuGet nuspec/props/targets를 읽어 Widgets 2.0.5·Base 2.0.4·C++/WinRT 및 필요한 build 도구의 고정 목록을 작성했다. 다운로드한 패키지 소스는 메모리에서 읽었으며 설치하거나 실행하지 않았다.
+- WidgetLaunchChannel은 상속된 client byte pipe의 server process를 package full name·Windows session·sibling CodexBarWindows.exe image 및 생존 상태로 대조한 뒤 시작 데이터를 읽는다. 정상 standalone/-Embedding 실행을 성공으로 처리하지 않으며 전용 시작 모드만 받는다. 실제 launcher 생성 및 닫힌 앱의 OS activation 진입 연결은 다음 필수 작업이다.
+- Swift connection에 기존 JSON-only bootstrap과 한 번의 event 전달 제한을 공유하는 prepareLaunchDelivery를 추가했다. CBL1/길이/원격 event 값/JSON frame을 작성하고 native에서 최대 4096바이트 및 총 30초 제한으로 받는다. 이벤트 소유권은 인증한 시작 channel에서 전달받으며 기존 decoder의 JSON handle 일치 대조도 유지한다.
+- 시작 packet 이후 EOF/backend 종료를 sticky cancellation slot에 전달하고, 추가 데이터는 protocol 오류로 처리한다. overlapped 작업은 취소 후 해당 작업의 완료를 기다리고 monitor를 join하도록 작성했다. host 진입점은 기존 COM/caller/worker/receiver/철회 결과와 monitor 결과를 종료 코드에 연결하고 민감한 payload를 로그에 쓰지 않는다.
+- Build-WidgetHost.ps1은 명시적 MSBuild/NuGet 경로·설치 SDK 버전·검토한 caller policy를 받고 새로운 output/package/object 디렉터리에서 순차 작업하도록 작성했다. caller policy는 exe에 고정하며 package/file 이름 wildcard를 만들지 않는다. exe byte identity·정책/패키지 목록 hash와 도구 정보를 receipt에 남기지만 서명된 빌드 증거로 취급하지 않는다.
+- component self-contained targets의 사용과 위젯 OS 등록 완료는 구분한다. 확인한 Base targets는 Widgets proxy/stub 자동 등록을 제외한다. 실제 MSIX COM/6종 widget 선언·broker 정책·runtime/license 배포·signing inventory, 앱 launcher와 재연결·OS activation 및 WinUI/전체 Windows-only 제품 graph는 남아 있다.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. NuGet restore·MSBuild·컴파일·테스트·lint·manifest 평가·실제 패키지/pipe/COM/UI 검증 미실행. guidelines/COMMITS.md는 현재 저장소에 없어 제공된 핵심 커밋 규칙을 적용했다.
+- 직전 IMPL-539는 007751465로 origin/main 푸시가 성공했다. IMPL-540도 별도 구현 커밋·푸시 후 Git 결과를 보고한다.

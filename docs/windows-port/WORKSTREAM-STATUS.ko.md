@@ -1,5 +1,7 @@
 # Windows 전용 제품 작업 현황
 
+- IMPL-540: 기존 native 위젯 runner를 포함하는 C++/WinRT host exe 프로젝트·고정 NuGet 목록·빌드 receipt 경로 작성. 같은 package/session/backend image를 확인하는 상속 파이프 수신, Swift 시작 frame, 취소/종료 연결 추가. 실제 앱 launcher·OS activation·MSIX 등록은 남아 있음. CODE_WRITTEN_UNVERIFIED.
+
 - IMPL-539: 확인된 plugin ID의 사용 이력 파일을 삭제 검토·잠금·내용 대조·파일 삭제에 포함. 삭제 후 해당 이력 cache/lease와 대기 알림 무효화, 한국어·영어 확인 문구 연결. ID를 모르는 로드 실패 파일과 일반 token 계정 삭제는 기존 보존 범위 유지. CODE_WRITTEN_UNVERIFIED.
 
 - IMPL-538: quota/pace 경고의 owner·설정·구간별 delivery lease와 native 표시/overlay 유효성 연결. 성공한 owner 관측 뒤 평가, 비동기 후 owner 재대조, Claude pace의 token/email 우회 차단, 지연 알림 ETA 절대 시각 및 만료 처리 작성. CODE_WRITTEN_UNVERIFIED.

@@ -122,10 +122,24 @@ actor WindowsWidgetBackendConnection {
 
     /// Prepare one payload for the authenticated target. If delivery fails, dispose this connection/host.
     func prepareBootstrap(processHandleAddress: UInt) async throws -> Data {
+        try await self.prepareBootstrap(processHandleAddress: processHandleAddress, launchFrame: false)
+    }
+
+    /// The native executable consumes this framed delivery from its inherited launch pipe.
+    /// It shares the one-transfer rule with prepareBootstrap; callers must choose one format.
+    func prepareLaunchDelivery(processHandleAddress: UInt) async throws -> Data {
+        try await self.prepareBootstrap(processHandleAddress: processHandleAddress, launchFrame: true)
+    }
+
+    private func prepareBootstrap(processHandleAddress: UInt, launchFrame: Bool) async throws -> Data {
         guard !self.stopRequested, !self.started else { throw Failure.closed }
         let pipeName = await self.server.pipeName
         let remote = try self.duplicateSignalForTrustedHost(processHandleAddress: processHandleAddress)
         do {
+            if launchFrame {
+                return try WindowsWidgetBootstrap.encodeLaunchDelivery(sessionID: self.sessionID,
+                    pipeName: pipeName, event: remote)
+            }
             return try WindowsWidgetBootstrap.encode(sessionID: self.sessionID, pipeName: pipeName, event: remote)
         } catch {
             // A remote handle was already transferred. This connection cannot safely prepare another payload.

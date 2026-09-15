@@ -49,3 +49,4 @@ docs/.astro/
 # Native Windows widget build outputs
 /Windows/Widgets/Native/out/
 /Windows/Widgets/Native/obj/
+/Windows/Widgets/Native/Host/packages/

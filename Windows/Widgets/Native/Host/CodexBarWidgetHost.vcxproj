@@ -1,0 +1,79 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup>
+    <CodexBarNuGetPackagesDir Condition="'$(CodexBarNuGetPackagesDir)'==''">$(MSBuildThisFileDirectory)packages\</CodexBarNuGetPackagesDir>
+    <CppWinRTPackage>$(CodexBarNuGetPackagesDir)Microsoft.Windows.CppWinRT.2.0.250303.1\</CppWinRTPackage>
+    <AppSDKBasePackage>$(CodexBarNuGetPackagesDir)Microsoft.WindowsAppSDK.Base.2.0.4\</AppSDKBasePackage>
+    <AppSDKWidgetsPackage>$(CodexBarNuGetPackagesDir)Microsoft.WindowsAppSDK.Widgets.2.0.5\</AppSDKWidgetsPackage>
+  </PropertyGroup>
+  <Import Project="$(CppWinRTPackage)build\native\Microsoft.Windows.CppWinRT.props" Condition="Exists('$(CppWinRTPackage)build\native\Microsoft.Windows.CppWinRT.props')" />
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Debug|x64"><Configuration>Debug</Configuration><Platform>x64</Platform></ProjectConfiguration>
+    <ProjectConfiguration Include="Release|x64"><Configuration>Release</Configuration><Platform>x64</Platform></ProjectConfiguration>
+    <ProjectConfiguration Include="Debug|ARM64"><Configuration>Debug</Configuration><Platform>ARM64</Platform></ProjectConfiguration>
+    <ProjectConfiguration Include="Release|ARM64"><Configuration>Release</Configuration><Platform>ARM64</Platform></ProjectConfiguration>
+  </ItemGroup>
+  <PropertyGroup Label="Globals">
+    <ProjectGuid>{89B1A5CB-32C9-481C-A37E-B31B866593C5}</ProjectGuid>
+    <Keyword>Win32Proj</Keyword>
+    <RootNamespace>CodexBarWidgetHost</RootNamespace>
+    <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
+    <WindowsTargetPlatformMinVersion>10.0.22000.0</WindowsTargetPlatformMinVersion>
+    <CppWinRTOptimized>true</CppWinRTOptimized>
+    <CppWinRTRootNamespaceAutoMerge>true</CppWinRTRootNamespaceAutoMerge>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+  <PropertyGroup Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <PlatformToolset>v143</PlatformToolset>
+    <CharacterSet>Unicode</CharacterSet>
+    <UseDebugLibraries Condition="'$(Configuration)'=='Debug'">true</UseDebugLibraries>
+    <UseDebugLibraries Condition="'$(Configuration)'=='Release'">false</UseDebugLibraries>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <PropertyGroup>
+    <OutDir>$(MSBuildThisFileDirectory)..\out\host\$(Platform)\$(Configuration)\</OutDir>
+    <IntDir>$(MSBuildThisFileDirectory)..\obj\host\$(Platform)\$(Configuration)\</IntDir>
+    <IntermediateOutputPath>$(IntDir)</IntermediateOutputPath>
+    <TargetName>CodexBarWidgetHost</TargetName>
+    <WindowsAppSDKSelfContained>true</WindowsAppSDKSelfContained>
+    <AppxPackage>false</AppxPackage>
+    <EnableMsixTooling>false</EnableMsixTooling>
+  </PropertyGroup>
+  <Import Project="$(AppSDKBasePackage)build\native\Microsoft.WindowsAppSDK.Base.props" Condition="Exists('$(AppSDKBasePackage)build\native\Microsoft.WindowsAppSDK.Base.props')" />
+  <Import Project="$(AppSDKWidgetsPackage)build\native\Microsoft.WindowsAppSDK.Widgets.props" Condition="Exists('$(AppSDKWidgetsPackage)build\native\Microsoft.WindowsAppSDK.Widgets.props')" />
+  <ItemDefinitionGroup>
+    <ClCompile>
+      <LanguageStandard>stdcpp20</LanguageStandard>
+      <ExceptionHandling>Sync</ExceptionHandling>
+      <WarningLevel>Level4</WarningLevel>
+      <SDLCheck>true</SDLCheck>
+      <ConformanceMode>true</ConformanceMode>
+      <PreprocessorDefinitions>WIN32_LEAN_AND_MEAN;NOMINMAX;UNICODE;_UNICODE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <AdditionalIncludeDirectories>$(CodexBarWidgetPolicyDirectory);$(MSBuildThisFileDirectory)..;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalOptions>/utf-8 %(AdditionalOptions)</AdditionalOptions>
+      <RuntimeLibrary Condition="'$(Configuration)'=='Debug'">MultiThreadedDebugDLL</RuntimeLibrary>
+      <RuntimeLibrary Condition="'$(Configuration)'=='Release'">MultiThreadedDLL</RuntimeLibrary>
+    </ClCompile>
+    <Link>
+      <AdditionalDependencies>runtimeobject.lib;windowsapp.lib;ole32.lib;advapi32.lib;rpcrt4.lib;shell32.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <SubSystem>Windows</SubSystem>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemGroup>
+    <ClCompile Include="..\WidgetHostMain.cpp" />
+    <ClCompile Include="..\WidgetProvider.cpp" />
+    <ClCompile Include="..\WidgetPublisher.cpp" />
+    <Manifest Include="app.manifest" />
+    <None Include="packages.config" />
+  </ItemGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+  <Import Project="$(CppWinRTPackage)build\native\Microsoft.Windows.CppWinRT.targets" Condition="Exists('$(CppWinRTPackage)build\native\Microsoft.Windows.CppWinRT.targets')" />
+  <Import Project="$(AppSDKWidgetsPackage)build\native\Microsoft.WindowsAppSDK.Widgets.targets" Condition="Exists('$(AppSDKWidgetsPackage)build\native\Microsoft.WindowsAppSDK.Widgets.targets')" />
+  <Import Project="$(AppSDKBasePackage)build\native\Microsoft.WindowsAppSDK.Base.targets" Condition="Exists('$(AppSDKBasePackage)build\native\Microsoft.WindowsAppSDK.Base.targets')" />
+  <Target Name="RequireWidgetHostInputs" BeforeTargets="PrepareForBuild">
+    <Error Condition="!Exists('$(CppWinRTPackage)build\native\Microsoft.Windows.CppWinRT.targets') Or !Exists('$(AppSDKWidgetsPackage)build\native\Microsoft.WindowsAppSDK.Widgets.targets') Or !Exists('$(AppSDKBasePackage)build\native\Microsoft.WindowsAppSDK.Base.targets')" Text="Restore Native/Host/packages.config to CodexBarNuGetPackagesDir before building the widget host." />
+    <Error Condition="'$(CodexBarWidgetPolicyDirectory)'=='' Or !Exists('$(CodexBarWidgetPolicyDirectory)\CodexBarWidgetCallerPolicy.h')" Text="Use Build-WidgetHost.ps1 with an explicit installed Widgets caller policy." />
+  </Target>
+</Project>
