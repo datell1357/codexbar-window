@@ -51,12 +51,20 @@ struct WindowsPlanUtilizationHistoryStore: Sendable {
     @discardableResult
     func record(providerID: ProviderInstanceID, samples: [PlanUtilizationHistoryCore.Series],
                 accountKey: String?, updatePreferred: Bool,
-                identityTransition: PlanUtilizationHistoryCore.IdentityTransition = .fixed) throws -> PlanUtilizationHistoryCore.Document {
+                identityTransition: PlanUtilizationHistoryCore.IdentityTransition = .fixed,
+                codexMigrationOwnership: CodexHistoricalOwnershipContext? = nil,
+                beforePublish: (() throws -> Void)? = nil) throws -> PlanUtilizationHistoryCore.Document {
         try self.withLock(providerID: providerID) {
             let fileURL = self.fileURL(providerID: providerID)
             let previous = try self.readRaw(fileURL)
             var document = try self.decode(previous)
             let before = document
+            if let ownership = codexMigrationOwnership {
+                guard providerID == .codex, let accountKey, accountKey == ownership.canonicalKey else {
+                    throw Failure.changed
+                }
+                document = try CodexPlanUtilizationHistoryMigration.materialize(document, ownership: ownership)
+            }
             try document.record(samples, accountKey: accountKey, updatePreferred: updatePreferred,
                 identityTransition: identityTransition)
             guard document != before else { return document }
@@ -67,6 +75,7 @@ struct WindowsPlanUtilizationHistoryStore: Sendable {
             guard data.count <= Self.maximumFileBytes else { throw Failure.tooLarge }
             try WindowsCredentialFileWriter.writePrivate(data, to: fileURL, beforePublish: { _ in
                 guard try self.readRaw(fileURL) == previous else { throw Failure.changed }
+                try beforePublish?()
             })
             return document
         }

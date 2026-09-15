@@ -5009,3 +5009,15 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - 메뉴 재구성은 native tracking 재진입 방식이므로 깜빡임, highlight/keyboard 탐색, 화면 구성 변경, 취소/닫기와 게시 경합을 Windows에서 확인해야 한다. 하위 메뉴를 연 동안에는 이전 snapshot이 유지되며 root highlight를 완전히 복원하는 구현은 포함하지 않았다. legacy migration/adoption, 이력 삭제 lifecycle 및 W05 전체 검증은 남아 있다.
 - CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·컴파일·lint·UI·실제 계정·성능 검증 미실행.
 - 직전 IMPL-531은 c519e56c3로 origin/main 푸시가 성공했다. IMPL-532도 별도 구현 커밋·푸시 후 Git 결과를 보고한다.
+
+## IMPL-533 — Materialize legacy Codex plan history under current ownership
+
+- 원본 UsageStore+PlanUtilization의 Codex materialization 규칙을 CodexPlanUtilizationHistoryMigration으로 이전했다. canonical/email hash 계열의 연결과 인접 이메일 scope ambiguity를 구분하며 preferred key만으로 owner를 선택하지 않는다.
+- opaque 이력은 session 이력과 둘 이상의 weekly reset, 현재 reset과 120초 미만 차이인 표본, 과거의 다른 reset, 유일한 후보 및 scoped 충돌 부재를 요구한다. 인접 다중 계정 veto가 있으면 opaque 복구를 보류한다.
+- unscoped 이력은 관측 기간을 가장 긴 series 구간만큼 확장하고 그 기간에 겹치는 scoped key들에 원본 strict single-account continuity를 적용한다. 이미 canonical 키만 있는 경우 재병합하지 않는다.
+- 전체 이관 결과는 문서 복사본에서 시간별 reducer와 최대 표본 제한을 적용해 구성한다. 병합/문서 검사 성공 뒤 복사본의 이전 bucket과 해당 pair metadata를 정리하며, 대상 밖 이력은 유지한다. 원본 파일을 삭제하거나 이 Mac의 실제 계정 이력에 접근하지 않았다.
+- Windows 저장은 provider lock 아래 최신 문서를 읽고 이관과 새 관측 기록을 하나의 보호된 파일 교체로 게시하도록 연결했다. 대상 provider/account key를 확인하며, 저장 직전 기존 파일 내용과 runtime owner·현재 계정 topology가 변했으면 게시를 중단하도록 작성했다. 설정한 token 계정은 기존 UUID bucket을 유지한다.
+- runtime은 새 성공 표본의 이관에 현재 Codex reconciliation/visible-account projection을 사용하고 동일 근거를 게시 직전에 다시 구한다. 일반 이력 저장에도 현재 context 확인을 연결했다. 이 경로는 provider probe를 새로 호출하지 않는다.
+- 이번 연결은 새 표본을 기록하는 경로다. 신규 유효 표본 없이 읽기만 하는 legacy 이력의 materialization, Claude/generic 계정 및 window-pair migration, 삭제 lifecycle, 동시 계정 소비, 실제 충돌·중단 복구·수치 일치 검증은 남아 있다. W05/WIN-020 완료가 아니다.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·컴파일·lint·이력 이관 실행·실제 계정·Windows UI 검증 미실행.
+- 직전 IMPL-532는 459738947로 origin/main 푸시가 성공했다. IMPL-533도 별도 구현 커밋·푸시 후 Git 결과를 보고한다.

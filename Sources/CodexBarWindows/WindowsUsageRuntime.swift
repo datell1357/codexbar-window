@@ -3894,6 +3894,32 @@ public actor WindowsUsageRuntime {
         }
     }
 
+    /// Migration needs the current account topology as well as the selected owner's key.
+    /// Recompute it before publication so an external account switch cannot authorize an old merge.
+    private func codexPlanHistoryMigrationOwnership(_ expected: PlanHistoryContext) throws
+        -> CodexHistoricalOwnershipContext?
+    {
+        guard case let .scoped(key) = expected.owner,
+              try self.planHistoryContextMatches(expected, provider: .codex),
+              let config = try self.configStore.load(), config.enabledProviders().contains(.codex),
+              try self.pluginProviderRevision(config.providerConfig(for: .codex)) == expected.providerRevision else {
+            throw WindowsPlanUtilizationHistoryStore.Failure.changed
+        }
+        let accounts = try TokenAccountCLIContext(
+            selection: TokenAccountCLISelection(label: nil, index: nil, allAccounts: false),
+            config: config, verbose: false)
+        // Configured token accounts retain their distinct UUID-based buckets.
+        guard try accounts.resolvedAccounts(for: .codex).first == nil else { return nil }
+        let current = accounts.codexAccountContextSnapshot()
+        let projection = current.visibleAccounts
+        let visible = projection.visibleAccounts.first { $0.id == projection.activeVisibleAccountID }
+        let selected = visible.map { current.selecting(activeSource: $0.selectionSource) } ?? current
+        let ownership = self.codexHistoricalOwnership(snapshot: expected.result.usage,
+            codexVisibleAccount: visible, codexAccountContext: selected)
+        guard ownership.canonicalKey == key else { throw WindowsPlanUtilizationHistoryStore.Failure.changed }
+        return ownership
+    }
+
     private func planHistoryContextMatches(_ expected: PlanHistoryContext, provider: UsageProvider) throws -> Bool {
         let id = provider.instanceID
         guard !self.shuttingDown, !Task.isCancelled,
@@ -3958,12 +3984,13 @@ public actor WindowsUsageRuntime {
                 return
             }
             self.planHistoryContexts[id]?.validity.invalidate()
-            self.planHistoryContexts[id] = PlanHistoryContext(token: UUID(), owner: owner,
+            let historyContext = PlanHistoryContext(token: UUID(), owner: owner,
                 providerRevision: revision, result: result, title: title,
                 claudeAccountUUID: claudeAccountUUIDAfter,
                 claudeProfileIdentifier: provider == .claude
                     ? ClaudeOAuthCredentialsStore.credentialsProfileIdentifier(environment: environment) : nil,
                 validity: WindowsSnapshotValidity())
+            self.planHistoryContexts[id] = historyContext
             // Stopping collection must not erase or make an existing, owner-matched history unreadable.
             let alwaysTracks = ProviderDescriptorRegistry.descriptor(for: provider).history.alwaysTracksPlanUtilization
             guard alwaysTracks || WindowsPredictivePaceWarningSettings.load().historicalTrackingEnabled else {
@@ -3975,9 +4002,23 @@ public actor WindowsUsageRuntime {
                 self.planUtilizationHistoryNotices.removeValue(forKey: id)
                 return
             }
+            let migrationOwnership: CodexHistoricalOwnershipContext?
+            if provider == .codex, tokenAccount == nil {
+                migrationOwnership = try self.codexPlanHistoryMigrationOwnership(historyContext)
+            } else { migrationOwnership = nil }
             try self.planUtilizationHistoryStore.record(providerID: id, samples: projection.samples,
                 accountKey: accountKey, updatePreferred: codexVisibleAccount?.isActive ?? true,
-                identityTransition: projection.identityTransition)
+                identityTransition: projection.identityTransition,
+                codexMigrationOwnership: migrationOwnership,
+                beforePublish: {
+                    guard try self.planHistoryContextMatches(historyContext, provider: provider) else {
+                        throw WindowsPlanUtilizationHistoryStore.Failure.changed
+                    }
+                    if migrationOwnership != nil,
+                       try self.codexPlanHistoryMigrationOwnership(historyContext) != migrationOwnership {
+                        throw WindowsPlanUtilizationHistoryStore.Failure.changed
+                    }
+                })
             self.planUtilizationHistoryNotices.removeValue(forKey: id)
         } catch {
             // A history failure does not turn a successful quota fetch into an authentication/network error.
