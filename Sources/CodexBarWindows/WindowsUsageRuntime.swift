@@ -3680,6 +3680,7 @@ public actor WindowsUsageRuntime {
         claudeAccountUUIDAfter: String?,
         strategyKind: ProviderFetchKind? = nil,
         oauthHistoryOwnerIdentifier: String? = nil,
+        oauthCredentialOwner: ClaudeOAuthCredentialOwner? = nil,
         quotaWarningGeneration: UInt64)
     {
         guard !self.shuttingDown, quotaWarningGeneration == self.quotaWarningGeneration else { return }
@@ -3691,7 +3692,12 @@ public actor WindowsUsageRuntime {
         let accountDiscriminator = self.quotaAccountDiscriminator(provider: provider, snapshot: snapshot,
             codexVisibleAccount: codexVisibleAccount, tokenAccount: tokenAccount, environment: environment,
             strategyKind: strategyKind, oauthHistoryOwnerIdentifier: oauthHistoryOwnerIdentifier,
+            oauthCredentialOwner: oauthCredentialOwner,
             claudeAccountUUIDBefore: claudeAccountUUIDBefore, claudeAccountUUIDAfter: claudeAccountUUIDAfter)
+        if provider == .claude, strategyKind == .oauth || strategyKind == .cli, accountDiscriminator == nil {
+            // Do not advance a shared anonymous baseline when a credential/account observation is unresolved.
+            return
+        }
         let selection = QuotaWarningTransitionCore.candidates(provider: provider, snapshot: snapshot,
             accountDiscriminator: accountDiscriminator)
         for window in QuotaWarningWindow.allCases {
@@ -4018,14 +4024,16 @@ public actor WindowsUsageRuntime {
         let environment = accounts.environment(base: ProcessInfo.processInfo.environment, provider: provider,
             account: tokenAccount, codexActiveSourceOverride: visibleAccount?.selectionSource,
             codexAccountContext: codexContext)
-        if provider == .claude,
+        let requiresClaudeAccount = provider == .claude && ClaudeUsageOwnerResolution.requiresCLIAccountObservation(
+            strategy: expected.result.strategyKind, credentialOwner: expected.result.claudeOAuthCredentialOwner)
+        if requiresClaudeAccount,
            ClaudeOAuthCredentialsStore.credentialsProfileIdentifier(environment: environment) != expected.claudeProfileIdentifier {
             return false
         }
         let owner = self.planUtilizationHistoryOwner(provider: provider, result: expected.result,
             tokenAccount: tokenAccount, codexVisibleAccount: visibleAccount, codexAccountContext: codexContext,
             environment: environment, claudeAccountUUIDBefore: expected.claudeAccountUUID,
-            claudeAccountUUIDAfter: provider == .claude ? ClaudeAccountProfile.accountUuid(environment: environment) : nil)
+            claudeAccountUUIDAfter: requiresClaudeAccount ? ClaudeAccountProfile.accountUuid(environment: environment) : nil)
         return owner == expected.owner && owner != .unavailable
     }
 
@@ -4059,10 +4067,12 @@ public actor WindowsUsageRuntime {
                 return
             }
             self.planHistoryContexts[id]?.validity.invalidate()
+            let requiresClaudeAccount = provider == .claude && ClaudeUsageOwnerResolution.requiresCLIAccountObservation(
+                strategy: result.strategyKind, credentialOwner: result.claudeOAuthCredentialOwner)
             let historyContext = PlanHistoryContext(token: UUID(), owner: owner,
                 providerRevision: revision, result: result, title: title,
-                claudeAccountUUID: claudeAccountUUIDAfter,
-                claudeProfileIdentifier: provider == .claude
+                claudeAccountUUID: requiresClaudeAccount ? claudeAccountUUIDAfter : nil,
+                claudeProfileIdentifier: requiresClaudeAccount
                     ? ClaudeOAuthCredentialsStore.credentialsProfileIdentifier(environment: environment) : nil,
                 validity: WindowsSnapshotValidity())
             self.planHistoryContexts[id] = historyContext
@@ -4120,19 +4130,18 @@ public actor WindowsUsageRuntime {
         func digest(_ value: String) -> String {
             SHA256.hash(data: Data(value.utf8)).map { String(format: "%02x", $0) }.joined()
         }
-        if provider == .claude, result.strategyKind == .oauth || result.strategyKind == .cli {
-            let observedBefore = normalized(claudeAccountUUIDBefore)
-            let observedAfter = normalized(claudeAccountUUIDAfter)
-            guard observedBefore == observedAfter else { return .unavailable }
-            if let before = observedBefore,
-               let accountID = UUID(uuidString: before) {
-                let profile = ClaudeOAuthCredentialsStore.credentialsProfileIdentifier(environment: environment)
-                return .scoped(digest("claude:active-account:v3:\(profile):\(accountID.uuidString.lowercased())"))
-            }
-            if result.strategyKind == .oauth {
-                guard let owner = normalized(result.claudeOAuthHistoryOwnerIdentifier), owner.utf8.count == 64,
-                      owner.utf8.allSatisfy({ (48...57).contains($0) || (97...102).contains($0) }) else { return .unavailable }
+        if provider == .claude {
+            switch ClaudeUsageOwnerResolution.resolve(strategy: result.strategyKind,
+                credentialOwner: result.claudeOAuthCredentialOwner,
+                historyOwnerIdentifier: result.claudeOAuthHistoryOwnerIdentifier,
+                accountUUIDBefore: claudeAccountUUIDBefore, accountUUIDAfter: claudeAccountUUIDAfter) {
+            case let .oauth(owner):
                 return .scoped("__claude_oauth__:" + digest("claude:oauth-history-owner:v2:" + owner))
+            case let .cliAccount(uuid):
+                let profile = ClaudeOAuthCredentialsStore.credentialsProfileIdentifier(environment: environment)
+                return .scoped(digest("claude:active-account:v3:\(profile):\(uuid)"))
+            case .unavailable: return .unavailable
+            case .cliWithoutAccount, .other: break
             }
         }
         if let tokenAccount, !(provider == .claude && result.strategyKind == .cli) {
@@ -4281,7 +4290,8 @@ public actor WindowsUsageRuntime {
         codexAccountContext: CodexAccountContextSnapshot?,
         environment: [String: String],
         claudeAccountUUIDBefore: String?, claudeAccountUUIDAfter: String?,
-        strategyKind: ProviderFetchKind?, oauthHistoryOwnerIdentifier: String?)
+        strategyKind: ProviderFetchKind?, oauthHistoryOwnerIdentifier: String?,
+        oauthCredentialOwner: ClaudeOAuthCredentialOwner?)
     {
         let settings = WindowsPredictivePaceWarningSettings.load()
         guard !self.shuttingDown,
@@ -4303,6 +4313,7 @@ public actor WindowsUsageRuntime {
             provider: provider, snapshot: snapshot, codexVisibleAccount: codexVisibleAccount,
             tokenAccount: tokenAccount, environment: environment,
             strategyKind: strategyKind, oauthHistoryOwnerIdentifier: oauthHistoryOwnerIdentifier,
+            oauthCredentialOwner: oauthCredentialOwner,
             claudeAccountUUIDBefore: claudeAccountUUIDBefore, claudeAccountUUIDAfter: claudeAccountUUIDAfter)
         let owner: String? = if provider == .codex {
             resolved
@@ -4393,23 +4404,24 @@ public actor WindowsUsageRuntime {
     private func quotaAccountDiscriminator(provider: UsageProvider, snapshot: UsageSnapshot,
         codexVisibleAccount: CodexVisibleAccount?, tokenAccount: ProviderTokenAccount?, environment: [String: String],
         strategyKind: ProviderFetchKind?, oauthHistoryOwnerIdentifier: String?,
+        oauthCredentialOwner: ClaudeOAuthCredentialOwner?,
         claudeAccountUUIDBefore: String?, claudeAccountUUIDAfter: String?) -> String? {
+        if provider == .claude {
+            switch ClaudeUsageOwnerResolution.resolve(strategy: strategyKind, credentialOwner: oauthCredentialOwner,
+                historyOwnerIdentifier: oauthHistoryOwnerIdentifier,
+                accountUUIDBefore: claudeAccountUUIDBefore, accountUUIDAfter: claudeAccountUUIDAfter) {
+            case let .oauth(owner): return "claude-oauth-owner:" + owner
+            case let .cliAccount(uuid):
+                let profile = ClaudeOAuthCredentialsStore.credentialsProfileIdentifier(environment: environment)
+                let raw = "claude:active-account:v3:\(profile):\(uuid)"
+                let digest = SHA256.hash(data: Data(raw.utf8)).map { String(format: "%02x", $0) }.joined()
+                return "claude-account:" + digest
+            case .unavailable, .cliWithoutAccount: return nil
+            case .other: break
+            }
+        }
         if let tokenAccount { return "token-account:\(tokenAccount.id.uuidString.lowercased())" }
         if provider == .codex { return self.codexSessionOwnerKey(snapshot: snapshot, visibleAccount: codexVisibleAccount, tokenAccount: nil) }
-        if provider == .claude, (strategyKind == .cli || strategyKind == .oauth),
-           let uuid = claudeAccountUUIDBefore?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased(),
-           !uuid.isEmpty,
-           uuid == claudeAccountUUIDAfter?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        {
-            let profile = ClaudeOAuthCredentialsStore.credentialsProfileIdentifier(environment: environment)
-            let raw = "claude:active-account:v3:\(profile):\(uuid.trimmingCharacters(in: .whitespacesAndNewlines).lowercased())"
-            let digest = SHA256.hash(data: Data(raw.utf8)).map { String(format: "%02x", $0) }.joined()
-            return "claude-account:\(digest)"
-        }
-        if provider == .claude, strategyKind == .oauth,
-           let owner = oauthHistoryOwnerIdentifier?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased(), !owner.isEmpty {
-            return "claude-oauth-owner:\(owner)"
-        }
         return nil
     }
 
@@ -4711,7 +4723,7 @@ public actor WindowsUsageRuntime {
                 let metadata = ProviderDescriptorRegistry.descriptor(for: provider).metadata
                 let labeledUsage: UsageSnapshot = if let codexVisibleAccount {
                     context.applyCodexVisibleAccountLabel(result.usage, account: codexVisibleAccount)
-                } else if let account {
+                } else if let account, !(provider == .claude && (result.strategyKind == .oauth || result.strategyKind == .cli)) {
                     context.applyAccountLabel(result.usage, provider: provider, account: account)
                 } else {
                     result.usage
@@ -4725,6 +4737,7 @@ public actor WindowsUsageRuntime {
                     let owner = self.quotaAccountDiscriminator(provider: provider, snapshot: result.usage,
                         codexVisibleAccount: codexVisibleAccount, tokenAccount: account, environment: env,
                         strategyKind: result.strategyKind, oauthHistoryOwnerIdentifier: result.claudeOAuthHistoryOwnerIdentifier,
+                        oauthCredentialOwner: result.claudeOAuthCredentialOwner,
                         claudeAccountUUIDBefore: claudeAccountUUIDBefore,
                         claudeAccountUUIDAfter: provider == .claude ? ClaudeAccountProfile.accountUuid(environment: env) : nil)
                     self.recordWidgetQuota(presentation: presentation, provider: provider, owner: owner,
@@ -4734,6 +4747,7 @@ public actor WindowsUsageRuntime {
                     let owner = self.quotaAccountDiscriminator(provider: provider, snapshot: result.usage,
                         codexVisibleAccount: codexVisibleAccount, tokenAccount: account, environment: env,
                         strategyKind: result.strategyKind, oauthHistoryOwnerIdentifier: result.claudeOAuthHistoryOwnerIdentifier,
+                        oauthCredentialOwner: result.claudeOAuthCredentialOwner,
                         claudeAccountUUIDBefore: claudeAccountUUIDBefore,
                         claudeAccountUUIDAfter: provider == .claude ? ClaudeAccountProfile.accountUuid(environment: env) : nil)
                     if let owner {
@@ -4756,6 +4770,7 @@ public actor WindowsUsageRuntime {
                         ? ClaudeAccountProfile.accountUuid(environment: env) : nil,
                     strategyKind: result.strategyKind,
                     oauthHistoryOwnerIdentifier: result.claudeOAuthHistoryOwnerIdentifier,
+                    oauthCredentialOwner: result.claudeOAuthCredentialOwner,
                     quotaWarningGeneration: quotaWarningGeneration)
                 self.recordPlanUtilizationSampleIfNeeded(provider: provider, result: result, config: config,
                     tokenAccount: account, codexVisibleAccount: codexVisibleAccount,
@@ -4779,7 +4794,8 @@ public actor WindowsUsageRuntime {
                     claudeAccountUUIDBefore: claudeAccountUUIDBefore,
                     claudeAccountUUIDAfter: provider == .claude ? ClaudeAccountProfile.accountUuid(environment: env) : nil,
                     strategyKind: result.strategyKind,
-                    oauthHistoryOwnerIdentifier: result.claudeOAuthHistoryOwnerIdentifier)
+                    oauthHistoryOwnerIdentifier: result.claudeOAuthHistoryOwnerIdentifier,
+                    oauthCredentialOwner: result.claudeOAuthCredentialOwner)
                 return presentation.rows()
             case let .failure(error):
                 if config.hooks?.enabled == true, !Task.isCancelled, !self.shuttingDown {

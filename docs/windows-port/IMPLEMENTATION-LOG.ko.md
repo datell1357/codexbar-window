@@ -5043,3 +5043,14 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - Claude OAuth/UUID 간 binding migration, 이력 삭제 lifecycle, 동시 계정 소비, 전체 설정/이력 import 및 Windows 실행 검증은 남아 있다. W05/WIN-020 전체 완료가 아니다.
 - CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·컴파일·lint·실제 이력/계정·Windows UI·성능 검증 미실행.
 - 직전 IMPL-534는 3b52261cf로 origin/main 푸시가 성공했다. IMPL-535도 별도 구현 커밋·푸시 후 Git 결과를 보고한다.
+
+## IMPL-536 — Keep Claude OAuth usage owned by its winning credential
+
+- 원본 resolvedClaudeOAuthHistoryOwner를 대조한 결과, OAuth 이력을 로컬 account UUID 이력과 무조건 합치는 것이 원본 계약이 아님을 확인했다. 원본은 winning credential의 one-way history owner를 사용하고, Claude Code와의 binding에는 별도 근거를 요구한다. 앞선 기록의 OAuth/UUID binding migration은 이 조건을 갖춘 작업으로 해석해야 하며 단순 bucket 병합으로 구현하지 않는다.
+- ClaudeUsageOwnerResolution을 Core에 추가했다. OAuth 응답은 유효한 64자리 hex history owner를 선택하고 CLI 응답은 안정적으로 관측된 UUID를 사용한다. CLI 또는 CLI 소유/출처 미확정 OAuth에서 before/after 계정이 바뀌면 unresolved로 처리한다. environment/CodexBar 소유 OAuth는 별도 CLI 로그인 상태에 의존하지 않는다.
+- Windows plan history의 OAuth owner 선택을 로컬 UUID보다 우선하도록 수정했다. 기존 OAuth bucket key 형식은 유지하고, 실제 CLI 응답의 UUID/profile bucket은 분리한다. 명시적 OAuth credential의 history context는 무관한 CLI UUID/profile을 요구하지 않는다.
+- quotaAccountDiscriminator에도 같은 resolver를 연결하고 quota 경고·predictive pace 경고·widget quota·hook 관측에 credential authority를 전달한다. OAuth/CLI owner를 결정할 수 없는 quota 경고는 anonymous 공용 baseline에 기록하지 않는다. 기존 predictive/widget/hook의 unresolved 처리 경로를 사용한다.
+- Claude OAuth/CLI 응답에 현재 설정된 token 계정 label을 덧씌우지 않도록 표시 경로를 수정했다. 실제 사용하지 않은 token 계정 UUID가 OAuth/CLI quota owner를 대체하지 않는다.
+- 과거 UUID bucket에 섞여 있을 수 있는 데이터를 새 OAuth owner로 자동 병합하거나 삭제하지 않았다. 원본의 exact-Keychain binding을 Windows에 있다고 가정하지 않는다. Windows credential-file 근거를 사용한 지속 binding 및 확인된 기존 bucket 복구, 일반 session-exhausted/restored 알림의 Claude owner baseline 통합, 전체 이력 lifecycle/동시 계정 소비는 남아 있다.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·컴파일·lint·실제 credential/계정 전환·알림·widget·hook·UI 검증 미실행. source 판정 로직을 작성했으며 실제 격리 성공을 검증한 상태는 아니다.
+- 직전 IMPL-535는 aeabefaa2로 origin/main 푸시가 성공했다. IMPL-536도 별도 구현 커밋·푸시 후 Git 결과를 보고한다.
