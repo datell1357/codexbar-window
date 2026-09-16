@@ -2339,6 +2339,7 @@ enum CostUsageScanner {
     struct ClaudeParseResult {
         let rows: [ClaudeUsageRow]
         let parsedBytes: Int64
+        var windowsReadProof: CostUsageClaudeReadProof? = nil
     }
 
     enum ClaudePathRole: String, Codable, Equatable {

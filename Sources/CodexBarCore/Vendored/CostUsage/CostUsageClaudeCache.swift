@@ -62,7 +62,7 @@ struct CostUsageClaudeReportMemoKey: Equatable, Sendable, Codable {
             roots: self.roots)
     }
 
-    struct ScanConfiguration: Equatable, Sendable {
+    struct ScanConfiguration: Codable, Equatable, Sendable {
         let provider: UsageProvider
         let providerFilter: String
         let timeZoneIdentifier: String
@@ -75,6 +75,7 @@ final class CostUsageClaudeReportMemo: @unchecked Sendable {
         let sourceInventory: [String: CostUsageClaudeFileStamp]
         let reportKey: CostUsageClaudeReportMemoKey
         let report: CostUsageDailyReport
+        var windowsReadProofs: [String: CostUsageClaudeReadProof]? = nil
     }
 
     static let shared = CostUsageClaudeReportMemo()
@@ -93,6 +94,7 @@ final class CostUsageClaudeReportMemo: @unchecked Sendable {
         var sourceInventory: [String: CostUsageClaudeFileStamp]
         var reportKey: CostUsageClaudeReportMemoKey
         var report: CostUsageDailyReport
+        var windowsReadProofs: [String: CostUsageClaudeReadProof]?
     }
 
     private let lock = NSLock()
@@ -126,11 +128,14 @@ final class CostUsageClaudeReportMemo: @unchecked Sendable {
         sourceInventory: [String: CostUsageClaudeFileStamp],
         reportKey: CostUsageClaudeReportMemoKey,
         report: CostUsageDailyReport,
+        windowsReadProofs: [String: CostUsageClaudeReadProof]? = nil,
         sourcePublication: CostUsageSourcePublication? = nil,
         checkCancellation: CostUsageScanner.CancellationCheck? = nil) throws
     {
         let key = Self.key(provider: provider, canonicalCachePath: canonicalCachePath)
-        let entry = Entry(sourceInventory: sourceInventory, reportKey: reportKey, report: report)
+        let entry = Entry(
+            sourceInventory: sourceInventory, reportKey: reportKey, report: report,
+            windowsReadProofs: windowsReadProofs)
         try sourcePublication?.check(checkCancellation: checkCancellation)
         try Self.persist(
             entry, canonicalCachePath: canonicalCachePath,
@@ -187,7 +192,8 @@ final class CostUsageClaudeReportMemo: @unchecked Sendable {
         return Entry(
             sourceInventory: envelope.sourceInventory,
             reportKey: envelope.reportKey,
-            report: envelope.report)
+            report: envelope.report,
+            windowsReadProofs: envelope.windowsReadProofs)
     }
 
     private static func persist(
@@ -202,7 +208,8 @@ final class CostUsageClaudeReportMemo: @unchecked Sendable {
             reportSemanticsVersion: Self.reportSemanticsVersion,
             sourceInventory: entry.sourceInventory,
             reportKey: entry.reportKey,
-            report: entry.report)
+            report: entry.report,
+            windowsReadProofs: entry.windowsReadProofs)
         guard let data = try? JSONEncoder().encode(envelope) else { return }
         #if os(Windows)
         // Persisted memo is optional; a failed publication must not replace the previous file.
@@ -331,8 +338,12 @@ extension CostUsageScanner {
 struct CostUsageClaudeCache: Codable {
     var usage = CostUsageCache()
     var sourceFileIDs: [String: String] = [:]
+    var windowsReadProofs: [String: CostUsageClaudeReadProof] = [:]
+    var windowsScanConfiguration: CostUsageClaudeReportMemoKey.ScanConfiguration?
 
-    private enum CodingKeys: String, CodingKey { case sourceFileIDs }
+    private enum CodingKeys: String, CodingKey {
+        case sourceFileIDs, windowsReadProofs, windowsScanConfiguration
+    }
 
     init() {}
 
@@ -340,12 +351,20 @@ struct CostUsageClaudeCache: Codable {
         self.usage = try CostUsageCache(from: decoder)
         self.sourceFileIDs = try decoder.container(keyedBy: CodingKeys.self)
             .decodeIfPresent([String: String].self, forKey: .sourceFileIDs) ?? [:]
+        self.windowsReadProofs = try decoder.container(keyedBy: CodingKeys.self)
+            .decodeIfPresent([String: CostUsageClaudeReadProof].self, forKey: .windowsReadProofs) ?? [:]
+        self.windowsScanConfiguration = try decoder.container(keyedBy: CodingKeys.self)
+            .decodeIfPresent(CostUsageClaudeReportMemoKey.ScanConfiguration.self, forKey: .windowsScanConfiguration)
     }
 
     func encode(to encoder: any Encoder) throws {
         try self.usage.encode(to: encoder)
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(self.sourceFileIDs, forKey: .sourceFileIDs)
+        if !self.windowsReadProofs.isEmpty {
+            try container.encode(self.windowsReadProofs, forKey: .windowsReadProofs)
+        }
+        try container.encodeIfPresent(self.windowsScanConfiguration, forKey: .windowsScanConfiguration)
     }
 }
 

@@ -1,6 +1,6 @@
 # Windows 비용 파일 I/O 구현 경계
 
-IMPL-559~568. 상태: **CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION**.
+IMPL-559~569. 상태: **CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION**.
 Mac 호스트에서 소스를 작성한 기록이며 Windows 컴파일·실행·성능·파일 시스템 호환성을 입증하지 않는다. W06/W07 전체 기능 및 G0~G6 완료가 아니다.
 
 ## 파일 메타데이터와 캐시
@@ -125,10 +125,21 @@ Mac 호스트에서 소스를 작성한 기록이며 Windows 컴파일·실행·
 - header/negative validation 및 최종 ledger 등록·검사의 전체 I/O 예산은 아직 별도다. parser suffix의 기존 byte budget이나 파일 validation cursor만으로 prefix 재읽기 비용까지 제한했다고 주장하지 않는다. 전체 body에서 얻은 헤더 지문은 파일 전체 길이일 수 있다. durable hash resume/공유 대조 및 실제 대형 파일 성능 검증이 후속 필수 작업이다.
 - 현재 연결은 실제 관측한 prefix와 게시/반환 경계의 비교다. 대조 이후 변경·파일 ID 재사용의 모든 특성·동시에 고정된 다중 파일 snapshot을 보장하지 않는다. 주 lookback 폴더 세대, junction/alias, Claude/기타 비용 source와 Windows SDK/runtime 검증도 남는다.
 
+## IMPL-569: Claude·Vertex의 실제 내용과 보고서 재사용
+
+- `CostUsageClaudeReadProof`는 parser의 관측 native snapshot, committed offset, 실제 read/committed prefix 지문과 version을 묶는다. 두 지문 모두 `CostUsageJsonl.scanBounded`가 처리한 Data에서 얻는다. 파일 끝의 미완성 JSON은 read proof에는 들어가지만 row/committed offset에는 들어가지 않으며 다음 append에서 완결 줄 경계부터 재파싱한다.
+- 증분 파싱 전에는 저장된 read/committed prefix를 대조하고, 실제 parser의 같은 FileHandle에서 committed prefix를 다시 대조한 뒤 새 바이트를 읽는다. 같은 ID·size·정밀 시각으로 본문을 고치거나 append 전에 옛 prefix를 바꾸면 기존 row를 버리고 재파싱한다. digest mismatch만 cache miss이고 access/read/native race/취소 오류는 실패로 전달한다.
+- Claude/Vertex cache에는 경로별 proof와 집계 configuration(provider/filter/time zone/roots)을 추가했다. 과거 필드가 없어도 decode 가능하지만 Windows row 재사용 승인은 하지 않는다. memo가 없더라도 configuration 불일치는 full rescan이다. 삭제/빈 source의 row와 proof는 현재 inventory에 맞춰 함께 정리한다.
+- report memo의 메모리 Entry와 디스크 envelope에도 proof를 보존한다. Windows fast return에는 정확한 inventory/proof 경로 집합, version/native snapshot/offset 형식과 실제 내용 대조가 필요하다. 증거 없는 legacy memo는 캐시 경로로 내려오고, memo miss이면 refresh interval이 남아도 row source를 전부 방문한다. 내용이 맞는 row는 재파싱 없이 재사용할 수 있다.
+- inventory 직후 freeze하던 publication snapshot을 row 처리 뒤로 옮겼다. reused/append/new row와 memo fast return의 지문을 기존 ledger에 추가하여 cache staging/memo staging/메모리 설치/최종 반환 경계에서도 내용을 대조한다. 다른 길이의 이전 관측도 보존한다.
+- cache와 memo는 별도 파일 게시다. cache 교체 실패 시 이전 cache를 유지하지만 cache 성공 이후 memo 단계에서 source가 바뀌면 cache까지 원복하지 않는다. memo 디스크·메모리의 이전 entry는 유지하며 report 반환은 실패한다. 다음 호출은 이미 게시된 cache의 proof부터 대조한다. 다중 파일 transaction 또는 writer 잠금은 아니다.
+- `WindowsCostClaudeContentTests.swift`에 Claude/Vertex warm/cold same-stamp 변경, cache/memo proof round-trip·legacy memo 우회 거부, 집계 설정 변경, 미완성 tail의 append/기존 prefix 변경, cache·memo staging에서 내용 변경 후 재수집, 취소/접근 오류용 임시 합성 fixture를 작성했다. **테스트·컴파일·Windows 실행은 하지 않았다.**
+- content validation은 전체 prefix의 순차 재읽기다. 하나의 파일의 여러 지문은 한 pass로 대조하지만 memo/source reuse/parser seed/각 publication 경계에서 다시 읽을 수 있다. 전체 byte/time budget과 durable hash 재개·중복 대조 공유는 아직 없으며 대형 transcript의 응답성을 입증하지 않는다. 최종 대조 뒤 변경과 immutable multi-file snapshot, 다른 비용 source와 실제 SDK/runtime 검증도 남는다.
+
 ## 남은 연결
 
 1. 비페이지/legacy·부모 세션 index/캐시 부재 오류 전달은 IMPL-562에 작성했다. 대규모 재귀/단일 폴더의 bounded/pause/resume 통합, IMPL-565에서 parent discovery의 native directory/file snapshot과 legacy 재탐색을 작성했다. main lookback의 완료 폴더 세대와 junction cycle/alias 처리는 남는다. 실행 증거는 없다.
-2. IMPL-561은 expected-file/열린 stream, IMPL-563~564는 게시 직전 metadata, IMPL-566은 usage native snapshot/전체 prefix, IMPL-567은 parser 실제 바이트/게시 내용 비교, IMPL-568은 parent head/negative discovery proof를 작성했다. immutable multi-file snapshot, 관측 뒤 변경, Claude 이전 prefix와 기타 source, 주 lookback의 과거 directory 세대가 남는다. hashing과 discovery 대조의 전체 I/O 예산·durable resume·경계 간 반복 읽기 공유도 후속 작업이다.
+2. IMPL-561은 expected-file/열린 stream, IMPL-563~564는 게시 직전 metadata, IMPL-566은 usage native snapshot/전체 prefix, IMPL-567은 parser 실제 바이트/게시 내용 비교, IMPL-568은 parent head/negative discovery proof, IMPL-569는 Claude/Vertex parser·cache/memo proof를 작성했다. immutable multi-file snapshot, 관측 뒤 변경, 기타 비용 source와 주 lookback의 과거 directory 세대가 남는다. hashing과 discovery 대조의 전체 I/O 예산·durable resume·경계 간 반복 읽기 공유도 후속 작업이다.
 3. 날짜/flat/legacy 루트, hard link/junction, case-sensitive NTFS, UNC/SMB, ReFS/FAT, 삭제 후 재생성, 장기 resume 및 모든 비용 source와의 통합. 파일 ID의 파일 시스템별 재사용·불안정성도 포함한다.
 4. 실제 Windows SDK 컴파일, x64/ARM64, native UI와 설치된 제품에서의 비용 표시, full WinUI3 제품 그래프 및 배포 준비.
 

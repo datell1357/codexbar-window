@@ -5397,3 +5397,14 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - 같은 stamp의 positive/negative/partial 변경, proof 없는 parsed flag, lookup 이후·게시 직전 변경 감지·취소, legacy 이관·SQLite round-trip, 미완료 inventory 및 여러 refresh의 마지막 내용 대조용 fixture 코드를 추가했다. 컴파일·실행하지 않았다.
 - 전체 prefix I/O/시간 예산·durable hash 재개, Windows 주 lookback 세대·junction/alias, Claude/기타 source 및 immutable multi-file snapshot은 남는다. 전체 W01~W16/G0~G6 완료 아님.
 - CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·formatter·compiler/manifest·파일 fixture·Windows·실계정·CI 실행 검증 미실행. 직전 IMPL-567은 1d94824671aacad6ccd47a79c86205b03c8189fb로 origin/main 푸시 확인. 이번 단위도 별도 커밋·푸시한다.
+
+
+## IMPL-569 — Bind Windows Claude and Vertex reports to consumed transcript bytes
+
+- Claude JSONL parser도 공통 실제 Data 지문 수집을 사용하고 마지막 완결 줄 offset/지문과 읽은 전체 prefix 지문을 구분한다. 파싱 후 파일을 다시 읽어 row에 새 증거를 붙이지 않으며, 증분 파싱은 같은 열린 handle에서 기존 committed prefix를 대조한다.
+- Claude/Vertex JSON cache와 메모리·디스크 report memo에 native snapshot·parsed offset·read/committed anchors·proof version을 보존한다. 과거 증거 없는 memo는 fast return을 하지 않고, 증거 없는 row cache는 Windows에서 재파싱한다. 기존 JSON은 선택 필드로 decode 가능하며 0-byte source는 기존 inventory metadata 정책을 유지한다.
+- same-stamp 내용 변경과 changed inherited prefix를 재파싱으로 보내고 실제 I/O/공유·read guard·Task/custom 취소 실패는 전달한다. cached row 재사용/append/새 parser proof를 살아 있는 publication ledger에 추가한 뒤 freeze하여 cache 교체 직전·memo 게시/메모리 설치·최종 report 반환까지 대조한다.
+- Windows memo miss는 refresh interval이 남아도 모든 row source를 확인한다. 별도 cache scan configuration을 저장하여 memo 없이 재시작해도 provider/filter/time zone/roots 변경은 재파싱한다. 미완성 JSON은 complete offset에서 재개하며 이전에 읽은 partial prefix도 내용 대조에 포함한다.
+- warm/cold Claude·Vertex의 동일 native stamp 재작성, cache/memo producer-consumer 복원, legacy proof 부재, memo 없는 filter 변경, partial tail append·변경된 prefix, cache/memo staging 변경 시 실패·기존 memo 보존·다음 재수집, 취소/접근 오류용 Windows 합성 fixture source를 작성했다. 컴파일·실행하지 않았다.
+- cache와 memo는 별도 게시이므로 cache 성공 뒤 memo 실패 시 이미 게시된 cache를 되돌리지 않는다. 다음 읽기는 그 cache proof를 다시 대조한다. immutable multi-file snapshot/최종 대조 뒤 변경 차단은 아니다. 전체 prefix I/O·시간 예산/분할 재개·반복 읽기 절감, main lookback 세대·junction/alias와 기타 비용 source 및 전체 Windows 제품 의무가 남는다.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·formatter·compiler/manifest·파일 fixture·Windows·실계정·CI 실행 검증 미실행. 전체 W01~W16/G0~G6 완료 아님. 직전 IMPL-568은 aaf3659a2b7d926bddfcb4c8dfbcb7ddf15371f4로 origin/main 푸시 확인. 이번 단위도 별도 커밋·푸시한다.
