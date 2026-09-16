@@ -38,6 +38,8 @@ UserDefaults에 저장한 별도 표시/언어/알림 설정, 위젯 설정, 사
 
 ## 제거 작업과 남은 연결
 
+[로컬 설정 묶음](LOCAL-SETTINGS-RECOVERY.ko.md) 명령도 추가했다. 별도의 archive로 Windows persistent preferences와 위젯 설정을 포함하고 preferences의 명시적 교체 전 암호화 백업을 제공한다. 이 문서의 config-only 명령/형식은 그대로 유지하며 전체 이력/credential 저장소 및 제거 도구 연동은 여전히 별도다.
+
 [MSIX 제거](MSIX-REMOVAL.ko.md)의 `backup: NOT_CREATED` 정책은 그대로다. 설정 파일 백업 명령을 작성했다는 사실로 제거 도구가 데이터를 보존했다고 기록하거나 패키지 데이터 삭제 선택을 생략하지 않는다. 제거 도구는 이 archive를 자동 생성·확인·채택하지 않는다.
 
 전체 저장소 인벤토리, 시점이 일치하는 다중 파일 백업, credential-store 복구 정책, 백업을 제거 영향 밖에 두는 경로 확인, 전체 설정 GUI에서 검토/선택/활성화, installer 연동 및 x64/ARM64의 실제 round-trip/실패 검증이 남아 있다. 원본 기능군과 전체 제품의 완료 판정은 계속 보류한다.

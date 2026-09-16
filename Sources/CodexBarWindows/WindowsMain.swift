@@ -8,6 +8,9 @@ struct CodexBarWindowsMain {
         if let result = WindowsConfigurationBackupCommand.run(arguments: Array(CommandLine.arguments.dropFirst())) {
             ExitProcess(result)
         }
+        if let result = WindowsLocalSettingsRecoveryCommand.run(arguments: Array(CommandLine.arguments.dropFirst())) {
+            ExitProcess(result)
+        }
         do {
             let instance = try WindowsApplicationInstance.acquire()
             withExtendedLifetime(instance) {

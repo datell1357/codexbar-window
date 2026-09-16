@@ -3,7 +3,8 @@ import Foundation
 import WinSDK
 
 /// Acquired before constructing any runtime. The process keeps this lease through its final exit.
-/// It protects startup ownership only; it does not authenticate a widget host or certify stored data.
+/// Shared profile ownership excludes settings recovery while any cooperating session is running.
+/// It does not authenticate a widget host or certify stored data.
 final class WindowsApplicationInstance {
     enum Failure: Error {
         case occupied
@@ -19,17 +20,25 @@ final class WindowsApplicationInstance {
         }
     }
 
-    private let file: HANDLE
+    private let files: [HANDLE]
     // Keeping every directory open without delete sharing prevents this path from being renamed
     // underneath the lock. The OS-known folder's ancestors remain outside this lease's boundary.
     private let directories: [HANDLE]
 
-    private init(file: HANDLE, directories: [HANDLE]) {
-        self.file = file
+    private init(files: [HANDLE], directories: [HANDLE]) {
+        self.files = files
         self.directories = directories
     }
 
     static func acquire() throws -> WindowsApplicationInstance {
+        try self.acquire(exclusiveProfile: false)
+    }
+
+    static func acquireForSettingsRecovery() throws -> WindowsApplicationInstance {
+        try self.acquire(exclusiveProfile: true)
+    }
+
+    private static func acquire(exclusiveProfile: Bool) throws -> WindowsApplicationInstance {
         var identifier = FOLDERID_LocalAppData
         var knownPath: PWSTR?
         let result = SHGetKnownFolderPath(&identifier, 0, nil, &knownPath)
@@ -44,11 +53,11 @@ final class WindowsApplicationInstance {
         guard ProcessIdToSessionId(GetCurrentProcessId(), &session) else { throw Failure.windows(GetLastError()) }
 
         var directories: [HANDLE] = []
-        var file: HANDLE?
+        var files: [HANDLE] = []
         var transferred = false
         defer {
             if !transferred {
-                if let file { _ = CloseHandle(file) }
+                for file in files.reversed() { _ = CloseHandle(file) }
                 for directory in directories.reversed() { _ = CloseHandle(directory) }
             }
         }
@@ -68,26 +77,34 @@ final class WindowsApplicationInstance {
                 // Check and pin each component before creating anything below it.
                 directories.append(try self.openDirectory(directory.path))
             }
-            let lock = runtime.appendingPathComponent("instance-session-\(session).lock")
-            let opened = lock.path.withCString(encodedAs: UTF16.self) {
-                CreateFileW($0, DWORD(GENERIC_READ | GENERIC_WRITE), 0, attributes, DWORD(OPEN_ALWAYS),
-                    DWORD(FILE_ATTRIBUTE_NORMAL | FILE_FLAG_OPEN_REPARSE_POINT), nil)
+            var locks: [(String, DWORD, DWORD)] = [
+                ("profile-settings.lock", exclusiveProfile ? DWORD(GENERIC_READ | GENERIC_WRITE) : DWORD(GENERIC_READ),
+                 exclusiveProfile ? 0 : DWORD(FILE_SHARE_READ)),
+            ]
+            if !exclusiveProfile {
+                locks.append(("instance-session-\(session).lock", DWORD(GENERIC_READ | GENERIC_WRITE), 0))
             }
-            guard let opened, opened != INVALID_HANDLE_VALUE else {
-                let error = GetLastError()
-                if error == ERROR_SHARING_VIOLATION || error == ERROR_LOCK_VIOLATION { throw Failure.occupied }
-                throw Failure.windows(error)
-            }
-            file = opened
-            var info = BY_HANDLE_FILE_INFORMATION()
-            guard GetFileType(opened) == DWORD(FILE_TYPE_DISK), GetFileInformationByHandle(opened, &info),
-                  info.dwFileAttributes & DWORD(FILE_ATTRIBUTE_DIRECTORY | FILE_ATTRIBUTE_REPARSE_POINT) == 0,
-                  info.nNumberOfLinks == 1, info.nFileSizeHigh == 0, info.nFileSizeLow == 0 else {
-                throw Failure.invalidStorage
+            for (name, access, sharing) in locks {
+                let lock = runtime.appendingPathComponent(name)
+                let opened = lock.path.withCString(encodedAs: UTF16.self) {
+                    CreateFileW($0, access, sharing, attributes, DWORD(OPEN_ALWAYS),
+                        DWORD(FILE_ATTRIBUTE_NORMAL | FILE_FLAG_OPEN_REPARSE_POINT), nil)
+                }
+                guard let opened, opened != INVALID_HANDLE_VALUE else {
+                    let error = GetLastError()
+                    if error == ERROR_SHARING_VIOLATION || error == ERROR_LOCK_VIOLATION { throw Failure.occupied }
+                    throw Failure.windows(error)
+                }
+                files.append(opened)
+                var info = BY_HANDLE_FILE_INFORMATION()
+                guard GetFileType(opened) == DWORD(FILE_TYPE_DISK), GetFileInformationByHandle(opened, &info),
+                      info.dwFileAttributes & DWORD(FILE_ATTRIBUTE_DIRECTORY | FILE_ATTRIBUTE_REPARSE_POINT) == 0,
+                      info.nNumberOfLinks == 1, info.nFileSizeHigh == 0, info.nFileSizeLow == 0 else {
+                    throw Failure.invalidStorage
+                }
             }
         }
-        guard let file else { throw Failure.invalidStorage }
-        let instance = WindowsApplicationInstance(file: file, directories: directories)
+        let instance = WindowsApplicationInstance(files: files, directories: directories)
         transferred = true
         return instance
     }
@@ -156,7 +173,7 @@ final class WindowsApplicationInstance {
     }
 
     deinit {
-        _ = CloseHandle(self.file)
+        for file in self.files.reversed() { _ = CloseHandle(file) }
         for directory in self.directories.reversed() { _ = CloseHandle(directory) }
     }
 }

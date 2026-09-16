@@ -5243,3 +5243,15 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - protectedConfiguration helper를 두 경로가 공유하고 invalidInput/invalidFormat을 설정 오류로 구분한다. archive 안에는 원래 바이트를 계속 보존하며 원본 파일을 수정하지 않는다. profile/key의 미래 가용성이나 모든 provider 설정 의미까지 보장하지 않는다.
 - CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·DPAPI·명령 및 round-trip 검증 미실행. 설정 전체 저장소의 백업/복원·GUI/제거 연동은 남아 있다.
 - IMPL-552는 b8b0be3d1a3b3c9943824104601abc98b1aa132c로 origin/main에 푸시했다. IMPL-553도 별도 커밋·푸시 후 실제 Git 결과를 보고한다.
+
+
+## IMPL-554 — Recover Windows preferences and widget configuration with local settings
+
+- config 파일과 CodexBar.Windows persistent domain, config 부모의 WindowsWidgets/settings.json을 별도 목적의 current-user DPAPI archive로 묶었다. widget 경로 helper를 runtime/백업이 공유하며 파일 부재와 오류를 구분한다. 동기화에서 제외되는 로컬 설정도 보존하되 history/plugin grants/OS credentials까지 포함했다고 주장하지 않는다.
+- preferences는 binary plist로 Data/Date/unknown key를 유지하고 깊이/노드/key/파일 크기를 제한했다. dictionary 순서와 Bool/정수/실수 구분을 보존한 비교를 사용하며 수집 전후 관측 변경을 거절한다. 미래 schema/잘못된 widget 설정/config 보호 변환 실패 시 완료 archive를 쓰지 않도록 작성했다.
+- 앱 시작 전 --settings-backup/--settings-restore-new/--settings-restore-preferences 및 도움말을 연결했다. 새 폴더 복원은 config/widgets 및 encrypted preferences archive만 준비하고 자동 활성화하지 않는다. preferences 적용은 --replace-current-preferences가 필수이며 현재 값과 목표 값의 암호화 사본/준비 기록 후 교체·synchronize·재읽기·별도 완료 기록을 작성한다.
+- Foundation의 per-key 교체를 atomic transaction으로 표현하지 않는다. 교체 시작 뒤 실패하면 값이 이미 바뀔 수 있음을 알리고 모든 복구 자료를 보존한다. 이전 preferences archive는 명시적 새 작업으로 다시 복원할 수 있으며 자동 rollback/불완전 작업 탐지 GUI는 남아 있다.
+- WindowsApplicationInstance에 사용자 profile 공유 lock을 추가하고 설정 복구는 독점 lock을 요구한다. 기존 per-session single-instance 소유권을 유지하며 협력 버전의 다른 session 앱/복구와 충돌하면 runtime/preferences 접근 전에 실패한다. 이전 버전/외부 writer/서로 다른 가상화 경로까지 막는 잠금이 아니다.
+- config-only 명령의 path/단일 handle/bounded/CreateNew 파일 처리와 DPAPI 변환을 공통 helper로 분리했다. 기존 archive의 magic/entropy 목적은 유지하며 local-settings 형식은 분리한다. 부분 출력 폴더/복구 사본은 자동 삭제하지 않는다.
+- LOCAL-SETTINGS-RECOVERY.ko.md에 실제 포함 저장소, 명령/교체 선택, 실패 및 복구 범위, 원본 API 근거와 남은 GUI/installer/전체 데이터 보존 연결을 기록했다. MSIX 제거의 backup NOT_CREATED 정책은 유지한다.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·compiler/manifest 평가·DPAPI·UserDefaults·명령·설치/제거·Windows 실행 검증 미실행. 직전 IMPL-553은 3542ef1bd1264b90334b13ecba8cb6f5c1b62abf로 origin/main 푸시 확인. IMPL-554도 별도 커밋·푸시 결과를 Git에서 보고한다.

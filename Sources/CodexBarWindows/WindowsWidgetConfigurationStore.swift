@@ -17,6 +17,12 @@ public actor WindowsWidgetConfigurationStore {
     private let url: URL
     public init(url: URL) { self.url = url.standardizedFileURL }
 
+    public static func defaultURL(configFileURL: URL) -> URL {
+        configFileURL.deletingLastPathComponent()
+            .appendingPathComponent("WindowsWidgets", isDirectory: true)
+            .appendingPathComponent("settings.json")
+    }
+
     public func load() throws -> Snapshot {
         try self.validateLocation()
         return try self.readSnapshot()

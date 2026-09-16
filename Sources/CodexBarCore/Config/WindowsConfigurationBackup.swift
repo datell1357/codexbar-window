@@ -53,7 +53,7 @@ public enum WindowsConfigurationBackup {
                                      storedData: protected)
     }
 
-    private static func protectedConfiguration(_ stored: Data) throws -> Data {
+    package static func protectedConfiguration(_ stored: Data) throws -> Data {
         let decoded = try self.decodedConfiguration(stored)
         let protected: Data
         do { protected = try WindowsProtectedTokenConfig.encode(decoded) }
@@ -90,36 +90,8 @@ public enum WindowsConfigurationBackup {
     }
 
     private static func transform(_ input: Data, protect: Bool) throws -> Data {
-        let limit = self.maximumArchiveBytes - self.magic.count
-        guard !input.isEmpty, input.count <= limit else { throw Failure.invalidArchive }
-        // Separate purpose from provider tokens, credential caches and account-removal journals.
-        let entropy = Data("CodexBar.Windows.ConfigurationRecovery.v1".utf8)
-        return try input.withUnsafeBytes { inputBytes in
-            try entropy.withUnsafeBytes { entropyBytes in
-                var source = DATA_BLOB()
-                source.cbData = DWORD(inputBytes.count)
-                source.pbData = UnsafeMutablePointer(mutating: inputBytes.bindMemory(to: BYTE.self).baseAddress)
-                var binding = DATA_BLOB()
-                binding.cbData = DWORD(entropyBytes.count)
-                binding.pbData = UnsafeMutablePointer(mutating: entropyBytes.bindMemory(to: BYTE.self).baseAddress)
-                var output = DATA_BLOB()
-                let succeeded = protect
-                    ? CryptProtectData(&source, nil, &binding, nil, nil, DWORD(CRYPTPROTECT_UI_FORBIDDEN), &output)
-                    : CryptUnprotectData(&source, nil, &binding, nil, nil, DWORD(CRYPTPROTECT_UI_FORBIDDEN), &output)
-                defer {
-                    if let bytes = output.pbData {
-                        // DPAPI's unprotected allocation must not outlive this copy.
-                        if !protect { bytes.initialize(repeating: 0, count: Int(output.cbData)) }
-                        LocalFree(HLOCAL(bytes))
-                    }
-                }
-                guard succeeded != 0 else { throw Failure.protectionUnavailable }
-                guard let bytes = output.pbData, output.cbData > 0, output.cbData <= DWORD(limit) else {
-                    throw Failure.invalidArchive
-                }
-                return Data(bytes: bytes, count: Int(output.cbData))
-            }
-        }
+        try WindowsRecoveryProtection.transform(input, protect: protect, purpose: .configuration,
+            maximumBytes: self.maximumArchiveBytes - self.magic.count)
     }
 }
 #endif

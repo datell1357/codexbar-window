@@ -54,4 +54,6 @@ dataPolicy는 패키지 데이터 제거 선택, 별도 외부 데이터 삭제 
 
 [설정 파일 하나의 암호화 백업·새 파일 복원](CONFIGURATION-RECOVERY.ko.md) 명령 코드를 추가했다. 전체 앱 데이터 백업이 아니며 이 제거 도구와 연결하거나 backup 정책을 변경하지 않았다. 필요한 데이터가 모두 보존됐다고 추정해 제거를 진행하면 안 된다.
 
+[로컬 설정 묶음 백업·복원](LOCAL-SETTINGS-RECOVERY.ko.md)으로 Windows preferences/위젯 설정과 교체 전 복구 사본도 연결했다. 전체 이력/credential/외부 저장소 및 실제 제거 영향 밖의 보관을 확인하는 기능은 아니므로 이 제거 명령의 데이터 선택과 backup 정책은 유지한다.
+
 전체 데이터 보존/복원 및 제거 연결, 명시적 rollback, 손상 canonical 기록의 generation 선택 복구, GUI 및 자동 업데이트와 연결이 남아 있다. OS 배포·실행 중 앱·패키지 가상화·경로 race·ACL·백신·전원 차단·x64/ARM64 동작도 미검증이다. 이 단계로 W16 또는 전체 Windows 제품이 완료됐다고 판정하지 않는다.

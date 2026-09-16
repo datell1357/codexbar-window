@@ -1,5 +1,7 @@
 # Windows 전용 제품 작업 현황
 
+- IMPL-554: config/Windows persistent preferences/위젯 설정 묶음 백업, 새 폴더 복원 및 명시적 preferences 교체·교체 전 암호화 복구 사본/준비·완료 기록 작성. 앱 공유 profile lock과 복구 exclusive lock 연결. 전체 이력/credential/제거 연동·실제 round-trip은 남음. CODE_WRITTEN_UNVERIFIED.
+
 - IMPL-553: config 백업 생성과 복원의 보호 변환·변환 후 파일 크기 조건을 공유하고 legacy secret 입력 오류를 구분. 복원 불가한 입력의 archive 게시를 제한하도록 작성. 실제 round-trip/DPAPI 미검증. CODE_WRITTEN_UNVERIFIED.
 
 - IMPL-552: 앱 runtime 이전의 config 파일 전용 DPAPI 백업·새 파일 복원 명령, unknown 설정 보존·비밀 필드 재보호, bounded 단일 handle 읽기·부모 pin·CreateNew 게시 작성. 전체 저장소 백업/제거 연결과 실제 Windows 복원은 남음. CODE_WRITTEN_UNVERIFIED.

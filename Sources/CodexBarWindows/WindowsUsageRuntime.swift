@@ -1032,9 +1032,7 @@ public actor WindowsUsageRuntime {
         self.configStore = configStore
         // Follow the selected app configuration root, including explicit portable/config overrides.
         // Construction does not read or create files; the first widget operation loads the store.
-        let widgetURL = widgetSettingsURL ?? configStore.fileURL.deletingLastPathComponent()
-            .appendingPathComponent("WindowsWidgets", isDirectory: true)
-            .appendingPathComponent("settings.json")
+        let widgetURL = widgetSettingsURL ?? WindowsWidgetConfigurationStore.defaultURL(configFileURL: configStore.fileURL)
         self.widgetService = WindowsWidgetService(store: WindowsWidgetConfigurationStore(url: widgetURL))
         self.browserDetection = browserDetection
         self.fetcher = UsageFetcher()
