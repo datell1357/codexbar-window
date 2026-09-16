@@ -101,8 +101,10 @@ extension CostUsageStore {
         fileBudgetBytes: Int64 = CostUsageStore.defaultFileBudgetBytes,
         unloadedTokenSnapshotPaths: Set<String> = [],
         skipIdenticalContent: Bool = false,
-        receipt: CodexBaselineReceipt? = nil) -> CostUsageStoreBudgetResult
+        receipt: CodexBaselineReceipt? = nil,
+        sourcePublication: CostUsageSourcePublication? = nil) -> CostUsageStoreBudgetResult
     {
+        guard sourcePublication?.isCurrent != false else { return Self.sourcePublicationRetry() }
         guard let baseline = self.takeCodexBaseline(receipt), self.codexBaselineIsCurrent(baseline) else {
             return Self.rescanRequired()
         }
@@ -143,6 +145,10 @@ extension CostUsageStore {
                 _ = self.rollbackSaveTransaction()
                 return Self.rescanRequired(result)
             }
+            guard sourcePublication?.isCurrent != false else {
+                _ = self.rollbackSaveTransaction()
+                return Self.sourcePublicationRetry(result)
+            }
             guard self.endSaveTransaction() else { return Self.rescanRequired(result) }
             return result
         }
@@ -180,6 +186,10 @@ extension CostUsageStore {
         _ = self.setMetadata(Self.metadata(cache: cache, calendar: calendar))
         _ = self.setDiscoveryState(Self.discoveryState(cache.codexSessionDiscovery))
         _ = self.setLookbackState(Self.lookbackState(cache.codexActiveLookbackState))
+        guard sourcePublication?.isCurrent != false else {
+            _ = self.rollbackSaveTransaction()
+            return Self.sourcePublicationRetry(retry)
+        }
         guard self.endSaveTransaction() else { return retry }
         // Checkpointing and vacuuming must remain outside the save transaction.
         let result = self.enforceBudgets(
@@ -213,6 +223,16 @@ extension CostUsageStore {
         {
             checkpoint.checkpoint()
         }
+    }
+
+    private static func sourcePublicationRetry(
+        _ result: CostUsageStoreBudgetResult = .init(deletedRows: 0, rowCount: 0, fileBytes: 0))
+        -> CostUsageStoreBudgetResult
+    {
+        var result = result
+        result.catchUpRequired = true
+        result.sourceValidationFailed = true
+        return result
     }
 
     /// True when persisting `cache` would leave every content table semantically unchanged.
@@ -1443,7 +1463,8 @@ enum CostUsageStoreAccess {
         reportWindow: (sinceKey: String, untilKey: String)? = nil,
         unloadedTokenSnapshotPaths: Set<String> = [],
         skipIdenticalContent: Bool = false,
-        receipt: CostUsageStore.CodexBaselineReceipt? = nil) -> CostUsageStoreBudgetResult
+        receipt: CostUsageStore.CodexBaselineReceipt? = nil,
+        sourcePublication: CostUsageSourcePublication? = nil) -> CostUsageStoreBudgetResult
     {
         store.syncSaveCodexCache(
             cache,
@@ -1452,6 +1473,7 @@ enum CostUsageStoreAccess {
             reportWindow: reportWindow,
             unloadedTokenSnapshotPaths: unloadedTokenSnapshotPaths,
             skipIdenticalContent: skipIdenticalContent,
-            receipt: receipt)
+            receipt: receipt,
+            sourcePublication: sourcePublication)
     }
 }

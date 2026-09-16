@@ -1,6 +1,6 @@
 # Windows 비용 파일 I/O 구현 경계
 
-IMPL-559~562. 상태: **CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION**.
+IMPL-559~563. 상태: **CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION**.
 Mac 호스트에서 소스를 작성한 기록이며 Windows 컴파일·실행·성능·파일 시스템 호환성을 입증하지 않는다. W06/W07 전체 기능 및 G0~G6 완료가 아니다.
 
 ## 파일 메타데이터와 캐시
@@ -53,10 +53,21 @@ Mac 호스트에서 소스를 작성한 기록이며 Windows 컴파일·실행·
 - Windows용 합성 fixture에 부재/빈/파일 root, 얕은 목록의 JSONL/폴더/점 숨김 구분, 취소, 잘못된 부모 root/디렉터리 session mapping의 실패를 작성했다. fixture와 ACL/공유 오류·실제 파일 시스템 I/O는 실행하지 않았다.
 - 이 공통 reader와 기존 재귀 inventory는 전체 목록을 메모리에 모으는 경로다. 대규모 단일 폴더/재귀 목록의 paging·시간 budget 세분화, native directory ID를 포함한 영속 색인 검증 및 junction cycle/alias, 목록 이후 최종 게시 사이 변경은 아직 남아 있다. 폴더/file stamp 대조는 atomic filesystem snapshot이 아니다.
 
+## IMPL-563: 관측 source와 저장 직전 대조
+
+- `CostUsagePublicationObservations`에 파일·폴더·실제 부재를 기록하고 immutable `CostUsageSourcePublication`으로 동결해 저장 경계로 넘긴다. collector는 잠금으로 보호하고 SQLite actor에는 mutable collector나 취소 closure를 보내지 않는다. raw source 경로는 메모리 관측에만 사용하며 새 로그/영속 파일에 저장하지 않는다.
+- 파일은 같은 native ID와 관측 크기 이상을 요구한다. 크기가 같을 때에는 정밀 수정 시각도 일치해야 하며, 늘어난 tail은 기존 고정 읽기 경계에 따라 다음 수집으로 넘긴다. 폴더는 관측 snapshot 일치, 부재는 계속 부재여야 한다. native 조회 실패와 Task/custom 취소는 성공으로 취급하지 않는다.
+- Codex의 개별 수집·의존/재시도 파일, 부모 색인의 cached mapping/head·폴더 열거, 명시적 missing cache 제거를 같은 관측 집합에 연결했다. SQLite 저장 전과 writer transaction의 COMMIT 직전에 대조한다. 실패 시 진행 중 save를 rollback하고 별도 `sourceValidationFailed`를 반환하며, scanner는 이를 throw하여 새 캐시의 보고서를 성공으로 반환하지 않는다. source 오류를 SQLite corruption 분류/rebuild에 넘기지 않는다. 저장 반환 후에도 대조한다.
+- unchanged 저장 전에 수행하는 기존 retention은 별도 transaction이다. 이후 source 실패로 save를 rollback해도 이미 끝난 retention까지 원복하는 계약은 아니다. COMMIT 이후 scanner 대조에서만 변경을 관측하면 저장된 snapshot은 남고 이번 report 호출은 실패한다. OS 파일 변경과 SQLite COMMIT은 하나의 원자적 transaction이 아니다.
+- Claude/Vertex 재귀 inventory는 빈 파일·폴더·없는 root까지 관측 집합에 포함한다. JSON cache의 protected writer staging callback에서 최종 교체 직전에 대조하고, 실패를 best-effort 디스크 저장 실패에 섞어 숨기지 않는다. report memo도 디스크 교체 전과 메모리 설치 전에 대조하며 source/cancellation 실패를 전달한다. 기존 memo fast return과 최종 report 반환에도 연결했다.
+- cache 교체 후 memo 단계에서 source가 바뀌면 cache 파일까지 이전 버전으로 되돌리는 다중 파일 transaction은 아니다. 디스크 memo I/O는 기존처럼 선택적이며, source 대조 실패와 구분한다. 마지막 관측 뒤 파일 시스템이 다시 바뀌는 경쟁도 남아 있다.
+- `WindowsCostPublicationTests.swift`에 append 허용/교체 거부, missing root 재등장/폴더 교체, staging 중 source 축소 시 Claude cache 및 memo의 이전 bytes/메모리 유지, Codex changed/identical save의 rollback·lastScan 보존·rebuild 없음용 합성 fixture를 작성했다. **실행하지 않았으며 통과 결과가 없다.**
+- 현재 Codex 관측 집합은 실제 연결한 수집/부모 탐색/명시적 부재 경로에 한정된다. 주 discovery의 날짜/flat/legacy/paged 전체 목록 세대와 모든 비수집 cache 재사용을 게시 경계에 묶는 작업은 남는다. 이것으로 전체 inventory·전체 prefix·모든 비용 source의 일관성을 완성했다고 판단하지 않는다. 대조의 전체 목록 순회/metadata I/O 비용과 writer lock 점유 시간도 미측정이다.
+
 ## 남은 연결
 
 1. 비페이지/legacy·부모 세션 index/캐시 부재 오류 전달은 IMPL-562에 작성했다. 대규모 재귀/단일 폴더의 bounded/pause/resume 통합, directory ID를 포함한 영속 색인 증거 및 junction cycle/alias 처리가 남는다. 실행 증거는 없다.
-2. IMPL-561에서 Codex/Claude expected-file과 열린 stream을 연결했다. 아직 관측 사이 truncate 후 재성장/같은 ID·size·mtime의 prefix 재작성, Claude의 이전 prefix 확인, 다른 비용 source 및 최종 게시까지 전체 버전 연결이 남는다. 메타데이터와 64 KiB anchor만으로 전체 내용 불변성을 증명하지 않는다.
+2. IMPL-561에서 Codex/Claude expected-file과 열린 stream을 연결했다. 아직 관측 사이 truncate 후 재성장/같은 ID·size·mtime의 prefix 재작성, Claude의 이전 prefix 확인, 다른 비용 source 및 최종 게시까지 전체 버전 연결이 남는다. IMPL-563은 연결한 관측 source의 게시 직전 metadata 대조이며 전체 Codex discovery/캐시 재사용과 내용 불변성 증명은 아직 포함하지 않는다. 메타데이터와 64 KiB anchor만으로 전체 내용 불변성을 증명하지 않는다.
 3. 날짜/flat/legacy 루트, hard link/junction, case-sensitive NTFS, UNC/SMB, ReFS/FAT, 삭제 후 재생성, 장기 resume 및 모든 비용 source와의 통합. 파일 ID의 파일 시스템별 재사용·불안정성도 포함한다.
 4. 실제 Windows SDK 컴파일, x64/ARM64, native UI와 설치된 제품에서의 비용 표시, full WinUI3 제품 그래프 및 배포 준비.
 

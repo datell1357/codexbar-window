@@ -271,7 +271,8 @@ extension CostUsageStore {
         fileBudgetBytes: Int64 = CostUsageStore.defaultFileBudgetBytes,
         unloadedTokenSnapshotPaths: Set<String> = [],
         skipIdenticalContent: Bool = false,
-        receipt: CodexBaselineReceipt? = nil) -> CostUsageStoreBudgetResult
+        receipt: CodexBaselineReceipt? = nil,
+        sourcePublication: CostUsageSourcePublication? = nil) -> CostUsageStoreBudgetResult
     {
         self.syncWithStoreIsolation { store in
             store.saveCodexCache(
@@ -283,7 +284,8 @@ extension CostUsageStore {
                 fileBudgetBytes: fileBudgetBytes,
                 unloadedTokenSnapshotPaths: unloadedTokenSnapshotPaths,
                 skipIdenticalContent: skipIdenticalContent,
-                receipt: receipt)
+                receipt: receipt,
+                sourcePublication: sourcePublication)
         }
     }
 }

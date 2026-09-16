@@ -239,6 +239,8 @@ struct CostUsageStoreBudgetResult: Equatable, Sendable {
     var rowCount: Int
     var fileBytes: Int64
     var catchUpRequired: Bool = false
+    /// Source I/O/change is a retry boundary, never database corruption/rebuild evidence.
+    var sourceValidationFailed: Bool = false
 }
 
 struct CostUsageStoreConfiguration: Equatable, Sendable {

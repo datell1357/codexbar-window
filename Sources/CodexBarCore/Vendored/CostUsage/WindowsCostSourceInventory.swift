@@ -31,10 +31,14 @@ enum WindowsCostSourceInventory {
     static func jsonlFiles(
         in root: URL,
         descendIntoDirectory: ((URL) -> Bool)? = nil,
-        checkCancellation: (() throws -> Void)? = nil) throws -> [URL: CostUsageClaudeFileStamp]?
+        checkCancellation: (() throws -> Void)? = nil,
+        publicationObservations: CostUsagePublicationObservations? = nil) throws -> [URL: CostUsageClaudeFileStamp]?
     {
         try self.checkCancellation(checkCancellation)
-        guard let rootSnapshot = try WindowsCostFileMetadata.atURL(root) else { return nil }
+        guard let rootSnapshot = try WindowsCostFileMetadata.atURL(root) else {
+            try publicationObservations?.missing(root)
+            return nil
+        }
         guard rootSnapshot.isDirectory else { throw Failure.unreadableDirectory }
         let failure = EnumerationFailure()
         let keys: Set<URLResourceKey> = [.isDirectoryKey, .isSymbolicLinkKey]
@@ -76,10 +80,12 @@ enum WindowsCostSourceInventory {
         for (url, expected) in directories {
             try self.checkCancellation(checkCancellation)
             guard try WindowsCostFileMetadata.atURL(url) == expected else { throw Failure.sourceChanged }
+            try publicationObservations?.directory(url, snapshot: .init(native: expected))
         }
         for (url, expected) in files {
             try self.checkCancellation(checkCancellation)
             try self.requireUnchangedFile(at: url, stamp: expected)
+            try publicationObservations?.file(url, snapshot: .init(claude: expected))
         }
         try self.checkCancellation(checkCancellation)
         return files

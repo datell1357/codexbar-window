@@ -125,14 +125,21 @@ final class CostUsageClaudeReportMemo: @unchecked Sendable {
         canonicalCachePath: String,
         sourceInventory: [String: CostUsageClaudeFileStamp],
         reportKey: CostUsageClaudeReportMemoKey,
-        report: CostUsageDailyReport)
+        report: CostUsageDailyReport,
+        sourcePublication: CostUsageSourcePublication? = nil,
+        checkCancellation: CostUsageScanner.CancellationCheck? = nil) throws
     {
         let key = Self.key(provider: provider, canonicalCachePath: canonicalCachePath)
         let entry = Entry(sourceInventory: sourceInventory, reportKey: reportKey, report: report)
+        try sourcePublication?.check(checkCancellation: checkCancellation)
+        try Self.persist(
+            entry, canonicalCachePath: canonicalCachePath,
+            sourcePublication: sourcePublication, checkCancellation: checkCancellation)
+        try checkCancellation?()
+        try sourcePublication?.check(checkCancellation: checkCancellation)
         self.lock.lock()
         self.installUnlocked(key: key, entry: entry)
         self.lock.unlock()
-        Self.persist(entry, canonicalCachePath: canonicalCachePath)
     }
 
     #if DEBUG
@@ -183,7 +190,12 @@ final class CostUsageClaudeReportMemo: @unchecked Sendable {
             report: envelope.report)
     }
 
-    private static func persist(_ entry: Entry, canonicalCachePath: String) {
+    private static func persist(
+        _ entry: Entry,
+        canonicalCachePath: String,
+        sourcePublication: CostUsageSourcePublication?,
+        checkCancellation: CostUsageScanner.CancellationCheck?) throws
+    {
         let url = Self.reportMemoFileURL(cacheFileURL: URL(fileURLWithPath: canonicalCachePath))
         let envelope = PersistedEnvelope(
             version: Self.persistedVersion,
@@ -194,7 +206,21 @@ final class CostUsageClaudeReportMemo: @unchecked Sendable {
         guard let data = try? JSONEncoder().encode(envelope) else { return }
         #if os(Windows)
         // Persisted memo is optional; a failed publication must not replace the previous file.
-        try? WindowsCredentialFileWriter.writePrivate(data, to: url)
+        var publicationFailure: (any Error)?
+        do {
+            try WindowsCredentialFileWriter.writePrivate(data, to: url) { _ in
+                do {
+                    try checkCancellation?()
+                    try sourcePublication?.check(checkCancellation: checkCancellation)
+                } catch {
+                    publicationFailure = error
+                    throw error
+                }
+            }
+        } catch {
+            if let publicationFailure { throw publicationFailure }
+            // Disk memo is optional; do not hide source-change or cancellation failures.
+        }
         #else
         let directory = url.deletingLastPathComponent()
         try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -366,7 +392,8 @@ enum CostUsageClaudeCacheIO {
         cache: CostUsageClaudeCache,
         cacheRoot: URL? = nil,
         calendar: Calendar = .current,
-        checkCancellation: CostUsageScanner.CancellationCheck? = nil) throws -> CostUsageClaudeFileStamp?
+        checkCancellation: CostUsageScanner.CancellationCheck? = nil,
+        sourcePublication: CostUsageSourcePublication? = nil) throws -> CostUsageClaudeFileStamp?
     {
         let url = self.cacheFileURL(provider: provider, cacheRoot: cacheRoot)
         var cache = cache
@@ -376,13 +403,17 @@ enum CostUsageClaudeCacheIO {
         #endif
         guard let data = try? JSONEncoder().encode(cache) else { return nil }
         try checkCancellation?()
+        try sourcePublication?.check(checkCancellation: checkCancellation)
         #if os(Windows)
-        var cancellationFailure: (any Error)?
+        var publicationFailure: (any Error)?
         var stagedStamp: CostUsageClaudeFileStamp?
         do {
             try WindowsCredentialFileWriter.writePrivate(data, to: url) { stagedURL in
-                do { try checkCancellation?() } catch {
-                    cancellationFailure = error
+                do {
+                    try checkCancellation?()
+                    try sourcePublication?.check(checkCancellation: checkCancellation)
+                } catch {
+                    publicationFailure = error
                     throw error
                 }
                 stagedStamp = CostUsageClaudeFileStamp.read(at: stagedURL)
@@ -392,7 +423,7 @@ enum CostUsageClaudeCacheIO {
             guard let stagedStamp, CostUsageClaudeFileStamp.read(at: url) == stagedStamp else { return nil }
             return stagedStamp
         } catch {
-            if let cancellationFailure { throw cancellationFailure }
+            if let publicationFailure { throw publicationFailure }
             return nil
         }
         #else

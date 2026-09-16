@@ -1,5 +1,7 @@
 # Windows 전용 제품 작업 현황
 
+- IMPL-563: 비용 source 관측 집합을 Codex SQLite COMMIT 및 Claude/Vertex cache/memo 교체 직전 대조에 연결. source 실패 rollback/throw와 DB corruption 분리, memo 재사용/반환 대조 및 미실행 회귀 fixture 작성. 전체 Codex discovery/비수집 cache 재사용·prefix 내용 결합·원자적 파일 snapshot 및 실제 Windows 동작은 남음. CODE_WRITTEN_UNVERIFIED.
+
 - IMPL-562: Codex 비페이지 날짜/flat·최근/legacy 재귀·부모 색인 목록에 Windows 오류 전달을 연결. cached session/head·catch-up 완료·캐시 삭제에서 실제 부재와 조회 실패 구분 작성. 얕은 native 목록 재관측·숨김/파일 종류·경로 구분자 비교와 fixture 추가. 실제 실행, 대규모 paging·directory ID/alias 및 최종 게시 결합은 남음. CODE_WRITTEN_UNVERIFIED.
 
 - IMPL-561: Codex/Claude 관측 metadata와 실제 열린 stream 결합, 최초 길이로 read boundary 고정·append 다음 수집 이월, 관측된 ID/크기/시각 변경 및 EOF/offset 오류 전달 작성. Codex metadata/parent/body 오류의 부분 성공 제거와 기존 합계 차감 지연·증분 anchor 요구. fixture 미실행. 전체 prefix/최종 게시/기타 source·실제 Windows 동작은 남음. CODE_WRITTEN_UNVERIFIED.

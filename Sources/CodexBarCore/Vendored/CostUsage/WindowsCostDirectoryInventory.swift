@@ -17,10 +17,14 @@ enum WindowsCostDirectoryInventory {
     static func read(
         in directory: URL,
         includeDirectories: Bool = true,
-        checkCancellation: (() throws -> Void)? = nil) throws -> Listing?
+        checkCancellation: (() throws -> Void)? = nil,
+        publicationObservations: CostUsagePublicationObservations? = nil) throws -> Listing?
     {
         try self.check(checkCancellation)
-        guard let snapshot = try WindowsCostFileMetadata.atURL(directory) else { return nil }
+        guard let snapshot = try WindowsCostFileMetadata.atURL(directory) else {
+            try publicationObservations?.missing(directory)
+            return nil
+        }
         guard snapshot.isDirectory else { throw WindowsCostSourceInventory.Failure.unreadableDirectory }
         let cursor = try WindowsCostDirectoryCursor(directoryURL: directory, snapshot: snapshot)
         var entries: [Entry] = []
@@ -47,6 +51,14 @@ enum WindowsCostDirectoryInventory {
         try self.check(checkCancellation)
         guard try WindowsCostFileMetadata.atURL(directory) == snapshot else {
             throw WindowsCostSourceInventory.Failure.sourceChanged
+        }
+        try publicationObservations?.directory(directory, snapshot: .init(native: snapshot))
+        for entry in entries {
+            if entry.snapshot.isDirectory {
+                try publicationObservations?.directory(entry.url, snapshot: .init(native: entry.snapshot))
+            } else {
+                try publicationObservations?.file(entry.url, snapshot: .init(native: entry.snapshot))
+            }
         }
         return Listing(directorySnapshot: snapshot, entries: entries)
     }

@@ -504,6 +504,7 @@ extension CostUsageScanner {
     }
 
     private struct ClaudeSourceInventory {
+        let publicationObservations = CostUsagePublicationObservations.forCurrentPlatform()
         var files: [String: ClaudeSourceFile] = [:]
 
         var stamps: [String: CostUsageClaudeFileStamp] {
@@ -613,7 +614,9 @@ extension CostUsageScanner {
         for root in roots {
             try checkCancellation?()
             #if os(Windows)
-            guard let files = try WindowsCostSourceInventory.jsonlFiles(in: root, checkCancellation: checkCancellation)
+            guard let files = try WindowsCostSourceInventory.jsonlFiles(
+                in: root, checkCancellation: checkCancellation,
+                publicationObservations: inventory.publicationObservations)
             else { continue }
             for (url, stamp) in files where stamp.size > 0 {
                 inventory.files[url.path] = ClaudeSourceFile(url: url, stamp: stamp)
@@ -650,6 +653,7 @@ extension CostUsageScanner {
     {
         let roots = self.defaultClaudeProjectsRoots(options: options)
         let inventory = try Self.inventoryClaudeRoots(roots, checkCancellation: checkCancellation)
+        let sourcePublication = inventory.publicationObservations?.freeze()
         try checkCancellation?()
 
         let cacheURL = CostUsageClaudeCacheIO.cacheFileURL(provider: provider, cacheRoot: options.cacheRoot)
@@ -673,6 +677,7 @@ extension CostUsageScanner {
            priorMemo.reportKey == reportKey
         {
             try checkCancellation?()
+            try sourcePublication?.check(checkCancellation: checkCancellation)
             return priorMemo.report
         }
 
@@ -767,7 +772,8 @@ extension CostUsageScanner {
                 cache: artifact,
                 cacheRoot: options.cacheRoot,
                 calendar: range.calendar,
-                checkCancellation: checkCancellation)
+                checkCancellation: checkCancellation,
+                sourcePublication: sourcePublication)
         } else {
             nil
         }
@@ -786,13 +792,16 @@ extension CostUsageScanner {
             finalCacheArtifactStamp == cacheArtifactStamp
         }
         if cacheArtifactIsCurrent, finalPricingArtifactStamp == pricingArtifactStamp {
-            memo.store(
+            try memo.store(
                 provider: provider,
                 canonicalCachePath: canonicalCachePath,
                 sourceInventory: sourceInventory,
                 reportKey: finalReportKey,
-                report: report)
+                report: report,
+                sourcePublication: sourcePublication,
+                checkCancellation: checkCancellation)
         }
+        try sourcePublication?.check(checkCancellation: checkCancellation)
         return report
     }
 

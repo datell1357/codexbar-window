@@ -889,6 +889,7 @@ enum CostUsageScanner {
         let modelsDevCatalog: ModelsDevCatalog?
         let modelsDevCacheRoot: URL?
         let priorityTurns: [String: CodexPriorityTurnMetadata]
+        var publicationObservations: CostUsagePublicationObservations? = nil
     }
 
     final class CodexCachePathAliasIndex {
@@ -1079,6 +1080,7 @@ enum CostUsageScanner {
         private let checkCancellation: CancellationCheck?
         private let scanBudget: CodexScanBudget?
         private let headParseObserver: (() -> Void)?
+        private let publicationObservations: CostUsagePublicationObservations?
         private var discovery: CostUsageCodexSessionDiscovery
         private var knownFilePaths: Set<String> = []
         private var knownDirectoryPaths: Set<String> = []
@@ -1090,13 +1092,15 @@ enum CostUsageScanner {
             cachedDiscovery: CostUsageCodexSessionDiscovery? = nil,
             scanBudget: CodexScanBudget? = nil,
             headParseObserver: (() -> Void)? = nil,
-            checkCancellation: CancellationCheck? = nil)
+            checkCancellation: CancellationCheck? = nil,
+            publicationObservations: CostUsagePublicationObservations? = nil)
         {
             self.files = files
             self.roots = roots
             self.checkCancellation = checkCancellation
             self.scanBudget = scanBudget
             self.headParseObserver = headParseObserver
+            self.publicationObservations = publicationObservations
             let rootPaths = roots.map(\.standardizedFileURL.path).sorted()
             if var cachedDiscovery, cachedDiscovery.roots == rootPaths {
                 for (sessionId, fileURL) in cachedSessionFiles {
@@ -1198,7 +1202,7 @@ enum CostUsageScanner {
 
         private func cachedFileURL(for sessionId: String) throws -> URL? {
             guard let path = self.discovery.filePathBySessionId[sessionId] else { return nil }
-            guard try CostUsageScanner.codexFileExists(fileURL: URL(fileURLWithPath: path)) else {
+            guard try self.observeFileIfPresent(URL(fileURLWithPath: path)) else {
                 self.discovery.filePathBySessionId.removeValue(forKey: sessionId)
                 return nil
             }
@@ -1207,9 +1211,24 @@ enum CostUsageScanner {
 
         private func cachedSessionFiles() throws -> [String: URL] {
             try self.discovery.filePathBySessionId.reduce(into: [:]) { result, entry in
-                guard try CostUsageScanner.codexFileExists(fileURL: URL(fileURLWithPath: entry.value)) else { return }
+                guard try self.observeFileIfPresent(URL(fileURLWithPath: entry.value)) else { return }
                 result[entry.key] = URL(fileURLWithPath: entry.value)
             }
+        }
+
+        private func observeFileIfPresent(_ url: URL) throws -> Bool {
+            #if os(Windows)
+            guard let metadata = try CostUsageScanner.codexFileMetadataIfPresent(fileURL: url) else {
+                try self.publicationObservations?.missing(url)
+                return false
+            }
+            if let snapshot = metadata.readSnapshot {
+                try self.publicationObservations?.file(url, snapshot: snapshot)
+            }
+            return true
+            #else
+            return try CostUsageScanner.codexFileExists(fileURL: url)
+            #endif
         }
 
         private var hasScannedInventory: Bool {
@@ -1245,6 +1264,11 @@ enum CostUsageScanner {
             #if os(Windows)
             let metadata = try CostUsageScanner.codexFileMetadataIfPresent(fileURL: fileURL)
                 ?? CostUsageScanner.CodexFileMetadata(path: fileURL.path, mtimeUnixMs: 0, size: 0, fileId: nil)
+            if let snapshot = metadata.readSnapshot {
+                try self.publicationObservations?.file(fileURL, snapshot: snapshot)
+            } else {
+                try self.publicationObservations?.missing(fileURL)
+            }
             #else
             let metadata = CostUsageScanner.codexFileMetadata(fileURL: fileURL)
             #endif
@@ -1340,7 +1364,8 @@ enum CostUsageScanner {
             var jsonlFileCount = 0
             #if os(Windows)
             let listing = try WindowsCostDirectoryInventory.read(
-                in: directoryURL, checkCancellation: self.checkCancellation)
+                in: directoryURL, checkCancellation: self.checkCancellation,
+                publicationObservations: self.publicationObservations)
             for entry in listing?.entries ?? [] {
                 try self.checkCancellation?()
                 if entry.snapshot.isDirectory {
@@ -5463,6 +5488,9 @@ enum CostUsageScanner {
     {
         try context.checkCancellation?()
         let metadata = try Self.requiredCodexFileMetadata(fileURL: fileURL)
+        if let snapshot = metadata.readSnapshot {
+            try context.resources.publicationObservations?.file(fileURL, snapshot: snapshot)
+        }
         defer {
             context.resources.cachePathAliasIndex.update(
                 path: metadata.path,
@@ -5941,8 +5969,11 @@ enum CostUsageScanner {
         receipt: CostUsageStore.CodexBaselineReceipt,
         range: CostUsageDayRange,
         history: CodexScanHistoryHydrator,
-        previousReport: CostUsageCodexPreviousReport?)
+        previousReport: CostUsageCodexPreviousReport?,
+        sourcePublication: CostUsageSourcePublication?,
+        checkCancellation: CancellationCheck?) throws
     {
+        try sourcePublication?.check(checkCancellation: checkCancellation)
         // The serial scan queue remains the per-process writer boundary. The store actor owns
         // the sole writable connection; app and CLI readers take independent WAL snapshots.
         let saveResult = CostUsageStoreAccess.save(
@@ -5953,7 +5984,13 @@ enum CostUsageScanner {
             reportWindow: (sinceKey: range.sinceKey, untilKey: range.untilKey),
             unloadedTokenSnapshotPaths: history.unloadedTokenPaths,
             skipIdenticalContent: true,
-            receipt: receipt)
+            receipt: receipt,
+            sourcePublication: sourcePublication)
+        if saveResult.sourceValidationFailed {
+            try checkCancellation?()
+            throw CostUsageSourcePublication.Failure.sourceChangedOrUnavailable
+        }
+        try sourcePublication?.check(checkCancellation: checkCancellation)
         if saveResult.catchUpRequired {
             cache.codexScanCatchUpPending = true
             cache.codexPreviousReport = previousReport
@@ -6259,6 +6296,7 @@ enum CostUsageScanner {
                 cachedParentSessionFiles = try Self.cachedCodexSessionIndex(
                     cache: cache, roots: plan.roots, knownExistingPaths: filePathsInScan)
             }
+            let publicationObservations = CostUsagePublicationObservations.forCurrentPlatform()
             let fileIndex = CodexSessionFileIndex(
                 files: files,
                 roots: plan.roots,
@@ -6266,7 +6304,8 @@ enum CostUsageScanner {
                 cachedDiscovery: plan.rootsChanged ? nil : cache.codexSessionDiscovery,
                 scanBudget: scanBudget,
                 headParseObserver: self.codexSessionHeadParseObserverStore?.observer,
-                checkCancellation: checkCancellation)
+                checkCancellation: checkCancellation,
+                publicationObservations: publicationObservations)
             let inheritedResolver = CodexInheritedTotalsResolver(
                 fileIndex: fileIndex,
                 checkCancellation: checkCancellation,
@@ -6283,7 +6322,8 @@ enum CostUsageScanner {
                 projectPathResolver: CodexCanonicalProjectPathResolver(),
                 modelsDevCatalog: plan.modelsDevCatalog,
                 modelsDevCacheRoot: options.cacheRoot,
-                priorityTurns: plan.priorityTurns)
+                priorityTurns: plan.priorityTurns,
+                publicationObservations: publicationObservations)
             let scanContext = Self.codexFileScanContext(
                 range: range,
                 options: options,
@@ -6397,6 +6437,7 @@ enum CostUsageScanner {
                         calendar: range.calendar)
                     else { continue }
                     guard try Self.codexFileExists(fileURL: URL(fileURLWithPath: key)) else {
+                        try publicationObservations?.missing(URL(fileURLWithPath: key))
                         Self.applyFileDays(cache: &cache, fileDays: old.days, sign: -1)
                         cache.files.removeValue(forKey: key)
                         continue
@@ -6490,13 +6531,15 @@ enum CostUsageScanner {
             }
             cache.lastScanUnixMs = nowMs
             try checkCancellation?()
-            Self.saveCodexCache(
+            try Self.saveCodexCache(
                 &cache,
                 store: loadedCache.store,
                 receipt: loadedCache.receipt,
                 range: range,
                 history: history,
-                previousReport: previousReport)
+                previousReport: previousReport,
+                sourcePublication: publicationObservations?.freeze(),
+                checkCancellation: checkCancellation)
         }
 
         if let previous = Self.codexPreviousReport(

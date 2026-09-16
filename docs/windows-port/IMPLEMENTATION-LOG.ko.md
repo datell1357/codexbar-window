@@ -5333,3 +5333,13 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - cached session 목록·부모 mapping/head 조회·catch-up 완료 경로·마지막 캐시 삭제에서 native 부재 구분을 사용하도록 작성했다. 권한/조회 오류 및 regular file 대신 directory인 경우 missing/삭제/완료 증거로 사용하지 않는다. 비페이지 날짜 budget은 실패 시에도 정산한다.
 - root 부재/빈/잘못된 종류·JSONL/숨김/폴더 구분·취소·잘못된 부모 root/mapping용 Windows 합성 fixture를 작성했으나 실행하지 않았다. 대규모 bulk inventory의 paging·directory ID/alias/cycle·prefix/최종 게시 결합과 실제 SDK/파일 시스템 동작은 남아 있다.
 - CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·formatter·compiler/manifest 평가·Windows·파일 fixture·실계정·CI 실행 검증 미실행. 전체 Windows 제품/W01~W16/G0~G6 완료 아님. 직전 IMPL-561은 0603c3b076210e07b331c65d47577af9936f22cf로 origin/main 푸시 확인. 이번 단위도 별도 커밋·푸시한다.
+
+
+## IMPL-563 — Bind observed Windows cost sources to cache publication
+
+- 파일·폴더·부재의 공통 관측 집합과 immutable 게시 snapshot을 작성했다. 같은 native ID의 append는 다음 수집 tail로 허용하고 교체/축소/같은 크기 시각 변경·폴더 변경/부재 재등장·조회 오류를 거부한다. 관측 경로는 새 영속 자료/로그에 기록하지 않는다.
+- Codex 수집/의존 파일·부모 색인의 mapping/head/폴더·명시적 cache 부재를 연결하고 저장 전/COMMIT 직전/저장 반환 후 대조를 작성했다. source 실패는 진행 중 transaction rollback과 별도 retry flag로 전달하며 DB corruption/rebuild 경로와 구분한다. scanner는 새 report를 성공으로 반환하지 않는다.
+- Claude/Vertex inventory에 빈 파일·폴더·없는 root를 포함하고 cache와 report memo staging 교체 직전, memo 메모리 설치/재사용 및 최종 report 반환에 대조를 연결했다. source/cancellation 실패와 선택적인 디스크 cache/memo I/O 실패를 구분한다.
+- 합성 Windows fixture로 append/교체, 부재 재등장/폴더 교체, Claude cache/memo staging 실패 시 기존 자료 유지, Codex changed/identical save rollback·lastScan 보존·rebuild 없음 시나리오를 작성했으나 실행하지 않았다.
+- 전체 Codex 주 discovery 목록 세대/비수집 cache 재사용·prefix 재작성·directory ID/cycle·bounded discovery·기타 cost source는 남는다. 기존 retention은 별도 transaction이며 게시 후 변경에 대한 다중 파일 원복/원자적 FS snapshot 보장은 없다. 전체 Windows 제품/W01~W16/G0~G6 완료 아님.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·formatter·compiler/manifest·파일 fixture·Windows·실계정·CI 실행 검증 미실행. 직전 IMPL-562는 c6ae69be095b62161ae6806bfd69b56ef881e4b4로 origin/main 푸시 확인. 이번 단위도 별도 커밋·푸시한다.
