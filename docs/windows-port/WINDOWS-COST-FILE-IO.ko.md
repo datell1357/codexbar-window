@@ -1,6 +1,6 @@
 # Windows 비용 파일 I/O 구현 경계
 
-IMPL-559~566. 상태: **CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION**.
+IMPL-559~567. 상태: **CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION**.
 Mac 호스트에서 소스를 작성한 기록이며 Windows 컴파일·실행·성능·파일 시스템 호환성을 입증하지 않는다. W06/W07 전체 기능 및 G0~G6 완료가 아니다.
 
 ## 파일 메타데이터와 캐시
@@ -99,10 +99,23 @@ Mac 호스트에서 소스를 작성한 기록이며 Windows 컴파일·실행·
 - 전체 prefix hash는 별도 파일 읽기다. parser가 소비한 바이트 자체의 digest를 저장하거나 최종 SQLite COMMIT에서 같은 내용 버전을 다시 보장하는 구현은 아직 아니다. metadata가 원상 복구되는 동시 재작성이나 parsing/hash 사이의 내용 변경까지 검출했다고 주장하지 않는다. parent head discovery의 자체 identity 증거에도 별도 content 결합이 남는다.
 - chunk 크기는 메모리 제한이며 전체 I/O/시간 예산은 아니다. 현재 여러 재사용/진행 계산 경로에서 prefix를 다시 읽을 수 있다. 반복 hash의 공유·durable resumable validation과 scan budget 정산, 대형 파일 성능 검증은 후속 필수 작업이다. 기존 pending 상태의 과거 보고서 제공 정책과 이후 변경 관측 한계도 유지한다.
 
+## IMPL-567: parser 소비 바이트와 게시 시점의 내용 대조
+
+- JSONL scanner는 선택적인 Windows content capture를 지원한다. `WindowsCostContentRead`는 같은 FileHandle에서 읽어 parser에 넘긴 Data chunk를 누적하며, read offset/마지막 완결 줄 offset에 대응하는 두 hash state를 유지한다. 모든 줄마다 새 전체 hash를 계산하지 않는다.
+- partial JSON resume는 열린 handle의 0..startOffset을 읽어 기존 prefix hash와 비교한 뒤 parsing을 시작한다. snapshot/offset/anchor 불일치와 읽기 오류는 throw하며 cached JSON prefix/누적 token state를 성공 결과로 반환하지 않는다. 이 선행 prefix I/O는 아직 scan budget으로 분할 재개하지 않는다.
+- 전체 Codex parser는 `windowsReadAnchor`를 반환한다. 관측 tail이 미완성 JSON이라 마지막 완결 줄로 parsedBytes/target을 되돌리면 committed anchor를 선택한다. Windows cache 생성은 이 digest만 사용하며 parser 반환 뒤 별도 파일 읽기로 새 hash를 붙이지 않는다.
+- 본문 앞의 session metadata 읽기도 실제 소비한 chunk의 auxiliary anchor를 반환한다. 부분 수집에서는 이 범위가 parsedBytes보다 길 수 있으므로 별도로 유지한다. usage-cache/SQLite details의 `codexWindowsReadProofVersion = 1`과 auxiliary anchors를 encode/decode하며, 기존 필드 없는 IMPL-566 이전/동일 형태 자료는 Windows 재사용 증거가 없는 것으로 보고 재파싱한다.
+- cached fresh/증분/history 재사용은 기본 prefix와 auxiliary anchors를 모두 대조한다. full rescan/append의 메타데이터 지문은 offset별로 병합하며 같은 offset의 서로 다른 hash는 오류다. row filtering과 SQLite round-trip은 proof version/auxiliary data를 보존한다.
+- immutable publication entry는 관측 파일별 여러 prefix anchor를 보관한다. metadata 재관측이 content 증거를 덮어쓰지 않으며, 같은 길이의 상충 내용도 overwrite하지 않는다. 한 파일의 여러 길이는 오름차순 한 번의 순차 읽기로 대조하며 read guard와 Task/custom 취소를 유지한다.
+- cache fresh/retained source, full/partial parser, 재사용하는 과거 history 및 부모 dependency-key hash를 publication ledger에 연결했다. 기존 저장 전/COMMIT 직전/반환 직전 검사가 이제 연결된 prefix 내용도 대조한다. observed content 실패는 기존 sourceValidationFailed/rollback 경로를 따른다. 빈 source와 directory/missing 관측은 기존 metadata 정책을 유지한다.
+- `WindowsCostContentReadTests.swift`에 같은 size/mtime 재작성에도 parser digest가 실제 옛 Data를 보존하는 경우, partial line/같은 handle 재개·변경된 prefix 거부, EOF rollback, metadata의 추가 관측 범위, 다중 지문 및 changed/identical SQLite 저장 직전 rewrite 시나리오를 작성했다. 기존 usage source fixture에 proof version과 auxiliary SQLite 복원 항목을 추가했다. **컴파일·실행·검증은 하지 않았다.**
+- 내용 대조가 끝난 뒤 writer가 다시 변경할 수 있으며, 여러 파일의 일관된 immutable snapshot이나 writer 차단을 제공하지 않는다. source를 안정적으로 잠그거나 버전 snapshot으로 고정한 구현이 아니다. 같은 호출의 연결된 읽기 증거를 최종 경계에서 비교하는 계약이다.
+- 전체 I/O/벽시계 예산과 대규모 prefix 재개의 durable state는 남는다. 같은 entry 안의 여러 anchor는 한 pass로 묶었지만 scanner의 서로 다른 재사용/완료/저장 경계는 여전히 반복 읽을 수 있다. parent session discovery head의 자체 proof·Claude/다른 비용 source·전체 Windows 실행/성능 검증도 후속 필수 작업이다.
+
 ## 남은 연결
 
 1. 비페이지/legacy·부모 세션 index/캐시 부재 오류 전달은 IMPL-562에 작성했다. 대규모 재귀/단일 폴더의 bounded/pause/resume 통합, IMPL-565에서 parent discovery의 native directory/file snapshot과 legacy 재탐색을 작성했다. main lookback의 완료 폴더 세대와 junction cycle/alias 처리는 남는다. 실행 증거는 없다.
-2. IMPL-561은 Codex/Claude expected-file과 열린 stream, IMPL-563~564는 source/discovery의 게시 직전 metadata, IMPL-566은 Codex usage-cache native snapshot과 전체 prefix 대조를 작성했다. parser 소비 바이트부터 최종 게시까지 내용 버전 결합, 관측 사이 재작성/재성장, Claude 이전 prefix, parent head 내용 결합, 모든 비용 source와 이전 호출의 전체 directory 세대가 남는다. hashing의 전체 I/O 예산·반복 읽기 공유도 아직 연결하지 않았다.
+2. IMPL-561은 expected-file/열린 stream, IMPL-563~564는 게시 직전 metadata, IMPL-566은 usage native snapshot/전체 prefix, IMPL-567은 Codex parser 실제 바이트·선행 metadata·게시 경계의 내용 비교를 작성했다. 아직 immutable multi-file snapshot, 관측 뒤 재작성, Claude 이전 prefix와 기타 source, parent head 자체의 내용 결합 및 이전 호출의 전체 directory 세대가 남는다. hashing의 전체 I/O 예산·durable resume·경계 간 반복 읽기 공유도 후속 작업이다.
 3. 날짜/flat/legacy 루트, hard link/junction, case-sensitive NTFS, UNC/SMB, ReFS/FAT, 삭제 후 재생성, 장기 resume 및 모든 비용 source와의 통합. 파일 ID의 파일 시스템별 재사용·불안정성도 포함한다.
 4. 실제 Windows SDK 컴파일, x64/ARM64, native UI와 설치된 제품에서의 비용 표시, full WinUI3 제품 그래프 및 배포 준비.
 

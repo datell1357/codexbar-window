@@ -332,6 +332,9 @@ struct CostUsageFileUsage: Codable, Equatable {
     var codexWindowsSource: CostUsageFileReadSnapshot? = nil
     /// Changes on a full reparse so equal row counts cannot reuse a previous source generation.
     var codexWindowsContentGeneration: String? = nil
+    /// Version 1 anchors originate from the bytes delivered to the parser.
+    var codexWindowsReadProofVersion: Int? = nil
+    var codexWindowsAuxiliaryAnchors: [CostUsageCodexTokenIndexAnchor]? = nil
 
     var hasBufferedCodexSubagentLines: Bool {
         self.codexReadRetryBufferPresence?.subagent ?? (self.codexBufferedSubagentLines?.isEmpty == false)
@@ -437,7 +440,7 @@ struct CostUsageCodexTokenCheckpoint: Codable, Equatable {
     var state: CostUsageCodexTokenAccumulatorState
 }
 
-struct CostUsageCodexTokenIndexAnchor: Codable, Equatable {
+struct CostUsageCodexTokenIndexAnchor: Codable, Equatable, Sendable {
     var indexedBytes: Int64
     var windowStart: Int64
     var sha256: String

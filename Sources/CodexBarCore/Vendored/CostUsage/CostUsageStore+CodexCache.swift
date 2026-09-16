@@ -326,6 +326,8 @@ extension CostUsageStore {
         var eventWhitespaceParsed: Bool?
         var windowsSource: CostUsageFileReadSnapshot? = nil
         var windowsContentGeneration: String? = nil
+        var windowsReadProofVersion: Int? = nil
+        var windowsAuxiliaryAnchors: [CostUsageCodexTokenIndexAnchor]? = nil
     }
 
     private struct StoredPriorityState: Codable {
@@ -521,7 +523,9 @@ extension CostUsageStore {
                 codexReadRetryBufferPresence: retryPresence.map { $0[file.path] ?? .init() },
                 codexEventWhitespaceParsed: details.eventWhitespaceParsed,
                 codexWindowsSource: details.windowsSource,
-                codexWindowsContentGeneration: details.windowsContentGeneration)
+                codexWindowsContentGeneration: details.windowsContentGeneration,
+                codexWindowsReadProofVersion: details.windowsReadProofVersion,
+                codexWindowsAuxiliaryAnchors: details.windowsAuxiliaryAnchors)
             cache.files[file.path] = usage
         }
         cache.days = Self.days(from: snapshot.dayAggregates)
@@ -928,7 +932,9 @@ extension CostUsageStore {
             interleavedTotals: usage.hasInterleavedTotals,
             eventWhitespaceParsed: usage.codexEventWhitespaceParsed,
             windowsSource: usage.codexWindowsSource,
-            windowsContentGeneration: usage.codexWindowsContentGeneration)
+            windowsContentGeneration: usage.codexWindowsContentGeneration,
+            windowsReadProofVersion: usage.codexWindowsReadProofVersion,
+            windowsAuxiliaryAnchors: usage.codexWindowsAuxiliaryAnchors)
         let file = CostUsageStoreFile(
             path: path,
             inode: Self.inode(from: usage.codexScanFileId),

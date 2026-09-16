@@ -5374,3 +5374,14 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - 정밀 시각 차이, 64 KiB 범위 밖 head 재작성, 정상 append/변경된 prefix, legacy JSON/tail anchor, hash 취소, SQLite 동수 행/token 교체·native 필드 복원, 전체 scanner의 같은 길이 session 재작성용 Windows fixture 코드를 추가했다. 기존 cached-source fixture도 새 증거를 명시하도록 갱신했다. 모든 fixture는 미실행이다.
 - hash는 parsing 이후 별도 읽기이며 parser가 소비한 바이트와 최종 게시를 하나의 immutable version으로 묶은 것은 아니다. 동시 writer의 관측 사이 재작성/재성장·Claude prefix·주 discovery 세대·junction/alias와 전체 hashing/metadata I/O 예산 및 실제 Windows SDK/runtime가 남는다. 전체 W01~W16/G0~G6 완료 아님.
 - CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·formatter·compiler/manifest·파일 fixture·Windows·실계정·CI 실행 검증 미실행. 직전 IMPL-565는 5680423b4ba3b42bec2ae851627375a978ed4909로 origin/main 푸시 확인. 이번 단위도 별도 커밋·푸시한다.
+
+
+## IMPL-567 — Bind consumed Codex bytes to Windows cache publication
+
+- `WindowsCostContentRead`를 작성해 JSONL parser가 처리한 실제 Data chunk의 SHA-256을 누적한다. read offset와 마지막 완결 줄 offset의 hash state를 따로 유지하고, EOF의 미완성 JSON을 되돌릴 때 해당 committed 지문을 선택하도록 연결했다.
+- 증분 재개는 같은 열린 handle에서 기존 prefix를 읽어 저장된 anchor와 대조한 뒤 새 바이트를 파싱한다. Windows 저장 anchor는 parser 결과만 사용하며 파싱 후 별도 재읽기로 기존 row를 재승인하지 않는다.
+- 본문 전 session metadata 읽기의 지문도 별도 보존한다. 본문보다 앞서 읽은 범위가 부분 scan offset 밖에 있더라도 cache reuse와 게시 대조에 포함한다. JSON/SQLite details에 read-proof version과 auxiliary anchors를 저장·복원하고 과거 version 없는 source는 재파싱한다.
+- publication ledger에 동일 파일의 여러 prefix 관측을 보존하고 같은 offset의 상충 지문은 오류로 처리한다. 같은 파일의 여러 길이는 한 순차 읽기로 대조한다. fresh cache/기존 history 재사용·append/rescan·부모 의존성 digest를 기존 preflight/COMMIT 직전/반환 경계에 연결했다.
+- 실제 소비 후 같은 stamp 재작성, partial JSON resume·변경된 prefix 재개 거부, EOF rollback 지문, metadata 선행 범위, 여러 proof 보존 및 changed/identical SQLite 저장 직전 내용 변경용 Windows fixture를 작성했다. 기존 source fixture의 새 proof-version/SQLite 복원 조건도 갱신했다. 전부 미실행이다.
+- 관측 뒤 변경과 여러 파일의 동시 변경까지 막는 immutable filesystem snapshot/파일 잠금은 아니다. 전체 prefix 재읽기의 durable resume/시간·I/O 예산, parent head 자체의 content proof, Claude/기타 source, 주 lookback 세대·junction/alias 및 실제 SDK/runtime가 남는다. 전체 W01~W16/G0~G6 완료 아님.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·formatter·compiler/manifest·파일 fixture·Windows·실계정·CI 실행 검증 미실행. 직전 IMPL-566은 88f09e18c927195d4596ed8d2e4b643083a7aa2f로 origin/main 푸시 확인. 이번 단위도 별도 커밋·푸시한다.

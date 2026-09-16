@@ -21,6 +21,7 @@ extension WindowsCostPublicationTests {
         usage.codexScanComplete = true
         usage.codexWindowsSource = metadata.readSnapshot
         usage.codexWindowsContentGeneration = UUID().uuidString
+        usage.codexWindowsReadProofVersion = CostUsageScanner.windowsCodexReadProofVersion
         usage.codexTokenIndexAnchor = CostUsageScanner.codexTokenIndexAnchor(
             fileURL: file, indexedBytes: metadata.size, expectedFile: metadata.readSnapshot)
         return usage
@@ -38,6 +39,7 @@ extension WindowsCostPublicationTests {
         usage.codexWindowsSource = CostUsageFileReadSnapshot(native: first)
         usage.codexScanFileId = first.fileID
         usage.codexWindowsContentGeneration = "synthetic-generation"
+        usage.codexWindowsReadProofVersion = CostUsageScanner.windowsCodexReadProofVersion
         let metadata = CostUsageScanner.CodexFileMetadata(
             path: "unused.jsonl", mtimeUnixMs: second.mtimeUnixMs, size: second.size, fileId: second.fileID,
             readSnapshot: CostUsageFileReadSnapshot(native: second))
@@ -94,6 +96,7 @@ extension WindowsCostPublicationTests {
                 as? [String: Any])
             object.removeValue(forKey: "codexWindowsSource")
             object.removeValue(forKey: "codexWindowsContentGeneration")
+            object.removeValue(forKey: "codexWindowsReadProofVersion")
             let legacy = try JSONDecoder().decode(
                 CostUsageFileUsage.self, from: JSONSerialization.data(withJSONObject: object))
             #expect(!CostUsageScanner.windowsCodexSourceMatches(legacy, metadata: metadata))
@@ -128,6 +131,7 @@ extension WindowsCostPublicationTests {
             calendar.timeZone = try #require(TimeZone(secondsFromGMT: 0))
             var usage = try self.usageSource(file)
             usage.sessionId = "synthetic-session"
+            usage.codexWindowsAuxiliaryAnchors = usage.codexTokenIndexAnchor.map { [$0] }
             usage.days = ["2026-08-01": ["synthetic-cost-model": [10, 0, 0]]]
             usage.codexRows = [.init(day: "2026-08-01", model: "synthetic-cost-model",
                                     turnID: nil, eventIndex: 0, input: 10, cached: 0, output: 0)]
@@ -143,6 +147,8 @@ extension WindowsCostPublicationTests {
             let loaded = CostUsageStoreAccess.read(cacheRoot: cacheRoot, calendar: calendar)
             let persisted = try #require(loaded.files[file.path])
             #expect(persisted.codexWindowsSource == usage.codexWindowsSource)
+            #expect(persisted.codexWindowsReadProofVersion == usage.codexWindowsReadProofVersion)
+            #expect(persisted.codexWindowsAuxiliaryAnchors == usage.codexWindowsAuxiliaryAnchors)
             #expect(persisted.codexWindowsContentGeneration == usage.codexWindowsContentGeneration)
             #expect(persisted.codexRows?.first?.input == 10)
 

@@ -329,6 +329,8 @@ enum CostUsageScanner {
         let jsonlResumeState: CostUsageJsonl.ResumeState?
         let bufferedSubagentLines: [CodexBufferedFastLine]?
         let bufferedUnresolvedForkLines: [CodexBufferedFastLine]?
+        var windowsReadAnchor: CostUsageCodexTokenIndexAnchor? = nil
+        var windowsAuxiliaryAnchors: [CostUsageCodexTokenIndexAnchor] = []
     }
 
     struct CodexUsageRow: Codable, Equatable {
@@ -1146,6 +1148,13 @@ enum CostUsageScanner {
                 return
             }
             _ = try self.resumeDiscovery()
+        }
+
+        func observeContent(
+            fileURL: URL, metadata: CodexFileMetadata, anchor: CostUsageCodexTokenIndexAnchor?) throws
+        {
+            try CostUsageScanner.observeWindowsCodexContent(
+                fileURL: fileURL, metadata: metadata, anchor: anchor, observations: self.publicationObservations)
         }
 
         func remember(
@@ -2015,6 +2024,7 @@ enum CostUsageScanner {
                     throw CostUsageSourcePublication.Failure.sourceChangedOrUnavailable
                 }
                 digest = anchor.sha256
+                try self.fileIndex.observeContent(fileURL: fileURL, metadata: metadata, anchor: anchor)
             }
             return ["file", sessionId, fileURL.standardizedFileURL.path, snapshot.fileID,
                     String(snapshot.modifiedSeconds), String(snapshot.modifiedNanoseconds),
@@ -4417,12 +4427,13 @@ enum CostUsageScanner {
     private static func parseCodexSessionMetadata(
         fileURL: URL,
         expectedFile: CostUsageFileReadSnapshot? = nil,
+        onWindowsContent: ((CostUsageCodexTokenIndexAnchor) -> Void)? = nil,
         checkCancellation: CancellationCheck? = nil) throws -> CodexSessionMetadata?
     {
         #if os(Windows)
         let snapshot = try expectedFile ?? CostUsageFileReadSnapshot.capture(at: fileURL)
         var matched: CodexSessionMetadata?
-        _ = try CostUsageJsonl.scanBounded(
+        let progress = try CostUsageJsonl.scanBounded(
             fileURL: fileURL,
             maxLineBytes: Self.codexSessionMetadataMaxLineBytes,
             prefixBytes: Self.codexSessionMetadataMaxLineBytes,
@@ -4430,6 +4441,7 @@ enum CostUsageScanner {
             resumeState: nil,
             shouldStop: { _ in matched != nil },
             expectedFile: snapshot,
+            captureWindowsContent: onWindowsContent != nil,
             checkCancellation: checkCancellation,
             onLine: { line in
                 guard matched == nil, !line.wasTruncated, !line.bytes.isEmpty else { return }
@@ -4439,6 +4451,7 @@ enum CostUsageScanner {
                     matched = Self.codexSessionMetadata(from: object)
                 }
             })
+        if let anchor = progress.windowsReadAnchor { onWindowsContent?(anchor) }
         return matched
         #else
         let handle: FileHandle
@@ -4750,9 +4763,11 @@ enum CostUsageScanner {
         shouldStopReading: ((Int64) -> Bool)? = nil,
         inheritedTotalsResolver: ((String, String) throws -> CodexForkBaseline)? = nil,
         expectedFile: CostUsageFileReadSnapshot? = nil,
+        expectedPrefixAnchor: CostUsageCodexTokenIndexAnchor? = nil,
         checkCancellation: CancellationCheck? = nil) throws -> CodexParseResult
     {
         let readSnapshot = try expectedFile ?? CostUsageFileReadSnapshot.capture(at: fileURL)
+        var windowsAuxiliaryAnchors: [CostUsageCodexTokenIndexAnchor] = []
         var currentModel = initialModel
         var previousTotals = initialTotals
         var sessionId: String?
@@ -5203,6 +5218,7 @@ enum CostUsageScanner {
                   let metadata = try Self.parseCodexSessionMetadata(
                       fileURL: fileURL,
                       expectedFile: readSnapshot,
+                      onWindowsContent: { windowsAuxiliaryAnchors.append($0) },
                       checkCancellation: checkCancellation)
         {
             try handleSessionMetadata(metadata)
@@ -5256,6 +5272,7 @@ enum CostUsageScanner {
             }
         }
 
+        var windowsReadAnchor: CostUsageCodexTokenIndexAnchor?
         var parsedBytes: Int64
         let currentFileSize = readSnapshot?.size ?? Self.codexFileMetadata(fileURL: fileURL).size
         let requestedTargetSize = max(startOffset, min(scanTargetSize ?? currentFileSize, currentFileSize))
@@ -5274,6 +5291,8 @@ enum CostUsageScanner {
                 resumeState: initialJSONLResumeState,
                 shouldStop: shouldStopReading,
                 expectedFile: readSnapshot,
+                captureWindowsContent: true,
+                expectedPrefixAnchor: expectedPrefixAnchor,
                 checkCancellation: checkCancellation,
                 onLine: { line in
                     let lineIndex = physicalLineIndex
@@ -5508,6 +5527,7 @@ enum CostUsageScanner {
                         }
                     }
                 })
+            windowsReadAnchor = scanProgress.windowsReadAnchor
             parsedBytes = scanProgress.readOffset
             jsonlResumeState = scanProgress.resumeState
             if let deferredError {
@@ -5519,6 +5539,7 @@ enum CostUsageScanner {
             // let the next scan reread the unfinished record with the later tail. Keeping the partial
             // resume state here would require bytes beyond the frozen target and could chase EOF again.
             if parsedBytes >= requestedTargetSize, jsonlResumeState != nil {
+                windowsReadAnchor = scanProgress.windowsCommittedAnchor
                 parsedBytes = scanProgress.committedOffset
                 jsonlResumeState = nil
                 effectiveTargetSize = parsedBytes
@@ -5735,7 +5756,9 @@ enum CostUsageScanner {
                 : nil,
             bufferedUnresolvedForkLines: hasUnresolvedForkBaseline
                 ? bufferedUnresolvedForkLines
-                : nil)
+                : nil,
+            windowsReadAnchor: windowsReadAnchor,
+            windowsAuxiliaryAnchors: windowsAuxiliaryAnchors)
     }
 
     private static func codexTurnID(from payload: [String: Any]) -> String? {

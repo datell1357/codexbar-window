@@ -105,6 +105,7 @@ extension WindowsCostPublicationTests {
         usage.parsedBytes = initial.size
         usage.codexWindowsSource = CostUsageFileReadSnapshot(native: initial)
         usage.codexWindowsContentGeneration = UUID().uuidString
+        usage.codexWindowsReadProofVersion = CostUsageScanner.windowsCodexReadProofVersion
         usage.codexTokenIndexAnchor = try #require(CostUsageScanner.codexTokenIndexAnchor(
             fileURL: source, indexedBytes: initial.size, expectedFile: usage.codexWindowsSource))
         var cache = CostUsageCache()

@@ -14,9 +14,6 @@ extension CostUsageScanner {
         metadata: CodexFileMetadata,
         cached: CostUsageFileUsage) -> Int64?
     {
-        #if os(Windows)
-        guard Self.windowsCodexSourceMatches(cached, metadata: metadata, allowAppend: true) else { return nil }
-        #endif
         let startOffset = cached.parsedBytes ?? cached.size
         let targetSize = cached.codexScanTargetSize ?? cached.size
         let hasMatchingResumeOffset = cached.codexJSONLResumeState?.offset == nil
@@ -29,14 +26,16 @@ extension CostUsageScanner {
               targetSize <= metadata.size,
               startOffset < targetSize || cached.codexJSONLResumeState != nil,
               cached.codexTokenIndexAnchor?.indexedBytes == startOffset,
-              hasMatchingResumeOffset,
-              cached.codexTokenIndexAnchor.map({
-                  Self.codexTokenIndexAnchorMatches(
-                      $0,
-                      fileURL: URL(fileURLWithPath: metadata.path),
-                      metadata: metadata)
-              }) == true
+              hasMatchingResumeOffset
         else { return nil }
+        #if os(Windows)
+        guard Self.windowsCodexPrefixMatches(cached, metadata: metadata) else { return nil }
+        #else
+        guard cached.codexTokenIndexAnchor.map({
+            Self.codexTokenIndexAnchorMatches(
+                $0, fileURL: URL(fileURLWithPath: metadata.path), metadata: metadata)
+        }) == true else { return nil }
+        #endif
         return targetSize
     }
 
@@ -44,9 +43,6 @@ extension CostUsageScanner {
         metadata: CodexFileMetadata,
         cached: CostUsageFileUsage) -> Bool
     {
-        #if os(Windows)
-        guard Self.windowsCodexSourceMatches(cached, metadata: metadata, allowAppend: true) else { return false }
-        #endif
         let startOffset = cached.parsedBytes ?? cached.size
         guard cached.codexJSONLResumeState == nil,
               cached.codexScanFileId != nil,
@@ -57,11 +53,15 @@ extension CostUsageScanner {
               targetSize < metadata.size,
               cached.codexTokenIndexAnchor?.indexedBytes == startOffset
         else { return false }
+        #if os(Windows)
+        return Self.windowsCodexPrefixMatches(cached, metadata: metadata)
+        #else
         return cached.codexTokenIndexAnchor.map {
             Self.codexTokenIndexAnchorMatches(
                 $0,
                 fileURL: URL(fileURLWithPath: metadata.path),
                 metadata: metadata)
         } == true
+        #endif
     }
 }

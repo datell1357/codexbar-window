@@ -40,6 +40,8 @@ enum CostUsageJsonl {
         let committedOffset: Int64
         let readOffset: Int64
         let resumeState: ResumeState?
+        var windowsReadAnchor: CostUsageCodexTokenIndexAnchor? = nil
+        var windowsCommittedAnchor: CostUsageCodexTokenIndexAnchor? = nil
     }
 
     fileprivate struct JSONTailState: Codable, Equatable {
@@ -322,6 +324,8 @@ enum CostUsageJsonl {
         resumeState: ResumeState?,
         shouldStop: ((Int64) -> Bool)? = nil,
         expectedFile: CostUsageFileReadSnapshot? = nil,
+        captureWindowsContent: Bool = false,
+        expectedPrefixAnchor: CostUsageCodexTokenIndexAnchor? = nil,
         checkCancellation: (() throws -> Void)? = nil,
         onLine: (Line) -> Void) throws -> ScanProgress
     {
@@ -340,6 +344,18 @@ enum CostUsageJsonl {
         }
         #else
         let readLimit = maxBytesToRead
+        #endif
+        #if os(Windows)
+        let contentRead: WindowsCostContentRead?
+        if captureWindowsContent {
+            guard let readGuard else { throw CostUsageSourcePublication.Failure.sourceChangedOrUnavailable }
+            contentRead = try WindowsCostContentRead(
+                file: handle, startOffset: startOffset,
+                committedOffset: resumeState?.lineStartOffset ?? startOffset,
+                expectedPrefix: expectedPrefixAnchor, readGuard: readGuard, checkCancellation: checkCancellation)
+        } else {
+            contentRead = nil
+        }
         #endif
         if startOffset > 0 {
             try handle.seek(toOffset: UInt64(startOffset))
@@ -485,6 +501,9 @@ enum CostUsageJsonl {
                         appendSegment(base.advanced(by: segmentStart), count: rawBuffer.count - segmentStart)
                     }
                 }
+                #if os(Windows)
+                try contentRead?.append(chunk, committedThrough: committedOffset)
+                #endif
                 return false
             }
             if reachedEOF {
@@ -496,10 +515,17 @@ enum CostUsageJsonl {
         try checkCancellation?()
         #if os(Windows)
         try readGuard?.check()
+        let readAnchor = try contentRead?.anchor(at: startOffset + bytesRead)
+        let committedAnchor = try contentRead?.anchor(at: committedOffset)
+        #else
+        let readAnchor: CostUsageCodexTokenIndexAnchor? = nil
+        let committedAnchor: CostUsageCodexTokenIndexAnchor? = nil
         #endif
         return ScanProgress(
             committedOffset: committedOffset,
             readOffset: startOffset + bytesRead,
-            resumeState: currentResumeState())
+            resumeState: currentResumeState(),
+            windowsReadAnchor: readAnchor,
+            windowsCommittedAnchor: committedAnchor)
     }
 }

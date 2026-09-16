@@ -1,6 +1,8 @@
 import Foundation
 
 extension CostUsageScanner {
+    static let windowsCodexReadProofVersion = 1
+
     static func newWindowsCodexContentGeneration() -> String? {
         #if os(Windows)
         return UUID().uuidString
@@ -9,11 +11,13 @@ extension CostUsageScanner {
         #endif
     }
 
-    /// A Windows parse cannot publish a resumable prefix whose digest could not be captured.
+    /// Windows uses the digest of the actual parser input; it must never recertify parsed rows
+    /// by reopening a potentially different source after the parser has returned.
     static func codexCommittedPrefixAnchor(
         fileURL: URL,
         indexedBytes: Int64,
         metadata: CodexFileMetadata,
+        parserAnchor: CostUsageCodexTokenIndexAnchor?,
         checkCancellation: CancellationCheck?) throws -> CostUsageCodexTokenIndexAnchor?
     {
         try Task.checkCancellation()
@@ -23,18 +27,51 @@ extension CostUsageScanner {
             throw CostUsageSourcePublication.Failure.sourceChangedOrUnavailable
         }
         if indexedBytes == 0 { return nil }
-        #endif
-        let anchor = self.codexTokenIndexAnchor(
-            fileURL: fileURL, indexedBytes: indexedBytes, expectedFile: metadata.readSnapshot,
-            checkCancellation: checkCancellation)
-        #if os(Windows)
-        guard anchor != nil else {
-            try Task.checkCancellation()
-            try checkCancellation?()
+        guard let parserAnchor, parserAnchor.windowStart == 0, parserAnchor.indexedBytes == indexedBytes else {
             throw CostUsageSourcePublication.Failure.sourceChangedOrUnavailable
         }
+        return parserAnchor
+        #else
+        return self.codexTokenIndexAnchor(
+            fileURL: fileURL, indexedBytes: indexedBytes, expectedFile: metadata.readSnapshot,
+            checkCancellation: checkCancellation)
         #endif
-        return anchor
+    }
+
+    static func observeWindowsCodexContent(
+        fileURL: URL,
+        metadata: CodexFileMetadata,
+        anchor: CostUsageCodexTokenIndexAnchor?,
+        auxiliaryAnchors: [CostUsageCodexTokenIndexAnchor] = [],
+        observations: CostUsagePublicationObservations?) throws
+    {
+        #if os(Windows)
+        guard let snapshot = metadata.readSnapshot else {
+            throw CostUsageSourcePublication.Failure.sourceChangedOrUnavailable
+        }
+        if let anchor {
+            try observations?.content(fileURL, snapshot: snapshot, anchor: anchor)
+        } else {
+            try observations?.file(fileURL, snapshot: snapshot)
+        }
+        for auxiliary in auxiliaryAnchors {
+            try observations?.content(fileURL, snapshot: snapshot, anchor: auxiliary)
+        }
+        #endif
+    }
+
+    static func mergeWindowsCodexAnchors(
+        _ previous: [CostUsageCodexTokenIndexAnchor]?,
+        _ current: [CostUsageCodexTokenIndexAnchor]) throws -> [CostUsageCodexTokenIndexAnchor]?
+    {
+        var byOffset: [Int64: CostUsageCodexTokenIndexAnchor] = [:]
+        for anchor in (previous ?? []) + current {
+            if let existing = byOffset[anchor.indexedBytes], existing != anchor {
+                throw CostUsageSourcePublication.Failure.sourceChangedOrUnavailable
+            }
+            byOffset[anchor.indexedBytes] = anchor
+        }
+        return byOffset.isEmpty ? nil : byOffset.sorted { $0.key < $1.key }.map(\.value)
     }
 
     #if os(Windows)
@@ -47,6 +84,7 @@ extension CostUsageScanner {
         guard let expected = usage.codexWindowsSource, expected.isValidWindowsObservation,
               let current = metadata.readSnapshot, current.isValidWindowsObservation,
               usage.codexWindowsContentGeneration?.isEmpty == false,
+              usage.codexWindowsReadProofVersion == self.windowsCodexReadProofVersion,
               usage.codexScanFileId == expected.fileID,
               metadata.fileId == current.fileID,
               usage.size == expected.size, metadata.size == current.size
@@ -73,9 +111,16 @@ extension CostUsageScanner {
         guard let anchor = usage.codexTokenIndexAnchor,
               anchor.indexedBytes == parsedBytes, anchor.windowStart == 0
         else { return false }
-        return self.codexTokenIndexAnchorMatches(
-            anchor, fileURL: URL(fileURLWithPath: metadata.path), metadata: metadata,
-            checkCancellation: checkCancellation)
+        guard let snapshot = metadata.readSnapshot else { return false }
+        do {
+            try WindowsCostContentRead.validate(
+                [anchor] + (usage.codexWindowsAuxiliaryAnchors ?? []),
+                fileURL: URL(fileURLWithPath: metadata.path), expectedFile: snapshot,
+                checkCancellation: checkCancellation)
+            return true
+        } catch {
+            return false
+        }
     }
     #endif
 }

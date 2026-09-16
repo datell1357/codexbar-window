@@ -14,6 +14,7 @@ struct CostUsageSourcePublication: Sendable {
     struct Entry: Sendable {
         let url: URL
         let expectation: Expectation
+        var contentAnchors: [CostUsageCodexTokenIndexAnchor] = []
     }
 
     let entries: [Entry]
@@ -31,6 +32,9 @@ struct CostUsageSourcePublication: Sendable {
                 guard let current, !current.isDirectory,
                       Self.allowsAppend(CostUsageFileReadSnapshot(native: current), from: expected)
                 else { throw Failure.sourceChangedOrUnavailable }
+                try WindowsCostContentRead.validate(
+                    entry.contentAnchors, fileURL: entry.url,
+                    expectedFile: CostUsageFileReadSnapshot(native: current), checkCancellation: checkCancellation)
             case let .directory(expected):
                 guard let current, current.isDirectory, CostUsageFileReadSnapshot(native: current) == expected else {
                     throw Failure.sourceChangedOrUnavailable
@@ -69,6 +73,30 @@ final class CostUsagePublicationObservations: @unchecked Sendable {
         try self.record(url, expectation: .file(snapshot))
     }
 
+    func content(
+        _ url: URL,
+        snapshot: CostUsageFileReadSnapshot,
+        anchor: CostUsageCodexTokenIndexAnchor) throws
+    {
+        guard anchor.windowStart == 0, anchor.indexedBytes > 0, anchor.indexedBytes <= snapshot.size else {
+            throw CostUsageSourcePublication.Failure.sourceChangedOrUnavailable
+        }
+        self.lock.lock()
+        defer { self.lock.unlock() }
+        let url = url.standardizedFileURL
+        try self.recordLocked(url, expectation: .file(snapshot))
+        guard var entry = self.entries[url.path] else {
+            throw CostUsageSourcePublication.Failure.sourceChangedOrUnavailable
+        }
+        if let previous = entry.contentAnchors.first(where: { $0.indexedBytes == anchor.indexedBytes }) {
+            guard previous == anchor else { throw CostUsageSourcePublication.Failure.sourceChangedOrUnavailable }
+        } else {
+            entry.contentAnchors.append(anchor)
+            entry.contentAnchors.sort { $0.indexedBytes < $1.indexedBytes }
+        }
+        self.entries[url.path] = entry
+    }
+
     func directory(_ url: URL, snapshot: CostUsageFileReadSnapshot) throws {
         try self.record(url, expectation: .directory(snapshot))
     }
@@ -86,12 +114,16 @@ final class CostUsagePublicationObservations: @unchecked Sendable {
     private func record(_ url: URL, expectation: CostUsageSourcePublication.Expectation) throws {
         self.lock.lock()
         defer { self.lock.unlock() }
-        let url = url.standardizedFileURL
+        try self.recordLocked(url.standardizedFileURL, expectation: expectation)
+    }
+
+    private func recordLocked(_ url: URL, expectation: CostUsageSourcePublication.Expectation) throws {
         if let previous = self.entries[url.path]?.expectation, previous != expectation {
             guard case let .file(old) = previous, case let .file(new) = expectation,
                   CostUsageSourcePublication.allowsAppend(new, from: old)
             else { throw CostUsageSourcePublication.Failure.sourceChangedOrUnavailable }
         }
-        self.entries[url.path] = .init(url: url, expectation: expectation)
+        self.entries[url.path] = .init(
+            url: url, expectation: expectation, contentAnchors: self.entries[url.path]?.contentAnchors ?? [])
     }
 }
