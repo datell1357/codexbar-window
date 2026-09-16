@@ -1161,23 +1161,31 @@ enum CostUsageScanner {
             fileURL: URL,
             sessionId: String?,
             metadata: CodexFileMetadata? = nil,
-            headWasParsed: Bool = false)
+            headWasParsed: Bool = false,
+            headAnchor: CostUsageCodexTokenIndexAnchor? = nil)
         {
             guard let sessionId, !sessionId.isEmpty else { return }
             let path = fileURL.standardizedFileURL.path
             #if os(Windows)
             // Bind the parsed ID to the observation used by its reader, never to a later stat.
             guard let metadata, metadata.readSnapshot != nil,
-                  let stamp = Self.fileStamp(metadata: metadata)
+                  let stamp = Self.fileStamp(
+                      metadata: metadata, headAnchor: headAnchor,
+                      headProofVersion: headWasParsed ? 1 : nil)
             else {
                 self.invalidateCachedFile(path: path)
                 return
             }
             if headWasParsed {
+                guard stamp.hasWindowsHeadProof, headAnchor != nil else {
+                    self.invalidateCachedFile(path: path)
+                    return
+                }
                 self.discovery.fileStamps[path] = stamp
                 self.discovery.filePathBySessionId = self.discovery.filePathBySessionId.filter { $0.value != path }
             } else {
                 guard self.discovery.filePathBySessionId[sessionId] == path,
+                      self.discovery.fileStamps[path]?.hasWindowsHeadProof == true,
                       self.discovery.fileStamps[path]?.matchesWindows(metadata.readSnapshot, allowAppend: true) == true
                 else {
                     self.invalidateCachedFile(path: path)
@@ -1185,7 +1193,7 @@ enum CostUsageScanner {
                 }
             }
             #else
-            self.discovery.fileStamps[path] = metadata.flatMap(Self.fileStamp(metadata:))
+            self.discovery.fileStamps[path] = metadata.flatMap { Self.fileStamp(metadata: $0) }
                 ?? Self.fileStamp(fileURL: fileURL)
             #endif
             self.discovery.filePathBySessionId[sessionId] = path
@@ -1206,6 +1214,9 @@ enum CostUsageScanner {
             if self.discovery.isComplete {
                 switch try self.validateInventory() {
                 case .current:
+                    #if os(Windows)
+                    try self.recordInventoryEvidence()
+                    #endif
                     if self.discovery.missingSessionIds.contains(sessionId),
                        let generation = self.discovery.generation
                     {
@@ -1260,7 +1271,8 @@ enum CostUsageScanner {
                 self.invalidateCachedFile(path: path, restartInventory: true)
                 return nil
             }
-            guard self.discovery.fileStamps[path]?.matchesWindows(metadata.readSnapshot, allowAppend: true) == true else {
+            guard let stamp = self.discovery.fileStamps[path], stamp.windowsHeadAnchor != nil,
+                  try self.headStampMatches(stamp, metadata: metadata, allowAppend: true) else {
                 self.invalidateCachedFile(path: path, restartInventory: true)
                 return nil
             }
@@ -1282,6 +1294,97 @@ enum CostUsageScanner {
         }
 
         #if os(Windows)
+        /// Only a content mismatch is a cache miss. Access, read and cancellation failures
+        /// remain errors, and must not establish that the requested parent is absent.
+        private func headStampMatches(
+            _ stamp: CostUsageCodexSessionDiscovery.FileStamp,
+            metadata: CodexFileMetadata,
+            allowAppend: Bool = false) throws -> Bool
+        {
+            guard stamp.hasWindowsHeadProof, stamp.matchesWindows(metadata.readSnapshot, allowAppend: allowAppend),
+                  let snapshot = metadata.readSnapshot else { return false }
+            let fileURL = URL(fileURLWithPath: metadata.path)
+            if let anchor = stamp.windowsHeadAnchor {
+                do {
+                    try WindowsCostContentRead.validate(
+                        [anchor], fileURL: fileURL, expectedFile: snapshot, checkCancellation: self.checkCancellation)
+                } catch WindowsCostContentRead.Failure.digestMismatch {
+                    return false
+                }
+            }
+            try self.observeContent(fileURL: fileURL, metadata: metadata, anchor: stamp.windowsHeadAnchor)
+            return true
+        }
+
+        private func partialHeadMatches(
+            _ head: CostUsageCodexSessionDiscovery.HeadScan?,
+            metadata: CodexFileMetadata) throws -> Bool
+        {
+            guard let head, head.windowsReadProofVersion == 1,
+                  let previous = head.windowsSnapshot, previous.isValidWindowsObservation,
+                  let current = metadata.readSnapshot,
+                  (0...previous.size).contains(head.offset),
+                  CostUsageSourcePublication.allowsAppend(current, from: previous) else { return false }
+            let readOffset = head.resumeState?.offset ?? head.offset
+            guard readOffset >= head.offset, readOffset <= previous.size else { return false }
+            if readOffset == 0 { return head.windowsReadAnchor == nil && head.resumeState == nil }
+            guard let anchor = head.windowsReadAnchor, anchor.windowStart == 0,
+                  anchor.indexedBytes == readOffset else { return false }
+            do {
+                try WindowsCostContentRead.validate(
+                    [anchor], fileURL: URL(fileURLWithPath: metadata.path), expectedFile: current,
+                    checkCancellation: self.checkCancellation)
+            } catch WindowsCostContentRead.Failure.digestMismatch {
+                return false
+            }
+            try self.observeContent(
+                fileURL: URL(fileURLWithPath: metadata.path), metadata: metadata, anchor: anchor)
+            return true
+        }
+
+        /// Cursor validation may span refreshes. Preserve every underlying observation in
+        /// the final publication check, including paths checked before the current refresh.
+        private func recordInventoryEvidence() throws {
+            let observations = self.publicationObservations ?? CostUsagePublicationObservations()
+            for path in self.discovery.directoryPaths {
+                try Task.checkCancellation()
+                try self.checkCancellation?()
+                guard let stamp = self.discovery.directoryStamps[path] else {
+                    throw CostUsageSourcePublication.Failure.sourceChangedOrUnavailable
+                }
+                let url = URL(fileURLWithPath: path, isDirectory: true)
+                if stamp.windowsObservedMissing == true, stamp.windowsSnapshot == nil {
+                    try observations.missing(url)
+                } else if stamp.windowsObservedMissing == false,
+                          let snapshot = stamp.windowsSnapshot, snapshot.isValidWindowsObservation {
+                    try observations.directory(url, snapshot: snapshot)
+                } else {
+                    throw CostUsageSourcePublication.Failure.sourceChangedOrUnavailable
+                }
+            }
+            for path in self.discovery.filePaths {
+                try Task.checkCancellation()
+                try self.checkCancellation?()
+                let url = URL(fileURLWithPath: path)
+                guard let stamp = self.discovery.fileStamps[path] else {
+                    try observations.missing(url)
+                    continue
+                }
+                guard stamp.hasWindowsHeadProof, let snapshot = stamp.windowsSnapshot else {
+                    throw CostUsageSourcePublication.Failure.sourceChangedOrUnavailable
+                }
+                if let anchor = stamp.windowsHeadAnchor {
+                    try observations.content(url, snapshot: snapshot, anchor: anchor)
+                } else {
+                    try observations.file(url, snapshot: snapshot)
+                }
+            }
+            // Standalone callers have no later cache-publication boundary.
+            if self.publicationObservations == nil {
+                try observations.freeze().check(checkCancellation: self.checkCancellation)
+            }
+        }
+
         private func invalidateCachedFile(path: String, restartInventory: Bool = false) {
             if restartInventory {
                 let previous = self.discovery
@@ -1371,14 +1474,7 @@ enum CostUsageScanner {
                 head = CostUsageCodexSessionDiscovery.HeadScan(path: path, offset: 0, resumeState: nil)
             }
             #if os(Windows)
-            if let previous = head?.windowsSnapshot, previous.isValidWindowsObservation,
-               let current = metadata.readSnapshot,
-               (0...previous.size).contains(head?.offset ?? 0),
-               (0...previous.size).contains(head?.resumeState?.offset ?? head?.offset ?? 0),
-               CostUsageSourcePublication.allowsAppend(current, from: previous)
-            {
-                // Keep the buffered prefix and offset for append-compatible metadata.
-            } else {
+            if try !self.partialHeadMatches(head, metadata: metadata) {
                 head = CostUsageCodexSessionDiscovery.HeadScan(path: path, offset: 0, resumeState: nil)
             }
             #endif
@@ -1394,6 +1490,10 @@ enum CostUsageScanner {
                 admittedBytes = remainingBytes
             }
 
+            var completedWork = max(1, admittedBytes)
+            defer {
+                self.scanBudget?.complete(admittedWorkBytes: admittedBytes, actualWorkBytes: completedWork)
+            }
             self.headParseObserver?()
             let result = try CostUsageScanner.scanCodexSessionIdentifier(
                 fileURL: fileURL,
@@ -1401,10 +1501,10 @@ enum CostUsageScanner {
                 maxBytesToRead: admittedBytes,
                 resumeState: head?.resumeState,
                 checkCancellation: self.checkCancellation,
-                expectedFile: metadata.readSnapshot)
-            self.scanBudget?.complete(
-                admittedWorkBytes: admittedBytes,
-                actualWorkBytes: max(1, result.bytesRead))
+                expectedFile: metadata.readSnapshot,
+                expectedPrefixAnchor: head?.windowsReadAnchor)
+            completedWork = max(1, result.bytesRead)
+            try self.observeContent(fileURL: fileURL, metadata: metadata, anchor: result.windowsReadAnchor)
 
             if let sessionId = result.sessionId, !sessionId.isEmpty {
                 #if os(Windows)
@@ -1412,11 +1512,15 @@ enum CostUsageScanner {
                 #endif
                 self.discovery.filePathBySessionId[sessionId] = path
                 self.discovery.missingSessionIds.removeAll { $0 == sessionId }
-                self.advancePastHead(path: path, stamp: Self.fileStamp(metadata: metadata))
+                self.advancePastHead(path: path, stamp: Self.fileStamp(
+                    metadata: metadata, headAnchor: result.windowsReadAnchor,
+                    headProofVersion: metadata.readSnapshot == nil ? nil : 1))
                 return true
             }
             if result.isComplete {
-                self.advancePastHead(path: path, stamp: Self.fileStamp(metadata: metadata))
+                self.advancePastHead(path: path, stamp: Self.fileStamp(
+                    metadata: metadata, headAnchor: result.windowsReadAnchor,
+                    headProofVersion: metadata.readSnapshot == nil ? nil : 1))
                 return true
             }
 
@@ -1424,7 +1528,9 @@ enum CostUsageScanner {
                 path: path,
                 offset: result.committedOffset,
                 resumeState: result.resumeState,
-                windowsSnapshot: metadata.readSnapshot)
+                windowsSnapshot: metadata.readSnapshot,
+                windowsReadAnchor: result.windowsReadAnchor,
+                windowsReadProofVersion: metadata.readSnapshot == nil ? nil : 1)
             return false
         }
 
@@ -1545,6 +1651,29 @@ enum CostUsageScanner {
                 }
                 processedCount += 1
             }
+            #if os(Windows)
+            // A persisted unfinished inventory may contain heads read by an older refresh.
+            // Revalidate those observations before turning an unknown ID into a missing result.
+            switch try self.validateInventory(requireGeneration: false) {
+            case .current:
+                break
+            case .deferred:
+                return false
+            case .changed:
+                let previous = self.discovery
+                self.discovery = Self.makeFreshDiscovery(
+                    roots: self.roots, files: self.files, cachedSessionFiles: [:], retaining: previous)
+                self.discovery.pendingSessionIds = Array(Set(
+                    previous.pendingSessionIds + previous.missingSessionIds)).sorted()
+                self.knownFilePaths = Set(self.discovery.filePaths)
+                self.knownDirectoryPaths = Set(self.discovery.directoryPaths)
+                processedCount = 0
+                return false
+            }
+            #endif
+            #if os(Windows)
+            try self.recordInventoryEvidence()
+            #endif
             let generation = try Self.discoveryGeneration(self.discovery)
             self.discovery.generation = generation
             self.discovery.missingSessionIds.sort()
@@ -1556,12 +1685,14 @@ enum CostUsageScanner {
             return true
         }
 
-        private func validateInventory() throws -> InventoryValidation {
+        private func validateInventory(requireGeneration: Bool = true) throws -> InventoryValidation {
             guard (0...self.discovery.directoryPaths.count).contains(self.discovery.validationDirectoryIndex),
                   (0...self.discovery.filePaths.count).contains(self.discovery.validationFileIndex ?? 0)
             else { return self.changedInventory() }
             #if os(Windows)
-            guard self.discovery.generation?.hasPrefix("windows-v2:") == true else { return self.changedInventory() }
+            if requireGeneration, self.discovery.generation?.hasPrefix("windows-v3:") != true {
+                return self.changedInventory()
+            }
             #endif
             while self.discovery.validationDirectoryIndex < self.discovery.directoryPaths.count {
                 guard let admittedWork = self.admitInventoryValidation() else { return .deferred }
@@ -1604,7 +1735,11 @@ enum CostUsageScanner {
                     let metadata = try CostUsageScanner.codexFileMetadataIfPresent(
                         fileURL: URL(fileURLWithPath: path), publicationObservations: self.publicationObservations)
                     if let metadata {
-                        matches = self.discovery.fileStamps[path]?.matchesWindows(metadata.readSnapshot) == true
+                        if let stamp = self.discovery.fileStamps[path] {
+                            matches = try self.headStampMatches(stamp, metadata: metadata)
+                        } else {
+                            matches = false
+                        }
                     } else {
                         matches = self.discovery.fileStamps[path] == nil
                     }
@@ -1733,18 +1868,21 @@ enum CostUsageScanner {
         }
 
         private static func fileStamp(
-            metadata: CodexFileMetadata) -> CostUsageCodexSessionDiscovery.FileStamp?
+            metadata: CodexFileMetadata,
+            headAnchor: CostUsageCodexTokenIndexAnchor? = nil,
+            headProofVersion: Int? = nil) -> CostUsageCodexSessionDiscovery.FileStamp?
         {
             guard metadata.fileId != nil else { return nil }
             return .init(
                 mtimeUnixMs: metadata.mtimeUnixMs, size: metadata.size, fileId: metadata.fileId,
-                windowsSnapshot: metadata.readSnapshot)
+                windowsSnapshot: metadata.readSnapshot, windowsHeadAnchor: headAnchor,
+                windowsHeadProofVersion: headProofVersion)
         }
 
         private static func discoveryGeneration(_ discovery: CostUsageCodexSessionDiscovery) throws -> String {
             #if os(Windows)
             struct Generation: Encodable {
-                let version = 2
+                let version = 3
                 let roots: [String]
                 let directories: [String: CostUsageCodexSessionDiscovery.DirectoryStamp]
                 let filePaths: [String]
@@ -1755,7 +1893,7 @@ enum CostUsageScanner {
             let data = try encoder.encode(Generation(
                 roots: discovery.roots.sorted(), directories: discovery.directoryStamps,
                 filePaths: discovery.filePaths.sorted(), files: discovery.fileStamps))
-            return "windows-v2:" + CostUsageScanner.sha256Hex(data)
+            return "windows-v3:" + CostUsageScanner.sha256Hex(data)
             #else
             let directories = discovery.directoryStamps.map { path, stamp in
                 "\(path)|\(stamp.mtimeUnixMs)|\(stamp.jsonlFileCount)"
@@ -1775,6 +1913,7 @@ enum CostUsageScanner {
         let committedOffset: Int64
         let resumeState: CostUsageJsonl.ResumeState?
         let isComplete: Bool
+        let windowsReadAnchor: CostUsageCodexTokenIndexAnchor?
     }
 
     private static func scanCodexSessionIdentifier(
@@ -1783,7 +1922,8 @@ enum CostUsageScanner {
         maxBytesToRead: Int64,
         resumeState: CostUsageJsonl.ResumeState?,
         checkCancellation: CancellationCheck?,
-        expectedFile: CostUsageFileReadSnapshot? = nil) throws -> CodexSessionIdentifierScanResult
+        expectedFile: CostUsageFileReadSnapshot? = nil,
+        expectedPrefixAnchor: CostUsageCodexTokenIndexAnchor? = nil) throws -> CodexSessionIdentifierScanResult
     {
         let readSnapshot = try expectedFile ?? CostUsageFileReadSnapshot.capture(at: fileURL)
         var sessionId: String?
@@ -1797,6 +1937,8 @@ enum CostUsageScanner {
             resumeState: resumeState,
             shouldStop: { _ in sessionId != nil },
             expectedFile: readSnapshot,
+            captureWindowsContent: true,
+            expectedPrefixAnchor: expectedPrefixAnchor,
             checkCancellation: checkCancellation,
             onLine: { line in
                 guard !line.wasTruncated else { return }
@@ -1810,7 +1952,8 @@ enum CostUsageScanner {
             bytesRead: max(0, progress.readOffset - scanStart),
             committedOffset: progress.committedOffset,
             resumeState: progress.resumeState,
-            isComplete: sessionId != nil || progress.readOffset >= size)
+            isComplete: sessionId != nil || progress.readOffset >= size,
+            windowsReadAnchor: progress.windowsReadAnchor)
     }
 
     final class CodexInheritedTotalsResolver {

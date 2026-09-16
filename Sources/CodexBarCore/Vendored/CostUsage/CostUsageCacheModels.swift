@@ -69,6 +69,17 @@ struct CostUsageCodexSessionDiscovery: Codable, Equatable {
         var size: Int64
         var fileId: String?
         var windowsSnapshot: CostUsageFileReadSnapshot? = nil
+        var windowsHeadAnchor: CostUsageCodexTokenIndexAnchor? = nil
+        var windowsHeadProofVersion: Int? = nil
+
+        var hasWindowsHeadProof: Bool {
+            guard self.windowsHeadProofVersion == 1,
+                  let snapshot = self.windowsSnapshot, snapshot.isValidWindowsObservation,
+                  self.fileId == snapshot.fileID, self.size == snapshot.size else { return false }
+            if snapshot.size == 0 { return self.windowsHeadAnchor == nil }
+            guard let anchor = self.windowsHeadAnchor else { return false }
+            return anchor.windowStart == 0 && anchor.indexedBytes > 0 && anchor.indexedBytes <= snapshot.size
+        }
 
         func matchesWindows(_ current: CostUsageFileReadSnapshot?, allowAppend: Bool = false) -> Bool {
             guard let expected = self.windowsSnapshot, expected.isValidWindowsObservation, let current else {
@@ -83,6 +94,8 @@ struct CostUsageCodexSessionDiscovery: Codable, Equatable {
         var offset: Int64
         var resumeState: CostUsageJsonl.ResumeState?
         var windowsSnapshot: CostUsageFileReadSnapshot? = nil
+        var windowsReadAnchor: CostUsageCodexTokenIndexAnchor? = nil
+        var windowsReadProofVersion: Int? = nil
     }
 
     var roots: [String]

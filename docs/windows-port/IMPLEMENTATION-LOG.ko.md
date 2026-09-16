@@ -5385,3 +5385,15 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - 실제 소비 후 같은 stamp 재작성, partial JSON resume·변경된 prefix 재개 거부, EOF rollback 지문, metadata 선행 범위, 여러 proof 보존 및 changed/identical SQLite 저장 직전 내용 변경용 Windows fixture를 작성했다. 기존 source fixture의 새 proof-version/SQLite 복원 조건도 갱신했다. 전부 미실행이다.
 - 관측 뒤 변경과 여러 파일의 동시 변경까지 막는 immutable filesystem snapshot/파일 잠금은 아니다. 전체 prefix 재읽기의 durable resume/시간·I/O 예산, parent head 자체의 content proof, Claude/기타 source, 주 lookback 세대·junction/alias 및 실제 SDK/runtime가 남는다. 전체 W01~W16/G0~G6 완료 아님.
 - CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·formatter·compiler/manifest·파일 fixture·Windows·실계정·CI 실행 검증 미실행. 직전 IMPL-566은 88f09e18c927195d4596ed8d2e4b643083a7aa2f로 origin/main 푸시 확인. 이번 단위도 별도 커밋·푸시한다.
+
+
+## IMPL-568 — Bind Windows parent-session discovery to consumed header bytes
+
+- parent discovery의 FileStamp/HeadScan에 실제 헤더 읽기 지문과 proof version을 추가했다. JSON/SQLite 기존 payload에 보존하며 windows-v3 generation을 사용한다. 이전 native snapshot만 있는 자료와 지문 없는 parsed flag는 mapping 재사용 증거로 인정하지 않는다.
+- cached parent 조회와 negative inventory 대조는 저장된 헤더 prefix를 검사한다. 같은 native ID·size·정밀 시각의 재작성도 내용 불일치이면 재탐색한다. digest mismatch만 cache miss로 구분하고 파일 접근·읽기·취소 오류는 호출부로 전달한다. publication 경계의 외부 source-failure 계약은 유지한다.
+- partial head는 저장된 read offset의 지문을 확인하고 불일치 시 buffer/offset을 처음부터 다시 읽는다. 실제 resume FileHandle에서도 expected prefix를 대조하며 읽은 Data의 지문을 결과와 함께 저장한다. head parse 실패 시에도 admission 정산을 수행한다.
+- 일반 usage parser가 부모 ID를 기억할 때 본문/선행 metadata 중 더 긴 실제 읽기 지문을 전달한다. cached ID를 새 stat 또는 Bool만으로 재승인하지 않는다. positive/negative/partial 관측은 publication ledger에도 내용 증거를 추가한다.
+- 미완료 상태로 복원된 discovery는 missing 확정 전에 폴더·헤더를 재대조한다. 변경 시 요청을 보존하고 deferred 상태로 재탐색한다. 분할 validation의 앞선 refresh에서 대조했던 파일/폴더/부재도 최종 게시 증거에 포함한다. 별도 게시 경계가 없는 독립 호출은 missing 반환 전에 자체 대조한다.
+- 같은 stamp의 positive/negative/partial 변경, proof 없는 parsed flag, lookup 이후·게시 직전 변경 감지·취소, legacy 이관·SQLite round-trip, 미완료 inventory 및 여러 refresh의 마지막 내용 대조용 fixture 코드를 추가했다. 컴파일·실행하지 않았다.
+- 전체 prefix I/O/시간 예산·durable hash 재개, Windows 주 lookback 세대·junction/alias, Claude/기타 source 및 immutable multi-file snapshot은 남는다. 전체 W01~W16/G0~G6 완료 아님.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·formatter·compiler/manifest·파일 fixture·Windows·실계정·CI 실행 검증 미실행. 직전 IMPL-567은 1d94824671aacad6ccd47a79c86205b03c8189fb로 origin/main 푸시 확인. 이번 단위도 별도 커밋·푸시한다.

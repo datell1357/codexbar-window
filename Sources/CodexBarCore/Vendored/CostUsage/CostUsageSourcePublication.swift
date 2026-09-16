@@ -32,9 +32,13 @@ struct CostUsageSourcePublication: Sendable {
                 guard let current, !current.isDirectory,
                       Self.allowsAppend(CostUsageFileReadSnapshot(native: current), from: expected)
                 else { throw Failure.sourceChangedOrUnavailable }
-                try WindowsCostContentRead.validate(
-                    entry.contentAnchors, fileURL: entry.url,
-                    expectedFile: CostUsageFileReadSnapshot(native: current), checkCancellation: checkCancellation)
+                do {
+                    try WindowsCostContentRead.validate(
+                        entry.contentAnchors, fileURL: entry.url,
+                        expectedFile: CostUsageFileReadSnapshot(native: current), checkCancellation: checkCancellation)
+                } catch WindowsCostContentRead.Failure.digestMismatch {
+                    throw Failure.sourceChangedOrUnavailable
+                }
             case let .directory(expected):
                 guard let current, current.isDirectory, CostUsageFileReadSnapshot(native: current) == expected else {
                     throw Failure.sourceChangedOrUnavailable

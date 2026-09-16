@@ -60,6 +60,13 @@ extension CostUsageScanner {
         #endif
     }
 
+    /// The selected session ID may come from the metadata pre-read or a later body record.
+    /// The longest actual observation covers both ranges; publication retains every digest.
+    static func codexObservedHeadAnchor(for parsed: CodexParseResult) -> CostUsageCodexTokenIndexAnchor? {
+        let anchors = parsed.windowsAuxiliaryAnchors + [parsed.windowsReadAnchor].compactMap { $0 }
+        return anchors.max { $0.indexedBytes < $1.indexedBytes }
+    }
+
     static func mergeWindowsCodexAnchors(
         _ previous: [CostUsageCodexTokenIndexAnchor]?,
         _ current: [CostUsageCodexTokenIndexAnchor]) throws -> [CostUsageCodexTokenIndexAnchor]?

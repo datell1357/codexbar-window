@@ -9,6 +9,7 @@ import Foundation
 /// Accumulates the exact Data passed to the JSONL parser. Hash state is local to one read;
 /// only immutable digest/offset pairs cross into persisted cache and publication checks.
 final class WindowsCostContentRead {
+    enum Failure: Error { case digestMismatch }
     private var digest = SHA256()
     private var committedDigest = SHA256()
     private var readOffset: Int64 = 0
@@ -100,7 +101,7 @@ final class WindowsCostContentRead {
                 digest.update(data: data)
                 offset += Int64(data.count)
             }
-            guard Self.anchor(state: digest, offset: offset) == anchor else { throw Self.failure }
+            guard Self.anchor(state: digest, offset: offset) == anchor else { throw Failure.digestMismatch }
         }
         try Task.checkCancellation()
         try checkCancellation?()

@@ -1,6 +1,6 @@
 # Windows 비용 파일 I/O 구현 경계
 
-IMPL-559~567. 상태: **CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION**.
+IMPL-559~568. 상태: **CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION**.
 Mac 호스트에서 소스를 작성한 기록이며 Windows 컴파일·실행·성능·파일 시스템 호환성을 입증하지 않는다. W06/W07 전체 기능 및 G0~G6 완료가 아니다.
 
 ## 파일 메타데이터와 캐시
@@ -112,10 +112,23 @@ Mac 호스트에서 소스를 작성한 기록이며 Windows 컴파일·실행·
 - 내용 대조가 끝난 뒤 writer가 다시 변경할 수 있으며, 여러 파일의 일관된 immutable snapshot이나 writer 차단을 제공하지 않는다. source를 안정적으로 잠그거나 버전 snapshot으로 고정한 구현이 아니다. 같은 호출의 연결된 읽기 증거를 최종 경계에서 비교하는 계약이다.
 - 전체 I/O/벽시계 예산과 대규모 prefix 재개의 durable state는 남는다. 같은 entry 안의 여러 anchor는 한 pass로 묶었지만 scanner의 서로 다른 재사용/완료/저장 경계는 여전히 반복 읽을 수 있다. parent session discovery head의 자체 proof·Claude/다른 비용 source·전체 Windows 실행/성능 검증도 후속 필수 작업이다.
 
+## IMPL-568: 부모 세션 헤더의 실제 내용과 negative inventory
+
+- `CostUsageCodexSessionDiscovery.FileStamp`는 `windowsHeadAnchor`와 proof version, `HeadScan`은 `windowsReadAnchor`와 proof version을 보존한다. file ID/size와 native snapshot의 일치, 전체 prefix 형식/offset 범위를 함께 확인한다. 빈 파일은 실제 0-byte 관측과 version이 있어야 negative 증거가 되고 positive ID에는 비어 있지 않은 헤더 지문이 필요하다.
+- `windows-v3:` generation은 새 proof payload를 포함한다. 과거 windows-v2/native-only/필드 없는 payload는 decode 가능하지만 header 재사용을 승인하지 않는다. 일반 parser가 ID를 알려 주는 `remember` 경로에도 실제 지문이 필요하며 `headWasParsed` Bool만으로 stamp를 만들지 않는다.
+- cached ID → path는 append-compatible native snapshot과 헤더 내용이 모두 맞을 때 반환한다. negative cache는 파일의 정확한 snapshot과 헤더 지문을 대조한다. 동일 native ID·size·mtime의 헤더 재작성은 digest mismatch로 구분하여 inventory를 새로 탐색한다.
+- `WindowsCostContentRead.Failure.digestMismatch`로 내용 불일치만 cache miss/restart로 처리한다. 실제 파일 접근/읽기/열거 오류, wrong-kind, read guard 경쟁 및 custom/Task 취소는 성공 또는 missing으로 바꾸지 않는다. publication 검사는 이 mismatch를 기존 sourceChangedOrUnavailable 계약으로 전달한다.
+- partial head의 metadata뿐 아니라 저장된 prefix를 먼저 대조한다. 바뀌었거나 legacy 증거이면 buffer와 offset을 초기화한다. 이어 실제 parser handle에서 expected prefix를 확인하고, 전달한 Data의 지문을 partial/완료 결과에 저장한다. head parsing admission은 예외 시에도 정산한다.
+- 일반 usage parsing에서 부모 ID를 기억할 때 본문/선행 metadata 중 더 긴 실제 지문을 선택한다. ID가 본문의 후반 metadata에서 왔더라도 짧은 선행 읽기 범위만으로 승인하지 않도록 작성했다. 사용량 게시 ledger는 각각의 원래 지문도 계속 유지한다.
+- 미완료 discovery는 예전 refresh의 header를 포함할 수 있다. 따라서 missing 분류를 확정하기 전에 directory/file 관측을 재대조하며, 변경 시 pending/missing 요청을 다음 탐색으로 보존하고 deferred로 반환한다. 여러 refresh의 validation cursor가 이미 지나간 항목도 마지막 publication ledger에 모두 등록한다. ledger가 없는 독립 caller는 missing 반환 전 해당 집합을 직접 대조한다.
+- `WindowsCostSessionIdentityTests.swift`에 동일 stamp의 ID 교체·negative 갱신·partial buffer 변경, proof 없는 Bool 거부, cached lookup→게시 경계·취소, native-only migration·SQLite producer/consumer, restored unfinished inventory·여러 refresh에 걸친 앞선 파일 변경 시나리오를 작성했다. **테스트·컴파일·Windows 실행은 하지 않았다.**
+- header/negative validation 및 최종 ledger 등록·검사의 전체 I/O 예산은 아직 별도다. parser suffix의 기존 byte budget이나 파일 validation cursor만으로 prefix 재읽기 비용까지 제한했다고 주장하지 않는다. 전체 body에서 얻은 헤더 지문은 파일 전체 길이일 수 있다. durable hash resume/공유 대조 및 실제 대형 파일 성능 검증이 후속 필수 작업이다.
+- 현재 연결은 실제 관측한 prefix와 게시/반환 경계의 비교다. 대조 이후 변경·파일 ID 재사용의 모든 특성·동시에 고정된 다중 파일 snapshot을 보장하지 않는다. 주 lookback 폴더 세대, junction/alias, Claude/기타 비용 source와 Windows SDK/runtime 검증도 남는다.
+
 ## 남은 연결
 
 1. 비페이지/legacy·부모 세션 index/캐시 부재 오류 전달은 IMPL-562에 작성했다. 대규모 재귀/단일 폴더의 bounded/pause/resume 통합, IMPL-565에서 parent discovery의 native directory/file snapshot과 legacy 재탐색을 작성했다. main lookback의 완료 폴더 세대와 junction cycle/alias 처리는 남는다. 실행 증거는 없다.
-2. IMPL-561은 expected-file/열린 stream, IMPL-563~564는 게시 직전 metadata, IMPL-566은 usage native snapshot/전체 prefix, IMPL-567은 Codex parser 실제 바이트·선행 metadata·게시 경계의 내용 비교를 작성했다. 아직 immutable multi-file snapshot, 관측 뒤 재작성, Claude 이전 prefix와 기타 source, parent head 자체의 내용 결합 및 이전 호출의 전체 directory 세대가 남는다. hashing의 전체 I/O 예산·durable resume·경계 간 반복 읽기 공유도 후속 작업이다.
+2. IMPL-561은 expected-file/열린 stream, IMPL-563~564는 게시 직전 metadata, IMPL-566은 usage native snapshot/전체 prefix, IMPL-567은 parser 실제 바이트/게시 내용 비교, IMPL-568은 parent head/negative discovery proof를 작성했다. immutable multi-file snapshot, 관측 뒤 변경, Claude 이전 prefix와 기타 source, 주 lookback의 과거 directory 세대가 남는다. hashing과 discovery 대조의 전체 I/O 예산·durable resume·경계 간 반복 읽기 공유도 후속 작업이다.
 3. 날짜/flat/legacy 루트, hard link/junction, case-sensitive NTFS, UNC/SMB, ReFS/FAT, 삭제 후 재생성, 장기 resume 및 모든 비용 source와의 통합. 파일 ID의 파일 시스템별 재사용·불안정성도 포함한다.
 4. 실제 Windows SDK 컴파일, x64/ARM64, native UI와 설치된 제품에서의 비용 표시, full WinUI3 제품 그래프 및 배포 준비.
 
