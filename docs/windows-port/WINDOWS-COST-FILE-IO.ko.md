@@ -1,6 +1,6 @@
 # Windows 비용 파일 I/O 구현 경계
 
-IMPL-559~564. 상태: **CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION**.
+IMPL-559~565. 상태: **CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION**.
 Mac 호스트에서 소스를 작성한 기록이며 Windows 컴파일·실행·성능·파일 시스템 호환성을 입증하지 않는다. W06/W07 전체 기능 및 G0~G6 완료가 아니다.
 
 ## 파일 메타데이터와 캐시
@@ -75,9 +75,21 @@ Mac 호스트에서 소스를 작성한 기록이며 Windows 컴파일·실행·
 - 범위: 현재 호출에서 관측한 입력을 묶은 것이며 이전 실행에서 완료로 남긴 모든 폴더/페이지의 세대를 영속적으로 증명하지 않는다. cache preflight는 관련 파일 목록을 순회하며 새 metadata I/O의 전체 상한/시간 예산 통합과 SQLite 저장 직전 대조 비용은 남는다. refresh interval 안에서 새로 생긴 미캐시 파일의 발견 주기를 바꾸는 watcher도 아니다.
 - 캐시와 비교하는 과거 시각은 기존 `mtimeUnixMs`다. 같은 ID·size·밀리초 시각 내 재작성, 전체 prefix 변경, truncate 후 재성장, final check 이후 변경까지 검출하는 계약은 아니다. 기존 pending/priority 실패 시 과거 보고서 제공 정책은 유지하며 이를 새로 검증한 usage로 표시한 것은 아니다. 파일 탐색 범위 연결이 W06 전체 또는 G0~G6 완료를 뜻하지 않는다.
 
+## IMPL-565: 영속 부모 세션 색인의 Windows 식별 정보
+
+- 부모 세션 discovery의 directory/file stamp와 partial head에 native ID·size·정밀 수정 시각 snapshot을 선택적 Codable 필드로 추가했다. 폴더 부재는 별도 `windowsObservedMissing`으로 표시한다. 과거 필드 없는 payload는 decode할 수 있지만 Windows 재사용 증거로 인정하지 않는다. DDL은 바꾸지 않고 기존 discovery JSON payload 경로를 사용한다.
+- Windows 폴더 유효성 판단은 snapshot 전체 또는 명시적으로 저장한 부재를 대조한다. mtime/count만 있는 legacy stamp와 generation은 새 탐색으로 전환한다. 음수/범위 밖 validation cursor도 새 탐색으로 돌린다. `windows-v2:` 세대 키는 sorted-key JSON으로 root·폴더·파일 경로와 snapshot을 함께 해시하며 기존 문자열 합치기 세대와 구분한다.
+- parent session ID → path 재사용은 해당 header를 읽을 때의 native snapshot을 요구한다. caller가 제공한 cachedSessionFiles는 후보 경로로만 사용한다. 실제 header parse가 없으면 새로 stat한 metadata만으로 오래된 ID에 새 snapshot을 붙이지 않으며, 기존의 head-proven mapping이 맞을 때만 유지한다. 파싱된 ID와 전달된 ID가 일치하는 전체/초기 증분 parser 결과를 `remember`에 연결했다.
+- 기존 mapping의 교체/축소/같은 크기 정밀 시각 변경/부재가 관측되면 해당 ID를 반환하지 않고, 알려진 후보와 폴더를 기존 budget 경로에서 다시 탐색한다. 같은 경로에 남은 다른 ID 연결도 header 결과를 기록하기 전에 제거한다. 헤더가 없는 파일을 오래된 ID로 다시 승인하지 않도록 작성했다.
+- partial head에는 당시 native snapshot을 보관한다. ID/size/시각 또는 resume offset 범위가 맞지 않거나 과거 snapshot이 없으면 buffer/offset을 재사용하지 않고 처음부터 읽는다. reader에는 metadata 단계의 같은 expectedFile을 넘긴다. 같은 파일의 append-compatible metadata는 기존 prefix/offset 유지 정책을 따른다.
+- negative lookup은 폴더 대조 뒤 이미 읽은 파일도 정확한 snapshot으로 다시 대조한다. 폴더 mtime이 그대로인 파일 append/rewrite 때문에 이전 missing 결과를 그대로 반환하지 않도록 연결했다. `validationFileIndex`로 파일 대조 진행을 저장해 기존 byte/time admission으로 다음 호출에서 재개한다. 오류/취소 때 admission을 정산하고 결과를 성공으로 바꾸지 않는다.
+- `WindowsCostSessionIdentityTests.swift`에 같은 시각 폴더 교체, 같은 크기/시각 파일 교체, caller/cached ID의 무근거 연결 거부, partial head 교체, 폴더 시각이 그대로인 append, legacy JSON migration과 작은 budget의 파일 대조 재개용 합성 source를 작성했다. JSON producer/consumer round-trip 코드를 포함하지만 **컴파일·실행하지 않았다.**
+- 이 필드는 부모 session discovery에 추가한 것이다. 일반 usage-cache의 과거 정밀 시각/prefix, main lookback의 모든 완료 폴더 세대, junction cycle/alias는 별도 연결이 남는다. 여러 호출에 나뉜 inventory 대조가 하나의 FS snapshot이 되지는 않는다. 같은 native ID를 유지한 prefix 재작성/재성장과 append 중 과거 header 변경은 내용 해시 또는 immutable source 결합 없이는 모두 검출하지 못한다.
+- 전체 metadata I/O·tree 재탐색 비용과 실제 Windows SDK/파일 시스템 동작은 미측정·미검증이다. 전체 W06/W01~W16/G0~G6 완료가 아니다.
+
 ## 남은 연결
 
-1. 비페이지/legacy·부모 세션 index/캐시 부재 오류 전달은 IMPL-562에 작성했다. 대규모 재귀/단일 폴더의 bounded/pause/resume 통합, directory ID를 포함한 영속 색인 증거 및 junction cycle/alias 처리가 남는다. 실행 증거는 없다.
+1. 비페이지/legacy·부모 세션 index/캐시 부재 오류 전달은 IMPL-562에 작성했다. 대규모 재귀/단일 폴더의 bounded/pause/resume 통합, IMPL-565에서 parent discovery의 native directory/file snapshot과 legacy 재탐색을 작성했다. main lookback의 완료 폴더 세대와 junction cycle/alias 처리는 남는다. 실행 증거는 없다.
 2. IMPL-561에서 Codex/Claude expected-file과 열린 stream을 연결했다. 아직 관측 사이 truncate 후 재성장/같은 ID·size·mtime의 prefix 재작성, Claude의 이전 prefix 확인, 다른 비용 source 및 최종 게시까지 전체 버전 연결이 남는다. IMPL-563~564는 현재 호출의 source/discovery 및 관련 캐시 재사용을 게시 직전 metadata 대조에 연결한다. 이전 호출의 전체 directory 세대, 과거 정밀 시각·prefix 및 내용 불변성 증명은 아직 남는다. 메타데이터와 64 KiB anchor만으로 전체 내용 불변성을 증명하지 않는다.
 3. 날짜/flat/legacy 루트, hard link/junction, case-sensitive NTFS, UNC/SMB, ReFS/FAT, 삭제 후 재생성, 장기 resume 및 모든 비용 source와의 통합. 파일 ID의 파일 시스템별 재사용·불안정성도 포함한다.
 4. 실제 Windows SDK 컴파일, x64/ARM64, native UI와 설치된 제품에서의 비용 표시, full WinUI3 제품 그래프 및 배포 준비.

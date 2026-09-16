@@ -1103,15 +1103,21 @@ enum CostUsageScanner {
             self.publicationObservations = publicationObservations
             let rootPaths = roots.map(\.standardizedFileURL.path).sorted()
             if var cachedDiscovery, cachedDiscovery.roots == rootPaths {
+                #if !os(Windows)
                 for (sessionId, fileURL) in cachedSessionFiles {
                     cachedDiscovery.filePathBySessionId[sessionId] = fileURL.standardizedFileURL.path
                 }
+                #endif
                 self.discovery = cachedDiscovery
                 self.knownFilePaths = Set(cachedDiscovery.filePaths)
                 self.knownDirectoryPaths = Set(cachedDiscovery.directoryPaths)
                 if !cachedDiscovery.isComplete {
                     self.enqueueCurrentFiles()
                 }
+                #if os(Windows)
+                // Caller mappings are candidates, not proof that the current file contains that ID.
+                for fileURL in cachedSessionFiles.values { self.enqueueFile(fileURL) }
+                #endif
             } else {
                 self.discovery = Self.makeFreshDiscovery(
                     roots: roots,
@@ -1142,12 +1148,39 @@ enum CostUsageScanner {
             _ = try self.resumeDiscovery()
         }
 
-        func remember(fileURL: URL, sessionId: String?) {
+        func remember(
+            fileURL: URL,
+            sessionId: String?,
+            metadata: CodexFileMetadata? = nil,
+            headWasParsed: Bool = false)
+        {
             guard let sessionId, !sessionId.isEmpty else { return }
             let path = fileURL.standardizedFileURL.path
+            #if os(Windows)
+            // Bind the parsed ID to the observation used by its reader, never to a later stat.
+            guard let metadata, metadata.readSnapshot != nil,
+                  let stamp = Self.fileStamp(metadata: metadata)
+            else {
+                self.invalidateCachedFile(path: path)
+                return
+            }
+            if headWasParsed {
+                self.discovery.fileStamps[path] = stamp
+                self.discovery.filePathBySessionId = self.discovery.filePathBySessionId.filter { $0.value != path }
+            } else {
+                guard self.discovery.filePathBySessionId[sessionId] == path,
+                      self.discovery.fileStamps[path]?.matchesWindows(metadata.readSnapshot, allowAppend: true) == true
+                else {
+                    self.invalidateCachedFile(path: path)
+                    return
+                }
+            }
+            #else
+            self.discovery.fileStamps[path] = metadata.flatMap(Self.fileStamp(metadata:))
+                ?? Self.fileStamp(fileURL: fileURL)
+            #endif
             self.discovery.filePathBySessionId[sessionId] = path
             self.resolveRequest(sessionId: sessionId)
-            self.discovery.fileStamps[path] = Self.fileStamp(fileURL: fileURL)
         }
 
         private func resolveRequest(sessionId: String) {
@@ -1172,10 +1205,15 @@ enum CostUsageScanner {
                             generation: generation))
                     }
                 case .changed:
+                    #if os(Windows)
+                    let retainedMappings: [String: URL] = [:]
+                    #else
+                    let retainedMappings = try self.cachedSessionFiles()
+                    #endif
                     self.discovery = Self.makeFreshDiscovery(
                         roots: self.roots,
                         files: self.files,
-                        cachedSessionFiles: try self.cachedSessionFiles(),
+                        cachedSessionFiles: retainedMappings,
                         retaining: self.discovery)
                     self.knownFilePaths = Set(self.discovery.filePaths)
                     self.knownDirectoryPaths = Set(self.discovery.directoryPaths)
@@ -1195,6 +1233,9 @@ enum CostUsageScanner {
                 self.resolveRequest(sessionId: sessionId)
                 return .found(cached)
             }
+            #if os(Windows)
+            guard self.discovery.isComplete, self.hasScannedInventory else { return .deferred }
+            #endif
             return .missing(dependencyKey: Self.missingDependencyKey(
                 sessionId: sessionId,
                 generation: self.discovery.generation ?? "unknown"))
@@ -1202,34 +1243,61 @@ enum CostUsageScanner {
 
         private func cachedFileURL(for sessionId: String) throws -> URL? {
             guard let path = self.discovery.filePathBySessionId[sessionId] else { return nil }
-            guard try self.observeFileIfPresent(URL(fileURLWithPath: path)) else {
+            let url = URL(fileURLWithPath: path)
+            #if os(Windows)
+            guard let metadata = try CostUsageScanner.codexFileMetadataIfPresent(
+                fileURL: url, publicationObservations: self.publicationObservations)
+            else {
+                self.invalidateCachedFile(path: path, restartInventory: true)
+                return nil
+            }
+            guard self.discovery.fileStamps[path]?.matchesWindows(metadata.readSnapshot, allowAppend: true) == true else {
+                self.invalidateCachedFile(path: path, restartInventory: true)
+                return nil
+            }
+            #else
+            guard try CostUsageScanner.codexFileExists(fileURL: url) else {
                 self.discovery.filePathBySessionId.removeValue(forKey: sessionId)
                 return nil
             }
-            return URL(fileURLWithPath: path)
+            #endif
+            return url
         }
 
         private func cachedSessionFiles() throws -> [String: URL] {
-            try self.discovery.filePathBySessionId.reduce(into: [:]) { result, entry in
-                guard try self.observeFileIfPresent(URL(fileURLWithPath: entry.value)) else { return }
-                result[entry.key] = URL(fileURLWithPath: entry.value)
+            var result: [String: URL] = [:]
+            for sessionId in Array(self.discovery.filePathBySessionId.keys) {
+                if let fileURL = try self.cachedFileURL(for: sessionId) { result[sessionId] = fileURL }
             }
+            return result
         }
 
-        private func observeFileIfPresent(_ url: URL) throws -> Bool {
-            #if os(Windows)
-            guard let metadata = try CostUsageScanner.codexFileMetadataIfPresent(fileURL: url) else {
-                try self.publicationObservations?.missing(url)
-                return false
+        #if os(Windows)
+        private func invalidateCachedFile(path: String, restartInventory: Bool = false) {
+            if restartInventory {
+                let previous = self.discovery
+                self.discovery = Self.makeFreshDiscovery(
+                    roots: self.roots, files: self.files,
+                    cachedSessionFiles: [:], retaining: previous)
+                self.discovery.pendingSessionIds = previous.pendingSessionIds
+                self.knownFilePaths = Set(self.discovery.filePaths)
+                self.knownDirectoryPaths = Set(self.discovery.directoryPaths)
+                return
             }
-            if let snapshot = metadata.readSnapshot {
-                try self.publicationObservations?.file(url, snapshot: snapshot)
+            self.discovery.fileStamps.removeValue(forKey: path)
+            self.discovery.filePathBySessionId = self.discovery.filePathBySessionId.filter { $0.value != path }
+            self.discovery.missingSessionIds = []
+            self.discovery.generation = nil
+            self.discovery.validationDirectoryIndex = 0
+            self.discovery.validationFileIndex = 0
+            self.discovery.isComplete = false
+            self.enqueueFile(URL(fileURLWithPath: path))
+            if let index = self.discovery.filePaths.firstIndex(of: path) {
+                self.discovery.nextFileIndex = min(self.discovery.nextFileIndex, index)
             }
-            return true
-            #else
-            return try CostUsageScanner.codexFileExists(fileURL: url)
-            #endif
+            self.discovery.headScan = nil
         }
+        #endif
 
         private var hasScannedInventory: Bool {
             self.discovery.headScan == nil
@@ -1285,10 +1353,26 @@ enum CostUsageScanner {
                 return true
             }
 
+            #if os(Windows)
+            // Until this head yields an ID, no previous mapping for its path is authoritative.
+            self.discovery.filePathBySessionId = self.discovery.filePathBySessionId.filter { $0.value != path }
+            #endif
             var head = self.discovery.headScan
             if head?.path != path {
                 head = CostUsageCodexSessionDiscovery.HeadScan(path: path, offset: 0, resumeState: nil)
             }
+            #if os(Windows)
+            if let previous = head?.windowsSnapshot, previous.isValidWindowsObservation,
+               let current = metadata.readSnapshot,
+               (0...previous.size).contains(head?.offset ?? 0),
+               (0...previous.size).contains(head?.resumeState?.offset ?? head?.offset ?? 0),
+               CostUsageSourcePublication.allowsAppend(current, from: previous)
+            {
+                // Keep the buffered prefix and offset for append-compatible metadata.
+            } else {
+                head = CostUsageCodexSessionDiscovery.HeadScan(path: path, offset: 0, resumeState: nil)
+            }
+            #endif
             let startOffset = head?.resumeState?.offset ?? head?.offset ?? 0
             let remainingBytes = max(0, metadata.size - startOffset)
             let admittedBytes: Int64
@@ -1307,12 +1391,16 @@ enum CostUsageScanner {
                 offset: head?.offset ?? 0,
                 maxBytesToRead: admittedBytes,
                 resumeState: head?.resumeState,
-                checkCancellation: self.checkCancellation)
+                checkCancellation: self.checkCancellation,
+                expectedFile: metadata.readSnapshot)
             self.scanBudget?.complete(
                 admittedWorkBytes: admittedBytes,
                 actualWorkBytes: max(1, result.bytesRead))
 
             if let sessionId = result.sessionId, !sessionId.isEmpty {
+                #if os(Windows)
+                self.discovery.filePathBySessionId = self.discovery.filePathBySessionId.filter { $0.value != path }
+                #endif
                 self.discovery.filePathBySessionId[sessionId] = path
                 self.discovery.missingSessionIds.removeAll { $0 == sessionId }
                 self.advancePastHead(path: path, stamp: Self.fileStamp(metadata: metadata))
@@ -1326,7 +1414,8 @@ enum CostUsageScanner {
             self.discovery.headScan = CostUsageCodexSessionDiscovery.HeadScan(
                 path: path,
                 offset: result.committedOffset,
-                resumeState: result.resumeState)
+                resumeState: result.resumeState,
+                windowsSnapshot: metadata.readSnapshot)
             return false
         }
 
@@ -1393,9 +1482,13 @@ enum CostUsageScanner {
             }
             let modificationTime = CostUsageScanner.codexFileMetadata(fileURL: directoryURL).mtimeUnixMs
             #endif
-            self.discovery.directoryStamps[path] = .init(
-                mtimeUnixMs: modificationTime,
-                jsonlFileCount: jsonlFileCount)
+            var stamp = CostUsageCodexSessionDiscovery.DirectoryStamp(
+                mtimeUnixMs: modificationTime, jsonlFileCount: jsonlFileCount)
+            #if os(Windows)
+            stamp.windowsSnapshot = listing.map { .init(native: $0.directorySnapshot) }
+            stamp.windowsObservedMissing = listing == nil
+            #endif
+            self.discovery.directoryStamps[path] = stamp
             self.discovery.nextDirectoryIndex += 1
             return !self.scanBudgetExhausted()
         }
@@ -1432,43 +1525,41 @@ enum CostUsageScanner {
                     }
                 }
                 // Cached mappings can outlive files already passed by the discovery cursor.
-                if try self.cachedFileURL(for: sessionId) == nil,
-                   !self.discovery.missingSessionIds.contains(sessionId)
-                {
+                let cached = try self.cachedFileURL(for: sessionId)
+                // A changed mapping may have queued a new head while finalizing requests.
+                guard self.hasScannedInventory else {
+                    processedCount = 0
+                    return false
+                }
+                if cached == nil, !self.discovery.missingSessionIds.contains(sessionId) {
                     self.discovery.missingSessionIds.append(sessionId)
                 }
                 processedCount += 1
             }
-            let generation = Self.discoveryGeneration(
-                roots: self.discovery.roots,
-                directoryStamps: self.discovery.directoryStamps)
+            let generation = try Self.discoveryGeneration(self.discovery)
             self.discovery.generation = generation
             self.discovery.missingSessionIds.sort()
             self.discovery.directoryPaths = self.discovery.directoryStamps.keys.sorted()
             self.discovery.nextDirectoryIndex = self.discovery.directoryPaths.count
             self.discovery.validationDirectoryIndex = 0
+            self.discovery.validationFileIndex = 0
             self.discovery.isComplete = true
             return true
         }
 
         private func validateInventory() throws -> InventoryValidation {
+            guard (0...self.discovery.directoryPaths.count).contains(self.discovery.validationDirectoryIndex),
+                  (0...self.discovery.filePaths.count).contains(self.discovery.validationFileIndex ?? 0)
+            else { return self.changedInventory() }
+            #if os(Windows)
+            guard self.discovery.generation?.hasPrefix("windows-v2:") == true else { return self.changedInventory() }
+            #endif
             while self.discovery.validationDirectoryIndex < self.discovery.directoryPaths.count {
-                let admittedWork: Int64
-                if let scanBudget = self.scanBudget {
-                    switch scanBudget.admit(workBytes: 1) {
-                    case let .allow(allowance): admittedWork = allowance
-                    case .deferBudget: return .deferred
-                    }
-                } else {
-                    admittedWork = 1
-                }
-
+                guard let admittedWork = self.admitInventoryValidation() else { return .deferred }
                 let path = self.discovery.directoryPaths[self.discovery.validationDirectoryIndex]
-                let currentMtime: Int64?
+                let matches: Bool
                 do {
-                    defer {
-                        self.scanBudget?.complete(admittedWorkBytes: admittedWork, actualWorkBytes: admittedWork)
-                    }
+                    defer { self.completeInventoryValidation(admittedWork) }
                     try self.checkCancellation?()
                     #if os(Windows)
                     let directoryURL = URL(fileURLWithPath: path, isDirectory: true)
@@ -1479,22 +1570,62 @@ enum CostUsageScanner {
                     } else {
                         try self.publicationObservations?.missing(directoryURL)
                     }
-                    currentMtime = snapshot?.mtimeUnixMs
+                    matches = self.discovery.directoryStamps[path]?.matchesWindows(
+                        snapshot.map { .init(native: $0) }) == true
                     #else
-                    currentMtime = Self.directoryModificationTime(atPath: path)
+                    matches = Self.directoryModificationTime(atPath: path) == self.discovery.directoryStamps[path]?
+                        .mtimeUnixMs
                     #endif
                 }
-                guard currentMtime == self.discovery.directoryStamps[path]?.mtimeUnixMs else {
-                    self.discovery.validationDirectoryIndex = 0
-                    return .changed
-                }
+                guard matches else { return self.changedInventory() }
                 self.discovery.validationDirectoryIndex += 1
-                if self.scanBudgetExhausted() {
-                    return .deferred
-                }
+                if self.scanBudgetExhausted() { return .deferred }
             }
+            #if os(Windows)
+            // A negative lookup must also notice a changed/extended previously headed file:
+            // directory timestamps alone do not describe the contents of files in that directory.
+            while (self.discovery.validationFileIndex ?? 0) < self.discovery.filePaths.count {
+                guard let admittedWork = self.admitInventoryValidation() else { return .deferred }
+                let index = self.discovery.validationFileIndex ?? 0
+                let path = self.discovery.filePaths[index]
+                let matches: Bool
+                do {
+                    defer { self.completeInventoryValidation(admittedWork) }
+                    try self.checkCancellation?()
+                    let metadata = try CostUsageScanner.codexFileMetadataIfPresent(
+                        fileURL: URL(fileURLWithPath: path), publicationObservations: self.publicationObservations)
+                    if let metadata {
+                        matches = self.discovery.fileStamps[path]?.matchesWindows(metadata.readSnapshot) == true
+                    } else {
+                        matches = self.discovery.fileStamps[path] == nil
+                    }
+                }
+                guard matches else { return self.changedInventory() }
+                self.discovery.validationFileIndex = index + 1
+                if self.scanBudgetExhausted() { return .deferred }
+            }
+            #endif
             self.discovery.validationDirectoryIndex = 0
+            self.discovery.validationFileIndex = 0
             return .current
+        }
+
+        private func admitInventoryValidation() -> Int64? {
+            guard let scanBudget = self.scanBudget else { return 1 }
+            switch scanBudget.admit(workBytes: 1) {
+            case let .allow(allowance): return allowance
+            case .deferBudget: return nil
+            }
+        }
+
+        private func completeInventoryValidation(_ admittedWork: Int64) {
+            self.scanBudget?.complete(admittedWorkBytes: admittedWork, actualWorkBytes: admittedWork)
+        }
+
+        private func changedInventory() -> InventoryValidation {
+            self.discovery.validationDirectoryIndex = 0
+            self.discovery.validationFileIndex = 0
+            return .changed
         }
 
         private func scanBudgetExhausted() -> Bool {
@@ -1515,6 +1646,21 @@ enum CostUsageScanner {
             retaining previous: CostUsageCodexSessionDiscovery?) -> CostUsageCodexSessionDiscovery
         {
             let rootPaths = roots.map(\.standardizedFileURL.path).sorted()
+            #if os(Windows)
+            // A new inventory rereads candidate heads under the normal budget. Do not mint a
+            // current file stamp for a session ID obtained from a different persisted version.
+            var seen: Set<String> = []
+            let previousPaths = (previous?.filePaths ?? [])
+                + (previous?.filePathBySessionId.values.sorted() ?? [])
+            let candidates = files + cachedSessionFiles.values.sorted { $0.path < $1.path }
+                + previousPaths.map { URL(fileURLWithPath: $0) }
+            let paths = candidates.map(\.standardizedFileURL.path).filter { seen.insert($0).inserted }
+            return CostUsageCodexSessionDiscovery(
+                roots: rootPaths, generation: nil, directoryStamps: [:], directoryPaths: rootPaths,
+                nextDirectoryIndex: 0, filePaths: paths, nextFileIndex: 0, fileStamps: [:], headScan: nil,
+                filePathBySessionId: [:], missingSessionIds: [], pendingSessionIds: [],
+                validationDirectoryIndex: 0, isComplete: false)
+            #else
             var retainedStamps: [String: CostUsageCodexSessionDiscovery.FileStamp] = [:]
             if let previous {
                 for (path, stamp) in previous.fileStamps {
@@ -1561,6 +1707,7 @@ enum CostUsageScanner {
                 pendingSessionIds: [],
                 validationDirectoryIndex: 0,
                 isComplete: false)
+            #endif
         }
 
         private static func directoryModificationTime(atPath path: String) -> Int64? {
@@ -1580,17 +1727,32 @@ enum CostUsageScanner {
             metadata: CodexFileMetadata) -> CostUsageCodexSessionDiscovery.FileStamp?
         {
             guard metadata.fileId != nil else { return nil }
-            return .init(mtimeUnixMs: metadata.mtimeUnixMs, size: metadata.size, fileId: metadata.fileId)
+            return .init(
+                mtimeUnixMs: metadata.mtimeUnixMs, size: metadata.size, fileId: metadata.fileId,
+                windowsSnapshot: metadata.readSnapshot)
         }
 
-        private static func discoveryGeneration(
-            roots: [String],
-            directoryStamps: [String: CostUsageCodexSessionDiscovery.DirectoryStamp]) -> String
-        {
-            let directories = directoryStamps.map { path, stamp in
+        private static func discoveryGeneration(_ discovery: CostUsageCodexSessionDiscovery) throws -> String {
+            #if os(Windows)
+            struct Generation: Encodable {
+                let version = 2
+                let roots: [String]
+                let directories: [String: CostUsageCodexSessionDiscovery.DirectoryStamp]
+                let filePaths: [String]
+                let files: [String: CostUsageCodexSessionDiscovery.FileStamp]
+            }
+            let encoder = JSONEncoder()
+            encoder.outputFormatting = [.sortedKeys]
+            let data = try encoder.encode(Generation(
+                roots: discovery.roots.sorted(), directories: discovery.directoryStamps,
+                filePaths: discovery.filePaths.sorted(), files: discovery.fileStamps))
+            return "windows-v2:" + CostUsageScanner.sha256Hex(data)
+            #else
+            let directories = discovery.directoryStamps.map { path, stamp in
                 "\(path)|\(stamp.mtimeUnixMs)|\(stamp.jsonlFileCount)"
             }.sorted()
-            return CostUsageScanner.sha256Hex(Data((roots + directories).joined(separator: "\n").utf8))
+            return CostUsageScanner.sha256Hex(Data((discovery.roots + directories).joined(separator: "\n").utf8))
+            #endif
         }
 
         private static func missingDependencyKey(sessionId: String, generation: String) -> String {
@@ -1611,9 +1773,10 @@ enum CostUsageScanner {
         offset: Int64,
         maxBytesToRead: Int64,
         resumeState: CostUsageJsonl.ResumeState?,
-        checkCancellation: CancellationCheck?) throws -> CodexSessionIdentifierScanResult
+        checkCancellation: CancellationCheck?,
+        expectedFile: CostUsageFileReadSnapshot? = nil) throws -> CodexSessionIdentifierScanResult
     {
-        let readSnapshot = try CostUsageFileReadSnapshot.capture(at: fileURL)
+        let readSnapshot = try expectedFile ?? CostUsageFileReadSnapshot.capture(at: fileURL)
         var sessionId: String?
         let scanStart = resumeState?.offset ?? max(0, offset)
         let progress = try CostUsageJsonl.scanBounded(

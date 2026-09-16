@@ -879,10 +879,13 @@ extension CostUsageScanner {
         session: CodexScannedSession,
         rows: [CodexUsageRow],
         context: CodexFileScanContext,
-        state: inout CodexScanState)
+        state: inout CodexScanState,
+        headWasParsed: Bool = false)
     {
         if let sessionId = session.id {
-            context.resources.fileIndex.remember(fileURL: input.fileURL, sessionId: sessionId)
+            context.resources.fileIndex.remember(
+                fileURL: input.fileURL, sessionId: sessionId, metadata: input.metadata,
+                headWasParsed: headWasParsed)
             if session.contributedUsage {
                 state.contributingSessionIds.insert(sessionId)
             }
@@ -1300,7 +1303,8 @@ extension CostUsageScanner {
             session: CodexScannedSession(id: sessionId, days: mergedDays),
             rows: uniqueRows,
             context: context,
-            state: &state)
+            state: &state,
+            headWasParsed: startOffset == 0 && delta.sessionId != nil && delta.sessionId == sessionId)
         return true
     }
 
@@ -1449,7 +1453,8 @@ extension CostUsageScanner {
             session: CodexScannedSession(id: sessionId, days: usageDays),
             rows: uniqueRows,
             context: context,
-            state: &state)
+            state: &state,
+            headWasParsed: parsed.sessionId != nil && parsed.sessionId == sessionId)
     }
 
     static func codexForkBaselineDependencyKey(

@@ -2,11 +2,16 @@ import Foundation
 
 /// Observation used to bind a cost scan to a file and a fixed physical read boundary.
 /// It is deliberately separate from the persisted cache's millisecond freshness hint.
-struct CostUsageFileReadSnapshot: Equatable, Sendable {
+struct CostUsageFileReadSnapshot: Codable, Equatable, Sendable {
     let fileID: String
     let size: Int64
     let modifiedSeconds: Int64
     let modifiedNanoseconds: Int64
+
+    var isValidWindowsObservation: Bool {
+        self.size >= 0 && (0..<1_000_000_000).contains(self.modifiedNanoseconds)
+            && (self.fileID.hasPrefix("win128:") || self.fileID.hasPrefix("win64:"))
+    }
 
     static func capture(at url: URL) throws -> Self? {
         #if os(Windows)

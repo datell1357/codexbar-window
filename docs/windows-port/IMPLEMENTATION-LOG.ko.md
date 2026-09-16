@@ -5353,3 +5353,13 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - full/paged missing root 재등장·날짜 폴더 생성, 같은 size/mtime 교체·append·부재·종류/취소, timed/byte queue의 missing 후보용 Windows fixture source를 작성했다. 전체 수집 호출과 SQLite 저장 경계 interleaving을 포함하지만 실행하지 않았다.
 - 과거 실행의 모든 directory/부모 mapping identity, 전체 prefix/정밀 시각 증거, 전체 metadata I/O 예산·재귀 paging과 기타 비용 source는 남는다. metadata 대조는 atomic filesystem snapshot이 아니며 새 파일 watcher가 아니다. 전체 Windows 제품/W01~W16/G0~G6 완료 아님.
 - CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·formatter·compiler/manifest·파일 fixture·Windows·실계정·CI 실행 검증 미실행. 직전 IMPL-563은 ccb0beb79a1e4d62a962dfbad1d387ff5b92a2fc로 origin/main 푸시 확인. 이번 단위도 별도 커밋·푸시한다.
+
+
+## IMPL-565 — Persist native identity for Windows parent-session discovery
+
+- directory/file stamp와 partial head에 Codable native snapshot, 폴더의 명시적 부재, 파일 validation cursor를 추가했다. 기존 discovery JSON payload에 저장하며 과거 필드 없는 data는 decode 후 Windows 재탐색 대상으로 처리한다.
+- 폴더 ID·정밀 시각 대조와 snapshot을 포함한 sorted-key JSON windows-v2 generation을 작성했다. missing lookup은 기존 파일의 append/change도 다시 읽으며 metadata validation을 기존 budget으로 재개한다.
+- cached ID→path는 해당 header를 읽은 native snapshot이 맞을 때만 반환한다. caller mapping과 새 stat만으로 ID를 재승인하지 않고 실제 전체/초기 증분 parse의 ID를 관측 metadata와 묶는다. mapping 변경/부재 시 알려진 후보/폴더를 다시 탐색하며 이전 path의 ID 연결을 새 header 없이 남기지 않는다.
+- partial head의 교체/축소/시각/offset 불일치·legacy snapshot은 buffer를 버리고 처음부터 읽으며 reader에 metadata 단계 expectedFile을 전달한다. append-compatible 유지 정책과 전체 prefix의 미증명 경계를 문서화했다.
+- 같은 시각 폴더/파일 교체, caller ID 오인 방지, partial head 재시작, directory 시각 그대로의 append, legacy JSON round-trip·작은 budget 재개용 Windows fixture 코드를 추가했으나 실행하지 않았다.
+- 일반 usage-cache 정밀 시각/prefix·main lookback 전체 폴더 세대·junction cycle/alias·전체 I/O 예산과 실제 SDK/runtime는 남는다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·formatter·compiler/manifest·파일 fixture·Windows·실계정·CI 실행 검증 미실행. 전체 Windows 제품/W01~W16/G0~G6 완료 아님. 직전 IMPL-564는 7b5369fbf7d2b913434ba0c06aefd565864dbe39로 origin/main 푸시 확인. 이번 단위도 별도 커밋·푸시한다.

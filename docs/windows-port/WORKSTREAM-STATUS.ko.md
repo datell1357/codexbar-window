@@ -1,5 +1,7 @@
 # Windows 전용 제품 작업 현황
 
+- IMPL-565: parent discovery의 native directory/file snapshot·명시적 부재·partial head identity와 windows-v2 세대, legacy 재탐색 작성. ID→path 재사용을 실제 header 관측에 연결하고 negative cache의 파일 대조 cursor/예산 재개 및 미실행 fixture 추가. 일반 usage prefix·main lookback 세대·junction/alias·실제 Windows 동작은 남음. CODE_WRITTEN_UNVERIFIED.
+
 - IMPL-564: Codex 날짜/flat/legacy/최근 변경·페이지 탐색과 관련 캐시 재사용 관측을 게시 대조에 연결. 변경 캐시의 interval 우회/대기 queue 편입, 안정된 부재 후보 정리, page 취소·숨김 정책과 미실행 회귀 fixture 작성. 과거 directory/parent identity·prefix·전체 I/O 예산 및 실제 Windows 동작은 남음. CODE_WRITTEN_UNVERIFIED.
 
 - IMPL-563: 비용 source 관측 집합을 Codex SQLite COMMIT 및 Claude/Vertex cache/memo 교체 직전 대조에 연결. source 실패 rollback/throw와 DB corruption 분리, memo 재사용/반환 대조 및 미실행 회귀 fixture 작성. 전체 Codex discovery/비수집 cache 재사용·prefix 내용 결합·원자적 파일 snapshot 및 실제 Windows 동작은 남음. CODE_WRITTEN_UNVERIFIED.

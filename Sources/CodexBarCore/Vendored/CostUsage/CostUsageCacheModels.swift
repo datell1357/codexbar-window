@@ -50,18 +50,39 @@ struct CostUsageCodexSessionDiscovery: Codable, Equatable {
     struct DirectoryStamp: Codable, Equatable {
         var mtimeUnixMs: Int64
         var jsonlFileCount: Int
+        /// nil fields decode legacy stamps; they are not native identity evidence.
+        var windowsSnapshot: CostUsageFileReadSnapshot? = nil
+        var windowsObservedMissing: Bool? = nil
+
+        func matchesWindows(_ current: CostUsageFileReadSnapshot?) -> Bool {
+            if self.windowsObservedMissing == true {
+                return self.windowsSnapshot == nil && current == nil
+            }
+            guard self.windowsObservedMissing == false, let expected = self.windowsSnapshot,
+                  expected.isValidWindowsObservation else { return false }
+            return current == expected
+        }
     }
 
     struct FileStamp: Codable, Equatable {
         var mtimeUnixMs: Int64
         var size: Int64
         var fileId: String?
+        var windowsSnapshot: CostUsageFileReadSnapshot? = nil
+
+        func matchesWindows(_ current: CostUsageFileReadSnapshot?, allowAppend: Bool = false) -> Bool {
+            guard let expected = self.windowsSnapshot, expected.isValidWindowsObservation, let current else {
+                return false
+            }
+            return allowAppend ? CostUsageSourcePublication.allowsAppend(current, from: expected) : current == expected
+        }
     }
 
     struct HeadScan: Codable, Equatable {
         var path: String
         var offset: Int64
         var resumeState: CostUsageJsonl.ResumeState?
+        var windowsSnapshot: CostUsageFileReadSnapshot? = nil
     }
 
     var roots: [String]
@@ -78,6 +99,7 @@ struct CostUsageCodexSessionDiscovery: Codable, Equatable {
     var pendingSessionIds: [String]
     var validationDirectoryIndex: Int
     var isComplete: Bool
+    var validationFileIndex: Int? = nil
 }
 
 struct CostUsageCodexPreviousReport: Codable, Equatable {
