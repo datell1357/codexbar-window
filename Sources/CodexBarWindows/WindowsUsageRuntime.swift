@@ -410,6 +410,8 @@ public actor WindowsUsageRuntime {
     enum SpendCollectionState: Sendable { case idle, disabled, collecting, available, failed, stopped }
     private var collectedSpendSources: [WindowsSpendSnapshotLoader.Source]?
     private var spendController: WindowsSpendDashboardController?
+    private var spendCollectionID: UUID?
+    private var spendPublicationSequence: UInt64 = 0
     private var collectedSpendSettings: WindowsSpendSettings?
     private var spendSnapshot: WindowsSpendDashboardController.Snapshot?
     private var spendState: SpendCollectionState = .idle
@@ -482,6 +484,8 @@ public actor WindowsUsageRuntime {
     struct WidgetContextStamp: Equatable, Sendable {
         let quotaContext: UUID
         let spendGeneration: UInt64
+        let spendCollectionID: UUID?
+        let spendPublicationSequence: UInt64
         let configurationRevision: Data?
         let presentation: WindowsUsagePresentationSettings
         let spend: WindowsSpendSettings
@@ -494,6 +498,7 @@ public actor WindowsUsageRuntime {
         let config = try self.configStore.load()
         let revision = try config.map { try self.widgetConfigurationRevision($0) }
         return WidgetContextStamp(quotaContext: self.widgetQuotaContext, spendGeneration: self.spendGeneration,
+            spendCollectionID: self.spendCollectionID, spendPublicationSequence: self.spendPublicationSequence,
             configurationRevision: revision, presentation: WindowsUsagePresentationSettings.load(),
             spend: WindowsSpendSettings.load(), language: WindowsStatusLocalization.Snapshot().language,
             refreshing: self.refreshTask != nil, stopped: self.shuttingDown)
@@ -761,7 +766,10 @@ public actor WindowsUsageRuntime {
             guard data.count <= 16 * 1024 * 1024 else { return .unavailable("The cost JSON exceeds the 16 MiB export limit.") }
             var notices: [String] = []
             if !snapshot.sourceFailures.isEmpty {
-                notices.append("Partial collection: \(snapshot.sourceFailures.count) failed source(s) are excluded.")
+                notices.append("Partial collection: \(snapshot.sourceFailures.count) pending or failed source(s). Sources without retained values are excluded.")
+                if !snapshot.retainedSourceDates.isEmpty {
+                    notices.append("Previously captured values from \(snapshot.retainedSourceDates.count) source(s) are included as stale display data.")
+                }
             }
             if snapshot.sourceFailures.contains(where: { $0.accountIdentityUnconfirmed }) {
                 notices.append("An account identity could not be confirmed. Re-import the intended account; its failed source is excluded.")
@@ -2036,6 +2044,10 @@ public actor WindowsUsageRuntime {
         self.invalidatePlanHistoryContexts()
         self.clearWidgetQuotaContext()
         self.spendGeneration &+= 1
+        let previousSpendController = self.spendController
+        self.spendCollectionID = nil
+        self.spendController = nil
+        if let previousSpendController { Task { await previousSpendController.stop() } }
         self.collectedSpendSources = nil
         self.widgetCostOwners = [:]
         self.spendSnapshot = nil
@@ -2776,6 +2788,7 @@ public actor WindowsUsageRuntime {
         let previousSettings = self.collectedSpendSettings
         let controller = self.spendController
         let canReproject = self.refreshTask == nil && self.spendState == .available &&
+            previousSnapshot?.continuingLocalDiscovery != true &&
             previousSettings?.usesSameCollection(as: settings) == true && previousSnapshot != nil
         self.spendGeneration &+= 1
         let generation = self.spendGeneration
@@ -2805,6 +2818,7 @@ public actor WindowsUsageRuntime {
         self.widgetCostOwners = [:]
         let refreshing = self.refreshTask != nil
         if refreshing { self.queuedSpendRefresh = true }
+        self.spendCollectionID = nil
         self.spendController = nil
         if let controller { await controller.stop() }
         guard !self.shuttingDown, generation == self.spendGeneration else { return }
@@ -3521,6 +3535,7 @@ public actor WindowsUsageRuntime {
         guard !self.shuttingDown, generation == self.spendGeneration, !Task.isCancelled else { return }
         guard !settings.enabledProviders(config: config).isEmpty || settings.openCodexUsageLogsEnabled else {
             if let previous = self.spendController { await previous.stop() }
+            self.spendCollectionID = nil
             self.spendController = nil
             self.collectedSpendSources = nil
             self.widgetCostOwners = [:]
@@ -3536,28 +3551,41 @@ public actor WindowsUsageRuntime {
                     .appendingPathComponent("spend-cache", isDirectory: true),
                 codexContext: codexContext)
             let sources = self.attachWidgetCostOwnership(resolvedSources)
+            let configurationRevision = try self.widgetConfigurationRevision(config)
+            let collectionID = UUID()
+            self.spendCollectionID = collectionID
+            self.spendPublicationSequence = 0
+            let publisher: WindowsSpendDashboardController.Publisher = { [weak self] snapshot in
+                Task { await self?.receiveSpendSnapshot(snapshot, collectionID: collectionID,
+                    generation: generation, settings: settings, sources: sources,
+                    configurationRevision: configurationRevision) }
+            }
             let canReuse = self.collectedSpendSettings == settings && self.collectedSpendSources == sources &&
                 !settings.openCodexUsageLogsEnabled && !sources.isEmpty &&
                 sources.allSatisfy(\.supportsRetainedCollection)
             let controller: WindowsSpendDashboardController
             if canReuse, let previous = self.spendController {
                 controller = previous
+                await previous.setPublisher(publisher)
                 let previousSnapshot = await previous.snapshot()
                 guard !self.shuttingDown, generation == self.spendGeneration, !Task.isCancelled else { return }
                 self.spendSnapshot = previousSnapshot.refreshing()
             } else {
+                self.spendSnapshot = nil
                 if let previous = self.spendController { await previous.stop() }
-                controller = WindowsSpendDashboardController(
-                loader: WindowsSpendSnapshotLoader.make(sources: sources, settings: settings,
+                let collection = WindowsSpendSnapshotLoader.collection(sources: sources, settings: settings,
                     openCodexCacheRoot: self.configStore.fileURL.deletingLastPathComponent()
-                        .appendingPathComponent("opencodex-cache", isDirectory: true)),
-                options: settings.dashboardOptions, publisher: { _ in })
+                        .appendingPathComponent("opencodex-cache", isDirectory: true))
+                controller = WindowsSpendDashboardController(loader: collection.load,
+                    continuationLoader: collection.resume, options: settings.dashboardOptions, publisher: publisher)
             }
             guard !self.shuttingDown, generation == self.spendGeneration, !Task.isCancelled else {
                 await controller.stop()
                 return
             }
             self.spendController = controller
+            self.collectedSpendSources = sources
+            self.collectedSpendSettings = settings
             self.spendState = .collecting
             // The original converter refreshes non-USD rates at most daily and retains fallback rates on failure.
             await CurrencyExchange.shared.fetchLatestRatesIfNeeded(preferredCurrencyCode: settings.preferredCurrencyCode)
@@ -3567,6 +3595,7 @@ public actor WindowsUsageRuntime {
             // External preference changes while scanning must not publish the old configuration.
             guard WindowsSpendSettings.load() == settings else {
                 await controller.stop()
+                self.spendCollectionID = nil
                 self.spendController = nil
                 self.spendSnapshot = nil
                 self.collectedSpendSources = nil
@@ -3577,17 +3606,67 @@ public actor WindowsUsageRuntime {
             }
             let snapshot = await controller.snapshot()
             guard !self.shuttingDown, generation == self.spendGeneration, !Task.isCancelled else { return }
-            self.collectedSpendSources = sources
-            self.collectedSpendSettings = settings
-            self.spendSnapshot = snapshot
-            self.spendState = snapshot.phase == .failed ? .failed : .available
+            await self.receiveSpendSnapshot(snapshot, collectionID: collectionID,
+                generation: generation, settings: settings, sources: sources,
+                configurationRevision: configurationRevision)
         } catch {
             guard !self.shuttingDown, generation == self.spendGeneration else { return }
             // Do not expose credential, path, or configuration decoder diagnostics to the dashboard.
+            let previous = self.spendController
+            self.spendCollectionID = nil
+            self.spendController = nil
             self.widgetCostOwners = [:]
             self.spendSnapshot = nil
             self.spendState = .failed
+            if let previous { await previous.stop() }
         }
+    }
+
+    /// Controller callbacks may arrive after a newer slice or collection. Authorize every
+    /// publication against the captured settings/configuration and order it within this controller.
+    private func receiveSpendSnapshot(_ snapshot: WindowsSpendDashboardController.Snapshot,
+                                      collectionID: UUID, generation: UInt64, settings: WindowsSpendSettings,
+                                      sources: [WindowsSpendSnapshotLoader.Source], configurationRevision: Data) async {
+        guard !self.shuttingDown, self.spendGeneration == generation,
+              self.spendCollectionID == collectionID, snapshot.publicationSequence > self.spendPublicationSequence,
+              snapshot.phase != .stopped else { return }
+        let authorized: Bool
+        do {
+            if let config = try self.configStore.load() {
+                let currentRevision = try self.widgetConfigurationRevision(config)
+                var ownersMatch = true
+                for source in sources where source.provider == .codex && source.verifyCodexOwner {
+                    guard let home = source.codexHomePath else { ownersMatch = false; break }
+                    if try CodexAuthFingerprint.fingerprintIfPresent(homePath: home) != source.expectedCodexAuthFingerprint {
+                        ownersMatch = false
+                        break
+                    }
+                }
+                authorized = ownersMatch && WindowsSpendSettings.load() == settings
+                    && currentRevision == configurationRevision
+            } else { authorized = false }
+        } catch { authorized = false }
+        guard authorized else {
+            let controller = self.spendController
+            self.spendCollectionID = nil
+            self.spendController = nil
+            self.spendSnapshot = nil
+            self.collectedSpendSources = nil
+            self.collectedSpendSettings = nil
+            self.widgetCostOwners = [:]
+            self.spendState = .idle
+            self.emitWidgetInvalidation()
+            if let controller { await controller.stop() }
+            return
+        }
+        self.spendPublicationSequence = snapshot.publicationSequence
+        self.collectedSpendSources = sources
+        self.collectedSpendSettings = settings
+        self.spendSnapshot = snapshot
+        self.spendState = snapshot.phase == .refreshing ? .collecting
+            : snapshot.phase == .failed ? .failed : .available
+        self.emitWidgetInvalidation()
+        self.publishRenderEntries(settings: WindowsUsagePresentationSettings.load())
     }
 
     private func publishRenderEntries(settings: WindowsUsagePresentationSettings) {
@@ -3712,6 +3791,7 @@ public actor WindowsUsageRuntime {
         if self.widgetLauncher != nil { self.widgetBackendCleanupFailed = true }
         self.widgetCostOwners = [:]
         if let controller = self.spendController { await controller.stop() }
+        self.spendCollectionID = nil
         self.spendController = nil
         self.scheduleGeneration &+= 1
         self.queuedOptionalRefresh = false

@@ -34,6 +34,31 @@ struct WindowsSpendSnapshotLoader {
     }
     enum Failure: Error { case invalidSources, missingCodexHome, codexOwnerChanged }
 
+    struct Collection {
+        let load: WindowsSpendDashboardController.Loader
+        let resume: WindowsSpendDashboardController.ContinuationLoader
+    }
+
+    static func collection(sources: [Source], settings: WindowsSpendSettings, forceRefresh: Bool = false,
+                           allowPricingRefresh: Bool = true,
+                           environment: [String: String] = ProcessInfo.processInfo.environment,
+                           openCodexCacheRoot: URL? = nil) -> Collection {
+        // Duplicate IDs are rejected by the native loader; grouping avoids a dictionary trap before it runs.
+        let providers = Dictionary(grouping: sources, by: \.id).compactMapValues { $0.first?.provider }
+        let session = WindowsSpendCollectionSession(sourceProviders: providers, settings: settings,
+            nativeLoader: { days, pending, now in
+                let selected = pending.map { ids in sources.filter { ids.contains($0.id) } } ?? sources
+                return try await Self.make(sources: selected, forceRefresh: forceRefresh,
+                    allowPricingRefresh: pending == nil && allowPricingRefresh,
+                    calendar: settings.bucketCalendar, capturedAt: now)(days)
+            }, supplementLoader: { now, days in
+                try WindowsOpenCodexSpendSource.capture(settings: settings, environment: environment,
+                    cacheRoot: openCodexCacheRoot ?? OpenCodexUsageLog.cacheRoot(), now: now, historyDays: days)
+            })
+        return Collection(load: { days in try await session.begin(days: days) },
+                          resume: { days, ids in try await session.resume(days: days, sourceIDs: ids) })
+    }
+
     static func make(sources: [Source], settings: WindowsSpendSettings, forceRefresh: Bool = false,
                      allowPricingRefresh: Bool = true,
                      environment: [String: String] = ProcessInfo.processInfo.environment,
@@ -47,16 +72,18 @@ struct WindowsSpendSnapshotLoader {
                 now: scan.capturedAt, historyDays: max(1, min(WindowsSpendHistoryPolicy.scanDays, days)))
             return .init(inputs: merged.inputs, subscriptionNames: scan.subscriptionNames,
                          sourceFailures: scan.sourceFailures, openCodexObservation: merged.observation, capturedAt: scan.capturedAt,
-                         widgetCosts: scan.widgetCosts, widgetCostFailures: scan.widgetCostFailures)
+                         widgetCosts: scan.widgetCosts, widgetCostFailures: scan.widgetCostFailures,
+                         retentionEligibleSourceIDs: scan.retentionEligibleSourceIDs)
         }
     }
 
     static func make(sources: [Source], forceRefresh: Bool = false,
-                     allowPricingRefresh: Bool = true, calendar: Calendar = .current) -> WindowsSpendDashboardController.Loader {
+                     allowPricingRefresh: Bool = true, calendar: Calendar = .current,
+                     capturedAt: Date? = nil) -> WindowsSpendDashboardController.Loader {
         { days in
             guard Set(sources.map(\.id)).count == sources.count,
                   sources.allSatisfy({ !$0.id.isEmpty }) else { throw Failure.invalidSources }
-            let now = Date()
+            let now = capturedAt ?? Date()
             let historyDays = max(1, min(WindowsSpendHistoryPolicy.scanDays, days))
             var inputs: [WindowsSpendDashboardModel.ProviderInput] = []
             var names: [String: WindowsShareStatsSubscriptionName] = [:]
@@ -145,15 +172,19 @@ struct WindowsSpendSnapshotLoader {
                     try Task.checkCancellation()
                     if error is CancellationError { throw error }
                     let inventoryPending: Bool
-                    if case CostUsageError.localInventoryPending = error { inventoryPending = true }
-                    else { inventoryPending = false }
+                    let discoveredFiles: Int?
+                    if case let CostUsageError.localInventoryPending(count) = error {
+                        inventoryPending = true
+                        discoveredFiles = count
+                    } else { inventoryPending = false; discoveredFiles = nil }
                     failures.append(.init(sourceID: source.id, provider: source.provider,
                         accountIdentityUnconfirmed: error is CursorCostAccountIdentityError,
-                        localInventoryPending: inventoryPending))
+                        localInventoryPending: inventoryPending, discoveredFiles: discoveredFiles))
                 }
             }
             return .init(inputs: inputs, subscriptionNames: names, sourceFailures: failures, capturedAt: now,
-                         widgetCosts: widgetCosts, widgetCostFailures: widgetFailures)
+                         widgetCosts: widgetCosts, widgetCostFailures: widgetFailures,
+                         retentionEligibleSourceIDs: Set(sources.filter(\.supportsRetainedCollection).map(\.id)))
         }
     }
 }

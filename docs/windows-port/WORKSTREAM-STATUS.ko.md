@@ -1,5 +1,7 @@
 # Windows 전용 제품 작업 현황
 
+- IMPL-574: pending local source만 자동 재개하는 collection/controller task, 완료 source·첫 날짜·OpenCodeX 단일 capture 보존, source/provider 대조·계정/설정 철회·runtime 게시 순서 연결. stale 표시 기반은 기존 ownership eligibility 조건부이며 Claude/Vertex ownership adapter는 미구현. Windows async fixture/manifest는 미실행. 전체 content/I/O 예산·membership·제품 완성과 Windows 검증은 남음. CODE_WRITTEN_UNVERIFIED.
+
 - IMPL-573: recursive native tree page/checkpoint·metadata 대조 재개, Claude/Vertex 4,096 work/refresh와 기존 rows/calendar 보존·pending 오류/화면 구분 작성. 완료 폴더는 재시작 후 유지하고 source 변경 시 재탐색. legacy 동기 drain·전체 byte/time/memory 예산·pending 전용 자동 수집/이전 화면값·membership 및 전체 Windows 제품 검증은 남음. CODE_WRITTEN_UNVERIFIED.
 
 - IMPL-572: 부모 세션 폴더 탐색을 native page/opaque handle token으로 분할하고 256회 visit 상한·기존 예산·1-unit 진행, partial page JSON/SQLite 보존 및 handle 소실 시 재열거 작성. EOF 전 missing 완료 제한과 eviction/취소/재개 fixture 미실행. recursive tree paging·전체 I/O/시간 budget·membership과 전체 제품 구현·Windows 검증은 남음. CODE_WRITTEN_UNVERIFIED.

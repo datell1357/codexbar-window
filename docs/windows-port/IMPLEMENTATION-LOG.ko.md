@@ -5454,3 +5454,16 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - 페이지 사이 같은 native file ID의 정상 append는 관측 stamp를 갱신하며 계속 진행한다. 여러 alias의 append-compatible 관측을 허용하고 Claude parser는 관측된 prefix만 actual-byte proof와 함께 읽는다. 교체/축소/같은 크기의 metadata 변경은 완료로 받아들이지 않는다. 지속 append fixture도 미실행이다.
 - 전체 queue/관측 map·JSON cache 인코딩/디코딩·정렬·state shape 확인·완료 ledger/게시 대조 및 file parser/content hashing은 아직 총 byte/시간/메모리 상한에 포함되지 않는다. active directory를 매 page마다 프로세스 종료하면 해당 폴더 replay가 반복될 수 있고, 완전한 durable ordered spool이나 metadata를 되돌린 membership 변경 탐지는 아니다. 전체 W01~W16/G0~G6 완료 아님.
 - CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·formatter·compiler/manifest·파일 fixture·Windows·실계정·CI 검증 미실행. 직전 IMPL-572는 0792fe4fde3d550fe0a1d6c80303cf8ad8801068로 origin/main 푸시 확인. 이번 단위도 별도 커밋·푸시한다.
+
+
+## IMPL-574 — Continue pending Windows cost sources without repeating completed collection
+
+- WindowsSpendCollectionSession을 추가해 첫 수집의 native 결과·일자 기준·OpenCodeX 보충 snapshot을 유지하고 pending local source ID만 다음 slice로 전달한다. 성공한 source와 hard-failed source를 재요청하지 않으며, 후속 slice는 가격 네트워크 갱신을 반복하지 않는다. 요청 source 집합·provider·중복 결과를 대조하고 다른 공급자의 같은 ID 결과도 거부한다.
+- OpenCodeX capture와 apply를 분리했다. 한 collection에서 로그는 한 번 읽고 매 결과를 보충 전 native 집합에서 다시 투영하여 이중 합산을 피한다. 날짜 기준은 첫 수집 시각에 고정한다. native 위젯 비용은 새로 수집한 provider만 교체하며 다른 완료 결과는 유지한다.
+- 비용 controller에 250ms 협력 대기 후 pending source를 이어 읽는 단일 background task를 연결했다. 첫 partial 결과를 반환한 뒤 후속 결과를 게시하고, pending이 없거나 오류/종료/계정·설정 철회가 생기면 종료한다. active continuation 중 일반 refresh 호출은 완료 source를 다시 읽지 않는다. 오류가 정상 완료나 0 usage가 되지 않는다.
+- 이전 native 값을 source별 display-only retained input으로 분리했다. caller가 기존 ownership 정책으로 retention eligibility를 명시하고 동일 source/provider이며 OpenCodeX가 비활성일 때만 pending 동안 stale로 표시한다. retained data는 fresh widget cost에 들어가지 않고 partial/stale 공유는 제한한다. **현재 Claude/Vertex는 ownership adapter가 없어 supportsRetainedCollection=false를 유지하므로 다른 collection의 값을 보존한다고 주장하지 않는다.** 그 공급자는 진행 상태를 표시하며 실제 ownership-bound stale 복원은 후속 작업이다.
+- runtime은 collection UUID·게시 sequence·spend generation·현재 config/settings와 Codex auth fingerprint를 대조한 후 background 결과를 받아 화면/위젯 invalidation에 연결한다. 이전 collection/늦은 sequence는 버린다. 계정 변경은 controller stop을 전달하고 기존 화면값을 즉시 철회한다. pending 도중 설정 변경은 재투영 대신 중단/새 수집으로 연결한다. widget 내부 context stamp도 collection/sequence를 포함해 중간 변경을 구분한다.
+- 요약에 자동 진행/현재 발견 파일 수/retained 값의 과거 시각을 추가하고 JSON·이력 안내가 pending/실패/오래된 값을 구분하도록 작성했다. 캡처한 화면 자료이며 현재 열린 모든 native dialog가 실시간 다시 그려진다는 증거는 없다.
+- Windows 전용 CodexBarWindowsTests target과 합성 async fixture source를 추가했다. pending-only 호출·첫 시각 유지·OpenCodeX 1회 capture/중복 합산 방지, scope eligibility에 따른 stale 표시와 widget/share 분리, 자동 완료·suspended task 철회, source/provider mismatch를 다룬다. Package.swift는 텍스트만 편집했으며 manifest 평가·컴파일·테스트·UI를 실행하지 않았다.
+- 전체 file parser/content hash·최종 publication/JSON/state 비용의 byte/time/memory budget, durable ordered membership, legacy Codex 외부 refresh 분할, Claude/Vertex ownership-bound 이전값 복원 및 전체 W01~W16/G0~G6는 남는다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
+- 직전 IMPL-573은 b6888fd1727fd4794c52f22a6c2aa4f35566306a로 origin/main 푸시 확인. 이번 단위도 별도 커밋·푸시하고 검증/CI는 실행하지 않는다. 자동화 설정은 변경하지 않았다.

@@ -6,25 +6,51 @@ import CodexBarCore
 enum WindowsOpenCodexSpendSource {
     enum Observation: Sendable { case disabled, available, confirmedEmpty, unavailable }
 
-    static func merge(inputs: [WindowsSpendDashboardModel.ProviderInput], settings: WindowsSpendSettings,
-                      environment: [String: String], cacheRoot: URL, now: Date,
-                      historyDays: Int) throws -> (inputs: [WindowsSpendDashboardModel.ProviderInput], observation: Observation) {
+    struct Inventory: Sendable {
+        let snapshots: [UsageProvider: CostUsageTokenSnapshot]
+        let observation: Observation
+    }
+
+    static func capture(settings: WindowsSpendSettings, environment: [String: String], cacheRoot: URL,
+                        now: Date, historyDays: Int) throws -> Inventory {
         let rootID = WindowsSpendDashboardModel.openCodexSourceID
         guard settings.openCodexUsageLogsEnabled, !settings.hiddenSourceIDs.contains(rootID) else {
-            return (inputs.filter { $0.id != rootID }, .disabled)
+            return Inventory(snapshots: [:], observation: .disabled)
         }
-        guard let url = OpenCodexUsageLog.usageLogURL(environment: environment) else { return (inputs, .unavailable) }
+        guard let url = OpenCodexUsageLog.usageLogURL(environment: environment) else {
+            return Inventory(snapshots: [:], observation: .unavailable)
+        }
         try Task.checkCancellation()
         let entries: [OpenCodexUsageEntry]
         do { entries = try OpenCodexUsageStore(cacheRoot: cacheRoot).loadEntries(logURL: url) }
         catch {
             try Task.checkCancellation()
-            return (inputs, .unavailable)
+            return Inventory(snapshots: [:], observation: .unavailable)
         }
         try Task.checkCancellation()
-        guard !entries.isEmpty else { return (inputs, .confirmedEmpty) }
         let snapshots = OpenCodexUsageFanOut.snapshotsBySubscription(entries: entries, now: now,
             historyDays: historyDays, calendar: settings.bucketCalendar)
+        let available = snapshots.values.contains { !$0.daily.isEmpty || !$0.sessions.isEmpty }
+        return Inventory(snapshots: snapshots, observation: available ? .available : .confirmedEmpty)
+    }
+
+    static func merge(inputs: [WindowsSpendDashboardModel.ProviderInput], settings: WindowsSpendSettings,
+                      environment: [String: String], cacheRoot: URL, now: Date,
+                      historyDays: Int) throws -> (inputs: [WindowsSpendDashboardModel.ProviderInput], observation: Observation) {
+        let inventory = try self.capture(settings: settings, environment: environment, cacheRoot: cacheRoot,
+                                        now: now, historyDays: historyDays)
+        return self.apply(inventory, to: inputs, settings: settings, now: now, historyDays: historyDays)
+    }
+
+    /// Reapply one captured supplement to native results, never to an already supplemented total.
+    static func apply(_ inventory: Inventory, to inputs: [WindowsSpendDashboardModel.ProviderInput],
+                      settings: WindowsSpendSettings, now: Date, historyDays: Int)
+        -> (inputs: [WindowsSpendDashboardModel.ProviderInput], observation: Observation) {
+        let rootID = WindowsSpendDashboardModel.openCodexSourceID
+        guard inventory.observation == .available else {
+            return (inputs.filter { $0.id != rootID }, inventory.observation)
+        }
+        let snapshots = inventory.snapshots
         var merged = inputs.filter { $0.id != rootID }
         var published = false
         for provider in snapshots.keys.sorted(by: { $0.rawValue < $1.rawValue }) {

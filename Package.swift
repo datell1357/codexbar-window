@@ -301,6 +301,14 @@ let package = Package(
                 .linkedLibrary("Shell32"),
                 .linkedLibrary("Ws2_32"),
             ]))
+        targets.append(.testTarget(
+            name: "CodexBarWindowsTests",
+            dependencies: ["CodexBarWindows", "CodexBarCore"],
+            path: "TestsWindows",
+            swiftSettings: [
+                .enableUpcomingFeature("StrictConcurrency"),
+                .enableExperimentalFeature("SwiftTesting"),
+            ]))
         #endif
 
         return targets

@@ -27,12 +27,21 @@ enum WindowsSpendSummary {
         if !snapshot.sourceFailures.isEmpty {
             let pending = snapshot.sourceFailures.filter(\.localInventoryPending).count
             let failed = snapshot.sourceFailures.count - pending
-            rows.append("Partial collection: \(pending) source(s) still discovering files; \(failed) failed. Totals exclude those sources.")
+            rows.append("Partial collection: \(pending) source(s) still discovering files; \(failed) failed. Sources without retained values are excluded.")
             for failure in snapshot.sourceFailures {
                 rows.append((failure.localInventoryPending ? "Discovering local files: " : "Unavailable: ")
                     + ProviderDescriptorRegistry.descriptor(for: failure.provider).metadata.displayName)
                 if failure.localInventoryPending {
-                    rows.append("Discovery progress is saved. Refresh to continue; no completed total is available yet.")
+                    rows.append(snapshot.continuingLocalDiscovery
+                        ? "Local discovery is continuing automatically; completed sources are not fetched again."
+                        : "Discovery progress is saved. Refresh to continue.")
+                    if let count = failure.discoveredFiles { rows.append("Files discovered so far: \(count).") }
+                    if let captured = snapshot.retainedSourceDates[failure.sourceID] {
+                        rows.append("Previous value retained (stale), captured: "
+                            + captured.formatted(date: .abbreviated, time: .shortened))
+                    } else {
+                        rows.append("No current total is available for this source; it is excluded from the displayed total.")
+                    }
                 }
                 if failure.accountIdentityUnconfirmed {
                     rows.append("Account identity could not be confirmed. Import the intended account again; this source is excluded.")
@@ -120,7 +129,7 @@ enum WindowsSpendSummary {
                            "Breakdowns can be incomplete and need not sum to the period total.",
                            "Token classes may overlap; do not add them to infer the total."]
             if !snapshot.sourceFailures.isEmpty {
-                context.append("Partial collection: unavailable sources are excluded. Return to Summary for collection details.")
+                context.append("Partial collection: sources without retained values are excluded; retained values are stale. Return to Summary for details.")
             }
             for (index, project) in group.projects.enumerated() {
                 let name = hidePersonalInfo ? "Project \(index + 1)" : safe(project.projectName)

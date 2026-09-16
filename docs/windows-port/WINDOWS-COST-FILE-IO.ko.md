@@ -1,6 +1,6 @@
 # Windows 비용 파일 I/O 구현 경계
 
-IMPL-559~573. 상태: **CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION**.
+IMPL-559~574. 상태: **CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION**.
 Mac 호스트에서 소스를 작성한 기록이며 Windows 컴파일·실행·성능·파일 시스템 호환성을 입증하지 않는다. W06/W07 전체 기능 및 G0~G6 완료가 아니다.
 
 ## 파일 메타데이터와 캐시
@@ -178,6 +178,14 @@ Mac 호스트에서 소스를 작성한 기록이며 Windows 컴파일·실행·
 - Windows Spend source 상태와 요약/이력 설명에 pending을 구분했다. pending source는 합계/공유 가능한 완성 source에 포함되지 않는다. source별 이전 수치의 stale 유지, pending source만 자동 후속 수집, 단계/진행률 UX는 아직 남는다.
 - 기존 동기 `WindowsCostSourceInventory.jsonlFiles`도 같은 state machine을 여러 page로 drain한다. Codex legacy/recent recursive 호출부의 외부 계약은 여전히 전체 완료 목록이므로 refresh 사이 분할은 후속 작업이다. `WindowsCostTreeInventoryTests.swift` 및 기존 link fixture는 source만 작성/연결했고 컴파일·실행하지 않았다.
 - 전체 queue/map과 checkpoint JSON·정렬/shape 점검·완료 publication sweep, parser/content hash는 총 I/O/시간/메모리 상한 밖이다. 반복 process termination마다 active 폴더가 replay될 수 있고 directory timestamp를 되돌린 membership 변화는 아직 증명하지 못한다. 이는 immutable 파일 시스템 snapshot·대규모 성능·모든 재시작의 전진 보장이 아니다.
+
+## IMPL-574: pending source 자동 재개와 게시 수명
+
+- `WindowsSpendCollectionSession`이 첫 native 결과/일자/OpenCodeX 보충 snapshot을 보유하고 pending source ID만 다음 호출로 전달한다. source ID뿐 아니라 provider와 native 결과 종류도 대조한다. 완료/일반 실패 source의 원격 API와 가격 갱신을 재개마다 반복하지 않는다. OpenCodeX capture는 1회이며 보충 전 native 결과에서 apply하여 중복 합산하지 않는다.
+- controller는 첫 partial 결과를 내보낸 뒤 250ms 대기를 사이에 두고 local discovery를 계속한다. 한 collection에는 재개 task가 하나이며 새 계정/설정·stop·오류 시 종료된다. runtime 게시에는 collection UUID/sequence/generation과 config/settings/Codex auth 재대조를 연결했다. widget 내부 context도 같은 collection/sequence 변경을 구분한다.
+- 이전 수치의 표시 경로는 fresh scan과 별개다. 기존 ownership policy가 허용한 동일 source/provider에서만 pending 동안 과거 값을 stale로 유지하고 시각을 표시한다. OpenCodeX와 합쳐진 이전 값은 이 경로에서 재사용하지 않는다. 공유/위젯에는 retained 값을 새 값으로 게시하지 않는다. **Claude/Vertex는 현재 ownership adapter가 없어 collection 간 이전값 보존 대상이 아니며** 진행 정보만 표시한다. 실제 ownership-bound stale 복원은 남는다.
+- 요약/이력/JSON 안내에 자동 재개·발견 파일 수·pending/실패/stale 차이를 반영했다. native dialog의 실시간 repaint, 접근성 및 대규모 실제 응답성은 미검증이다. `TestsWindows/WindowsSpendContinuationTests.swift`와 Windows test target은 source만 작성했다.
+- 이 단위는 pending inventory 이후의 수집 orchestration이다. file content 파싱/해시 및 완료 게시의 전체 I/O·시간/메모리 budget, 반복 종료 중 active directory의 전진, membership 증거, 모든 비용 source/전체 제품의 실행 완료를 뜻하지 않는다.
 
 ## 남은 연결
 

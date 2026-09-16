@@ -115,7 +115,7 @@ public struct WindowsSpendHistorySnapshot: Sendable {
         summary += "\r\nGreen intensity is logarithmic relative to the largest known day. Select a day for its exact tracked count."
         summary += "\r\nTracked counts include scanned sources; sources without coverage may be absent."
         if snapshot.openCodexObservation == .unavailable { summary += "\r\nOpenCodeX logs are unavailable; this collection is partial." }
-        if !snapshot.sourceFailures.isEmpty { summary += "\r\nPartial collection: \(snapshot.sourceFailures.count) pending or failed source(s) are excluded." }
+        if !snapshot.sourceFailures.isEmpty { summary += "\r\nPartial collection: \(snapshot.sourceFailures.count) pending or failed source(s); sources without retained values are excluded." }
         return Self(kind: .tokens, series: [Series(legend: [], code: "Tokens", days: days, maximum: Double(maximum),
                                                    maximumLabel: maximum.formatted(), summary: summary)])
     }
