@@ -60,4 +60,6 @@ Windows 명령이 반환된 후 main package를 다시 조회한다. 예상 vers
 
 ## 남은 작업
 
-중단 설치와 receipt 조정/재개, 명시적 rollback과 데이터 보존 정책, 제거, stable/beta 자동 업데이트, GUI 설치 흐름, 설치된 코드/리소스의 실제 동작, WinUI/위젯/COM·앱 간 전환은 남아 있다. Source provenance는 선언값이며 빌드 attestation이 아니다. PKI/SIP 지원·Appx module 호환성, 상위 경로 race/파일 공유·ACL·백신, 디스크/전원 중단, Windows 버전·x64/ARM64 실제 검증을 하지 않았다. script success를 배포 가능 판정으로 사용하지 않는다.
+중단된 작업을 같은 signed 입력·user·operation ID 및 현재 등록에 묶어 조정/명시 재제출하는 코드는 [MSIX 재개 계약](MSIX-RECOVERY.ko.md)에 추가했다. 설치와 재개는 같은 등록 조회·lock·receipt 생성 helper를 사용하며, 새 receipt는 CreateOnly로 게시해 기존 파일을 교체하지 않는다. 새 Install/Update mode는 canonical 표기로 기록하고 이전 입력의 대소문자 차이는 재개 시 허용한다. 실행으로 검증한 것은 아니다.
+
+손상/누락 canonical 기록의 generation 선택 복구, 명시적 rollback과 데이터 보존 정책, 제거, stable/beta 자동 업데이트, GUI 설치 흐름, 설치된 코드/리소스의 실제 동작, WinUI/위젯/COM·앱 간 전환은 남아 있다. Source provenance는 선언값이며 빌드 attestation이 아니다. PKI/SIP 지원·Appx module 호환성, 상위 경로 race/파일 공유·ACL·백신, 디스크/전원 중단, Windows 버전·x64/ARM64 실제 검증을 하지 않았다. script success를 배포 가능 판정으로 사용하지 않는다.

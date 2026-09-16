@@ -5189,3 +5189,15 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - 단계별 journal과 이전 generation을 보존하고 실패/불확실 결과 및 등록 관측 후 기록 실패를 구분했다. 자동 제거/rollback이나 성공 추정 없이 로컬 source/기록을 유지한다. 문서에 future invocation, current-user 범위, OS 신뢰 및 재개/경로/전원/PKI 경계를 기록했다.
 - CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. PowerShell·archive/XML 평가·OS signature trust·Appx·인증서/private key·설치/업데이트·빌드·테스트·lint·실제 Windows 앱/위젯 검증 미실행. 중단 재개/rollback/제거·자동 업데이트·GUI·실제 리소스/Windows-only 제품 graph와 전체 검증은 남아 있다.
 - 직전 IMPL-547 0b1b5561e는 origin/main 푸시가 확인됐다. IMPL-548도 검증 hook 비활성화 및 [skip ci]를 포함해 별도 커밋·푸시 후 실제 Git 결과를 보고한다.
+
+
+## IMPL-549 — Reconcile and explicitly resume interrupted MSIX deployment records
+
+- 설치/재개가 current-user 등록 조회, 같은 operations.lock 소유권, 등록 판정 및 receipt 생성을 공유하도록 Read-CodexBarMSIXDeployment를 추가했다. 기존 Install/Update 조건과 source/signer 대조는 유지하고 새 mode 표기를 정규화했다. 잠금 확보 실패 시 열린 handle을 닫으며 기존 lock 데이터는 보존한다.
+- Resume-CodexBarMSIXDeployment는 명시적 operation ID·user SID·같은 signed MSIX/receipt hash·expected signer·identity에 결합한 schema 1 기록만 수용한다. 기록된 observed를 현재 상태 증거로 쓰지 않고 lock 획득 뒤 journal byte hash와 Windows 등록을 다시 읽는다.
+- target 버전이 정상 등록된 경우 Add-AppxPackage를 다시 호출하지 않고 일치한 receipt를 재사용하거나 누락된 receipt만 작성한다. 완료 상태까지 이미 일치하면 기록을 다시 쓰지 않고 반환한다. current-user 등록 관측이며 설치된 파일 전체 hash/실행 증거는 아니다.
+- 원래 snapshot과 정확히 같은 상태이고 완료 관측/receipt가 없을 때만 RetryIfUnchanged로 명시 재제출을 허용한다. 다른 상태·기존 완료 target 변경·다른 receipt는 보존 후 중단한다. 같은 이전 상태를 Windows 내부 작업 종료 증거로 취급하지 않으며 자동 재시도 loop는 없다.
+- Write-CodexBarJournal에 CreateOnly를 추가해 새 receipt 게시 시 raced existing 파일을 교체하지 않도록 작성했다. 기존 기본 journal 교체/previous 보존 계약은 유지하고 최초 설치 receipt에도 같은 옵션을 사용한다.
+- 재개는 원래 작업 ID/생성 시각/before를 유지하고 resume ID/시각·새 관측을 기록한다. 완료와 실패/불확실/관측 후 기록 실패를 구분하며 source·journal generation·pending·receipt를 삭제하지 않는다. canonical 기록 손상 시 임의 generation 선택은 하지 않는다.
+- MSIX-RECOVERY.ko.md에 상태별 동작과 future invocation, WhatIf/PKI/동시 변경/중단 경계를 기록했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. PowerShell·JSON/XML/package 평가·Appx·signature trust·설치/복구·빌드·테스트·lint·Windows 실행 검증 미실행.
+- 제거/rollback·사용자 데이터 정책·자동 업데이트/UI·실제 리소스/Windows-only 제품 graph와 전체 검증은 남아 있다. 직전 IMPL-548 804f40dac은 origin/main 푸시가 확인됐다. IMPL-549도 검증 hook 비활성화 및 [skip ci]와 함께 별도 커밋·푸시 후 Git 결과를 보고한다.

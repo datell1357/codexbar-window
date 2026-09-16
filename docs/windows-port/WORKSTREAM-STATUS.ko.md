@@ -1,5 +1,7 @@
 # Windows 전용 제품 작업 현황
 
+- IMPL-549: 동일 signed 입력/user/operation에 결합한 중단 MSIX 기록 조정·명시 재제출, 공유 등록/lock/receipt helper와 CreateOnly 게시 작성. 기존 완료 target 변경/다른 receipt는 보존 후 중단. 실제 설치/재개 미검증. CODE_WRITTEN_UNVERIFIED.
+
 - IMPL-548: signed MSIX/receipt·현재 signer 연결, current-user Install/Update·정확한 기존 등록/상위 버전 조건, 협력 설치 lock·단계 기록·등록 관측 후 receipt 작성. 실제 설치/업데이트/실행 미검증. CODE_WRITTEN_UNVERIFIED.
 
 - IMPL-547: 실제 MSIX/receipt·embedded identity에 묶인 서명 요청, 명시적 인증서/SDK를 통한 새 사본 서명·timestamp·서명 후 hash 기록 경로 작성. 코드만 작성했고 인증서/SDK/서명/실행 미검증. IMPL-545·546 각각 커밋·푸시 완료. CODE_WRITTEN_UNVERIFIED.

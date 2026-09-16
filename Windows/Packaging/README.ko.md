@@ -256,3 +256,10 @@ Read-CodexBarMSIXBuild는 실제 unsigned package와 로컬 build receipt, embed
 Install-CodexBarMSIXPackage.ps1에 signed MSIX/receipt/expected signer를 받아 Windows Appx로 현재 사용자에게 설치·업데이트하는 코드를 추가했다. 공유 metadata reader와 현재 OS 서명 신뢰 확인을 사용하고, Update는 정확한 기존 full name 및 더 높은 버전을 요구한다. SDK는 필요하지 않으며 runtime-unverified 산출물에는 AllowUnvalidatedBuild가 필요하다.
 
 잠금·새 출력·단계 journal과 실제 등록 관측 뒤의 receipt를 연결했고, 자동 강제 종료/강등/제거/rollback은 수행하지 않는다. 자세한 future invocation과 경계는 [MSIX 설치 계약](MSIX-INSTALLATION.ko.md)을 따른다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION이며 설치/업데이트·PowerShell·signature/Appx·빌드·테스트·Windows 실행 검증은 하지 않았다.
+
+
+## MSIX 중단 작업 기록 조정·명시 재개
+
+Resume-CodexBarMSIXDeployment.ps1은 정확한 작업 ID·현재 user·같은 signed 입력에 결합한 기존 기록과 Windows 등록을 대조하도록 작성했다. target이 등록됐으면 Add-AppxPackage 재호출 없이 receipt를 재사용/새로 게시하고 journal을 조정한다. 원래 상태일 때 다시 제출하려면 RetryIfUnchanged를 명시해야 한다. 설치와 재개가 공유 helper를 사용하며 새 receipt는 CreateOnly로 기존 파일을 보존한다.
+
+[MSIX 재개 계약](MSIX-RECOVERY.ko.md)에 상태별 동작, future invocation과 손상 기록/동시 변경/중단 경계를 기록했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 실제 PowerShell·서명·Appx·설치/재개·빌드·테스트·Windows 실행 검증은 하지 않았다.
