@@ -1551,6 +1551,7 @@ enum CostUsageScanner {
         resumeState: CostUsageJsonl.ResumeState?,
         checkCancellation: CancellationCheck?) throws -> CodexSessionIdentifierScanResult
     {
+        let readSnapshot = try CostUsageFileReadSnapshot.capture(at: fileURL)
         var sessionId: String?
         let scanStart = resumeState?.offset ?? max(0, offset)
         let progress = try CostUsageJsonl.scanBounded(
@@ -1561,6 +1562,7 @@ enum CostUsageScanner {
             maxBytesToRead: maxBytesToRead,
             resumeState: resumeState,
             shouldStop: { _ in sessionId != nil },
+            expectedFile: readSnapshot,
             checkCancellation: checkCancellation,
             onLine: { line in
                 guard !line.wasTruncated else { return }
@@ -1568,7 +1570,7 @@ enum CostUsageScanner {
                     sessionId = metadata.sessionId
                 }
             })
-        let size = Self.codexFileMetadata(fileURL: fileURL).size
+        let size = readSnapshot?.size ?? Self.codexFileMetadata(fileURL: fileURL).size
         return CodexSessionIdentifierScanResult(
             sessionId: sessionId,
             bytesRead: max(0, progress.readOffset - scanStart),
@@ -2358,7 +2360,8 @@ enum CostUsageScanner {
 
     static func codexTokenIndexAnchor(
         fileURL: URL,
-        indexedBytes: Int64) -> CostUsageCodexTokenIndexAnchor?
+        indexedBytes: Int64,
+        expectedFile: CostUsageFileReadSnapshot? = nil) -> CostUsageCodexTokenIndexAnchor?
     {
         let indexedBytes = max(0, indexedBytes)
         guard indexedBytes > 0 else { return nil }
@@ -2367,12 +2370,22 @@ enum CostUsageScanner {
         guard byteCount > 0 else { return nil }
 
         do {
+            #if os(Windows)
+            guard let snapshot = try expectedFile ?? CostUsageFileReadSnapshot.capture(at: fileURL),
+                  indexedBytes <= snapshot.size else { return nil }
+            #endif
             let handle = try FileHandle(forReadingFrom: fileURL)
             defer { try? handle.close() }
+            #if os(Windows)
+            let readGuard = try WindowsCostFileReadGuard(file: handle, url: fileURL, expected: snapshot)
+            #endif
             try handle.seek(toOffset: UInt64(windowStart))
             guard let data = try handle.read(upToCount: byteCount), data.count == byteCount else {
                 return nil
             }
+            #if os(Windows)
+            try readGuard.check()
+            #endif
             return CostUsageCodexTokenIndexAnchor(
                 indexedBytes: indexedBytes,
                 windowStart: windowStart,
@@ -2394,7 +2407,8 @@ enum CostUsageScanner {
         else { return false }
         return self.codexTokenIndexAnchor(
             fileURL: fileURL,
-            indexedBytes: anchor.indexedBytes) == anchor
+            indexedBytes: anchor.indexedBytes,
+            expectedFile: metadata.readSnapshot) == anchor
     }
 
     private static func listCodexRecentlyModifiedPartitionFiles(
@@ -3981,8 +3995,31 @@ enum CostUsageScanner {
 
     private static func parseCodexSessionMetadata(
         fileURL: URL,
+        expectedFile: CostUsageFileReadSnapshot? = nil,
         checkCancellation: CancellationCheck? = nil) throws -> CodexSessionMetadata?
     {
+        #if os(Windows)
+        let snapshot = try expectedFile ?? CostUsageFileReadSnapshot.capture(at: fileURL)
+        var matched: CodexSessionMetadata?
+        _ = try CostUsageJsonl.scanBounded(
+            fileURL: fileURL,
+            maxLineBytes: Self.codexSessionMetadataMaxLineBytes,
+            prefixBytes: Self.codexSessionMetadataMaxLineBytes,
+            maxBytesToRead: nil,
+            resumeState: nil,
+            shouldStop: { _ in matched != nil },
+            expectedFile: snapshot,
+            checkCancellation: checkCancellation,
+            onLine: { line in
+                guard matched == nil, !line.wasTruncated, !line.bytes.isEmpty else { return }
+                if case let .sessionMeta(metadata) = Self.parseCodexFastLine(line.bytes) {
+                    matched = metadata
+                } else if let object = (try? JSONSerialization.jsonObject(with: line.bytes)) as? [String: Any] {
+                    matched = Self.codexSessionMetadata(from: object)
+                }
+            })
+        return matched
+        #else
         let handle: FileHandle
         do {
             handle = try FileHandle(forReadingFrom: fileURL)
@@ -4071,6 +4108,7 @@ enum CostUsageScanner {
             return metadata
         }
         return nil
+        #endif
     }
 
     static func codexFileIsSubagentThread(
@@ -4088,6 +4126,7 @@ enum CostUsageScanner {
         sessionId: String?,
         snapshots: [CodexTimestampedTotals])
     {
+        let readSnapshot = try CostUsageFileReadSnapshot.capture(at: fileURL)
         var sessionId: String?
         var accumulator = CodexSnapshotAccumulator()
         var snapshots: [CodexTimestampedTotals] = []
@@ -4119,6 +4158,7 @@ enum CostUsageScanner {
                 fileURL: fileURL,
                 maxLineBytes: 512 * 1024,
                 prefixBytes: 512 * 1024,
+                expectedFile: readSnapshot,
                 checkCancellation: checkCancellation,
                 onLine: { line in
                     guard !line.bytes.isEmpty, !line.wasTruncated else { return }
@@ -4196,9 +4236,13 @@ enum CostUsageScanner {
         } catch is CancellationError {
             throw CancellationError()
         } catch {
+            #if os(Windows)
+            throw error
+            #else
             self.log.warning(
                 "Codex cost usage failed while scanning parent token snapshots",
                 metadata: ["path": fileURL.path, "error": error.localizedDescription])
+            #endif
         }
 
         return (sessionId, snapshots)
@@ -4284,8 +4328,10 @@ enum CostUsageScanner {
         maxBytesToRead: Int64? = nil,
         shouldStopReading: ((Int64) -> Bool)? = nil,
         inheritedTotalsResolver: ((String, String) throws -> CodexForkBaseline)? = nil,
+        expectedFile: CostUsageFileReadSnapshot? = nil,
         checkCancellation: CancellationCheck? = nil) throws -> CodexParseResult
     {
+        let readSnapshot = try expectedFile ?? CostUsageFileReadSnapshot.capture(at: fileURL)
         var currentModel = initialModel
         var previousTotals = initialTotals
         var sessionId: String?
@@ -4735,6 +4781,7 @@ enum CostUsageScanner {
         } else if startOffset == 0,
                   let metadata = try Self.parseCodexSessionMetadata(
                       fileURL: fileURL,
+                      expectedFile: readSnapshot,
                       checkCancellation: checkCancellation)
         {
             try handleSessionMetadata(metadata)
@@ -4789,7 +4836,7 @@ enum CostUsageScanner {
         }
 
         var parsedBytes: Int64
-        let currentFileSize = Self.codexFileMetadata(fileURL: fileURL).size
+        let currentFileSize = readSnapshot?.size ?? Self.codexFileMetadata(fileURL: fileURL).size
         let requestedTargetSize = max(startOffset, min(scanTargetSize ?? currentFileSize, currentFileSize))
         var effectiveTargetSize = requestedTargetSize
         let bytesToTarget = max(0, requestedTargetSize - startOffset)
@@ -4805,6 +4852,7 @@ enum CostUsageScanner {
                 maxBytesToRead: boundedBytesToRead,
                 resumeState: initialJSONLResumeState,
                 shouldStop: shouldStopReading,
+                expectedFile: readSnapshot,
                 checkCancellation: checkCancellation,
                 onLine: { line in
                     let lineIndex = physicalLineIndex
@@ -5221,11 +5269,16 @@ enum CostUsageScanner {
         } catch is CancellationError {
             throw CancellationError()
         } catch {
+            #if os(Windows)
+            // No partial usage may escape a failed or changed native stream.
+            throw error
+            #else
             self.log.warning(
                 "Codex cost usage failed while scanning session file",
                 metadata: ["path": fileURL.path, "error": error.localizedDescription])
             parsedBytes = startOffset
             jsonlResumeState = initialJSONLResumeState
+            #endif
         }
 
         return CodexParseResult(

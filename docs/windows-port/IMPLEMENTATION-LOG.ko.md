@@ -5315,3 +5315,12 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - Claude/Vertex 파일의 cache 재사용 전과 파싱 후 목록 stamp를 대조한다. Windows parser가 stream/read/cancellation 오류를 부분 row 성공으로 바꾸던 경로를 throw로 연결했다. 다중 시점 관측은 atomic snapshot/최종 게시의 전체 file-version 증명이 아님을 문서화했다.
 - 부재/빈/파일 root·재귀/0-byte/jsonl 이름 폴더·custom cancellation·목록 이후 append 오류용 합성 Windows fixture를 작성했으나 실행하지 않았다. ACL/공유/교체 경쟁·Windows Foundation·대규모 성능 및 Codex 비페이지 수집/같은 열린 stream 결합은 남아 있다.
 - CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·formatter·compiler/manifest 평가·Windows·실계정·CI·파일 fixture 실행 검증 미실행. 전체 Windows 제품/W01~W16/G0~G6 완료 아님. 직전 IMPL-559는 fedeec87badbf3391b8b3036e3209edc38594bee로 origin/main 푸시 확인. 이번 단위도 별도 커밋·푸시한다.
+
+
+## IMPL-561 — Bind Windows cost parsing to the observed file and read boundary
+
+- expected native file ID·size·정밀 mtime을 JSONL scanner에 전달하고 actual FileHandle/path를 읽기 시작·chunk 사이·반환 전에 대조하도록 작성했다. 관측된 replacement/shrink/same-size mtime 변경·early EOF·관측 길이 밖 resume는 성공 progress로 반환하지 않는다.
+- 최초 관측 size와 byte budget으로 읽기 범위를 고정하고 같은 파일에 추가된 tail은 다음 수집으로 남긴다. cache의 원래 size/mtime을 유지하며 Claude의 파싱 후 대조도 append를 허용하도록 연결했다. timestamp 지연/관측 사이 재작성·재성장 검출의 한계를 문서화했다.
+- Codex session identifier/metadata·parent token·본문·token anchor와 Claude 본문에 연결했다. Windows Codex read 실패는 partial row 성공으로 바꾸지 않는다. 재수집의 기존 days 차감은 파싱 성공 뒤로 옮겼으며 증분 경로는 기존 committed-offset anchor와 file ID를 함께 요구한다. anchor는 전체 prefix가 아닌 최대 64 KiB 구간임을 명시했다.
+- 관측 후 교체·callback 중 append/후속 tail·truncate·같은 크기의 시각 변경·범위 밖 resume용 Windows 합성 fixture를 작성했다. 전체 prefix 재작성·Claude 이전 prefix·최종 cache 게시 결합·기타 비용 source 및 Codex 비페이지 inventory는 남아 있다.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·formatter·compiler/manifest 평가·파일 fixture·Windows·실계정·CI 실행 검증 미실행. 전체 Windows 제품/W01~W16/G0~G6 완료 아님. 직전 IMPL-560은 2ae59ba82e0c379edf1ed7fce48aa8f85479618e로 origin/main 푸시 확인. 이번 단위도 별도 커밋·푸시한다.

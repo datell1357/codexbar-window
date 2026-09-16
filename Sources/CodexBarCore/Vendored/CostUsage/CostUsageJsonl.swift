@@ -294,6 +294,7 @@ enum CostUsageJsonl {
         maxLineBytes: Int,
         prefixBytes: Int,
         maxBytesToRead: Int64? = nil,
+        expectedFile: CostUsageFileReadSnapshot? = nil,
         checkCancellation: (() throws -> Void)? = nil,
         onLine: (Line) -> Void) throws
         -> Int64
@@ -306,6 +307,7 @@ enum CostUsageJsonl {
             maxBytesToRead: maxBytesToRead,
             resumeState: nil,
             shouldStop: nil,
+            expectedFile: expectedFile,
             checkCancellation: checkCancellation,
             onLine: onLine).committedOffset
     }
@@ -319,6 +321,7 @@ enum CostUsageJsonl {
         maxBytesToRead: Int64?,
         resumeState: ResumeState?,
         shouldStop: ((Int64) -> Bool)? = nil,
+        expectedFile: CostUsageFileReadSnapshot? = nil,
         checkCancellation: (() throws -> Void)? = nil,
         onLine: (Line) -> Void) throws -> ScanProgress
     {
@@ -326,6 +329,18 @@ enum CostUsageJsonl {
         defer { try? handle.close() }
 
         let startOffset = resumeState?.offset ?? max(0, offset)
+        #if os(Windows)
+        let readGuard = try expectedFile.map { try WindowsCostFileReadGuard(file: handle, url: fileURL, expected: $0) }
+        let readLimit: Int64?
+        if let readGuard {
+            let remaining = try readGuard.remainingBytes(from: startOffset)
+            readLimit = min(max(0, maxBytesToRead ?? remaining), remaining)
+        } else {
+            readLimit = maxBytesToRead
+        }
+        #else
+        let readLimit = maxBytesToRead
+        #endif
         if startOffset > 0 {
             try handle.seek(toOffset: UInt64(startOffset))
         }
@@ -340,7 +355,7 @@ enum CostUsageJsonl {
         var jsonTailState = resumeState?.jsonTailState ?? JSONTailState()
         #if os(Windows)
         // Bind the tail boundary to the actual stream, not a potentially replaced path.
-        let fileSize: Int64? = try WindowsCostFileMetadata.opened(handle).size
+        let fileSize: Int64? = try readGuard?.snapshot.size ?? WindowsCostFileMetadata.opened(handle).size
         #else
         let fileSize = (try? FileManager.default.attributesOfItem(atPath: fileURL.path)[.size] as? NSNumber)?
             .int64Value
@@ -398,10 +413,13 @@ enum CostUsageJsonl {
 
         while true {
             try checkCancellation?()
+            #if os(Windows)
+            try readGuard?.check()
+            #endif
             if bytesRead > 0, shouldStop?(bytesRead) == true {
                 break
             }
-            let remaining = maxBytesToRead.map { max(0, $0 - bytesRead) }
+            let remaining = readLimit.map { max(0, $0 - bytesRead) }
             if remaining == 0 {
                 if let fileSize, startOffset + bytesRead >= fileSize, hasCompleteJSONTail() {
                     flushLine(endOffset: startOffset + bytesRead)
@@ -414,6 +432,11 @@ enum CostUsageJsonl {
                 let readCount = min(256 * 1024, Int(remaining ?? Int64(256 * 1024)))
                 let chunk = try handle.read(upToCount: readCount) ?? Data()
                 if chunk.isEmpty {
+                    #if os(Windows)
+                    if let readGuard, startOffset + bytesRead < readGuard.snapshot.size {
+                        throw WindowsCostFileReadGuard.Failure.sourceChanged
+                    }
+                    #endif
                     if hasCompleteJSONTail() {
                         flushLine(endOffset: startOffset + bytesRead)
                         committedOffset = startOffset + bytesRead
@@ -470,6 +493,10 @@ enum CostUsageJsonl {
             try checkCancellation?()
         }
 
+        try checkCancellation?()
+        #if os(Windows)
+        try readGuard?.check()
+        #endif
         return ScanProgress(
             committedOffset: committedOffset,
             readOffset: startOffset + bytesRead,

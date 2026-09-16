@@ -104,8 +104,10 @@ extension CostUsageScanner {
         providerFilter: ClaudeLogProviderFilter,
         startOffset: Int64 = 0,
         pricingResolver: CostUsagePricing.ClaudeResolver,
+        expectedFile: CostUsageFileReadSnapshot? = nil,
         checkCancellation: CancellationCheck? = nil) throws -> ClaudeParseResult
     {
+        let readSnapshot = try expectedFile ?? CostUsageFileReadSnapshot.capture(at: fileURL)
         func toInt(_ v: Any?) -> Int {
             if let n = v as? NSNumber {
                 return n.intValue
@@ -139,6 +141,7 @@ extension CostUsageScanner {
                 offset: startOffset,
                 maxLineBytes: maxLineBytes,
                 prefixBytes: prefixBytes,
+                expectedFile: readSnapshot,
                 checkCancellation: checkCancellation,
                 onLine: { line in
                     guard !line.bytes.isEmpty else { return }
@@ -548,6 +551,9 @@ extension CostUsageScanner {
         let stamp = source.stamp
         #if os(Windows)
         try WindowsCostSourceInventory.requireUnchangedFile(at: source.url, stamp: stamp)
+        let readSnapshot: CostUsageFileReadSnapshot? = CostUsageFileReadSnapshot(claude: stamp)
+        #else
+        let readSnapshot: CostUsageFileReadSnapshot? = nil
         #endif
         let cached = state.cache.files[path]
         let sameFile = state.sourceFileIDs[path] == stamp.fileID
@@ -581,9 +587,10 @@ extension CostUsageScanner {
             providerFilter: state.providerFilter,
             startOffset: startOffset,
             pricingResolver: state.pricingResolver,
+            expectedFile: readSnapshot,
             checkCancellation: state.checkCancellation)
         #if os(Windows)
-        try WindowsCostSourceInventory.requireUnchangedFile(at: source.url, stamp: stamp)
+        try WindowsCostSourceInventory.requireCompatibleFileAfterRead(at: source.url, stamp: stamp)
         #endif
         let rows = startOffset > 0 ? Self.mergeClaudeRows(existing: cached?.claudeRows ?? [], delta: parsed.rows)
             : parsed.rows

@@ -700,6 +700,21 @@ extension CostUsageScanner {
         let mtimeUnixMs: Int64
         let size: Int64
         let fileId: String?
+        let readSnapshot: CostUsageFileReadSnapshot?
+
+        init(
+            path: String,
+            mtimeUnixMs: Int64,
+            size: Int64,
+            fileId: String?,
+            readSnapshot: CostUsageFileReadSnapshot? = nil)
+        {
+            self.path = path
+            self.mtimeUnixMs = mtimeUnixMs
+            self.size = size
+            self.fileId = fileId
+            self.readSnapshot = readSnapshot
+        }
     }
 
     struct CodexFileScanInput {
@@ -715,7 +730,8 @@ extension CostUsageScanner {
             return CodexFileMetadata(path: path, mtimeUnixMs: 0, size: 0, fileId: nil)
         }
         return CodexFileMetadata(
-            path: path, mtimeUnixMs: snapshot.mtimeUnixMs, size: snapshot.size, fileId: snapshot.fileID)
+            path: path, mtimeUnixMs: snapshot.mtimeUnixMs, size: snapshot.size, fileId: snapshot.fileID,
+            readSnapshot: CostUsageFileReadSnapshot(native: snapshot))
         #else
         var info = stat()
         guard path.withCString({ fstatat(AT_FDCWD, $0, &info, 0) }) == 0 else {
@@ -741,7 +757,8 @@ extension CostUsageScanner {
         #if os(Windows)
         let snapshot = try WindowsCostFileMetadata.requiredFile(at: fileURL)
         return CodexFileMetadata(
-            path: fileURL.path, mtimeUnixMs: snapshot.mtimeUnixMs, size: snapshot.size, fileId: snapshot.fileID)
+            path: fileURL.path, mtimeUnixMs: snapshot.mtimeUnixMs, size: snapshot.size, fileId: snapshot.fileID,
+            readSnapshot: CostUsageFileReadSnapshot(native: snapshot))
         #else
         return self.codexFileMetadata(fileURL: fileURL)
         #endif
@@ -1004,6 +1021,14 @@ extension CostUsageScanner {
                     && !hasIncompleteInterleaveState))
         guard canIncremental else { return false }
 
+        #if os(Windows)
+        // An unchanged file ID alone does not establish append-only history (copy/truncate
+        // writers can reuse the object). Require the persisted committed-prefix anchor.
+        guard let anchor = cached.codexTokenIndexAnchor, anchor.indexedBytes == startOffset,
+              Self.codexTokenIndexAnchorMatches(anchor, fileURL: input.fileURL, metadata: input.metadata)
+        else { return false }
+        #endif
+
         let delta = try Self.parseCodexFileCancellable(
             fileURL: input.fileURL,
             range: context.range,
@@ -1026,6 +1051,7 @@ extension CostUsageScanner {
                 { bytesRead in budget.shouldYield(additionalBytes: bytesRead) }
             },
             inheritedTotalsResolver: context.resources.inheritedResolver.inheritedTotals(for:atOrBefore:),
+            expectedFile: input.metadata.readSnapshot,
             checkCancellation: context.checkCancellation)
         if delta.forkedFromId != nil, !isResumablePartial, !isBufferedForkResume {
             return false
@@ -1161,7 +1187,8 @@ extension CostUsageScanner {
                 workRecorder: context.workRecorder),
             codexTokenIndexAnchor: Self.codexTokenIndexAnchor(
                 fileURL: input.fileURL,
-                indexedBytes: delta.parsedBytes),
+                indexedBytes: delta.parsedBytes,
+                expectedFile: input.metadata.readSnapshot),
             codexScanFileId: input.metadata.fileId,
             codexScanTargetSize: delta.scanTargetSize,
             codexScanComplete: delta.parsedBytes >= delta.scanTargetSize && delta.jsonlResumeState == nil,
@@ -1186,9 +1213,6 @@ extension CostUsageScanner {
         maxBytesToRead: Int64? = nil) throws
     {
         try context.checkCancellation?()
-        if let cached = input.cached {
-            self.applyFileDays(cache: &cache, fileDays: cached.days, sign: -1)
-        }
         // Legacy rows can combine events that the corrected parser splits; do not merge them back.
         let replaceCachedRows = context.dropDeferredCodexRows || input.cached?.codexEventWhitespaceParsed != true
         let migratedCached = replaceCachedRows
@@ -1206,7 +1230,11 @@ extension CostUsageScanner {
                 { bytesRead in budget.shouldYield(additionalBytes: bytesRead) }
             },
             inheritedTotalsResolver: context.resources.inheritedResolver.inheritedTotals(for:atOrBefore:),
+            expectedFile: input.metadata.readSnapshot,
             checkCancellation: context.checkCancellation)
+        if let cached = input.cached {
+            self.applyFileDays(cache: &cache, fileDays: cached.days, sign: -1)
+        }
         let forkBaselineDependencyKey = Self.codexForkBaselineDependencyKey(
             parentSessionId: parsed.forkedFromId,
             dependsOnParentTotals: parsed.dependsOnParentTotals,
@@ -1300,7 +1328,8 @@ extension CostUsageScanner {
                 workRecorder: context.workRecorder),
             codexTokenIndexAnchor: Self.codexTokenIndexAnchor(
                 fileURL: input.fileURL,
-                indexedBytes: parsed.parsedBytes),
+                indexedBytes: parsed.parsedBytes,
+                expectedFile: input.metadata.readSnapshot),
             codexScanFileId: input.metadata.fileId,
             codexScanTargetSize: parsed.scanTargetSize,
             codexScanComplete: parsed.parsedBytes >= parsed.scanTargetSize && parsed.jsonlResumeState == nil,

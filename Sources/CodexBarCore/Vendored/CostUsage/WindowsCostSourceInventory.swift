@@ -84,6 +84,14 @@ enum WindowsCostSourceInventory {
         guard try CostUsageClaudeFileStamp.readRequired(at: url) == stamp else { throw Failure.sourceChanged }
     }
 
+    /// The parser reads only the observed prefix. An append schedules another refresh because
+    /// the cache keeps the original stamp/size, rather than claiming to have consumed new bytes.
+    static func requireCompatibleFileAfterRead(at url: URL, stamp: CostUsageClaudeFileStamp) throws {
+        let current = try CostUsageClaudeFileStamp.readRequired(at: url)
+        guard current.fileID == stamp.fileID, current.size >= stamp.size,
+              current.size > stamp.size || current == stamp else { throw Failure.sourceChanged }
+    }
+
     private static func checkCancellation(_ check: (() throws -> Void)?) throws {
         try Task.checkCancellation()
         try check?()

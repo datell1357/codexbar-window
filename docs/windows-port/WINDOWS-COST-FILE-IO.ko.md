@@ -1,6 +1,6 @@
 # Windows 비용 파일 I/O 구현 경계
 
-IMPL-559~560. 상태: **CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION**.
+IMPL-559~561. 상태: **CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION**.
 Mac 호스트에서 소스를 작성한 기록이며 Windows 컴파일·실행·성능·파일 시스템 호환성을 입증하지 않는다. W06/W07 전체 기능 및 G0~G6 완료가 아니다.
 
 ## 파일 메타데이터와 캐시
@@ -34,10 +34,20 @@ Mac 호스트에서 소스를 작성한 기록이며 Windows 컴파일·실행·
 - 각 metadata 재관측 사이/마지막 재관측 후에는 변경이 가능하다. 같은 handle의 예상 identity 결합, 동일 ID·size·mtime로 덮어쓴 내용, 최종 게시까지의 모든 변경을 입증한 것은 아니다. 대규모 재귀 inventory는 현재 bulk 수집이며 페이지화와 장기 성능 증거도 남아 있다.
 - `WindowsCostSourceInventoryTests.swift`에 부재/빈/파일 root, 재귀·0-byte·jsonl 이름 폴더, 사용자 정의 취소, 목록 이후 append 거부용 합성 fixture를 작성했다. 실행하지 않았다. 실제 ACL/공유 오류·동시 변경·Windows Foundation traversal도 미검증이다.
 
+## IMPL-561: 실제 열린 stream과 고정 읽기 경계
+
+- `CostUsageFileReadSnapshot`에 native file ID·size·정밀 수정 시각을 묶고, JSONL scanner의 선택적 expectedFile 계약을 추가했다. Windows Codex/Claude의 실제 비용 parser와 Codex session ID/metadata·parent token snapshot·token-index anchor 읽기에 연결했다. 다른 JSONL 소비자는 이 expectedFile 연결만으로 자동 이식 완료된 것이 아니다.
+- `WindowsCostFileReadGuard`는 실제 FileHandle과 현재 path가 관측한 파일 ID를 가리키는지 시작·chunk 사이·반환 전에 읽는다. 초기/이후 관측보다 크기가 줄거나, 크기 증가 없이 수정 시각이 바뀌면 실패한다. 사라진 path나 실제 handle 조회 오류도 전달한다. 재개 offset이 관측한 크기를 넘어가거나 기대한 EOF 이전에 끝나면 정상 결과로 반환하지 않는다.
+- 읽기 한도는 최초 관측한 파일 길이와 기존 byte budget 중 작은 값으로 고정한다. 같은 파일이 더 커지는 것은 허용하되 새 tail을 이번 결과에 포함하지 않는다. cache에는 원래 size/mtime을 남겨 다음 수집이 새 tail을 처리하도록 한다. Claude의 파싱 후 대조도 이 추가분을 허용한다. JSONL의 미완성 끝줄 및 기존 resume-state 계약은 유지한다.
+- Windows Codex의 metadata/parent/body read 오류는 partial row 성공으로 축소하지 않고 상위에 전달한다. 재수집의 이전 days 차감도 throwing parser가 성공한 뒤로 옮겼다. 비 Windows 파서의 기존 오류 처리 의미는 유지한다.
+- Windows Codex 증분 경로는 file ID 외에도 기존 committed-offset anchor 일치를 요구한다. anchor 읽기도 expectedFile과 native handle/path를 대조한다. anchor가 없거나 다르면 전체 재파싱 경로로 돌아간다. 이 anchor는 기존 최대 64 KiB 구간 해시이며 전체 과거 prefix를 해시한 증거가 아니다.
+- 합성 Windows fixture에 관측 후/open 전 교체, callback 중 append와 다음 scan의 tail 처리, callback 중 truncate, 같은 크기에서 수정 시각 변경, 범위 밖 resume를 작성했으나 실행하지 않았다. 활성 writer와 FileHandle의 실제 share mode 및 SDK 호환성도 미검증이다.
+- 관측 사이에 truncate 후 재성장하거나 ID/size/시각을 유지한 내용을 변경하는 경우까지 탐지하는 immutable snapshot은 아니다. prefix 재작성·Claude의 이전 prefix 확인, 최종 cache/SQLite 게시 직전의 전체 source-version 연결, Pi 등 다른 비용 source는 후속 구현 범위다. 정상 writer의 timestamp 지연 갱신도 재시도로 이어질 수 있으며 성능/진행성 결과는 없다.
+
 ## 남은 연결
 
 1. Codex 비페이지/legacy Foundation 열거 경로의 부재·권한 오류 구분과 재귀 수집의 bounded/pause/resume 통합. Claude inventory 오류 전달은 IMPL-560에 작성했으며 실행 증거는 없다.
-2. parser의 expected file ID와 열린 stream ID 결합, 수집 중 replace/truncate/동일 크기 재작성, 읽기 완료 후 게시 시점의 변경 처리. 메타데이터만으로 같은 ID의 내용 변경 전체를 증명할 수 없다.
+2. IMPL-561에서 Codex/Claude expected-file과 열린 stream을 연결했다. 아직 관측 사이 truncate 후 재성장/같은 ID·size·mtime의 prefix 재작성, Claude의 이전 prefix 확인, 다른 비용 source 및 최종 게시까지 전체 버전 연결이 남는다. 메타데이터와 64 KiB anchor만으로 전체 내용 불변성을 증명하지 않는다.
 3. 날짜/flat/legacy 루트, hard link/junction, case-sensitive NTFS, UNC/SMB, ReFS/FAT, 삭제 후 재생성, 장기 resume 및 모든 비용 source와의 통합. 파일 ID의 파일 시스템별 재사용·불안정성도 포함한다.
 4. 실제 Windows SDK 컴파일, x64/ARM64, native UI와 설치된 제품에서의 비용 표시, full WinUI3 제품 그래프 및 배포 준비.
 

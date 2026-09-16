@@ -1,5 +1,7 @@
 # Windows 전용 제품 작업 현황
 
+- IMPL-561: Codex/Claude 관측 metadata와 실제 열린 stream 결합, 최초 길이로 read boundary 고정·append 다음 수집 이월, 관측된 ID/크기/시각 변경 및 EOF/offset 오류 전달 작성. Codex metadata/parent/body 오류의 부분 성공 제거와 기존 합계 차감 지연·증분 anchor 요구. fixture 미실행. 전체 prefix/최종 게시/기타 source·실제 Windows 동작은 남음. CODE_WRITTEN_UNVERIFIED.
+
 - IMPL-560: Windows Claude/Vertex 재귀 inventory에서 root·폴더·파일 오류 및 취소 전달, 관측 stamp 재대조와 불완전 목록 반환 차단을 작성. parser의 stream 오류를 부분 성공으로 바꾸지 않고 cache 재사용 전/파싱 후 source stamp 대조. 합성 fixture 미실행. Codex 비페이지 inventory·열린 stream/최종 게시 결합·대규모 재귀 paging은 남음. CODE_WRITTEN_UNVERIFIED.
 
 - IMPL-559: 비용 파일/폴더의 Windows native ID·시각·크기 조회, Codex fresh/append/SQLite 복원의 전체 ID 대조, bounded native 페이지 탐색과 오류 전달·재열거, Claude/Vertex cache/memo 보호 교체 저장 작성. 회귀 fixture도 미실행. Claude/비페이지 inventory 오류 및 읽는 중 변경·최종 게시 결합은 남음. CODE_WRITTEN_UNVERIFIED.
