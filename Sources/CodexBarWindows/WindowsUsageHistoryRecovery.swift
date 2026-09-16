@@ -8,10 +8,10 @@ import Foundation
 enum WindowsUsageHistoryRecovery {
     enum Failure: Error {
         case invalidArchive, unsupportedEntries, tooLarge, changed, invalidDestination
-        case destinationOccupied, partialRestore
+        case destinationOccupied, partialRestore, invalidOperation, restoredFileChanged
     }
     enum Kind: String, Codable, Sendable { case planUtilization, historicalPace }
-    struct Entry: Codable, Sendable {
+    struct Entry: Codable, Equatable, Sendable {
         let id: UUID
         let kind: Kind
         let providerID: String?
@@ -21,7 +21,7 @@ enum WindowsUsageHistoryRecovery {
         let encryptedSHA256: String
         var filename: String { self.id.uuidString.lowercased() + ".cbhist" }
     }
-    struct Manifest: Codable, Sendable {
+    struct Manifest: Codable, Equatable, Sendable {
         let version: Int
         let archiveID: UUID
         let createdAt: Date
@@ -38,16 +38,14 @@ enum WindowsUsageHistoryRecovery {
         let providerID: String?
         let data: Data
     }
-    private struct OperationRecord: Encodable {
-        let version = 1
+    struct RestoreResult {
         let operationID: UUID
-        let archiveID: UUID
-        let status: String
-        let recordedAt = Date()
-        let plannedFiles: Int
-        let writtenEntryIDs: [UUID]
-        let runtimeValidation = "NOT_RUN"
+        let publishedFiles: Int
+        let reconciledFiles: Int
+        let alreadyCompleted: Bool
     }
+
+    private typealias Journal = WindowsUsageHistoryRestoreJournal
 
     private static let maximumProviders = 1024
     private static let maximumFileBytes = WindowsPlanUtilizationHistoryStore.maximumFileBytes
@@ -120,18 +118,17 @@ enum WindowsUsageHistoryRecovery {
                 try self.publishBoundary(entry, manifest: manifest, target: target)
                 try WindowsRecoveryFileAccess.publish(self.readEntry(entry, manifest: manifest, directory: archive), to: target)
             }
-            let record = OperationRecord(operationID: UUID(), archiveID: manifest.archiveID,
-                status: "HISTORY_FILES_MATERIALIZED_NOT_ACTIVATED", plannedFiles: manifest.entries.count,
-                writtenEntryIDs: manifest.entries.map(\.id))
-            try WindowsRecoveryFileAccess.publish(JSONEncoder().encode(record),
-                to: destination.appendingPathComponent("history-materialization.json"))
+            let context = try Journal.Context(operationID: UUID(), manifest: manifest,
+                planDirectory: planDirectory, paceFile: destination.appendingPathComponent("usage-history.jsonl"))
+            try Journal.publish(context.record(status: "HISTORY_FILES_MATERIALIZED_NOT_ACTIVATED",
+                written: manifest.entries.map(\.id)), to: destination, name: "history-materialization.json")
             return manifest.entries.count
         }
     }
 
     /// Explicitly restores only when every target file in the archive is absent. Existing provider
     /// files outside the archive are preserved. No file is overwritten or merged, even if identical.
-    static func restoreMissing(from archive: URL, operationDirectory: URL) throws -> Int {
+    static func restoreMissing(from archive: URL, operationDirectory: URL) throws -> RestoreResult {
         try self.requireOutsideLiveHistory(archive)
         try self.requireOutsideLiveHistory(operationDirectory)
         guard !self.contains(archive, operationDirectory) else { throw Failure.invalidDestination }
@@ -142,16 +139,15 @@ enum WindowsUsageHistoryRecovery {
             try self.requireAbsent(WindowsHistoryRecoveryBoundary.url(for: self.sourceURL(entry)))
         }
         let operationID = UUID()
+        let context = try Journal.Context(operationID: operationID, manifest: manifest)
         var written: [UUID] = []
         var publicationStarted = false
         return try WindowsRecoveryFileAccess.withNewDirectory(operationDirectory) {
             // Preserve the planned identities/hashes privately before any live history publication.
             try WindowsRecoveryFileAccess.publish(self.sealManifest(manifest),
                 to: operationDirectory.appendingPathComponent("history-restore-plan.cbhm"))
-            let prepared = OperationRecord(operationID: operationID, archiveID: manifest.archiveID,
-                status: "HISTORY_RESTORE_PREPARED", plannedFiles: manifest.entries.count, writtenEntryIDs: [])
-            try WindowsRecoveryFileAccess.publish(JSONEncoder().encode(prepared),
-                to: operationDirectory.appendingPathComponent("history-restore-prepared.json"))
+            try Journal.publish(context.record(status: "HISTORY_RESTORE_PREPARED", written: []),
+                to: operationDirectory, name: "history-restore-prepared.json")
             do {
                 let root = HistoricalUsageHistoryStore.defaultFileURL().deletingLastPathComponent()
                 try WindowsRecoveryFileAccess.withDirectoryCreatingIfMissing(root) {
@@ -168,6 +164,7 @@ enum WindowsUsageHistoryRecovery {
                             try self.publishBoundary(entry, manifest: manifest, target: target)
                             try WindowsRecoveryFileAccess.publish(data, to: target)
                             written.append(entry.id)
+                            try Journal.publishEntry(entry.id, context: context, directory: operationDirectory)
                         }
                         if let rawID = entry.providerID, let providerID = ProviderInstanceID(rawValue: rawID) {
                             // Cooperate with older per-provider writers as well as the profile lease.
@@ -177,20 +174,121 @@ enum WindowsUsageHistoryRecovery {
                         }
                     }
                 }
-                let completed = OperationRecord(operationID: operationID, archiveID: manifest.archiveID,
-                    status: "MISSING_HISTORY_FILES_PUBLISHED", plannedFiles: manifest.entries.count,
-                    writtenEntryIDs: written)
-                try WindowsRecoveryFileAccess.publish(JSONEncoder().encode(completed),
-                    to: operationDirectory.appendingPathComponent("history-restore-completed.json"))
-                return written.count
+                try self.requirePublished(manifest)
+                try Journal.publish(context.record(status: "MISSING_HISTORY_FILES_PUBLISHED", written: written),
+                    to: operationDirectory, name: "history-restore-completed.json")
+                return RestoreResult(operationID: operationID, publishedFiles: written.count,
+                    reconciledFiles: 0, alreadyCompleted: false)
             } catch {
-                let failed = OperationRecord(operationID: operationID, archiveID: manifest.archiveID,
-                    status: publicationStarted ? "PARTIAL_OR_INDETERMINATE" : "NOT_PUBLISHED",
-                    plannedFiles: manifest.entries.count, writtenEntryIDs: written)
-                try? WindowsRecoveryFileAccess.publish(JSONEncoder().encode(failed),
-                    to: operationDirectory.appendingPathComponent("history-restore-failed.json"))
+                try? Journal.publish(context.record(status: publicationStarted ? "PARTIAL_OR_INDETERMINATE" : "NOT_PUBLISHED",
+                    written: written), to: operationDirectory, name: "history-restore-failed.json")
                 if publicationStarted { throw Failure.partialRestore }
                 throw error
+            }
+        }
+    }
+
+    /// Caller explicitly selects the original operation. Existing files must match both the archive
+    /// bytes and recovery provenance; publication receipts never substitute for current observations.
+    static func resumeMissing(from archive: URL, operationDirectory: URL, operationID: UUID) throws -> RestoreResult {
+        try self.requireOutsideLiveHistory(archive)
+        try self.requireOutsideLiveHistory(operationDirectory)
+        guard !self.contains(archive, operationDirectory), !self.contains(operationDirectory, archive) else {
+            throw Failure.invalidDestination
+        }
+        return try WindowsRecoveryFileAccess.withDirectory(operationDirectory) {
+            try WindowsRecoveryFileAccess.withDirectory(archive) {
+                let manifest = try self.readManifest(archive)
+                let plan = try self.readManifest(operationDirectory, filename: "history-restore-plan.cbhm")
+                guard plan == manifest else { throw Failure.invalidOperation }
+                let context = try Journal.Context(operationID: operationID, manifest: manifest)
+                let evidence = try Journal.evidence(in: operationDirectory, context: context)
+                try self.preflight(manifest, archive: archive)
+                var observed: [UUID: TargetState] = [:]
+                for entry in manifest.entries {
+                    observed[entry.id] = try self.observe(entry, manifest: manifest,
+                        knownPublished: evidence.knownPublished.contains(entry.id))
+                }
+                if evidence.completed {
+                    return RestoreResult(operationID: operationID, publishedFiles: 0,
+                        reconciledFiles: manifest.entries.count, alreadyCompleted: true)
+                }
+                // Persist exact files already observed before any new live publication. Later deletion
+                // cannot be mistaken for an entry that the interrupted operation never reached.
+                var confirmed = manifest.entries.filter { observed[$0.id] == .present }.map(\.id)
+                let attemptID = UUID()
+                try Journal.publish(context.record(status: "HISTORY_RECONCILIATION_PREPARED", written: confirmed,
+                    attemptID: attemptID), to: operationDirectory, name: Journal.attemptName(attemptID, failed: false))
+                var publicationStarted = false
+                var publishedFiles = 0
+                do {
+                    let root = HistoricalUsageHistoryStore.defaultFileURL().deletingLastPathComponent()
+                    try WindowsRecoveryFileAccess.withDirectoryCreatingIfMissing(root) {
+                        if manifest.planDirectoryPresent {
+                            try WindowsRecoveryFileAccess.withDirectoryCreatingIfMissing(
+                                WindowsPlanUtilizationHistoryStore.defaultDirectory) {}
+                        }
+                        for entry in manifest.entries {
+                            let data = try self.readEntry(entry, manifest: manifest, directory: archive)
+                            let publish = {
+                                let current = try self.observe(entry, manifest: manifest,
+                                    knownPublished: confirmed.contains(entry.id))
+                                guard current == observed[entry.id] else { throw Failure.restoredFileChanged }
+                                if case let .absent(boundaryPublished) = current {
+                                    publicationStarted = true
+                                    let target = self.sourceURL(entry)
+                                    if !boundaryPublished { try self.publishBoundary(entry, manifest: manifest, target: target) }
+                                    try WindowsRecoveryFileAccess.publish(data, to: target)
+                                    confirmed.append(entry.id)
+                                    publishedFiles += 1
+                                }
+                                try Journal.publishEntry(entry.id, context: context, directory: operationDirectory)
+                            }
+                            if let rawID = entry.providerID, let providerID = ProviderInstanceID(rawValue: rawID) {
+                                try WindowsPlanUtilizationHistoryStore().withExclusiveAccess(providerID: providerID, operation: publish)
+                            } else {
+                                try publish()
+                            }
+                        }
+                    }
+                    try self.requirePublished(manifest)
+                    try Journal.publish(context.record(status: "MISSING_HISTORY_FILES_PUBLISHED",
+                        written: manifest.entries.map(\.id)), to: operationDirectory, name: "history-restore-completed.json")
+                    return RestoreResult(operationID: operationID, publishedFiles: publishedFiles,
+                        reconciledFiles: manifest.entries.count - publishedFiles, alreadyCompleted: false)
+                } catch {
+                    try? Journal.publish(context.record(
+                        status: publicationStarted ? "PARTIAL_OR_INDETERMINATE" : "RECONCILIATION_INCOMPLETE",
+                        written: confirmed, attemptID: attemptID), to: operationDirectory,
+                        name: Journal.attemptName(attemptID, failed: true))
+                    if publicationStarted { throw Failure.partialRestore }
+                    throw error
+                }
+            }
+        }
+    }
+
+    private enum TargetState: Equatable { case absent(boundaryPublished: Bool), present }
+
+    private static func observe(_ entry: Entry, manifest: Manifest, knownPublished: Bool) throws -> TargetState {
+        let target = self.sourceURL(entry)
+        let boundary = try WindowsHistoryRecoveryBoundary.read(for: target)
+        let expected = self.boundary(entry, manifest: manifest, target: target)
+        guard boundary == nil || boundary == expected else { throw Failure.restoredFileChanged }
+        if let data = try WindowsRecoveryFileAccess.readIfPresent(target, limit: self.maximumFileBytes, allowEmpty: true) {
+            guard boundary == expected, data.count == entry.bytes, self.hash(data) == entry.sha256 else {
+                throw Failure.restoredFileChanged
+            }
+            return .present
+        }
+        guard !knownPublished else { throw Failure.restoredFileChanged }
+        return .absent(boundaryPublished: boundary != nil)
+    }
+
+    private static func requirePublished(_ manifest: Manifest) throws {
+        for entry in manifest.entries {
+            guard try self.observe(entry, manifest: manifest, knownPublished: true) == .present else {
+                throw Failure.restoredFileChanged
             }
         }
     }
@@ -240,8 +338,8 @@ enum WindowsUsageHistoryRecovery {
         return entry
     }
 
-    private static func readManifest(_ directory: URL) throws -> Manifest {
-        let bytes = try WindowsRecoveryFileAccess.read(directory.appendingPathComponent(self.manifestName),
+    private static func readManifest(_ directory: URL, filename: String = "history-manifest.cbhm") throws -> Manifest {
+        let bytes = try WindowsRecoveryFileAccess.read(directory.appendingPathComponent(filename),
             limit: self.maximumManifestBytes)
         let data = try self.open(bytes, magic: self.manifestMagic, purpose: .historyManifest, limit: self.maximumManifestBytes)
         let manifest: Manifest
@@ -311,9 +409,13 @@ enum WindowsUsageHistoryRecovery {
     }
 
     private static func publishBoundary(_ entry: Entry, manifest: Manifest, target: URL) throws {
-        let record = WindowsHistoryRecoveryBoundary.Record(archiveID: manifest.archiveID, entryID: entry.id,
-            originalSHA256: entry.sha256, filename: target.lastPathComponent)
+        let record = self.boundary(entry, manifest: manifest, target: target)
         try WindowsRecoveryFileAccess.publish(record.encoded(), to: WindowsHistoryRecoveryBoundary.url(for: target))
+    }
+
+    private static func boundary(_ entry: Entry, manifest: Manifest, target: URL) -> WindowsHistoryRecoveryBoundary.Record {
+        WindowsHistoryRecoveryBoundary.Record(archiveID: manifest.archiveID, entryID: entry.id,
+            originalSHA256: entry.sha256, filename: target.lastPathComponent)
     }
 
     private static func planURL(_ providerID: String) -> URL {

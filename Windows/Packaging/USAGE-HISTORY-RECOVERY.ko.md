@@ -1,6 +1,6 @@
 # Windows 사용량 이력 보존과 복원
 
-IMPL-555~556에서 코드 경로를 작성했다. 상태는 **CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION**이다. 백업/복원 명령, DPAPI, 파일/잠금, 빌드·테스트·Windows 실행은 현재 작업에서 수행하지 않았다.
+IMPL-555~557에서 코드 경로를 작성했다. 상태는 **CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION**이다. 백업/복원 명령, DPAPI, 파일/잠금, 빌드·테스트·Windows 실행은 현재 작업에서 수행하지 않았다.
 
 ## 보존 범위
 
@@ -48,17 +48,43 @@ plan 이력은 저장된 account key가 현재 key와 정확히 일치하는 buc
 
 pace는 표식이 있으면 정확히 일치하는 canonical account key만 읽고 기록한다. unscoped·legacy/email 별칭을 현재 canonical owner로 추정하지 않으며 표식 변경 시 메모리 자료를 다시 읽는다. 표식이 손상되거나 읽기 불가능한 경우 일반 로컬 이력으로 낮춰 처리하지 않는다. 이 제한은 계정 연결 정책이며 parser, retention 및 best-effort 저장의 기존 의미를 모두 교체하는 것은 아니다. 원본 보존용 archive를 계속 보관해야 한다.
 
-표식만 게시된 중단 상태도 제한을 유지하고 새 restore-missing으로 덮지 않는다. 명시적 plugin 삭제에서는 이력 파일과 표식을 모두 검토 화면에 표시하고 내용/잠금 대조 후 payload부터 삭제하도록 작성했다. 로드 실패로 ID를 모르는 plugin 파일 삭제에는 이력을 연결하지 않는다. 현재 작업에서 실제 삭제를 실행한 것은 아니다.
+표식만 게시된 중단 상태도 제한을 유지하고 새 restore-missing으로 덮지 않는다. 아래 명시적 resume은 같은 작업의 표식인 경우에만 남은 payload 게시를 허용한다. 명시적 plugin 삭제에서는 이력 파일과 표식을 모두 검토 화면에 표시하고 내용/잠금 대조 후 payload부터 삭제하도록 작성했다. 로드 실패로 ID를 모르는 plugin 파일 삭제에는 이력을 연결하지 않는다. 현재 작업에서 실제 삭제를 실행한 것은 아니다.
 
 미지정/legacy 이력의 사용자 소유권 검토·명시적 재귀속 UI는 남아 있다. IMPL-555만으로 이미 복원한 파일에는 표식이 없을 수 있으며 이번 구현이 과거 파일을 자동 판별하거나 소급 변환하지 않는다. 표식만 복사에서 제외하거나 외부 도구가 제거하면 이 경계가 유지된다고 보장하지 않는다. inactive 복원 폴더를 옮길 때는 표식을 포함한 전체 파일 쌍을 보존한다.
 
 ## 현재 저장소 복원의 기록과 부분 실패
 
-새 operation 폴더에 암호화된 `history-restore-plan.cbhm` 및 `history-restore-prepared.json`을 먼저 보관한다. 후자는 operation/archive ID, 예정 파일 수와 상태만 담는다. 쓰기 직전 대상 부재를 다시 요구하고, 실제 게시도 CreateNew이므로 확인 이후 생긴 파일을 덮지 않는다. provider 파일에는 기존 store의 exclusive coordination lock도 적용한다.
+새 operation 폴더에 암호화된 `history-restore-plan.cbhm` 및 `history-restore-prepared.json`을 먼저 보관한다. IMPL-557 이후 준비 기록은 version 2이며 operation/archive ID, 현재 plan/pace 저장소 경로에서 계산한 SHA256, 예정 파일 수와 상태를 담는다. 이 경로 해시는 정규화한 경로 문자열의 결합으로, volume/file identity 또는 MSIX 가상화 경계 전체를 증명하지 않는다. 쓰기 직전 대상 부재를 다시 요구하고, 실제 게시도 CreateNew이므로 확인 이후 생긴 파일을 덮지 않는다. provider 파일에는 기존 store의 exclusive coordination lock도 적용한다.
 
-모든 게시가 끝나면 `history-restore-completed.json`에 `MISSING_HISTORY_FILES_PUBLISHED`와 게시한 entry ID를 기록한다. 이는 해당 파일 게시 코드의 완료 상태이며 parser/소유권/화면/forecast 검증과는 별개다. `runtimeValidation`은 `NOT_RUN`이다.
+각 payload 게시 뒤에는 `history-entry-<entry-uuid>.json`에 같은 작업/백업/대상 위치와 그 entry ID를 기록한다. 모든 파일·표식의 내용이 여전히 일치하는지 다시 읽은 뒤 `history-restore-completed.json`에 `MISSING_HISTORY_FILES_PUBLISHED`와 게시한 entry ID를 기록한다. 이는 해당 파일 게시 코드의 완료 상태이며 parser/소유권/화면/forecast 검증과는 별개다. `runtimeValidation`은 `NOT_RUN`이다.
 
-중간 실패에서는 이미 일부 파일이 만들어졌을 수 있다. `history-restore-failed.json`을 기록하도록 시도하고, 실패 기록 자체를 쓸 수 없어도 성공으로 간주하지 않는다. 준비 기록만 있거나 완료 기록이 없으면 불완전한 작업이다. 원본 archive, operation 기록과 이미 게시한 파일을 보존한다. 자동 rollback/삭제 또는 이미 존재하는 파일을 건너뛰는 암묵적 재시도는 없다. 부분 작업의 식별·명시적 재개/GUI는 남아 있으며, 같은 명령을 그대로 재실행하면 생성된 대상 때문에 거절될 수 있다.
+중간 실패에서는 이미 일부 파일이 만들어졌을 수 있다. `history-restore-failed.json`을 기록하도록 시도하고, 실패 기록 자체를 쓸 수 없어도 성공으로 간주하지 않는다. 준비 기록만 있거나 완료 기록이 없으면 불완전한 작업이다. 원본 archive, operation 기록과 이미 게시한 파일을 보존한다. 자동 rollback/삭제 또는 이미 존재하는 파일을 건너뛰는 암묵적 재시도는 없다. 같은 restore-missing 명령을 그대로 재실행하면 생성된 대상 때문에 거절될 수 있다. IMPL-557의 명시적 재개 경로는 아래와 같으며 GUI는 아직 없다.
+
+## 중단된 복원의 명시적 재개 — 미실행
+
+IMPL-557부터 생성한 version 2 live restore 작업에 다음 명령을 사용할 수 있도록 작성했다. `<operation-uuid>`는 원래 `history-restore-prepared.json`의 `operationID`이며 새 ID를 만들지 않는다. 모든 앱 세션을 종료하고 원래 archive와 operation 폴더 전체를 사용한다.
+
+```powershell
+& 'C:\Apps\CodexBar\CodexBarWindows.exe' --history-resume 'D:\Backups\usage-history-001' 'D:\Backups\history-operation-001' '<operation-uuid>' --resume-missing-history
+```
+
+원래 암호화된 복원 plan과 archive manifest가 같아야 하며 모든 chunk도 먼저 대조한다. record의 version·명시한 operation ID·archive ID·대상 경로 hash·예정 수·entry 집합·상태를 현재 값과 결합한다. 손상된 기록을 무시하거나 임의로 이전 기록을 선택하지 않는다. 작업 폴더와 archive 디렉터리를 열어 유지하고 기존 profile exclusive lock을 사용한다.
+
+| 현재 대상 상태 | 재개 처리 |
+| --- | --- |
+| 원본 크기/hash와 복원 표식이 모두 일치 | 기존 파일은 그대로 두고 누락된 파일별 기록만 CreateNew로 작성 |
+| 파일이 없고 이전 게시/일치 관측 기록도 없음 | 명시적 resume flag 아래 해당 파일만 CreateNew로 게시; 같은 작업의 표식만 이미 있으면 재사용 |
+| 기존 파일/표식이 다름, 읽기 불가 또는 표식 없이 파일만 존재 | 그대로 보존하고 중단 |
+| 게시/일치 관측 기록은 있는데 현재 파일이 없음 | 나중에 삭제됐을 수 있으므로 재생성하지 않고 중단 |
+| 완료 기록과 현재 전체 파일이 일치 | 파일·기록을 다시 쓰지 않고 이미 완료된 조정 결과 반환 |
+
+재개 시도마다 UUID를 새로 부여한 `history-resume-<attempt-uuid>-prepared.json`을 쓴다. 이 기록에는 새 쓰기 전에 정확히 일치한 것으로 관측한 entry ID도 보존한다. 중간 실패는 같은 attempt의 `-failed.json`에 게시/일치 관측된 ID를 기록하도록 시도한다. 다음 재개는 최초 실패 기록, 파일별 기록, 이전 재개 시도의 기록을 함께 읽어 알려진 게시를 잊지 않도록 작성했다. 이전 기록과 원본을 교체·삭제하지 않는다. 완료는 원래 `history-restore-completed.json`을 새로 게시한다.
+
+재개 기록 한 개는 256 KiB, 폴더 열거는 4,096개, 시도는 256개로 제한한다. 한도 초과·읽기 실패·버전/대상 불일치가 있으면 임의 기록 정리로 우회하지 않는다. 기록을 잃어버렸거나 payload 게시와 receipt 사이에서 중단되면 “한 번도 쓰지 않음”과 “기록 전에 쓰인 뒤 외부에서 삭제됨”을 완전히 구분할 수 없다. 미기록·현재 부재를 재개하는 것은 사용자가 이번 명령으로 명시한 동작이며 과거 부재의 증거는 아니다.
+
+**IMPL-555~556의 version 1 operation은 재개 대상으로 받지 않는다.** 대상 위치 결합과 파일별 기록이 부족하므로 추정 업그레이드를 하지 않는다. 기존 archive v1 형식은 여전히 새 폴더 복원에 사용할 수 있으며 그 원본/부분 출력을 보관해야 한다. 앱이 이미 이력을 추가한 뒤에는 원본 hash가 달라지므로 같은 작업의 resume도 거절될 수 있다. 별도 자료 비교/복구 UI는 남아 있다.
+
+현재 파일의 관측과 CreateNew 게시가 외부 writer 전체에 대한 transaction은 아니다. 완료 전 재관측 뒤에도 외부 변경이 가능하다. 실제 Windows 중단/동시성/DPAPI/경로·MSIX 가상화/파일 수명 동작은 검증하지 않았다.
 
 ## 동시 실행·파일 경계와 남은 범위
 
@@ -66,4 +92,4 @@ pace는 표식이 있으면 정확히 일치하는 canonical account key만 읽�
 
 출력은 현재 CodexBar 이력 데이터 root 밖이어야 하고, 복원 출력은 입력 archive 내부에도 만들지 않는다. live 복원에 사용하는 archive 역시 live data root 밖에 있어야 한다. 이 경로 제한은 모든 MSIX package/install 제거 영향 밖의 저장임을 증명하지 않는다. archive는 그런 제거 대상 밖에 별도로 보관해야 한다.
 
-비용 SQLite/웹 cache·credential 등 나머지 저장소, legacy 이력의 명시적 소유권 검토/재귀속과 과거 복원 자료 처리, 부분 복원 재개, 제거 도구의 전체 보존 선택과 GUI, profile/key 복구 정책, Windows x64/ARM64 실제 round-trip/중단/ACL/가상화 동작은 남아 있다. [MSIX 제거](MSIX-REMOVAL.ko.md)의 `backup: NOT_CREATED` 정책은 이 일부 백업 구현만으로 바꾸지 않는다.
+비용 SQLite/웹 cache·credential 등 나머지 저장소, legacy 이력의 명시적 소유권 검토/재귀속과 과거 복원 자료 처리, legacy 작업 조정/복구와 재개 GUI, 제거 도구의 전체 보존 선택과 GUI, profile/key 복구 정책, Windows x64/ARM64 실제 round-trip/중단/ACL/가상화 동작은 남아 있다. [MSIX 제거](MSIX-REMOVAL.ko.md)의 `backup: NOT_CREATED` 정책은 이 일부 백업 구현만으로 바꾸지 않는다.

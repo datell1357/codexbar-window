@@ -5276,3 +5276,13 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - 차트 상세의 복원 제한 안내, 미식별 계정 오류를 한국어·영어로 연결했다. plugin 삭제 검토에는 history와 표식을 따로 표시하며 검토 후 새로 생긴 표식은 삭제하지 않는다. 같은 provider lock 아래 각각 hash/handle을 대조하고 payload를 먼저 삭제하도록 작성했다. 실제 삭제는 수행하지 않았다.
 - backup inventory가 유효한 표식을 인식하고 다음 복원 때 제한 정책을 다시 생성한다. orphan 표식은 새 live restore를 막으며, IMPL-555만으로 이미 복원된 표식 없는 파일은 자동 식별/소급 이관하지 않는다. docs에 명시적 legacy 소유권 검토·재귀속 UI, 부분 복원 재개 및 원본 archive 보존 경계를 기록했다.
 - CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·compiler/manifest 평가·DPAPI·명령·파일 복원/삭제·Windows 실행 검증 미실행. 모든 W01~W16/G0~G6 완료를 뜻하지 않는다. 직전 IMPL-555는 572792e426ac83a8b02fad67d145f4acbcfcca66으로 origin/main 푸시 확인. 이번 단위도 별도 커밋·푸시 결과를 Git에서 보고한다.
+
+
+## IMPL-557 — Reconcile and explicitly resume interrupted history restoration
+
+- live restore 기록을 schema 2로 작성하고 현재 plan/pace 저장소 경로 해시와 원래 operation/archive ID에 결합했다. payload 이후 파일별 immutable receipt를 남기고 모든 파일·표식 재관측 뒤 완료 기록을 CreateNew로 게시한다. materialization도 같은 기록 생성기를 사용하되 inactive output 위치에 결합한다.
+- --history-resume 명령에 archive·기존 operation 폴더·명시한 원래 UUID·--resume-missing-history를 요구한다. 암호화된 원래 plan/manifest, 모든 chunk, 준비/실패/완료·파일별·이전 시도 기록의 schema/ID/상태/entry 집합을 읽고 현재 raw hash·크기·표식과 대조하는 경로를 작성했다.
+- 현재 파일이 정확히 일치하면 다시 쓰지 않고 필요한 receipt만 보완한다. 아직 게시/일치 관측된 기록이 없는 부재 대상만 CreateNew로 게시한다. 다르거나 표식 없는 기존 파일·알려진 게시 후 삭제는 복원으로 덮거나 부활시키지 않는다. 완료 기록과 전체 대상이 일치하면 파일/기록 mutation 없이 반환한다.
+- 재개 전 일치한 기존 파일을 새 attempt 준비 기록에 남기고 이후 실패 기록에 누적 관측/게시 ID를 보존한다. 다음 재개에서도 과거의 알려진 게시를 유지하며 기존 실패 기록을 교체하지 않는다. record/attempt/디렉터리 한도를 두고 malformed/알 수 없는 resume 기록은 중단한다.
+- 이전 schema 1 작업은 target binding/evidence가 부족해 자동 재개나 추정 upgrade를 하지 않는다. archive v1 자체는 새 복원에 계속 사용한다. 경로 문자열 hash의 한계, 유실된 receipt/게시 사이 중단의 모호성, 외부 writer·MSIX 가상화·앱에 의해 갱신된 이력의 별도 복구 필요를 문서화했다.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 명령·DPAPI·파일/잠금/복원·Windows·빌드·테스트·lint·compiler/manifest 평가 검증 미실행. GUI·명시적 legacy 소유권 검토·전체 저장소/제거 연동과 모든 W01~W16/G0~G6 완료는 남아 있다. 직전 IMPL-556은 ed3691d2ae39396e7fec4e458a9e62f5e237adc1로 origin/main 푸시 확인. 이번 단위도 별도 커밋·푸시한다.
