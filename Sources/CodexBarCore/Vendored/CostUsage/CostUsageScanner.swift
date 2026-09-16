@@ -171,6 +171,9 @@ enum CostUsageScanner {
         /// Windows Claude/Vertex directory visits and metadata rechecks per refresh.
         /// File parsing, content hashing and checkpoint serialization have separate pending budgets.
         var maxWindowsClaudeInventoryWorkPerRefresh: Int = 4096
+        /// Newly parsed bytes and file visits; prefix verification and publication I/O are separate.
+        var maxWindowsClaudeParseBytesPerRefresh: Int64 = 8 * 1024 * 1024
+        var maxWindowsClaudeFilesPerRefresh: Int = 64
         var calendar: Calendar
         var refreshMinIntervalSeconds: TimeInterval = 60
         var claudeLogProviderFilter: ClaudeLogProviderFilter = .all
@@ -2407,6 +2410,7 @@ enum CostUsageScanner {
         let rows: [ClaudeUsageRow]
         let parsedBytes: Int64
         var windowsReadProof: CostUsageClaudeReadProof? = nil
+        var progress: CostUsageJsonl.ScanProgress? = nil
     }
 
     enum ClaudePathRole: String, Codable, Equatable {

@@ -5467,3 +5467,15 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - Windows 전용 CodexBarWindowsTests target과 합성 async fixture source를 추가했다. pending-only 호출·첫 시각 유지·OpenCodeX 1회 capture/중복 합산 방지, scope eligibility에 따른 stale 표시와 widget/share 분리, 자동 완료·suspended task 철회, source/provider mismatch를 다룬다. Package.swift는 텍스트만 편집했으며 manifest 평가·컴파일·테스트·UI를 실행하지 않았다.
 - 전체 file parser/content hash·최종 publication/JSON/state 비용의 byte/time/memory budget, durable ordered membership, legacy Codex 외부 refresh 분할, Claude/Vertex ownership-bound 이전값 복원 및 전체 W01~W16/G0~G6는 남는다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION.
 - 직전 IMPL-573은 b6888fd1727fd4794c52f22a6c2aa4f35566306a로 origin/main 푸시 확인. 이번 단위도 별도 커밋·푸시하고 검증/CI는 실행하지 않는다. 자동화 설정은 변경하지 않았다.
+
+## IMPL-575: Claude·Vertex 본문 파싱의 저장·재개
+
+- 한 refresh에서 새로 파싱하는 로그 본문은 기본 8 MiB, 파일 방문은 64개로 제한하도록 작성했다. JSONL scanner의 partial-line resume과 실제 read/committed offset을 Claude parser로 전달하며, 끝까지 읽지 않은 파일에는 완료 read proof를 만들지 않는다.
+- `CostUsageClaudeContentCheckpoint`에 고정 source inventory, 수집 조건/기간/가격 파일 stamp/semantics, 완료 파일의 staged cache와 proof, 현재 파일의 누적 행·offset·부분 줄·내용 지문을 저장한다. 기존 완료 usage·source ID·proof·calendar·lastScan은 그대로 보존하며, 전체 파일 처리와 게시 전 내용 대조를 끝낸 경우에만 교체 대상으로 만든다. 선택적인 continuation 필드가 해독 불가하면 그 필드만 버리고 완료 데이터는 유지한다.
+- 완료된 recursive inventory를 본문 작업 동안 재사용한다. 재개는 실제 열린 파일의 prefix 지문을 대조하며, 이전 slice의 완료 파일도 마지막 게시 관측 집합에 다시 연결한다. 파일 교체·축소·내용 변경 시 staged 진행을 폐기하고 재탐색 pending으로 넘긴다. 접근/취소/저장 오류를 완료나 0 usage로 바꾸지 않는다. 관측 길이 이후 append는 다음 수집으로 넘긴다.
+- provider/filter/root·기간·시간대·가격 stamp·force-rescan 조건이 맞는 checkpoint만 재개한다. force rescan과 calendar 변경 중에도 기존 완료 캐시는 지우지 않는다. `localContentPending`을 기존 pending-source 자동 재개로 연결하고 요약에 완료 파일 수/전체 파일 수를 표시한다.
+- `TestsLinux/WindowsClaudeContentCheckpointTests.swift`에 Claude/Vertex의 분할·재시작·스트리밍 누적 행, 파일 방문 제한, 고정 길이 이후 append, 교체, force/calendar 변경, 취소, 선택 필드 호환성, 저장 실패 fixture를 작성했다. Windows continuation fixture에도 본문 진행 상태를 추가했다. 모든 fixture와 실제 UI/파일 I/O는 미실행이다.
+- **예산 범위는 새 본문 파싱량과 파일 방문이다.** prefix seed/revalidation hashing, discovery/final publication metadata·내용 대조, JSON checkpoint 직렬화/저장, 누적 행/목록의 메모리는 아직 전체 byte/time/memory budget으로 제한되지 않는다. 디스크의 이전 완료 데이터 보존은 Claude/Vertex 계정 소유권 확인을 갖춘 화면 stale 복원이 아니다. directory membership, legacy Codex recursive refresh 분할 및 전체 W01~W16/G0~G6 의무는 남는다.
+- 상태: CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·정적 QA 스크립트·실행·원격 Windows·CI는 수행하지 않았다.
+
+- 직전 IMPL-574는 69a783d92d24deb663822659743bd98b0c9932f7로 origin/main 푸시 확인. 이번 단위는 별도 커밋·푸시하며 자동화 설정을 변경하지 않았다.

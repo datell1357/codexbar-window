@@ -341,9 +341,10 @@ struct CostUsageClaudeCache: Codable {
     var windowsReadProofs: [String: CostUsageClaudeReadProof] = [:]
     var windowsScanConfiguration: CostUsageClaudeReportMemoKey.ScanConfiguration?
     var windowsInventory: CostUsageWindowsTreeInventory?
+    var windowsContent: CostUsageClaudeContentCheckpoint?
 
     private enum CodingKeys: String, CodingKey {
-        case sourceFileIDs, windowsReadProofs, windowsScanConfiguration, windowsInventory
+        case sourceFileIDs, windowsReadProofs, windowsScanConfiguration, windowsInventory, windowsContent
     }
 
     init() {}
@@ -358,6 +359,10 @@ struct CostUsageClaudeCache: Codable {
             .decodeIfPresent(CostUsageClaudeReportMemoKey.ScanConfiguration.self, forKey: .windowsScanConfiguration)
         self.windowsInventory = try decoder.container(keyedBy: CodingKeys.self)
             .decodeIfPresent(CostUsageWindowsTreeInventory.self, forKey: .windowsInventory)
+        // An incompatible optional continuation cannot invalidate the last completed usage.
+        // Without it, the next Windows collection discovers and parses sources again.
+        self.windowsContent = try? decoder.container(keyedBy: CodingKeys.self)
+            .decodeIfPresent(CostUsageClaudeContentCheckpoint.self, forKey: .windowsContent)
     }
 
     func encode(to encoder: any Encoder) throws {
@@ -369,6 +374,7 @@ struct CostUsageClaudeCache: Codable {
         }
         try container.encodeIfPresent(self.windowsScanConfiguration, forKey: .windowsScanConfiguration)
         try container.encodeIfPresent(self.windowsInventory, forKey: .windowsInventory)
+        try container.encodeIfPresent(self.windowsContent, forKey: .windowsContent)
     }
 }
 

@@ -1,6 +1,6 @@
 # Windows 비용 파일 I/O 구현 경계
 
-IMPL-559~574. 상태: **CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION**.
+IMPL-559~575. 상태: **CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION**.
 Mac 호스트에서 소스를 작성한 기록이며 Windows 컴파일·실행·성능·파일 시스템 호환성을 입증하지 않는다. W06/W07 전체 기능 및 G0~G6 완료가 아니다.
 
 ## 파일 메타데이터와 캐시
@@ -187,10 +187,20 @@ Mac 호스트에서 소스를 작성한 기록이며 Windows 컴파일·실행·
 - 요약/이력/JSON 안내에 자동 재개·발견 파일 수·pending/실패/stale 차이를 반영했다. native dialog의 실시간 repaint, 접근성 및 대규모 실제 응답성은 미검증이다. `TestsWindows/WindowsSpendContinuationTests.swift`와 Windows test target은 source만 작성했다.
 - 이 단위는 pending inventory 이후의 수집 orchestration이다. file content 파싱/해시 및 완료 게시의 전체 I/O·시간/메모리 budget, 반복 종료 중 active directory의 전진, membership 증거, 모든 비용 source/전체 제품의 실행 완료를 뜻하지 않는다.
 
+## IMPL-575: Claude·Vertex 본문 파싱의 저장·재개
+
+- 한 refresh에서 새로 파싱하는 로그 본문은 기본 8 MiB, 파일 방문은 64개로 제한하도록 작성했다. JSONL scanner의 partial-line resume과 실제 read/committed offset을 Claude parser로 전달하며, 끝까지 읽지 않은 파일에는 완료 read proof를 만들지 않는다.
+- `CostUsageClaudeContentCheckpoint`에 고정 source inventory, 수집 조건/기간/가격 파일 stamp/semantics, 완료 파일의 staged cache와 proof, 현재 파일의 누적 행·offset·부분 줄·내용 지문을 저장한다. 기존 완료 usage·source ID·proof·calendar·lastScan은 그대로 보존하며, 전체 파일 처리와 게시 전 내용 대조를 끝낸 경우에만 교체 대상으로 만든다. 선택적인 continuation 필드가 해독 불가하면 그 필드만 버리고 완료 데이터는 유지한다.
+- 완료된 recursive inventory를 본문 작업 동안 재사용한다. 재개는 실제 열린 파일의 prefix 지문을 대조하며, 이전 slice의 완료 파일도 마지막 게시 관측 집합에 다시 연결한다. 파일 교체·축소·내용 변경 시 staged 진행을 폐기하고 재탐색 pending으로 넘긴다. 접근/취소/저장 오류를 완료나 0 usage로 바꾸지 않는다. 관측 길이 이후 append는 다음 수집으로 넘긴다.
+- provider/filter/root·기간·시간대·가격 stamp·force-rescan 조건이 맞는 checkpoint만 재개한다. force rescan과 calendar 변경 중에도 기존 완료 캐시는 지우지 않는다. `localContentPending`을 기존 pending-source 자동 재개로 연결하고 요약에 완료 파일 수/전체 파일 수를 표시한다.
+- `TestsLinux/WindowsClaudeContentCheckpointTests.swift`에 Claude/Vertex의 분할·재시작·스트리밍 누적 행, 파일 방문 제한, 고정 길이 이후 append, 교체, force/calendar 변경, 취소, 선택 필드 호환성, 저장 실패 fixture를 작성했다. Windows continuation fixture에도 본문 진행 상태를 추가했다. 모든 fixture와 실제 UI/파일 I/O는 미실행이다.
+- **예산 범위는 새 본문 파싱량과 파일 방문이다.** prefix seed/revalidation hashing, discovery/final publication metadata·내용 대조, JSON checkpoint 직렬화/저장, 누적 행/목록의 메모리는 아직 전체 byte/time/memory budget으로 제한되지 않는다. 디스크의 이전 완료 데이터 보존은 Claude/Vertex 계정 소유권 확인을 갖춘 화면 stale 복원이 아니다. directory membership, legacy Codex recursive refresh 분할 및 전체 W01~W16/G0~G6 의무는 남는다.
+- 상태: CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·정적 QA 스크립트·실행·원격 Windows·CI는 수행하지 않았다.
+
 ## 남은 연결
 
 1. 비페이지/legacy·부모 세션 index/캐시 부재 오류 전달은 IMPL-562에 작성했다. 대규모 재귀/단일 폴더의 bounded/pause/resume 통합, IMPL-565에서 parent discovery의 native directory/file snapshot과 legacy 재탐색을 작성했다. IMPL-570에서 main lookback의 관측 directory native snapshot/부재를 별도 metadata로 보존했다. IMPL-571에서 recursive/parent directory ID 방문 제어·alias 관측과 Claude 다중 root 파일 중복 방지를 작성했다. IMPL-572에서 parent directory page와 live-token 재개, IMPL-573에서 Claude/Vertex 재귀 tree checkpoint/refresh 분할을 작성했다. directory membership 증거·legacy recursive 호출부 refresh 분할/active directory의 프로세스 재시작 전진·파일 시스템별 alias/reparse 동작 검증은 남는다. 실행 증거는 없다.
-2. IMPL-561은 expected-file/열린 stream, IMPL-563~564는 게시 직전 metadata, IMPL-566은 usage native snapshot/전체 prefix, IMPL-567은 parser 실제 바이트/게시 내용 비교, IMPL-568은 parent head/negative discovery proof, IMPL-569는 Claude/Vertex parser·cache/memo proof를 작성했다. immutable multi-file snapshot, 관측 뒤 변경, 기타 비용 source와 directory membership 증거가 남는다. 주 lookback의 과거 native directory 관측은 IMPL-570에서 연결했다. hashing과 discovery 대조의 전체 I/O 예산·durable resume·경계 간 반복 읽기 공유도 후속 작업이다.
+2. IMPL-561은 expected-file/열린 stream, IMPL-563~564는 게시 직전 metadata, IMPL-566은 usage native snapshot/전체 prefix, IMPL-567은 parser 실제 바이트/게시 내용 비교, IMPL-568은 parent head/negative discovery proof, IMPL-569는 Claude/Vertex parser·cache/memo proof를 작성했다. immutable multi-file snapshot, 관측 뒤 변경, 기타 비용 source와 directory membership 증거가 남는다. 주 lookback의 과거 native directory 관측은 IMPL-570에서 연결했다. IMPL-575에서 Claude/Vertex 신규 본문 byte/file budget과 staged partial-line 재개를 작성했다. hashing과 discovery/게시 대조·checkpoint 저장의 전체 I/O 예산 및 경계 간 반복 읽기 공유는 후속 작업이다.
 3. 날짜/flat/legacy 루트, hard link/junction, case-sensitive NTFS, UNC/SMB, ReFS/FAT, 삭제 후 재생성, 장기 resume 및 모든 비용 source와의 통합. 파일 ID의 파일 시스템별 재사용·불안정성도 포함한다.
 4. 실제 Windows SDK 컴파일, x64/ARM64, native UI와 설치된 제품에서의 비용 표시, full WinUI3 제품 그래프 및 배포 준비.
 

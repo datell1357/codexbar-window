@@ -34,6 +34,16 @@ enum CostUsageJsonl {
         fileprivate let lineBytes: Int
         fileprivate let truncated: Bool
         fileprivate let jsonTailState: JSONTailState
+
+        /// Reject malformed persisted partial lines before counters or literal indexes reach the parser.
+        func isValidContinuation(committedOffset: Int64, readOffset: Int64, limit: Int) -> Bool {
+            self.offset == readOffset && self.lineStartOffset == committedOffset
+                && committedOffset >= 0 && readOffset > committedOffset
+                && self.lineBytes > 0 && Int64(self.lineBytes) == readOffset - committedOffset
+                && self.prefix.count == min(limit, self.lineBytes)
+                && self.truncated == (self.lineBytes > limit)
+                && self.jsonTailState.isValidContinuation(lineBytes: self.lineBytes)
+        }
     }
 
     struct ScanProgress {
@@ -134,6 +144,16 @@ enum CostUsageJsonl {
         private var escaping = false
         private var sawNonWhitespace = false
         private var scalarState = ScalarState.notScalar
+
+        func isValidContinuation(lineBytes: Int) -> Bool {
+            guard self.containerDepth >= 0, self.containerDepth <= lineBytes else { return false }
+            switch self.scalarState {
+            case let .trueLiteral(matched): return (0...Self.trueLiteral.count).contains(matched)
+            case let .falseLiteral(matched): return (0...Self.falseLiteral.count).contains(matched)
+            case let .nullLiteral(matched): return (0...Self.nullLiteral.count).contains(matched)
+            case .notScalar, .number, .invalid: return true
+            }
+        }
 
         /// Persisted Codable checkpoints can contain unusual counters. Preserve the scalar updater
         /// when skipping could bypass checked depth arithmetic or literal indexing.

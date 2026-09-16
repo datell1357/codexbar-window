@@ -43,7 +43,7 @@ struct WindowsSpendContinuationTests {
             self.resumes += 1
             if self.resumes == 1 {
                 return Scan(inputs: [], subscriptionNames: [:], sourceFailures: [.init(sourceID: "local",
-                    provider: .claude, localInventoryPending: true, discoveredFiles: 9)], capturedAt: now)
+                    provider: .claude, localInventoryPending: true, discoveredFiles: 9, completedFiles: 3)], capturedAt: now)
             }
             return Scan(inputs: [WindowsSpendContinuationTests.input("local", tokens: 20, now: now)],
                         subscriptionNames: [:], capturedAt: now)
@@ -66,7 +66,8 @@ struct WindowsSpendContinuationTests {
             })
         let initial = try await session.begin(days: 30)
         #expect(initial.sourceFailures.first?.localInventoryPending == true)
-        _ = try await session.resume(days: 30, sourceIDs: ["local"])
+        let reading = try await session.resume(days: 30, sourceIDs: ["local"])
+        #expect(reading.sourceFailures.first?.completedFiles == 3)
         let completed = try await session.resume(days: 30, sourceIDs: ["local"])
         #expect(completed.sourceFailures.isEmpty)
         #expect(completed.inputs.first { $0.id == "remote" }?.snapshot.last30DaysTokens == 8)

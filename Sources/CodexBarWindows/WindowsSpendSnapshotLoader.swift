@@ -173,13 +173,25 @@ struct WindowsSpendSnapshotLoader {
                     if error is CancellationError { throw error }
                     let inventoryPending: Bool
                     let discoveredFiles: Int?
-                    if case let CostUsageError.localInventoryPending(count) = error {
+                    let completedFiles: Int?
+                    switch error {
+                    case let CostUsageError.localInventoryPending(count):
                         inventoryPending = true
                         discoveredFiles = count
-                    } else { inventoryPending = false; discoveredFiles = nil }
+                        completedFiles = nil
+                    case let CostUsageError.localContentPending(completed, total):
+                        inventoryPending = true
+                        discoveredFiles = total
+                        completedFiles = completed
+                    default:
+                        inventoryPending = false
+                        discoveredFiles = nil
+                        completedFiles = nil
+                    }
                     failures.append(.init(sourceID: source.id, provider: source.provider,
                         accountIdentityUnconfirmed: error is CursorCostAccountIdentityError,
-                        localInventoryPending: inventoryPending, discoveredFiles: discoveredFiles))
+                        localInventoryPending: inventoryPending, discoveredFiles: discoveredFiles,
+                        completedFiles: completedFiles))
                 }
             }
             return .init(inputs: inputs, subscriptionNames: names, sourceFailures: failures, capturedAt: now,

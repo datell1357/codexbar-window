@@ -1,5 +1,7 @@
 # Windows 전용 제품 작업 현황
 
+- IMPL-575: Claude/Vertex 새 본문 8 MiB·64 file/refresh, staged cache·부분 JSON/offset·실제 바이트 proof 저장과 고정 inventory 재개 작성. 기존 완료 데이터 보존, 교체 시 재탐색, content pending 자동 재개·파일 진행 표시 및 미실행 fixture 추가. hashing/게시/저장 전체 예산·ownership-bound 화면 복원·membership·전체 Windows 제품/검증은 남음. CODE_WRITTEN_UNVERIFIED.
+
 - IMPL-574: pending local source만 자동 재개하는 collection/controller task, 완료 source·첫 날짜·OpenCodeX 단일 capture 보존, source/provider 대조·계정/설정 철회·runtime 게시 순서 연결. stale 표시 기반은 기존 ownership eligibility 조건부이며 Claude/Vertex ownership adapter는 미구현. Windows async fixture/manifest는 미실행. 전체 content/I/O 예산·membership·제품 완성과 Windows 검증은 남음. CODE_WRITTEN_UNVERIFIED.
 
 - IMPL-573: recursive native tree page/checkpoint·metadata 대조 재개, Claude/Vertex 4,096 work/refresh와 기존 rows/calendar 보존·pending 오류/화면 구분 작성. 완료 폴더는 재시작 후 유지하고 source 변경 시 재탐색. legacy 동기 drain·전체 byte/time/memory 예산·pending 전용 자동 수집/이전 화면값·membership 및 전체 Windows 제품 검증은 남음. CODE_WRITTEN_UNVERIFIED.

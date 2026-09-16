@@ -13,6 +13,7 @@ public enum CostUsageError: LocalizedError, Sendable {
     case timedOut(seconds: Int)
     /// Local discovery has persisted a bounded slice; callers should retry without treating it as zero usage.
     case localInventoryPending(discoveredFiles: Int)
+    case localContentPending(completedFiles: Int, totalFiles: Int)
     case localInventoryCheckpointUnavailable
     case cursorPaginationIncomplete(expected: Int?, received: Int)
     case cursorPaginationInconsistent(expected: Int, received: Int)
@@ -28,8 +29,10 @@ public enum CostUsageError: LocalizedError, Sendable {
             return "Cost refresh timed out after \(seconds)s."
         case let .localInventoryPending(discoveredFiles):
             return "Local cost discovery is still in progress (\(discoveredFiles) files found). Refresh to continue."
+        case let .localContentPending(completedFiles, totalFiles):
+            return "Local cost collection is still in progress (\(completedFiles) of \(totalFiles) files read). Refresh to continue."
         case .localInventoryCheckpointUnavailable:
-            return "Local cost discovery could not save its progress. Previous cost data has been preserved."
+            return "Local cost collection could not save its progress. Previous cost data has been preserved."
         case let .cursorPaginationIncomplete(expected, received):
             if let expected {
                 return "Cursor cost refresh was incomplete (received \(received) of \(expected) events)."
