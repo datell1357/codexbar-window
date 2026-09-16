@@ -95,20 +95,10 @@ try {
         $signature.SignerCertificate.Thumbprint -ine $CertificateThumbprint -or $null -eq $signature.TimeStamperCertificate) {
         throw 'The signed package signer and timestamp were not confirmed.'
     }
-    $archive = [IO.Compression.ZipArchive]::new($signedStream, [IO.Compression.ZipArchiveMode]::Read, $true)
-    try {
-        $signatureEntry = $archive.GetEntry('AppxSignature.p7x')
-        $manifestEntry = $archive.GetEntry('AppxManifest.xml')
-        $blockMapEntry = $archive.GetEntry('AppxBlockMap.xml')
-        if ($null -eq $signatureEntry -or $signatureEntry.Length -le 0 -or $signatureEntry.Length -gt 16777216 -or
-            $null -eq $manifestEntry -or $null -eq $blockMapEntry) { throw 'Signed package footprint is incomplete.' }
-        $manifestBytes = Read-CodexBarMSIXEntry $manifestEntry 1048576
-        $blockMapBytes = Read-CodexBarMSIXEntry $blockMapEntry 33554432
-        if ((Get-CodexBarMSIXBytesHash $manifestBytes) -cne $build.ManifestSha256 -or
-            (Get-CodexBarMSIXBytesHash $blockMapBytes) -cne $build.BlockMapSha256) {
-            throw 'Signing changed the package manifest or block map.'
-        }
-    } finally { $archive.Dispose(); $signedStream.Position = 0 }
+    $signedMetadata = Read-CodexBarMSIXMetadata $signedStream $true
+    if ($signedMetadata.ManifestSha256 -cne $build.ManifestSha256 -or $signedMetadata.BlockMapSha256 -cne $build.BlockMapSha256) {
+        throw 'Signing changed the package manifest or block map.'
+    }
     $receipt = [ordered] @{
         schemaVersion = 1
         status = 'SIGNED_MSIX_RUNTIME_UNVERIFIED'

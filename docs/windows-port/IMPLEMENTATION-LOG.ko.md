@@ -5177,3 +5177,15 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - 서명 후 held package의 새 hash와 서명 요청/빌드/source identity를 SIGNED_MSIX_RUNTIME_UNVERIFIED receipt에 기록한다. installation/runtimeValidation은 NOT_RUN이며 source attestation·내부 바이너리별 서명·설치 가능성·릴리스 상태와 구분했다. MSIX-SIGNING.ko.md에 invocation 및 DN 표현/PKI/SIP/경로 race 경계를 기록했다.
 - CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. PowerShell·XML/package 평가·빌드·테스트·lint·SDK·인증서/private key·timestamp 서비스·서명·설치·Windows 실행 검증 미실행. MSIX 설치/update/제거, 실제 리소스/PRI·Windows 위젯/COM·Windows-only 제품 graph 및 전체 검증은 남아 있다.
 - 직전 푸시 확인은 IMPL-546 0541d09b6이다. IMPL-547도 별도 구현 커밋·푸시 후 실제 Git 결과를 보고한다.
+
+
+## IMPL-548 — Register signed MSIX packages for the current Windows user
+
+- bounded archive/identity/manifest/block-map 읽기를 Read-CodexBarMSIXMetadata로 공유해 unsigned build, signed output 및 설치 입력이 같은 형식/중복/크기 계약을 사용하도록 연결했다. unsigned/signed signature footprint 존재 조건은 구분하고 이전 빌드 receipt의 manifest/아키텍처 대조를 유지했다.
+- Read-CodexBarSignedMSIX는 실제 signed artifact/receipt의 크기·hash·identity를 대조하고 명시적인 expected signer와 source provenance를 연결한다. 별도 Assert-CodexBarMSIXSignature는 Windows의 현재 trust 상태·정확한 signer/Publisher·timestamp를 다시 요구하도록 작성했다. SDK를 설치 사용자에게 요구하지 않는다.
+- Install-CodexBarMSIXPackage에 Install/Update를 구분하고 기존 개발 설치 계약과 같은 AllowUnvalidatedBuild 선택을 추가했다. 현재 사용자 main package만 조회하며 Update는 정확한 기존 full name, 같은 publisher/아키텍처, 정상 상태 및 더 높은 버전을 요구한다. WhatIf는 signature trust·출력·설치 전에 반환한다.
+- LocalApplicationData 아래 regular 빈 operations.lock을 독점 열어 협력하는 설치를 직렬화하고 잠금 뒤 현재 등록을 다시 읽는다. signed 입력 stream을 작업 종료까지 유지하고 원본/기존 출력/lock 파일을 삭제하지 않는다. Windows나 외부 설치 도구와의 전체 transaction을 구현한 것은 아니다.
+- Appx Add-AppxPackage 신규/Update 경로를 연결했다. 강제 종료·downgrade·defer·dependency 자동 수집은 수행하지 않으며 오류는 보존한다. 명령이 반환된 뒤 실제 현재 사용자 등록의 version/architecture/상태/full/family name을 대조한 후에만 REGISTERED_RUNTIME_UNVERIFIED receipt를 작성하도록 했다.
+- 단계별 journal과 이전 generation을 보존하고 실패/불확실 결과 및 등록 관측 후 기록 실패를 구분했다. 자동 제거/rollback이나 성공 추정 없이 로컬 source/기록을 유지한다. 문서에 future invocation, current-user 범위, OS 신뢰 및 재개/경로/전원/PKI 경계를 기록했다.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. PowerShell·archive/XML 평가·OS signature trust·Appx·인증서/private key·설치/업데이트·빌드·테스트·lint·실제 Windows 앱/위젯 검증 미실행. 중단 재개/rollback/제거·자동 업데이트·GUI·실제 리소스/Windows-only 제품 graph와 전체 검증은 남아 있다.
+- 직전 IMPL-547 0b1b5561e는 origin/main 푸시가 확인됐다. IMPL-548도 검증 hook 비활성화 및 [skip ci]를 포함해 별도 커밋·푸시 후 실제 Git 결과를 보고한다.

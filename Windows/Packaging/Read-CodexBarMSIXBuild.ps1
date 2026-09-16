@@ -101,6 +101,19 @@ function Read-CodexBarMSIXBuild([string] $PackageDirectory, [Collections.Generic
     $packageStream = Open-CodexBarMSIXInput $packagePath 8724152320 $HeldFiles
     $packageHash = Get-CodexBarMSIXHash $packageStream
     if ($packageStream.Length -ne $size -or $packageHash -cne $receipt.package.sha256) { throw 'Package bytes differ from the build receipt.' }
+    $metadata = Read-CodexBarMSIXMetadata $packageStream $false
+    if ($metadata.ManifestSha256 -cne $receipt.manifestSha256 -or $metadata.Identity.architecture -cne $receipt.architecture) {
+        throw 'Embedded package metadata differs from the build receipt.'
+    }
+    return [pscustomobject] @{
+        Directory = $root.FullName; PackagePath = $packagePath; PackageStream = $packageStream
+        PackageBytes = $size; PackageSha256 = $packageHash; ReceiptSha256 = (Get-CodexBarMSIXHash $receiptStream)
+        ManifestSha256 = $metadata.ManifestSha256; BlockMapSha256 = $metadata.BlockMapSha256
+        Identity = $metadata.Identity; Provenance = $provenance; HashAlgorithm = $metadata.HashAlgorithm
+        SourceInventorySha256 = $receipt.sourceInventory.sha256
+    }
+}
+function Read-CodexBarMSIXMetadata([IO.Stream] $PackageStream, [bool] $RequireSignature) {
     Add-Type -AssemblyName System.IO.Compression
     $archive = [IO.Compression.ZipArchive]::new($packageStream, [IO.Compression.ZipArchiveMode]::Read, $true)
     try {
@@ -117,15 +130,17 @@ function Read-CodexBarMSIXBuild([string] $PackageDirectory, [Collections.Generic
             }
             $entries.Add($name, $entry)
         }
-        if ($entries.ContainsKey('AppxSignature.p7x') -or $entries.ContainsKey('AppxMetadata/AppxBundleManifest.xml')) {
-            throw 'Expected an unsigned single application package, not a signed package or bundle.'
+        if ($entries.ContainsKey('AppxMetadata/AppxBundleManifest.xml') -or
+            $entries.ContainsKey('AppxSignature.p7x') -ne $RequireSignature) {
+            throw 'Package signature presence or single application package contract differs.'
         }
+        if ($RequireSignature -and ($entries['AppxSignature.p7x'].Length -le 0 -or
+            $entries['AppxSignature.p7x'].Length -gt 16777216)) { throw 'Invalid package signature footprint size.' }
         foreach ($name in @('AppxManifest.xml', 'AppxBlockMap.xml', '[Content_Types].xml')) {
             if (-not $entries.ContainsKey($name)) { throw 'Required package metadata is missing.' }
         }
         $manifestBytes = Read-CodexBarMSIXEntry $entries['AppxManifest.xml'] 1048576
         $manifestHash = Get-CodexBarMSIXBytesHash $manifestBytes
-        if ($manifestHash -cne $receipt.manifestSha256) { throw 'Embedded manifest differs from the build receipt.' }
         $manifest = Read-CodexBarMSIXXML $manifestBytes 1048576
         $foundation = 'http://schemas.microsoft.com/appx/manifest/foundation/windows10'
         if ($manifest.DocumentElement.LocalName -cne 'Package' -or $manifest.DocumentElement.NamespaceURI -cne $foundation) {
@@ -141,7 +156,7 @@ function Read-CodexBarMSIXBuild([string] $PackageDirectory, [Collections.Generic
         $version = $node.GetAttribute('Version')
         $architecture = $node.GetAttribute('ProcessorArchitecture')
         if ($name -cnotmatch '^[A-Za-z0-9.-]{3,50}$' -or [string]::IsNullOrWhiteSpace($publisher) -or
-            $publisher.Length -gt 8192 -or $publisher -match '[\x00-\x1f]' -or $architecture -cne $receipt.architecture -or
+            $publisher.Length -gt 8192 -or $publisher -match '[\x00-\x1f]' -or $architecture -cnotin @('x64', 'arm64') -or
             $node.GetAttribute('ResourceId').Length -ne 0 -or
             $version -notmatch '^(0|[1-9][0-9]{0,4})\.(0|[1-9][0-9]{0,4})\.(0|[1-9][0-9]{0,4})\.(0|[1-9][0-9]{0,4})$') {
             throw 'Invalid package identity.'
@@ -159,11 +174,9 @@ function Read-CodexBarMSIXBuild([string] $PackageDirectory, [Collections.Generic
             throw 'Only the build entry point SHA256 block-map contract is supported.'
         }
         return [pscustomobject] @{
-            Directory = $root.FullName; PackagePath = $packagePath; PackageStream = $packageStream
-            PackageBytes = $size; PackageSha256 = $packageHash; ReceiptSha256 = (Get-CodexBarMSIXHash $receiptStream)
             ManifestSha256 = $manifestHash; BlockMapSha256 = (Get-CodexBarMSIXBytesHash $blockMapBytes)
             Identity = [ordered] @{ name = $name; publisher = $publisher; version = $version; architecture = $architecture }
-            Provenance = $provenance; HashAlgorithm = 'SHA256'; SourceInventorySha256 = $receipt.sourceInventory.sha256
+            HashAlgorithm = 'SHA256'
         }
     } finally { $archive.Dispose(); $packageStream.Position = 0 }
 }

@@ -249,3 +249,10 @@ receipt의 PACKAGED_UNSIGNED_RUNTIME_UNVERIFIED는 나중에 Windows 명령이 �
 Read-CodexBarMSIXBuild는 실제 unsigned package와 로컬 build receipt, embedded manifest/Publisher 및 SHA256 block map을 연결한다. New-CodexBarMSIXSigningRequest는 이 값들로 새 요청을 작성하며, Sign-CodexBarMSIXPackage는 같은 바이트를 다시 대조한 뒤 선택한 CurrentUser/My 인증서로 새 사본만 서명하도록 구현했다. 내부 바이너리 서명과 MSIX 서명은 별개이며, 실제 실행하지 않았다.
 
 입력/WhatIf/출력 보존/SDK 옵션/서명 후 기록 및 미검증 경계는 [MSIX 서명 인계](MSIX-SIGNING.ko.md)를 따른다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. SDK·인증서·timestamp 서비스·서명·설치·검증 실행은 하지 않았고, Windows 제품 전체의 설치/update/기능 검증과 릴리스 판단은 남아 있다.
+
+
+## 현재 사용자 MSIX 개발 설치·업데이트
+
+Install-CodexBarMSIXPackage.ps1에 signed MSIX/receipt/expected signer를 받아 Windows Appx로 현재 사용자에게 설치·업데이트하는 코드를 추가했다. 공유 metadata reader와 현재 OS 서명 신뢰 확인을 사용하고, Update는 정확한 기존 full name 및 더 높은 버전을 요구한다. SDK는 필요하지 않으며 runtime-unverified 산출물에는 AllowUnvalidatedBuild가 필요하다.
+
+잠금·새 출력·단계 journal과 실제 등록 관측 뒤의 receipt를 연결했고, 자동 강제 종료/강등/제거/rollback은 수행하지 않는다. 자세한 future invocation과 경계는 [MSIX 설치 계약](MSIX-INSTALLATION.ko.md)을 따른다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION이며 설치/업데이트·PowerShell·signature/Appx·빌드·테스트·Windows 실행 검증은 하지 않았다.

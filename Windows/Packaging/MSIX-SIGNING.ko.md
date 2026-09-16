@@ -53,3 +53,5 @@ MSIX 컨테이너는 개별 EXE/DLL 서명과 별도로 서명한다. [패키지
 각 파일의 held handle은 일반적인 Windows 공유 규칙에 따라 바이트 변경을 제한하지만 상위 디렉터리 변경을 막는 전체 transaction은 아니다. 복사 후 SDK가 쓸 수 있도록 handle을 닫는 구간, 출력 경로 교체·외부 writer, PKI trust/revocation·timestamp 실패/취소, PowerShell의 MSIX SIP 지원, 실제 SDK·x64/ARM64 동작은 미검증이다. 일부 signature/receipt가 남은 실패는 자동 재개하지 않는다.
 
 receipt와 hash는 로컬 바이트 연결이며 빌드 attestation이나 배포 승인 증거가 아니다. STAGED 입력을 container-signing했다고 내부 first-party 파일의 개별 서명·의존성 완전성이 보장되지는 않는다. 실제 이미지·locale/PRI, package identity 정책, 설치·업데이트·제거·COM/Widgets activation 및 Windows 제품 전체 검증은 계속 필요하다. 현재 작업은 인증서 생성/설치, private key 사용, 인증서 신뢰 변경, Store 제출이나 릴리스를 수행하지 않았다.
+
+서명 후 archive 읽기도 unsigned 입력과 같은 Read-CodexBarMSIXMetadata를 공유하도록 연결했다. 이 signed receipt를 소비하는 현재 사용자용 개발 설치·업데이트 코드는 [MSIX 설치 계약](MSIX-INSTALLATION.ko.md)에 추가했으며 실제 설치/업데이트는 실행하지 않았다.
