@@ -1,7 +1,7 @@
 import Foundation
 
 /// Observation used to bind a cost scan to a file and a fixed physical read boundary.
-/// It is deliberately separate from the persisted cache's millisecond freshness hint.
+/// Persisted Windows consumers retain this alongside the legacy millisecond freshness hint.
 struct CostUsageFileReadSnapshot: Codable, Equatable, Sendable {
     let fileID: String
     let size: Int64

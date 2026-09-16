@@ -1979,7 +1979,7 @@ enum CostUsageScanner {
         func currentDependencyKey(for sessionId: String) throws -> String? {
             switch try self.fileIndex.lookup(sessionId: sessionId) {
             case let .found(fileURL):
-                self.dependencyKey(for: sessionId, fileURL: fileURL)
+                try self.dependencyKey(for: sessionId, fileURL: fileURL)
             case let .missing(dependencyKey):
                 dependencyKey
             case .deferred:
@@ -1997,7 +1997,29 @@ enum CostUsageScanner {
             return files
         }
 
-        private func dependencyKey(for sessionId: String, fileURL: URL) -> String {
+        private func dependencyKey(for sessionId: String, fileURL: URL) throws -> String {
+            #if os(Windows)
+            let metadata = try CostUsageScanner.requiredCodexFileMetadata(fileURL: fileURL)
+            guard let snapshot = metadata.readSnapshot else {
+                throw CostUsageSourcePublication.Failure.sourceChangedOrUnavailable
+            }
+            let digest: String
+            if snapshot.size == 0 {
+                digest = "empty"
+            } else {
+                guard let anchor = CostUsageScanner.codexTokenIndexAnchor(
+                    fileURL: fileURL, indexedBytes: snapshot.size, expectedFile: snapshot,
+                    checkCancellation: self.checkCancellation) else {
+                    try Task.checkCancellation()
+                    try self.checkCancellation?()
+                    throw CostUsageSourcePublication.Failure.sourceChangedOrUnavailable
+                }
+                digest = anchor.sha256
+            }
+            return ["file", sessionId, fileURL.standardizedFileURL.path, snapshot.fileID,
+                    String(snapshot.modifiedSeconds), String(snapshot.modifiedNanoseconds),
+                    String(snapshot.size), digest].joined(separator: "|")
+            #else
             let metadata = CostUsageScanner.codexFileMetadata(fileURL: fileURL)
             return [
                 "file",
@@ -2007,6 +2029,7 @@ enum CostUsageScanner {
                 String(metadata.mtimeUnixMs),
                 String(metadata.size),
             ].joined(separator: "|")
+            #endif
         }
 
         private func snapshotResolution(for sessionId: String) throws -> SnapshotResolution {
@@ -2040,7 +2063,7 @@ enum CostUsageScanner {
             }
 
             let parentMetadata = CostUsageScanner.codexFileMetadata(fileURL: fileURL)
-            if let cachedResolution = self.cachedSnapshotResolution(
+            if let cachedResolution = try self.cachedSnapshotResolution(
                 for: sessionId,
                 fileURL: fileURL,
                 metadata: parentMetadata)
@@ -2057,7 +2080,7 @@ enum CostUsageScanner {
                 // opening it here and bypassing the byte or wall-clock budget.
                 self.pendingParentFiles[fileURL.standardizedFileURL.path] = fileURL
                 let resolution = SnapshotResolution(
-                    dependencyKey: self.dependencyKey(for: sessionId, fileURL: fileURL),
+                    dependencyKey: try self.dependencyKey(for: sessionId, fileURL: fileURL),
                     snapshots: nil,
                     isComplete: false)
                 self.snapshotResolutions[sessionId] = resolution
@@ -2067,11 +2090,11 @@ enum CostUsageScanner {
             // Direct resolver construction without a scan budget is retained for focused parser
             // tests and explicit unbounded callers. Production refreshes always install a budget.
             for _ in 0..<2 {
-                let dependencyKeyBeforeParse = self.dependencyKey(for: sessionId, fileURL: fileURL)
+                let dependencyKeyBeforeParse = try self.dependencyKey(for: sessionId, fileURL: fileURL)
                 let parsed = try CostUsageScanner.parseCodexTokenSnapshots(
                     fileURL: fileURL,
                     checkCancellation: self.checkCancellation)
-                let dependencyKeyAfterParse = self.dependencyKey(for: sessionId, fileURL: fileURL)
+                let dependencyKeyAfterParse = try self.dependencyKey(for: sessionId, fileURL: fileURL)
                 guard dependencyKeyBeforeParse == dependencyKeyAfterParse else { continue }
 
                 guard let parsedSessionId = parsed.sessionId else {
@@ -2122,7 +2145,7 @@ enum CostUsageScanner {
         private func cachedSnapshotResolution(
             for sessionId: String,
             fileURL: URL,
-            metadata: CodexFileMetadata) -> SnapshotResolution?
+            metadata: CodexFileMetadata) throws -> SnapshotResolution?
         {
             let standardizedPath = fileURL.standardizedFileURL.path
             let cachedUsage = self.cachedFiles[fileURL.path] ?? self.cachedFiles[standardizedPath]
@@ -2132,6 +2155,10 @@ enum CostUsageScanner {
                   let cachedSnapshots = usage.codexTokenSnapshots
             else { return nil }
 
+            #if os(Windows)
+            guard CostUsageScanner.windowsCodexPrefixMatches(
+                usage, metadata: metadata, checkCancellation: self.checkCancellation) else { return nil }
+            #endif
             let metadataMatches = usage.mtimeUnixMs == metadata.mtimeUnixMs
                 && usage.size == metadata.size
             let appendSafePrefixMatches = usage.codexScanFileId == metadata.fileId
@@ -2148,7 +2175,7 @@ enum CostUsageScanner {
             let coversCurrentFile = usage.codexScanComplete != false
                 && indexedBytes >= metadata.size
             return SnapshotResolution(
-                dependencyKey: self.dependencyKey(for: sessionId, fileURL: fileURL),
+                dependencyKey: try self.dependencyKey(for: sessionId, fileURL: fileURL),
                 indexedEvents: cachedSnapshots,
                 checkpoints: usage.codexTokenCheckpoints ?? [],
                 indexedTimestampsMonotonic: usage.codexTokenTimestampsMonotonic == true,
@@ -2604,13 +2631,16 @@ enum CostUsageScanner {
     static func codexTokenIndexAnchor(
         fileURL: URL,
         indexedBytes: Int64,
-        expectedFile: CostUsageFileReadSnapshot? = nil) -> CostUsageCodexTokenIndexAnchor?
+        expectedFile: CostUsageFileReadSnapshot? = nil,
+        checkCancellation: CancellationCheck? = nil) -> CostUsageCodexTokenIndexAnchor?
     {
         let indexedBytes = max(0, indexedBytes)
         guard indexedBytes > 0 else { return nil }
+        #if os(Windows)
+        let windowStart: Int64 = 0
+        #else
         let windowStart = max(0, indexedBytes - 64 * 1024)
-        let byteCount = Int(indexedBytes - windowStart)
-        guard byteCount > 0 else { return nil }
+        #endif
 
         do {
             #if os(Windows)
@@ -2623,8 +2653,18 @@ enum CostUsageScanner {
             let readGuard = try WindowsCostFileReadGuard(file: handle, url: fileURL, expected: snapshot)
             #endif
             try handle.seek(toOffset: UInt64(windowStart))
-            guard let data = try handle.read(upToCount: byteCount), data.count == byteCount else {
-                return nil
+            var remaining = indexedBytes - windowStart
+            var digest = SHA256()
+            while remaining > 0 {
+                try Task.checkCancellation()
+                try checkCancellation?()
+                #if os(Windows)
+                try readGuard.check()
+                #endif
+                let count = Int(min(remaining, 64 * 1024))
+                guard let data = try handle.read(upToCount: count), !data.isEmpty else { return nil }
+                digest.update(data: data)
+                remaining -= Int64(data.count)
             }
             #if os(Windows)
             try readGuard.check()
@@ -2632,7 +2672,7 @@ enum CostUsageScanner {
             return CostUsageCodexTokenIndexAnchor(
                 indexedBytes: indexedBytes,
                 windowStart: windowStart,
-                sha256: Self.sha256Hex(data))
+                sha256: digest.finalize().map { String(format: "%02x", $0) }.joined())
         } catch {
             return nil
         }
@@ -2641,8 +2681,12 @@ enum CostUsageScanner {
     static func codexTokenIndexAnchorMatches(
         _ anchor: CostUsageCodexTokenIndexAnchor,
         fileURL: URL,
-        metadata: CodexFileMetadata) -> Bool
+        metadata: CodexFileMetadata,
+        checkCancellation: CancellationCheck? = nil) -> Bool
     {
+        #if os(Windows)
+        guard anchor.windowStart == 0 else { return false }
+        #endif
         guard anchor.indexedBytes > 0,
               anchor.windowStart >= 0,
               anchor.windowStart < anchor.indexedBytes,
@@ -2651,7 +2695,8 @@ enum CostUsageScanner {
         return self.codexTokenIndexAnchor(
             fileURL: fileURL,
             indexedBytes: anchor.indexedBytes,
-            expectedFile: metadata.readSnapshot) == anchor
+            expectedFile: metadata.readSnapshot,
+            checkCancellation: checkCancellation) == anchor
     }
 
     private static func listCodexRecentlyModifiedPartitionFiles(
@@ -6513,6 +6558,11 @@ enum CostUsageScanner {
                     guard let metadata = try Self.codexFileMetadataIfPresent(
                         fileURL: fileURL, publicationObservations: publicationObservations)
                     else { return true }
+                    #if os(Windows)
+                    if !Self.windowsCodexSourceMatches(usage, metadata: metadata)
+                        || !Self.windowsCodexPrefixMatches(usage, metadata: metadata, checkCancellation: checkCancellation)
+                    { return true }
+                    #endif
                     return Self.codexLogicalTargetHasUnconsumedTail(metadata: metadata, cached: usage)
                         || usage.size != metadata.size || usage.mtimeUnixMs != metadata.mtimeUnixMs
                         || usage.codexScanFileId != metadata.fileId
@@ -6969,6 +7019,9 @@ enum CostUsageScanner {
         metadata: CodexFileMetadata,
         usage: CostUsageFileUsage) -> Int64?
     {
+        #if os(Windows)
+        guard Self.windowsCodexPrefixMatches(usage, metadata: metadata) else { return nil }
+        #endif
         let identityMatches = usage.codexScanFileId == nil || usage.codexScanFileId == metadata.fileId
         guard usage.codexScanComplete != false,
               usage.codexJSONLResumeState == nil,
@@ -7045,6 +7098,9 @@ enum CostUsageScanner {
             }
 
             totalBytes += max(0, metadata.size)
+            #if os(Windows)
+            guard Self.windowsCodexPrefixMatches(usage, metadata: metadata) else { continue }
+            #endif
             let identityMatches = usage.codexScanFileId == nil || usage.codexScanFileId == metadata.fileId
             guard identityMatches,
                   usage.mtimeUnixMs == metadata.mtimeUnixMs,

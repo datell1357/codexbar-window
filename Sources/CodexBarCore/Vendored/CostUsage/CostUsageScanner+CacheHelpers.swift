@@ -225,7 +225,9 @@ extension CostUsageScanner {
         codexScanComplete: Bool? = nil,
         codexJSONLResumeState: CostUsageJsonl.ResumeState? = nil,
         codexBufferedSubagentLines: [CodexBufferedFastLine]? = nil,
-        codexBufferedUnresolvedForkLines: [CodexBufferedFastLine]? = nil) -> CostUsageFileUsage
+        codexBufferedUnresolvedForkLines: [CodexBufferedFastLine]? = nil,
+        codexWindowsSource: CostUsageFileReadSnapshot? = nil,
+        codexWindowsContentGeneration: String? = nil) -> CostUsageFileUsage
     {
         CostUsageFileUsage(
             mtimeUnixMs: mtimeUnixMs,
@@ -266,7 +268,9 @@ extension CostUsageScanner {
             codexScanComplete: codexScanComplete,
             codexJSONLResumeState: codexJSONLResumeState,
             codexBufferedSubagentLines: codexBufferedSubagentLines,
-            codexBufferedUnresolvedForkLines: codexBufferedUnresolvedForkLines)
+            codexBufferedUnresolvedForkLines: codexBufferedUnresolvedForkLines,
+            codexWindowsSource: codexWindowsSource,
+            codexWindowsContentGeneration: codexWindowsContentGeneration)
     }
 
     static func needsCodexPricingMetadata(_ usage: CostUsageFileUsage) -> Bool {
@@ -617,7 +621,9 @@ extension CostUsageScanner {
             codexScanComplete: usage.codexScanComplete,
             codexJSONLResumeState: usage.codexJSONLResumeState,
             codexBufferedSubagentLines: usage.codexBufferedSubagentLines,
-            codexBufferedUnresolvedForkLines: usage.codexBufferedUnresolvedForkLines)
+            codexBufferedUnresolvedForkLines: usage.codexBufferedUnresolvedForkLines,
+            codexWindowsSource: usage.codexWindowsSource,
+            codexWindowsContentGeneration: usage.codexWindowsContentGeneration)
             .refreshingCodexWorkspaceUsageFingerprint()
     }
 
@@ -851,8 +857,8 @@ extension CostUsageScanner {
                 changes.files.append(url)
                 continue
             }
-            if usage.codexScanFileId != metadata.fileId || usage.size != metadata.size
-                || usage.mtimeUnixMs != metadata.mtimeUnixMs
+            if !Self.windowsCodexSourceMatches(usage, metadata: metadata)
+                || !Self.windowsCodexPrefixMatches(usage, metadata: metadata, checkCancellation: checkCancellation)
             {
                 changes.files.append(url)
             }
@@ -908,7 +914,10 @@ extension CostUsageScanner {
     {
         guard let cached = input.cached, cached.codexEventWhitespaceParsed == true else { return false }
         #if os(Windows)
-        guard let identity = input.metadata.fileId, cached.codexScanFileId == identity else { return false }
+        guard Self.windowsCodexSourceMatches(cached, metadata: input.metadata),
+              Self.windowsCodexPrefixMatches(
+                  cached, metadata: input.metadata, checkCancellation: context.checkCancellation)
+        else { return false }
         #endif
         let needsSessionId = cached.sessionId == nil
         let parsedBytes = cached.parsedBytes ?? cached.size
@@ -997,6 +1006,9 @@ extension CostUsageScanner {
         cached: CostUsageFileUsage) -> Bool
     {
         let startOffset = cached.parsedBytes ?? cached.size
+        #if os(Windows)
+        guard Self.windowsCodexSourceMatches(cached, metadata: metadata, allowAppend: true) else { return false }
+        #endif
         guard cached.forkedFromId != nil,
               cached.forkBaselineDependencyKey == nil,
               cached.hasBufferedCodexForkRetryLines,
@@ -1022,6 +1034,9 @@ extension CostUsageScanner {
         cached: CostUsageFileUsage) -> Bool
     {
         let startOffset = cached.parsedBytes ?? cached.size
+        #if os(Windows)
+        guard Self.windowsCodexSourceMatches(cached, metadata: metadata, allowAppend: true) else { return false }
+        #endif
         guard cached.codexScanComplete != false,
               cached.forkedFromId != nil,
               cached.codexBufferedSubagentLines?.isEmpty != false,
@@ -1053,7 +1068,8 @@ extension CostUsageScanner {
         guard let cached = input.cached, cached.codexEventWhitespaceParsed == true,
               cached.sessionId != nil, !context.forceFullScan else { return false }
         #if os(Windows)
-        guard let identity = input.metadata.fileId, cached.codexScanFileId == identity else { return false }
+        guard Self.windowsCodexSourceMatches(cached, metadata: input.metadata, allowAppend: true)
+        else { return false }
         #endif
         guard !Self.cachedCodexFileNeedsPriorityRescan(cached, context: context) else { return false }
         if Self.cachedCodexRowsNeedIdentityRescan(cached) {
@@ -1124,10 +1140,10 @@ extension CostUsageScanner {
         guard canIncremental else { return false }
 
         #if os(Windows)
-        // An unchanged file ID alone does not establish append-only history (copy/truncate
-        // writers can reuse the object). Require the persisted committed-prefix anchor.
-        guard let anchor = cached.codexTokenIndexAnchor, anchor.indexedBytes == startOffset,
-              Self.codexTokenIndexAnchorMatches(anchor, fileURL: input.fileURL, metadata: input.metadata)
+        // Windows reuse requires a digest of the entire committed prefix, including bytes
+        // outside the old 64 KiB tail anchor. Unproven/legacy sources start over.
+        guard Self.windowsCodexPrefixMatches(
+            cached, metadata: input.metadata, checkCancellation: context.checkCancellation)
         else { return false }
         #endif
 
@@ -1287,16 +1303,17 @@ extension CostUsageScanner {
                 prefixIsMonotonic: migratedCached.codexTokenTimestampsMonotonic,
                 checkCancellation: context.checkCancellation,
                 workRecorder: context.workRecorder),
-            codexTokenIndexAnchor: Self.codexTokenIndexAnchor(
-                fileURL: input.fileURL,
-                indexedBytes: delta.parsedBytes,
-                expectedFile: input.metadata.readSnapshot),
+            codexTokenIndexAnchor: try Self.codexCommittedPrefixAnchor(
+                fileURL: input.fileURL, indexedBytes: delta.parsedBytes,
+                metadata: input.metadata, checkCancellation: context.checkCancellation),
             codexScanFileId: input.metadata.fileId,
             codexScanTargetSize: delta.scanTargetSize,
             codexScanComplete: delta.parsedBytes >= delta.scanTargetSize && delta.jsonlResumeState == nil,
             codexJSONLResumeState: delta.jsonlResumeState,
             codexBufferedSubagentLines: delta.bufferedSubagentLines,
-            codexBufferedUnresolvedForkLines: delta.bufferedUnresolvedForkLines)
+            codexBufferedUnresolvedForkLines: delta.bufferedUnresolvedForkLines,
+            codexWindowsSource: input.metadata.readSnapshot,
+            codexWindowsContentGeneration: cached.codexWindowsContentGeneration)
             .refreshingCodexWorkspaceUsageFingerprint()
         Self.rememberScannedCodexFile(
             input: input,
@@ -1317,9 +1334,18 @@ extension CostUsageScanner {
     {
         try context.checkCancellation?()
         // Legacy rows can combine events that the corrected parser splits; do not merge them back.
-        let replaceCachedRows = context.dropDeferredCodexRows || input.cached?.codexEventWhitespaceParsed != true
+        #if os(Windows)
+        let reusableCached = input.cached.flatMap { cached in
+            Self.windowsCodexSourceMatches(cached, metadata: input.metadata, allowAppend: true)
+                && Self.windowsCodexPrefixMatches(
+                    cached, metadata: input.metadata, checkCancellation: context.checkCancellation) ? cached : nil
+        }
+        #else
+        let reusableCached = input.cached
+        #endif
+        let replaceCachedRows = context.dropDeferredCodexRows || reusableCached?.codexEventWhitespaceParsed != true
         let migratedCached = replaceCachedRows
-            ? nil : input.cached.map { Self.codexFileUsageWithPricingMetadata($0, context: context) }
+            ? nil : reusableCached.map { Self.codexFileUsageWithPricingMetadata($0, context: context) }
         var usageDays = replaceCachedRows
             ? [:]
             : Self.fileDaysOutsideScanWindow(migratedCached?.days ?? [:], range: context.range)
@@ -1342,19 +1368,19 @@ extension CostUsageScanner {
             parentSessionId: parsed.forkedFromId,
             dependsOnParentTotals: parsed.dependsOnParentTotals,
             inheritedResolver: context.resources.inheritedResolver)
-        let cachedSessionMetadata = input.cached?.codexSession ?? CostUsageCodexSessionMetadata(
-            sessionId: input.cached?.sessionId,
-            forkedFromId: input.cached?.forkedFromId,
+        let cachedSessionMetadata = reusableCached?.codexSession ?? CostUsageCodexSessionMetadata(
+            sessionId: reusableCached?.sessionId,
+            forkedFromId: reusableCached?.forkedFromId,
             cwd: nil,
             title: nil,
             startedAtUnixMs: nil,
             latestActivityUnixMs: nil)
         let parsedCodexSession = cachedSessionMetadata.merging(parsed.codexSession)
-        let sessionId = parsedCodexSession.sessionId ?? parsed.sessionId ?? input.cached?.sessionId
-        let projectPath = parsed.projectPath ?? input.cached?.projectPath
+        let sessionId = parsedCodexSession.sessionId ?? parsed.sessionId ?? reusableCached?.sessionId
+        let projectPath = parsed.projectPath ?? reusableCached?.projectPath
         let canonicalProjectPath = parsed.projectPath.map {
             context.resources.projectPathResolver.canonicalProjectPath(for: $0)
-        } ?? input.cached?.canonicalProjectPath ?? context.resources.projectPathResolver
+        } ?? reusableCached?.canonicalProjectPath ?? context.resources.projectPathResolver
             .canonicalProjectPath(for: projectPath)
         let uniqueRows = Self.uniqueCodexRows(
             rows: parsed.rows,
@@ -1429,16 +1455,17 @@ extension CostUsageScanner {
                 parsed.tokenSnapshots,
                 checkCancellation: context.checkCancellation,
                 workRecorder: context.workRecorder),
-            codexTokenIndexAnchor: Self.codexTokenIndexAnchor(
-                fileURL: input.fileURL,
-                indexedBytes: parsed.parsedBytes,
-                expectedFile: input.metadata.readSnapshot),
+            codexTokenIndexAnchor: try Self.codexCommittedPrefixAnchor(
+                fileURL: input.fileURL, indexedBytes: parsed.parsedBytes,
+                metadata: input.metadata, checkCancellation: context.checkCancellation),
             codexScanFileId: input.metadata.fileId,
             codexScanTargetSize: parsed.scanTargetSize,
             codexScanComplete: parsed.parsedBytes >= parsed.scanTargetSize && parsed.jsonlResumeState == nil,
             codexJSONLResumeState: parsed.jsonlResumeState,
             codexBufferedSubagentLines: parsed.bufferedSubagentLines,
-            codexBufferedUnresolvedForkLines: parsed.bufferedUnresolvedForkLines)
+            codexBufferedUnresolvedForkLines: parsed.bufferedUnresolvedForkLines,
+            codexWindowsSource: input.metadata.readSnapshot,
+            codexWindowsContentGeneration: Self.newWindowsCodexContentGeneration())
             .refreshingCodexWorkspaceUsageFingerprint()
         if duplicateWithoutUniqueUsage,
            !parsed.rows.isEmpty || !Self.isCompleteEmptyCodexFragment(fileUsage)

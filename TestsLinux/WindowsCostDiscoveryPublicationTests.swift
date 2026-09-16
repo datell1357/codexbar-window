@@ -102,6 +102,11 @@ extension WindowsCostPublicationTests {
             days: ["2026-08-01": ["synthetic-cost-model": [10, 0, 1]]])
         usage.codexScanFileId = initial.fileID
         usage.codexScanComplete = true
+        usage.parsedBytes = initial.size
+        usage.codexWindowsSource = CostUsageFileReadSnapshot(native: initial)
+        usage.codexWindowsContentGeneration = UUID().uuidString
+        usage.codexTokenIndexAnchor = try #require(CostUsageScanner.codexTokenIndexAnchor(
+            fileURL: source, indexedBytes: initial.size, expectedFile: usage.codexWindowsSource))
         var cache = CostUsageCache()
         cache.files[source.path] = usage
         let observations = CostUsagePublicationObservations()

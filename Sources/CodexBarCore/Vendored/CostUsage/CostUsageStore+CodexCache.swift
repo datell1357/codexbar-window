@@ -176,7 +176,8 @@ extension CostUsageStore {
                     rowCount: previous.rowCounts[path] ?? 0,
                     tokenSnapshotsLoaded: !unloadedTokenSnapshotPaths.contains(path),
                     canReuseRows: canReuseStoredRows,
-                    eventWhitespaceParsed: baseline.decoded.files[path]?.codexEventWhitespaceParsed),
+                    eventWhitespaceParsed: baseline.decoded.files[path]?.codexEventWhitespaceParsed,
+                    windowsContentGeneration: baseline.decoded.files[path]?.codexWindowsContentGeneration),
                 calendar: calendar)
             persistedFiles += 1
             Self.saveCycleCheckpointForTesting?(persistedFiles)
@@ -323,6 +324,8 @@ extension CostUsageStore {
         var divergentTotals: Bool?
         var interleavedTotals: Bool?
         var eventWhitespaceParsed: Bool?
+        var windowsSource: CostUsageFileReadSnapshot? = nil
+        var windowsContentGeneration: String? = nil
     }
 
     private struct StoredPriorityState: Codable {
@@ -378,6 +381,7 @@ extension CostUsageStore {
         var tokenSnapshotsLoaded: Bool
         var canReuseRows: Bool
         var eventWhitespaceParsed: Bool?
+        var windowsContentGeneration: String?
     }
 
     private struct CurrentCodexRootDevice {
@@ -515,7 +519,9 @@ extension CostUsageStore {
                 codexBufferedSubagentLines: Self.bufferedLines(buffers, kind: .subagent),
                 codexBufferedUnresolvedForkLines: Self.bufferedLines(buffers, kind: .unresolvedFork),
                 codexReadRetryBufferPresence: retryPresence.map { $0[file.path] ?? .init() },
-                codexEventWhitespaceParsed: details.eventWhitespaceParsed)
+                codexEventWhitespaceParsed: details.eventWhitespaceParsed,
+                codexWindowsSource: details.windowsSource,
+                codexWindowsContentGeneration: details.windowsContentGeneration)
             cache.files[file.path] = usage
         }
         cache.days = Self.days(from: snapshot.dayAggregates)
@@ -858,6 +864,10 @@ extension CostUsageStore {
         metadata: CostUsageScanner.CodexFileMetadata,
         fileURL: URL) -> Bool
     {
+        #if os(Windows)
+        guard CostUsageScanner.windowsCodexSourceMatches(usage, metadata: metadata),
+              CostUsageScanner.windowsCodexPrefixMatches(usage, metadata: metadata) else { return false }
+        #endif
         guard usage.mtimeUnixMs == metadata.mtimeUnixMs,
               usage.size == metadata.size,
               let cachedIdentity = usage.codexScanFileId,
@@ -892,8 +902,13 @@ extension CostUsageStore {
     {
         // Persistence strips detailed payloads; the decoded baseline retains the trusted parser marker.
         let parserStateChanged = baseline.eventWhitespaceParsed != usage.codexEventWhitespaceParsed
-        let canReuseRows = baseline.canReuseRows && !parserStateChanged
-        let tokenSnapshotsLoaded = baseline.tokenSnapshotsLoaded || parserStateChanged
+        #if os(Windows)
+        let sourceGenerationChanged = baseline.windowsContentGeneration != usage.codexWindowsContentGeneration
+        #else
+        let sourceGenerationChanged = false
+        #endif
+        let canReuseRows = baseline.canReuseRows && !parserStateChanged && !sourceGenerationChanged
+        let tokenSnapshotsLoaded = baseline.tokenSnapshotsLoaded || parserStateChanged || sourceGenerationChanged
         let sourceSnapshots = usage.codexTokenSnapshots ?? []
         let sourceRows = usage.codexRows ?? []
         let snapshotCount = sourceSnapshots.count
@@ -911,7 +926,9 @@ extension CostUsageStore {
             hasSeenRawTotals: usage.seenRawTotals != nil,
             divergentTotals: usage.hasDivergentTotals,
             interleavedTotals: usage.hasInterleavedTotals,
-            eventWhitespaceParsed: usage.codexEventWhitespaceParsed)
+            eventWhitespaceParsed: usage.codexEventWhitespaceParsed,
+            windowsSource: usage.codexWindowsSource,
+            windowsContentGeneration: usage.codexWindowsContentGeneration)
         let file = CostUsageStoreFile(
             path: path,
             inode: Self.inode(from: usage.codexScanFileId),

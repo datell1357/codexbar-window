@@ -14,6 +14,9 @@ extension CostUsageScanner {
         metadata: CodexFileMetadata,
         cached: CostUsageFileUsage) -> Int64?
     {
+        #if os(Windows)
+        guard Self.windowsCodexSourceMatches(cached, metadata: metadata, allowAppend: true) else { return nil }
+        #endif
         let startOffset = cached.parsedBytes ?? cached.size
         let targetSize = cached.codexScanTargetSize ?? cached.size
         let hasMatchingResumeOffset = cached.codexJSONLResumeState?.offset == nil
@@ -41,6 +44,9 @@ extension CostUsageScanner {
         metadata: CodexFileMetadata,
         cached: CostUsageFileUsage) -> Bool
     {
+        #if os(Windows)
+        guard Self.windowsCodexSourceMatches(cached, metadata: metadata, allowAppend: true) else { return false }
+        #endif
         let startOffset = cached.parsedBytes ?? cached.size
         guard cached.codexJSONLResumeState == nil,
               cached.codexScanFileId != nil,

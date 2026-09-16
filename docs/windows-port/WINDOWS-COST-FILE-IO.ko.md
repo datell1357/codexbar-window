@@ -1,6 +1,6 @@
 # Windows 비용 파일 I/O 구현 경계
 
-IMPL-559~565. 상태: **CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION**.
+IMPL-559~566. 상태: **CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION**.
 Mac 호스트에서 소스를 작성한 기록이며 Windows 컴파일·실행·성능·파일 시스템 호환성을 입증하지 않는다. W06/W07 전체 기능 및 G0~G6 완료가 아니다.
 
 ## 파일 메타데이터와 캐시
@@ -87,10 +87,22 @@ Mac 호스트에서 소스를 작성한 기록이며 Windows 컴파일·실행·
 - 이 필드는 부모 session discovery에 추가한 것이다. 일반 usage-cache의 과거 정밀 시각/prefix, main lookback의 모든 완료 폴더 세대, junction cycle/alias는 별도 연결이 남는다. 여러 호출에 나뉜 inventory 대조가 하나의 FS snapshot이 되지는 않는다. 같은 native ID를 유지한 prefix 재작성/재성장과 append 중 과거 header 변경은 내용 해시 또는 immutable source 결합 없이는 모두 검출하지 못한다.
 - 전체 metadata I/O·tree 재탐색 비용과 실제 Windows SDK/파일 시스템 동작은 미측정·미검증이다. 전체 W06/W01~W16/G0~G6 완료가 아니다.
 
+## IMPL-566: 사용량 캐시의 native source와 전체 prefix 재사용
+
+- `CostUsageFileUsage`에 `codexWindowsSource`와 `codexWindowsContentGeneration`을 추가했다. 기존 JSON Codable과 SQLite file details에 선택 필드로 저장·복원하므로 별도 DDL 변경은 없다. 과거 payload는 필드 없는 상태로 읽히며 Windows reuse/append 증거로 사용할 수 없다. pricing/row filtering은 원본의 두 필드를 보존한다.
+- native snapshot은 ID·size·초/나노초 수정 시각을 보존하며 cache/model metadata의 ID/size도 함께 대조한다. fresh reuse는 정확한 일치, append/resume는 같은 ID의 성장 또는 정확히 같은 snapshot을 요구한다. 같은 millisecond 안의 write-time 변경도 동일한 파일로 간주하지 않는다.
+- Windows `codexTokenIndexAnchor`는 `windowStart = 0`부터 committed offset까지 SHA-256을 계산한다. 기존 `windowStart > 0` tail anchor는 대조 전에 거부한다. 64 KiB씩 읽으므로 전체 파일을 메모리에 올리지 않으며 각 chunk 사이 Task/custom 취소와 native handle/path 관측을 수행한다. 비Windows anchor 범위는 기존대로 유지한다.
+- report timer의 cache source 확인, fresh reuse, append/partial/frozen/buffered retry, parent token snapshot, logical-target 완료 및 persisted completion 대조에 연결했다. 부모 의존성 키는 정밀 시각과 전체 관측 길이의 digest를 포함하여 같은 길이/시각의 부모 재작성도 자식의 재계산을 요청한다. native/hash 실패로 key를 만들 수 없으면 throw한다.
+- full rescan에서 이전 native source와 prefix가 일치하지 않으면 이전 session/project/lineage 및 scan window 밖의 days/costs/tokens/rows를 새 파싱 결과에 섞지 않는다. 기존 global day 기여분은 파싱 성공 뒤 차감한다. full rescan에는 새 content generation을 부여하고 검증된 append에는 기존 generation을 유지한다.
+- SQLite `persistFile`은 full rescan의 generation 변경을 row/token snapshot 교체 사유로 처리한다. 같은 parsed offset와 같은 개수만 보고 이전 row 또는 token snapshot을 재사용하던 경로를 분리했다. 이 generation은 실제 filesystem version 번호가 아니라 parser 작업 계보이며 append-only 증거는 native snapshot과 prefix hash가 담당한다.
+- `WindowsCostUsageSourceTests.swift`에 정밀 시각·prefix 밖 재작성·append·legacy decode·취소·SQLite producer/consumer와 동일 개수 교체·전체 scanner의 session/history 분리 코드를 작성했다. 기존 discovery fixture의 trusted cache에도 새 evidence를 넣었다. **컴파일·테스트·fixture 실행은 하지 않았다.**
+- 전체 prefix hash는 별도 파일 읽기다. parser가 소비한 바이트 자체의 digest를 저장하거나 최종 SQLite COMMIT에서 같은 내용 버전을 다시 보장하는 구현은 아직 아니다. metadata가 원상 복구되는 동시 재작성이나 parsing/hash 사이의 내용 변경까지 검출했다고 주장하지 않는다. parent head discovery의 자체 identity 증거에도 별도 content 결합이 남는다.
+- chunk 크기는 메모리 제한이며 전체 I/O/시간 예산은 아니다. 현재 여러 재사용/진행 계산 경로에서 prefix를 다시 읽을 수 있다. 반복 hash의 공유·durable resumable validation과 scan budget 정산, 대형 파일 성능 검증은 후속 필수 작업이다. 기존 pending 상태의 과거 보고서 제공 정책과 이후 변경 관측 한계도 유지한다.
+
 ## 남은 연결
 
 1. 비페이지/legacy·부모 세션 index/캐시 부재 오류 전달은 IMPL-562에 작성했다. 대규모 재귀/단일 폴더의 bounded/pause/resume 통합, IMPL-565에서 parent discovery의 native directory/file snapshot과 legacy 재탐색을 작성했다. main lookback의 완료 폴더 세대와 junction cycle/alias 처리는 남는다. 실행 증거는 없다.
-2. IMPL-561에서 Codex/Claude expected-file과 열린 stream을 연결했다. 아직 관측 사이 truncate 후 재성장/같은 ID·size·mtime의 prefix 재작성, Claude의 이전 prefix 확인, 다른 비용 source 및 최종 게시까지 전체 버전 연결이 남는다. IMPL-563~564는 현재 호출의 source/discovery 및 관련 캐시 재사용을 게시 직전 metadata 대조에 연결한다. 이전 호출의 전체 directory 세대, 과거 정밀 시각·prefix 및 내용 불변성 증명은 아직 남는다. 메타데이터와 64 KiB anchor만으로 전체 내용 불변성을 증명하지 않는다.
+2. IMPL-561은 Codex/Claude expected-file과 열린 stream, IMPL-563~564는 source/discovery의 게시 직전 metadata, IMPL-566은 Codex usage-cache native snapshot과 전체 prefix 대조를 작성했다. parser 소비 바이트부터 최종 게시까지 내용 버전 결합, 관측 사이 재작성/재성장, Claude 이전 prefix, parent head 내용 결합, 모든 비용 source와 이전 호출의 전체 directory 세대가 남는다. hashing의 전체 I/O 예산·반복 읽기 공유도 아직 연결하지 않았다.
 3. 날짜/flat/legacy 루트, hard link/junction, case-sensitive NTFS, UNC/SMB, ReFS/FAT, 삭제 후 재생성, 장기 resume 및 모든 비용 source와의 통합. 파일 ID의 파일 시스템별 재사용·불안정성도 포함한다.
 4. 실제 Windows SDK 컴파일, x64/ARM64, native UI와 설치된 제품에서의 비용 표시, full WinUI3 제품 그래프 및 배포 준비.
 

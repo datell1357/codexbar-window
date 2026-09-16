@@ -329,6 +329,9 @@ struct CostUsageFileUsage: Codable, Equatable {
     /// Only the store's private read-view adapter uses presence without loading replay bodies.
     var codexReadRetryBufferPresence: CostUsageCodexRetryBufferPresence?
     var codexEventWhitespaceParsed: Bool? = true
+    var codexWindowsSource: CostUsageFileReadSnapshot? = nil
+    /// Changes on a full reparse so equal row counts cannot reuse a previous source generation.
+    var codexWindowsContentGeneration: String? = nil
 
     var hasBufferedCodexSubagentLines: Bool {
         self.codexReadRetryBufferPresence?.subagent ?? (self.codexBufferedSubagentLines?.isEmpty == false)

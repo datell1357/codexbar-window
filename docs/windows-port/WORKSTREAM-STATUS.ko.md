@@ -1,5 +1,7 @@
 # Windows 전용 제품 작업 현황
 
+- IMPL-566: usage-cache native snapshot·재탐색 세대의 JSON/SQLite 보존, 전체 committed-prefix 지문과 parent 의존성 키, 변경 source의 세션/과거 집계 분리 및 같은 cursor/count SQLite 행 교체 작성. 관련 Windows fixture 미실행. parser 실제 바이트→최종 게시 결합·전체 I/O 예산·main lookback 세대·junction/alias·제품 전체 구현과 실제 Windows 동작은 남음. CODE_WRITTEN_UNVERIFIED.
+
 - IMPL-565: parent discovery의 native directory/file snapshot·명시적 부재·partial head identity와 windows-v2 세대, legacy 재탐색 작성. ID→path 재사용을 실제 header 관측에 연결하고 negative cache의 파일 대조 cursor/예산 재개 및 미실행 fixture 추가. 일반 usage prefix·main lookback 세대·junction/alias·실제 Windows 동작은 남음. CODE_WRITTEN_UNVERIFIED.
 
 - IMPL-564: Codex 날짜/flat/legacy/최근 변경·페이지 탐색과 관련 캐시 재사용 관측을 게시 대조에 연결. 변경 캐시의 interval 우회/대기 queue 편입, 안정된 부재 후보 정리, page 취소·숨김 정책과 미실행 회귀 fixture 작성. 과거 directory/parent identity·prefix·전체 I/O 예산 및 실제 Windows 동작은 남음. CODE_WRITTEN_UNVERIFIED.

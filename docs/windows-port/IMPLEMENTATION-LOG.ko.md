@@ -5363,3 +5363,14 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - partial head의 교체/축소/시각/offset 불일치·legacy snapshot은 buffer를 버리고 처음부터 읽으며 reader에 metadata 단계 expectedFile을 전달한다. append-compatible 유지 정책과 전체 prefix의 미증명 경계를 문서화했다.
 - 같은 시각 폴더/파일 교체, caller ID 오인 방지, partial head 재시작, directory 시각 그대로의 append, legacy JSON round-trip·작은 budget 재개용 Windows fixture 코드를 추가했으나 실행하지 않았다.
 - 일반 usage-cache 정밀 시각/prefix·main lookback 전체 폴더 세대·junction cycle/alias·전체 I/O 예산과 실제 SDK/runtime는 남는다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·formatter·compiler/manifest·파일 fixture·Windows·실계정·CI 실행 검증 미실행. 전체 Windows 제품/W01~W16/G0~G6 완료 아님. 직전 IMPL-564는 7b5369fbf7d2b913434ba0c06aefd565864dbe39로 origin/main 푸시 확인. 이번 단위도 별도 커밋·푸시한다.
+
+
+## IMPL-566 — Bind Windows usage cache reuse to source identity and full prefix
+
+- 일반 Codex usage-cache에 native ID·size·정밀 수정 시각과 content generation을 추가하고 기존 JSON/SQLite details payload의 producer/consumer에 연결했다. 과거 필드 없는 캐시는 decode 후 Windows 재사용 증거가 없는 것으로 처리한다. row filtering에서도 두 필드를 보존한다.
+- Windows anchor를 마지막 64 KiB에서 전체 committed prefix의 streaming SHA-256으로 바꿨다. chunk 메모리는 최대 64 KiB이고 Task/custom 취소와 열린 handle/path 대조를 수행한다. legacy tail anchor는 재사용하지 않는다. 파싱 결과의 지문을 얻지 못하면 Windows 저장 경로에서 오류를 전달한다.
+- refresh interval 내 cached source·fresh reuse·append/partial/frozen/buffered retry·부모 token snapshot·완료 집계에서 native 증거와 prefix 대조를 연결했다. 부모 의존성 키에도 정밀 시각과 전체 내용 지문을 넣고 조회 실패를 전달한다.
+- full rescan에서 이전 source 증거가 맞지 않으면 과거 session/project/lineage/기간 밖 집계·행을 가져오지 않도록 작성했다. full rescan은 새 generation, append는 기존 generation을 유지한다. SQLite 저장에서 generation 변경은 cursor와 row/token count가 같아도 기존 행을 교체한다.
+- 정밀 시각 차이, 64 KiB 범위 밖 head 재작성, 정상 append/변경된 prefix, legacy JSON/tail anchor, hash 취소, SQLite 동수 행/token 교체·native 필드 복원, 전체 scanner의 같은 길이 session 재작성용 Windows fixture 코드를 추가했다. 기존 cached-source fixture도 새 증거를 명시하도록 갱신했다. 모든 fixture는 미실행이다.
+- hash는 parsing 이후 별도 읽기이며 parser가 소비한 바이트와 최종 게시를 하나의 immutable version으로 묶은 것은 아니다. 동시 writer의 관측 사이 재작성/재성장·Claude prefix·주 discovery 세대·junction/alias와 전체 hashing/metadata I/O 예산 및 실제 Windows SDK/runtime가 남는다. 전체 W01~W16/G0~G6 완료 아님.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·formatter·compiler/manifest·파일 fixture·Windows·실계정·CI 실행 검증 미실행. 직전 IMPL-565는 5680423b4ba3b42bec2ae851627375a978ed4909로 origin/main 푸시 확인. 이번 단위도 별도 커밋·푸시한다.
