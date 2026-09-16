@@ -5343,3 +5343,13 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - 합성 Windows fixture로 append/교체, 부재 재등장/폴더 교체, Claude cache/memo staging 실패 시 기존 자료 유지, Codex changed/identical save rollback·lastScan 보존·rebuild 없음 시나리오를 작성했으나 실행하지 않았다.
 - 전체 Codex 주 discovery 목록 세대/비수집 cache 재사용·prefix 재작성·directory ID/cycle·bounded discovery·기타 cost source는 남는다. 기존 retention은 별도 transaction이며 게시 후 변경에 대한 다중 파일 원복/원자적 FS snapshot 보장은 없다. 전체 Windows 제품/W01~W16/G0~G6 완료 아님.
 - CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·formatter·compiler/manifest·파일 fixture·Windows·실계정·CI 실행 검증 미실행. 직전 IMPL-562는 c6ae69be095b62161ae6806bfd69b56ef881e4b4로 origin/main 푸시 확인. 이번 단위도 별도 커밋·푸시한다.
+
+
+## IMPL-564 — Bind Codex discovery and retained sources to publication
+
+- 게시 관측 집합을 refresh-plan 이전부터 유지하고 날짜/flat/legacy/최근 변경 재귀·current/lookback 페이지·cache/parent 후보와 완료/tail 판단에 전달했다. page의 선택 파일 native snapshot 재대조, custom 취소와 실패 cursor 정리, 숨김 제외를 연결했다.
+- root/window 관련 캐시 파일의 native ID·size·기존 밀리초 mtime 차이 및 실제 부재는 refresh interval이 남아도 갱신을 요청한다. 변경 경로를 durable lookback queue에 명시적으로 추가하고 cache/과거 report 반환 직전에도 현재 관측 집합을 대조한다.
+- 이전 실행에서 남긴 후보가 안정된 부재로 관측되면 usage/alias/history를 정리하고 processed로 반환하여 queue에서 제거할 수 있게 했다. 현재 호출에서 present→missing 충돌이나 권한/I/O/wrong-kind 오류는 throw로 유지한다. 부모 폴더 유효성 확인에도 native throwing 관측을 연결했다.
+- full/paged missing root 재등장·날짜 폴더 생성, 같은 size/mtime 교체·append·부재·종류/취소, timed/byte queue의 missing 후보용 Windows fixture source를 작성했다. 전체 수집 호출과 SQLite 저장 경계 interleaving을 포함하지만 실행하지 않았다.
+- 과거 실행의 모든 directory/부모 mapping identity, 전체 prefix/정밀 시각 증거, 전체 metadata I/O 예산·재귀 paging과 기타 비용 source는 남는다. metadata 대조는 atomic filesystem snapshot이 아니며 새 파일 watcher가 아니다. 전체 Windows 제품/W01~W16/G0~G6 완료 아님.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·formatter·compiler/manifest·파일 fixture·Windows·실계정·CI 실행 검증 미실행. 직전 IMPL-563은 ccb0beb79a1e4d62a962dfbad1d387ff5b92a2fc로 origin/main 푸시 확인. 이번 단위도 별도 커밋·푸시한다.

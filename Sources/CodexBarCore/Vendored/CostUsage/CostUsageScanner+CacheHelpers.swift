@@ -753,9 +753,13 @@ extension CostUsageScanner {
     }
 
     /// File scan errors propagate; optional metadata remains available to best-effort sorting/hints.
-    static func requiredCodexFileMetadata(fileURL: URL) throws -> CodexFileMetadata {
+    static func requiredCodexFileMetadata(
+        fileURL: URL,
+        publicationObservations: CostUsagePublicationObservations? = nil) throws -> CodexFileMetadata
+    {
         #if os(Windows)
         let snapshot = try WindowsCostFileMetadata.requiredFile(at: fileURL)
+        try publicationObservations?.file(fileURL, snapshot: .init(native: snapshot))
         return CodexFileMetadata(
             path: fileURL.path, mtimeUnixMs: snapshot.mtimeUnixMs, size: snapshot.size, fileId: snapshot.fileID,
             readSnapshot: CostUsageFileReadSnapshot(native: snapshot))
@@ -765,11 +769,18 @@ extension CostUsageScanner {
     }
 
     /// A missing cached path is removable; failure to inspect it is not absence evidence.
-    static func codexFileMetadataIfPresent(fileURL: URL) throws -> CodexFileMetadata? {
+    static func codexFileMetadataIfPresent(
+        fileURL: URL,
+        publicationObservations: CostUsagePublicationObservations? = nil) throws -> CodexFileMetadata?
+    {
         #if os(Windows)
         try Task.checkCancellation()
-        guard let snapshot = try WindowsCostFileMetadata.atURL(fileURL) else { return nil }
+        guard let snapshot = try WindowsCostFileMetadata.atURL(fileURL) else {
+            try publicationObservations?.missing(fileURL)
+            return nil
+        }
         guard !snapshot.isDirectory else { throw WindowsCostSourceInventory.Failure.sourceChanged }
+        try publicationObservations?.file(fileURL, snapshot: .init(native: snapshot))
         return CodexFileMetadata(
             path: fileURL.path, mtimeUnixMs: snapshot.mtimeUnixMs, size: snapshot.size, fileId: snapshot.fileID,
             readSnapshot: CostUsageFileReadSnapshot(native: snapshot))
@@ -779,22 +790,76 @@ extension CostUsageScanner {
         #endif
     }
 
-    static func codexFileExists(fileURL: URL) throws -> Bool {
+    static func codexFileExists(
+        fileURL: URL,
+        publicationObservations: CostUsagePublicationObservations? = nil) throws -> Bool
+    {
         #if os(Windows)
-        return try self.codexFileMetadataIfPresent(fileURL: fileURL) != nil
+        return try self.codexFileMetadataIfPresent(
+            fileURL: fileURL, publicationObservations: publicationObservations) != nil
         #else
         return FileManager.default.fileExists(atPath: fileURL.path)
         #endif
     }
 
-    static func codexDirectoryExists(directoryURL: URL) throws -> Bool {
+    static func codexDirectoryExists(
+        directoryURL: URL,
+        publicationObservations: CostUsagePublicationObservations? = nil) throws -> Bool
+    {
         #if os(Windows)
         try Task.checkCancellation()
-        guard let snapshot = try WindowsCostFileMetadata.atURL(directoryURL) else { return false }
+        guard let snapshot = try WindowsCostFileMetadata.atURL(directoryURL) else {
+            try publicationObservations?.missing(directoryURL)
+            return false
+        }
         guard snapshot.isDirectory else { throw WindowsCostSourceInventory.Failure.unreadableDirectory }
+        try publicationObservations?.directory(directoryURL, snapshot: .init(native: snapshot))
         return true
         #else
         return FileManager.default.fileExists(atPath: directoryURL.path)
+        #endif
+    }
+
+    struct CodexCachedSourceChanges {
+        var files: [URL] = []
+        var requiresRefresh: Bool { !self.files.isEmpty }
+    }
+
+    /// A timer hit is not proof that retained Windows sources still match the report.
+    /// Inspect only cached sources relevant to this scan window and these configured roots.
+    /// Missing/replaced/changed sources request a refresh; inspection failures propagate.
+    static func observeCachedCodexSources(
+        cache: CostUsageCache,
+        range: CostUsageDayRange,
+        roots: [URL],
+        publicationObservations: CostUsagePublicationObservations?,
+        checkCancellation: CancellationCheck?) throws -> CodexCachedSourceChanges
+    {
+        #if os(Windows)
+        guard let publicationObservations else { return .init() }
+        var changes = CodexCachedSourceChanges()
+        for (path, usage) in cache.files.sorted(by: { $0.key < $1.key }) {
+            try checkCancellation?()
+            let url = URL(fileURLWithPath: path)
+            guard Self.isWithinCodexRoots(fileURL: url, roots: roots),
+                  usage.touchesCodexScanWindow(
+                      sinceKey: range.scanSinceKey, untilKey: range.scanUntilKey, calendar: range.calendar)
+            else { continue }
+            guard let metadata = try Self.codexFileMetadataIfPresent(
+                fileURL: url, publicationObservations: publicationObservations)
+            else {
+                changes.files.append(url)
+                continue
+            }
+            if usage.codexScanFileId != metadata.fileId || usage.size != metadata.size
+                || usage.mtimeUnixMs != metadata.mtimeUnixMs
+            {
+                changes.files.append(url)
+            }
+        }
+        return changes
+        #else
+        return .init()
         #endif
     }
 

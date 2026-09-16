@@ -1,6 +1,6 @@
 # Windows 비용 파일 I/O 구현 경계
 
-IMPL-559~563. 상태: **CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION**.
+IMPL-559~564. 상태: **CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION**.
 Mac 호스트에서 소스를 작성한 기록이며 Windows 컴파일·실행·성능·파일 시스템 호환성을 입증하지 않는다. W06/W07 전체 기능 및 G0~G6 완료가 아니다.
 
 ## 파일 메타데이터와 캐시
@@ -64,10 +64,21 @@ Mac 호스트에서 소스를 작성한 기록이며 Windows 컴파일·실행·
 - `WindowsCostPublicationTests.swift`에 append 허용/교체 거부, missing root 재등장/폴더 교체, staging 중 source 축소 시 Claude cache 및 memo의 이전 bytes/메모리 유지, Codex changed/identical save의 rollback·lastScan 보존·rebuild 없음용 합성 fixture를 작성했다. **실행하지 않았으며 통과 결과가 없다.**
 - 현재 Codex 관측 집합은 실제 연결한 수집/부모 탐색/명시적 부재 경로에 한정된다. 주 discovery의 날짜/flat/legacy/paged 전체 목록 세대와 모든 비수집 cache 재사용을 게시 경계에 묶는 작업은 남는다. 이것으로 전체 inventory·전체 prefix·모든 비용 source의 일관성을 완성했다고 판단하지 않는다. 대조의 전체 목록 순회/metadata I/O 비용과 writer lock 점유 시간도 미측정이다.
 
+## IMPL-564: 주 discovery와 캐시 재사용 관측 연결
+
+- 게시 관측 집합을 `loadCodexDaily`의 refresh-plan 생성 전부터 유지한다. 날짜별/flat/legacy/최근 변경 재귀 목록, current-window/lookback 페이지, 캐시 후보와 부모 session 후보, 완료 후보/남은 tail 판단까지 같은 집합을 전달한다. 현재 호출에서 실제로 읽은 root·날짜 폴더·파일·부재를 최종 대조에 포함한다.
+- Windows page reader는 선택된 파일의 native snapshot을 모아 페이지 반환 전에 다시 대조하고, 안정된 폴더와 파일 관측을 합쳐 반환한다. custom cancellation을 page/current/lookback 경로로 전달하고 실패 시 live cursor를 정리한다. 기존 visit limit과 최대 64개 cursor는 유지하며 숨김 attribute/점 파일 제외를 비페이지 목록과 맞춘다.
+- 설정된 root와 scan window에 관련된 캐시 파일을 재사용하기 전에 native metadata로 관측한다. 저장된 ID·size·밀리초 수정 시각과 다르거나 실제로 없으면 refresh interval이 남아 있어도 priority/usage 갱신 대상으로 삼고, 변경 경로를 durable lookback 대기 목록에 추가한다. 이미 완료된 날짜 탐색 때문에 변경된 캐시 파일이 계속 빠지는 것을 방지하도록 연결했다. 보고서 반환/과거 보고서 fallback 반환 직전에도 현재 관측 집합을 대조한다.
+- 이전 실행의 durable 후보가 없어졌다면 native 부재를 관측하고 기존 usage/alias/history 항목을 정리한 processed 후보로 넘긴다. 이에 따라 분할 수집 queue에서 제거할 수 있다. 같은 호출에서 이미 있던 것으로 관측한 파일이 사라지면 관측 집합 충돌로 실패하며, 부재가 유지되는 후속 호출에서 정리한다. 권한/공유/I/O·wrong-kind 오류는 이 경로에 들어가지 않는다.
+- 부모 색인의 기존 폴더 유효성 확인에도 Windows throwing metadata와 관측 집합을 연결했다. 이 변경은 이전에 영속화한 directory ID 증명이 아니며, 이전 mtime/count 세대의 의미를 새 파일 identity로 치환하지 않는다.
+- `WindowsCostDiscoveryPublicationTests.swift`는 기존 serialized suite에 추가했다. paged/full 수집의 missing root 재등장, 날짜 폴더 생성, 캐시의 같은 size/mtime 교체·append·부재·wrong-kind·취소, timed/byte 후보의 안정된 부재 정리용 합성 시나리오를 작성했다. source/cache/trace 경로는 fixture 폴더로 지정하며 실행 결과는 없다.
+- 범위: 현재 호출에서 관측한 입력을 묶은 것이며 이전 실행에서 완료로 남긴 모든 폴더/페이지의 세대를 영속적으로 증명하지 않는다. cache preflight는 관련 파일 목록을 순회하며 새 metadata I/O의 전체 상한/시간 예산 통합과 SQLite 저장 직전 대조 비용은 남는다. refresh interval 안에서 새로 생긴 미캐시 파일의 발견 주기를 바꾸는 watcher도 아니다.
+- 캐시와 비교하는 과거 시각은 기존 `mtimeUnixMs`다. 같은 ID·size·밀리초 시각 내 재작성, 전체 prefix 변경, truncate 후 재성장, final check 이후 변경까지 검출하는 계약은 아니다. 기존 pending/priority 실패 시 과거 보고서 제공 정책은 유지하며 이를 새로 검증한 usage로 표시한 것은 아니다. 파일 탐색 범위 연결이 W06 전체 또는 G0~G6 완료를 뜻하지 않는다.
+
 ## 남은 연결
 
 1. 비페이지/legacy·부모 세션 index/캐시 부재 오류 전달은 IMPL-562에 작성했다. 대규모 재귀/단일 폴더의 bounded/pause/resume 통합, directory ID를 포함한 영속 색인 증거 및 junction cycle/alias 처리가 남는다. 실행 증거는 없다.
-2. IMPL-561에서 Codex/Claude expected-file과 열린 stream을 연결했다. 아직 관측 사이 truncate 후 재성장/같은 ID·size·mtime의 prefix 재작성, Claude의 이전 prefix 확인, 다른 비용 source 및 최종 게시까지 전체 버전 연결이 남는다. IMPL-563은 연결한 관측 source의 게시 직전 metadata 대조이며 전체 Codex discovery/캐시 재사용과 내용 불변성 증명은 아직 포함하지 않는다. 메타데이터와 64 KiB anchor만으로 전체 내용 불변성을 증명하지 않는다.
+2. IMPL-561에서 Codex/Claude expected-file과 열린 stream을 연결했다. 아직 관측 사이 truncate 후 재성장/같은 ID·size·mtime의 prefix 재작성, Claude의 이전 prefix 확인, 다른 비용 source 및 최종 게시까지 전체 버전 연결이 남는다. IMPL-563~564는 현재 호출의 source/discovery 및 관련 캐시 재사용을 게시 직전 metadata 대조에 연결한다. 이전 호출의 전체 directory 세대, 과거 정밀 시각·prefix 및 내용 불변성 증명은 아직 남는다. 메타데이터와 64 KiB anchor만으로 전체 내용 불변성을 증명하지 않는다.
 3. 날짜/flat/legacy 루트, hard link/junction, case-sensitive NTFS, UNC/SMB, ReFS/FAT, 삭제 후 재생성, 장기 resume 및 모든 비용 source와의 통합. 파일 ID의 파일 시스템별 재사용·불안정성도 포함한다.
 4. 실제 Windows SDK 컴파일, x64/ARM64, native UI와 설치된 제품에서의 비용 표시, full WinUI3 제품 그래프 및 배포 준비.
 
