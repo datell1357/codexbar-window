@@ -603,18 +603,26 @@ extension CostUsageStore {
     private static func currentCodexRootDevices(
         rootMtimes: [String: Int64]?) -> [CurrentCodexRootDevice]
     {
-        (rootMtimes ?? [:]).keys.compactMap { path in
+        #if os(Windows)
+        // A junction may cross volumes. Windows identity must never inherit the root's volume.
+        return []
+        #else
+        return (rootMtimes ?? [:]).keys.compactMap { path in
             let rootURL = URL(fileURLWithPath: path, isDirectory: true).standardizedFileURL
             let metadata = CostUsageScanner.codexFileMetadata(fileURL: rootURL)
             guard let device = Self.device(from: metadata.fileId) else { return nil }
             return CurrentCodexRootDevice(path: Self.normalizedCodexPath(rootURL.path), device: device)
         }.sorted { $0.path.count > $1.path.count }
+        #endif
     }
 
     private static func normalizedCodexFileIdentity(
         file: CostUsageStoreFile,
         currentRootDevices: [CurrentCodexRootDevice]) -> String?
     {
+        #if os(Windows)
+        return file.scanState.fileIdentity
+        #else
         guard let identity = file.scanState.fileIdentity,
               let inode = Self.inode(from: identity)
         else { return file.scanState.fileIdentity }
@@ -630,6 +638,7 @@ extension CostUsageStore {
             return filePath.hasPrefix(prefix)
         }) else { return identity }
         return "\(root.device):\(inode)"
+        #endif
     }
 
     private static func restoredCodexScanState(
@@ -837,6 +846,10 @@ extension CostUsageStore {
         if cachedIdentity == currentIdentity {
             return true
         }
+        #if os(Windows)
+        // Partial inode matches and APFS device remapping are not Windows identity evidence.
+        return false
+        #else
         guard Self.inode(from: cachedIdentity) == Self.inode(from: currentIdentity) else {
             return false
         }
@@ -848,6 +861,7 @@ extension CostUsageStore {
             anchor,
             fileURL: fileURL,
             metadata: metadata)
+        #endif
     }
 
     private func persistFile(
@@ -1328,7 +1342,12 @@ extension CostUsageStore {
     }
 
     private static func inode(from identity: String?) -> Int64? {
-        identity?.split(separator: ":").last.flatMap { Int64($0) }
+        #if os(Windows)
+        // The full native identity is persisted in scan state; it is not a signed POSIX inode.
+        return nil
+        #else
+        return identity?.split(separator: ":").last.flatMap { Int64($0) }
+        #endif
     }
 
     private static func device(from identity: String?) -> String? {

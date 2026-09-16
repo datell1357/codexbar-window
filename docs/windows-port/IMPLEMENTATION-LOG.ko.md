@@ -5296,3 +5296,13 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - provider lock·directory pin 안에서 원본 전체의 current-user DPAPI archive와 prepared 기록을 먼저 게시한다. 기존 usage-history archive/restore-new 형식을 재사용해 실제 소비 경로를 연결했다. 새 provider 원본 게시와 완료 receipt 누락을 구분하고 실패·부분 사본을 보존한다. 이후 context/read/forecast cache를 무효화하고 새로고침한다.
 - 한국어·영어 안내, native 키보드/기본 취소·DPI/resize/개인정보 타이머, 원본을 새 폴더로 꺼내는 미실행 명령과 데이터 효과를 문서화했다. 사본 ID·정확한 보관 경로를 표시하며 앱 제거 전 외부 보관을 안내한다. 이 내부 사본이 제거용 전체 백업을 대신하지 않는다.
 - pace/plugin 전용 UI·표식 없는 과거 자료·동적 구간 분리·연결 취소/중단 조정·전체 저장소/제거 연결 및 전체 Windows 제품 구현은 남아 있다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. UI·계정·DPAPI·파일·명령·빌드·테스트·lint·compiler/manifest·Windows 실행 검증 미실행. 직전 IMPL-557은 754ffb5d8231d029a6d9e4f61e387d12b52cbe76으로 origin/main 푸시 확인. 이번 단위도 별도 커밋·푸시한다.
+
+
+## IMPL-559 — Port cost metadata and paged discovery to Windows file APIs
+
+- WindowsCostFileMetadata에 파일/폴더 native handle, 128-bit ID/volume과 명시적 미지원일 때의 별도 legacy ID 형식, 정수 FILETIME·size·disk/kind 구분을 작성했다. 정확한 부재와 권한/I/O 실패를 구분하고 Codex 개별 수집 오류를 상위로 전달한다.
+- Windows Codex cache의 fresh/append에 전체 ID 일치를 요구하고 SQLite 복원의 APFS device 교체/inode-only 인정 경로를 제외했다. 기존 ID 없는/다른 형식 cache는 재수집 대상으로 남는다. JSONL tail 크기는 실제 열린 handle에서 읽도록 작성했다.
+- Windows FindFirst/Next cursor를 page registry에 연결하고 visit budget·최대 64개 handle·취소/오류 정리·폴더 제외를 작성했다. live cursor가 없거나 snapshot/offset이 다르면 정렬되지 않은 목록의 과거 offset을 건너뛰지 않고 재열거한다. 페이지 전후 변경은 후보를 보류하며 다음 offset 0으로 남긴다.
+- Claude/Vertex cache와 report memo를 기존 Windows private/flush/replace writer에 연결했다. 게시 직전 취소 전달과 staging/destination stamp 대조를 작성하고 best-effort cache 실패는 새 memo stamp로 성공 처리하지 않는다.
+- 같은 크기/mtime 교체, stream/path ID, 한글/폴더 열거, 반복 cache 게시 및 게시 전 취소용 합성 Windows 회귀 fixture를 작성했으나 실행하지 않았다. WINDOWS-COST-FILE-IO.ko.md에 API 근거와 전체 inventory/read/publish race 및 플랫폼 검증의 남은 경계를 기록했다.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·formatter·compiler/manifest 평가·파일 I/O fixture·Windows·실계정·CI 실행 검증 미실행. 원본의 Windows 가능 전체 기능/W01~W16/G0~G6 완료를 뜻하지 않는다. 직전 IMPL-558은 36f5e964344eeb21b7b57d1ba7dccb11419ad17b로 origin/main 푸시 확인. 이번 단위도 별도 커밋·푸시한다.

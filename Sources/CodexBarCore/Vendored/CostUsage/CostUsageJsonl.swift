@@ -338,8 +338,13 @@ enum CostUsageJsonl {
         var lineStartOffset = resumeState?.lineStartOffset ?? startOffset
         var committedOffset = lineStartOffset
         var jsonTailState = resumeState?.jsonTailState ?? JSONTailState()
+        #if os(Windows)
+        // Bind the tail boundary to the actual stream, not a potentially replaced path.
+        let fileSize: Int64? = try WindowsCostFileMetadata.opened(handle).size
+        #else
         let fileSize = (try? FileManager.default.attributesOfItem(atPath: fileURL.path)[.size] as? NSNumber)?
             .int64Value
+        #endif
 
         func appendSegment(_ bytes: UnsafePointer<UInt8>, count: Int) {
             guard count > 0 else { return }

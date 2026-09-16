@@ -1,5 +1,7 @@
 # Windows 전용 제품 작업 현황
 
+- IMPL-559: 비용 파일/폴더의 Windows native ID·시각·크기 조회, Codex fresh/append/SQLite 복원의 전체 ID 대조, bounded native 페이지 탐색과 오류 전달·재열거, Claude/Vertex cache/memo 보호 교체 저장 작성. 회귀 fixture도 미실행. Claude/비페이지 inventory 오류 및 읽는 중 변경·최종 게시 결합은 남음. CODE_WRITTEN_UNVERIFIED.
+
 - IMPL-558: 복원된 first-party plan 이력의 native 묶음 선택·소유권 확인→현재 계정 연결, revision/context 재대조·변경 전 DPAPI archive·게시/receipt 실패 구분 작성. 다른 묶음/복원 제한 유지. pace/plugin 전용 UI·동적 구간 분리·취소/복구 및 실제 동작은 남음. CODE_WRITTEN_UNVERIFIED.
 
 - IMPL-557: schema 2 작업/백업/대상 경로 결합·파일별 immutable receipt와 명시적 history resume 작성. 기존 파일·표식 전체 대조, 게시 후 삭제 보호, 재개 시도별 기록 보존 및 이미 완료된 작업의 무변경 반환. legacy 작업/UI·실제 중단/복원은 남음. CODE_WRITTEN_UNVERIFIED.

@@ -2546,6 +2546,9 @@ enum CostUsageScanner {
         }
     }
 
+    #if os(Windows)
+    private typealias CodexDirectoryCursor = WindowsCostDirectoryCursor
+    #else
     #if os(Linux)
     private typealias CodexDirectoryHandle = OpaquePointer
     #else
@@ -2566,6 +2569,8 @@ enum CostUsageScanner {
         }
     }
 
+    #endif
+
     private final class CodexDirectoryCursorRegistry: @unchecked Sendable {
         private let lock = NSLock()
         private var cursors: [String: CodexDirectoryCursor] = [:]
@@ -2575,12 +2580,67 @@ enum CostUsageScanner {
             resumeOffset: Int64,
             visitLimit: Int,
             filter: (String) -> Bool,
-            workRecorder: CodexScanWorkRecorder?) -> CodexDirectoryPage
+            workRecorder: CodexScanWorkRecorder?) throws -> CodexDirectoryPage
         {
             self.lock.lock()
             defer { self.lock.unlock() }
 
             let path = directoryURL.path
+            #if os(Windows)
+            do {
+                try Task.checkCancellation()
+                guard let snapshot = try WindowsCostFileMetadata.atURL(directoryURL) else {
+                    self.cursors.removeValue(forKey: path)
+                    return CodexDirectoryPage(files: [], nextOffset: nil, visits: 0)
+                }
+                guard snapshot.isDirectory else { throw CocoaError(.fileReadUnknown) }
+                let resumeOffset = max(0, resumeOffset)
+                if resumeOffset == 0 || self.cursors[path]?.logicalOffset != resumeOffset
+                    || self.cursors[path]?.snapshot != snapshot
+                {
+                    self.cursors.removeValue(forKey: path)
+                }
+                if self.cursors[path] == nil {
+                    // Keep handle use bounded. An evicted/restarted enumeration replays from zero:
+                    // FindFirstFile ordering is unspecified, so a persisted count cannot be skipped.
+                    if self.cursors.count >= 64, let evicted = self.cursors.keys.first {
+                        self.cursors.removeValue(forKey: evicted)
+                    }
+                    self.cursors[path] = try WindowsCostDirectoryCursor(directoryURL: directoryURL, snapshot: snapshot)
+                }
+                guard let cursor = self.cursors[path] else { throw CocoaError(.fileReadUnknown) }
+                var files: [URL] = []
+                var visits = 0
+                var completed = false
+                while visits < visitLimit {
+                    guard let entry = try cursor.next() else {
+                        completed = true
+                        break
+                    }
+                    guard entry.name != ".", entry.name != ".." else { continue }
+                    cursor.logicalOffset += 1
+                    visits += 1
+                    workRecorder?.recordCodexDiscoveryVisit()
+                    guard !entry.isDirectory, filter(entry.name) else { continue }
+                    files.append(directoryURL.appendingPathComponent(entry.name, isDirectory: false))
+                }
+                try Task.checkCancellation()
+                guard let observed = try WindowsCostFileMetadata.atURL(directoryURL) else {
+                    throw CocoaError(.fileReadNoSuchFile)
+                }
+                guard observed == snapshot else {
+                    self.cursors.removeValue(forKey: path)
+                    // Keep the work charged to this page, but do not publish a changed listing.
+                    return CodexDirectoryPage(files: [], nextOffset: 0, visits: visits)
+                }
+                if completed { self.cursors.removeValue(forKey: path) }
+                return CodexDirectoryPage(
+                    files: files, nextOffset: completed ? nil : cursor.logicalOffset, visits: visits)
+            } catch {
+                self.cursors.removeValue(forKey: path)
+                throw error
+            }
+            #else
             let resumeOffset = max(0, resumeOffset)
             if resumeOffset == 0 || (self.cursors[path]?.logicalOffset ?? 0) > resumeOffset {
                 self.cursors.removeValue(forKey: path)
@@ -2616,15 +2676,26 @@ enum CostUsageScanner {
                 files: files,
                 nextOffset: max(resumeOffset, cursor.logicalOffset),
                 visits: visits)
+            #endif
         }
 
         func reset(under root: URL) {
-            let roots = Set([root.standardizedFileURL.path, root.resolvingSymlinksInPath().standardizedFileURL.path])
+            func pathKey(_ path: String) -> String {
+                #if os(Windows)
+                return path.replacingOccurrences(of: "\\", with: "/")
+                #else
+                return path
+                #endif
+            }
+            let roots = Set([root.standardizedFileURL.path, root.resolvingSymlinksInPath().standardizedFileURL.path]
+                .map(pathKey))
             self.lock.lock()
             defer { self.lock.unlock() }
-            for path in self.cursors.keys where roots.contains(where: { path == $0 || path.hasPrefix($0 + "/") }) {
-                self.cursors.removeValue(forKey: path)
+            let removedPaths = self.cursors.keys.filter { path in
+                let key = pathKey(path)
+                return roots.contains { key == $0 || key.hasPrefix($0.hasSuffix("/") ? $0 : $0 + "/") }
             }
+            for path in removedPaths { self.cursors.removeValue(forKey: path) }
         }
     }
 
@@ -2635,12 +2706,12 @@ enum CostUsageScanner {
         resumeOffset: Int64,
         visitLimit: Int,
         filter: (String) -> Bool,
-        workRecorder: CodexScanWorkRecorder?) -> CodexDirectoryPage
+        workRecorder: CodexScanWorkRecorder?) throws -> CodexDirectoryPage
     {
         guard visitLimit > 0 else {
             return CodexDirectoryPage(files: [], nextOffset: max(0, resumeOffset), visits: 0)
         }
-        return self.codexDirectoryCursorRegistry.page(
+        return try self.codexDirectoryCursorRegistry.page(
             directoryURL: directoryURL,
             resumeOffset: resumeOffset,
             visitLimit: visitLimit,
@@ -2658,9 +2729,16 @@ enum CostUsageScanner {
         visitLimit: Int,
         preferNewest: Bool,
         calendar: Calendar,
-        workRecorder: CodexScanWorkRecorder?) -> CodexPartitionPage
+        workRecorder: CodexScanWorkRecorder?) throws -> CodexPartitionPage
     {
-        guard FileManager.default.fileExists(atPath: root.path) else {
+        #if os(Windows)
+        let rootSnapshot = try WindowsCostFileMetadata.atURL(root)
+        if let rootSnapshot, !rootSnapshot.isDirectory { throw CocoaError(.fileReadUnknown) }
+        let rootExists = rootSnapshot != nil
+        #else
+        let rootExists = FileManager.default.fileExists(atPath: root.path)
+        #endif
+        guard rootExists else {
             return CodexPartitionPage(files: [], nextDayKey: nil, nextDirectoryOffset: nil, visits: 0)
         }
         let calendar = CostUsageDayRange.localGregorianCalendar(matching: calendar)
@@ -2690,7 +2768,7 @@ enum CostUsageScanner {
                 .appendingPathComponent(String(format: "%04d", comps.year ?? 1970), isDirectory: true)
                 .appendingPathComponent(String(format: "%02d", comps.month ?? 1), isDirectory: true)
                 .appendingPathComponent(String(format: "%02d", comps.day ?? 1), isDirectory: true)
-            let page = Self.listCodexDirectoryPage(
+            let page = try Self.listCodexDirectoryPage(
                 directoryURL: dayDirectory,
                 resumeOffset: directoryOffset,
                 visitLimit: remainingVisits,
@@ -2819,7 +2897,7 @@ enum CostUsageScanner {
         remainingDiscoveryVisits: inout Int,
         excludedPendingPathKeys: Set<String>,
         workRecorder: CodexScanWorkRecorder?,
-        state: inout CostUsageCodexActiveLookbackState)
+        state: inout CostUsageCodexActiveLookbackState) throws
     {
         let rootPath = Self.codexResolvedPath(root)
         state.currentWindowNextDayKeyByRoot = state.currentWindowNextDayKeyByRoot ?? [:]
@@ -2830,7 +2908,7 @@ enum CostUsageScanner {
         var discoveredFilePaths: [String] = []
 
         if !completedPartitionRoots.contains(rootPath), remainingDiscoveryVisits > 0 {
-            let page = Self.listCodexSessionFilesByDatePartitionPage(
+            let page = try Self.listCodexSessionFilesByDatePartitionPage(
                 root: root,
                 scanSinceKey: range.scanSinceKey,
                 scanUntilKey: range.scanUntilKey,
@@ -2861,7 +2939,7 @@ enum CostUsageScanner {
            !completedFlatRoots.contains(rootPath),
            remainingDiscoveryVisits > 0
         {
-            let page = Self.listCodexDirectoryPage(
+            let page = try Self.listCodexDirectoryPage(
                 directoryURL: root,
                 resumeOffset: state.currentWindowFlatDirectoryOffsetByRoot?[rootPath] ?? 0,
                 visitLimit: remainingDiscoveryVisits,
@@ -2947,7 +3025,7 @@ enum CostUsageScanner {
         remainingDiscoveryVisits: inout Int,
         excludedPendingPathKeys: Set<String>,
         workRecorder: CodexScanWorkRecorder?,
-        state: inout CostUsageCodexActiveLookbackState)
+        state: inout CostUsageCodexActiveLookbackState) throws
     {
         let rootPath = Self.codexResolvedPath(root)
         var completedRootPaths = Set(state.completedRootPaths)
@@ -2961,7 +3039,7 @@ enum CostUsageScanner {
             range.scanSinceKey,
             addingDays: -1,
             calendar: range.calendar) ?? lookbackSinceKey
-        let page = Self.listCodexSessionFilesByDatePartitionPage(
+        let page = try Self.listCodexSessionFilesByDatePartitionPage(
             root: root,
             scanSinceKey: lookbackSinceKey,
             scanUntilKey: lookbackUntilKey,
@@ -5225,7 +5303,7 @@ enum CostUsageScanner {
         loadHistoryBeforeFreshness: Bool = false) throws -> CodexFileScanOutcome
     {
         try context.checkCancellation?()
-        let metadata = Self.codexFileMetadata(fileURL: fileURL)
+        let metadata = try Self.requiredCodexFileMetadata(fileURL: fileURL)
         defer {
             context.resources.cachePathAliasIndex.update(
                 path: metadata.path,
@@ -5848,7 +5926,7 @@ enum CostUsageScanner {
             var remainingDiscoveryVisits = Self.codexCatchUpScanCandidateLimit
             for root in plan.roots {
                 if shouldPageDiscovery {
-                    Self.advanceCodexCurrentWindow(
+                    try Self.advanceCodexCurrentWindow(
                         root: root,
                         range: range,
                         preferNewest: options.preferNewestCodexSessionsFirst,
@@ -5890,7 +5968,7 @@ enum CostUsageScanner {
                     activeLookbackState.nextDirectoryOffsetByRoot?.removeValue(forKey: rootPath)
                 } else if let coldCacheLookbackStart {
                     if shouldPageDiscovery {
-                        Self.advanceCodexActiveLookbackPage(
+                        try Self.advanceCodexActiveLookbackPage(
                             root: root,
                             range: range,
                             modifiedSince: coldCacheLookbackStart,

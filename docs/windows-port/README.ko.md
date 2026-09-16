@@ -2,6 +2,8 @@
 
 현재 구현은 [IMPLEMENTATION-LOG](IMPLEMENTATION-LOG.ko.md)에서 이어간다. 2026-09-12 사용자가 구현과 30분 진행 보고/계속 루틴을 승인했다. 각 구현 묶음은 관련 기록과 함께 커밋·푸시하고 30분 보고에 게시 결과를 포함한다. macOS에서는 검증을 실행하지 않는다. 계획·감사 문서의 과거 검증 기록과 새 미검증 구현을 구분한다.
 
+비용 파일 I/O의 Windows 구현 범위와 미완료 경계는 [Windows 비용 파일 I/O](WINDOWS-COST-FILE-IO.ko.md)에 기록한다.
+
 현재 계획은 [2026-09-12 Windows 전용 개정](WINDOWS-PORT-PLAN.ko.md)이다. **Mac에서 제공되는 기능 중 Windows에서 구현 가능한 기능 전부**가 필수 범위다. Mac/Linux 제품 유지 자체는 목표에서 제외했다. Swift 공용 로직 재사용과 Mac 전용 host 제거는 별개의 판단이다.
 
 - [3차 검토와 조치 — 현재](TERTIARY-AUDIT-2026-09-12.ko.md) / [행동 계약](BEHAVIOR-CONTRACTS-2026-09-12.ko.md)

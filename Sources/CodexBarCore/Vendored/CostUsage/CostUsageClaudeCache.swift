@@ -11,6 +11,12 @@ struct CostUsageClaudeFileStamp: Equatable, Sendable, Codable {
     }
 
     static func read(at url: URL) -> Self? {
+        #if os(Windows)
+        guard let snapshot = try? WindowsCostFileMetadata.requiredFile(at: url) else { return nil }
+        return Self(
+            fileID: snapshot.fileID, size: snapshot.size,
+            modifiedSeconds: snapshot.modifiedSeconds, modifiedNanoseconds: snapshot.modifiedNanoseconds)
+        #else
         var info = stat()
         guard url.path.withCString({ fstatat(AT_FDCWD, $0, &info, 0) }) == 0 else { return nil }
         guard info.st_mode & mode_t(S_IFMT) == mode_t(S_IFREG) else { return nil }
@@ -26,6 +32,7 @@ struct CostUsageClaudeFileStamp: Equatable, Sendable, Codable {
             size: Int64(info.st_size),
             modifiedSeconds: modifiedSeconds,
             modifiedNanoseconds: modifiedNanoseconds)
+        #endif
     }
 }
 
@@ -179,6 +186,10 @@ final class CostUsageClaudeReportMemo: @unchecked Sendable {
             reportKey: entry.reportKey,
             report: entry.report)
         guard let data = try? JSONEncoder().encode(envelope) else { return }
+        #if os(Windows)
+        // Persisted memo is optional; a failed publication must not replace the previous file.
+        try? WindowsCredentialFileWriter.writePrivate(data, to: url)
+        #else
         let directory = url.deletingLastPathComponent()
         try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let temporaryURL = directory.appendingPathComponent(".claude-report-memo-\(UUID().uuidString).tmp")
@@ -190,6 +201,7 @@ final class CostUsageClaudeReportMemo: @unchecked Sendable {
         } catch {
             try? FileManager.default.removeItem(at: temporaryURL)
         }
+        #endif
     }
 }
 
@@ -358,6 +370,26 @@ enum CostUsageClaudeCacheIO {
         #endif
         guard let data = try? JSONEncoder().encode(cache) else { return nil }
         try checkCancellation?()
+        #if os(Windows)
+        var cancellationFailure: (any Error)?
+        var stagedStamp: CostUsageClaudeFileStamp?
+        do {
+            try WindowsCredentialFileWriter.writePrivate(data, to: url) { stagedURL in
+                do { try checkCancellation?() } catch {
+                    cancellationFailure = error
+                    throw error
+                }
+                stagedStamp = CostUsageClaudeFileStamp.read(at: stagedURL)
+                guard stagedStamp != nil else { throw CocoaError(.fileReadUnknown) }
+            }
+            // Do not associate this report with a different writer's replacement cache.
+            guard let stagedStamp, CostUsageClaudeFileStamp.read(at: url) == stagedStamp else { return nil }
+            return stagedStamp
+        } catch {
+            if let cancellationFailure { throw cancellationFailure }
+            return nil
+        }
+        #else
         let directory = url.deletingLastPathComponent()
         try? FileManager.default.createDirectory(
             at: directory,
@@ -376,5 +408,6 @@ enum CostUsageClaudeCacheIO {
             try? FileManager.default.removeItem(at: temporaryURL)
             return nil
         }
+        #endif
     }
 }

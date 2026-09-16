@@ -3,7 +3,7 @@ import Foundation
 import Musl
 #elseif canImport(Glibc)
 import Glibc
-#else
+#elseif canImport(Darwin)
 import Darwin
 #endif
 
@@ -710,6 +710,13 @@ extension CostUsageScanner {
 
     static func codexFileMetadata(fileURL: URL) -> CodexFileMetadata {
         let path = fileURL.path
+        #if os(Windows)
+        guard let snapshot = try? WindowsCostFileMetadata.atURL(fileURL) else {
+            return CodexFileMetadata(path: path, mtimeUnixMs: 0, size: 0, fileId: nil)
+        }
+        return CodexFileMetadata(
+            path: path, mtimeUnixMs: snapshot.mtimeUnixMs, size: snapshot.size, fileId: snapshot.fileID)
+        #else
         var info = stat()
         guard path.withCString({ fstatat(AT_FDCWD, $0, &info, 0) }) == 0 else {
             return CodexFileMetadata(path: path, mtimeUnixMs: 0, size: 0, fileId: nil)
@@ -726,6 +733,18 @@ extension CostUsageScanner {
             mtimeUnixMs: modifiedSeconds * 1000 + modifiedNanoseconds / 1_000_000,
             size: Int64(info.st_size),
             fileId: "\(info.st_dev):\(info.st_ino)")
+        #endif
+    }
+
+    /// File scan errors propagate; optional metadata remains available to best-effort sorting/hints.
+    static func requiredCodexFileMetadata(fileURL: URL) throws -> CodexFileMetadata {
+        #if os(Windows)
+        let snapshot = try WindowsCostFileMetadata.requiredFile(at: fileURL)
+        return CodexFileMetadata(
+            path: fileURL.path, mtimeUnixMs: snapshot.mtimeUnixMs, size: snapshot.size, fileId: snapshot.fileID)
+        #else
+        return self.codexFileMetadata(fileURL: fileURL)
+        #endif
     }
 
     static func dropCachedCodexFile(
@@ -769,6 +788,9 @@ extension CostUsageScanner {
         state: inout CodexScanState) throws -> Bool
     {
         guard let cached = input.cached, cached.codexEventWhitespaceParsed == true else { return false }
+        #if os(Windows)
+        guard let identity = input.metadata.fileId, cached.codexScanFileId == identity else { return false }
+        #endif
         let needsSessionId = cached.sessionId == nil
         let parsedBytes = cached.parsedBytes ?? cached.size
         let targetSize = cached.codexScanTargetSize ?? cached.size
@@ -911,6 +933,9 @@ extension CostUsageScanner {
         try context.checkCancellation?()
         guard let cached = input.cached, cached.codexEventWhitespaceParsed == true,
               cached.sessionId != nil, !context.forceFullScan else { return false }
+        #if os(Windows)
+        guard let identity = input.metadata.fileId, cached.codexScanFileId == identity else { return false }
+        #endif
         guard !Self.cachedCodexFileNeedsPriorityRescan(cached, context: context) else { return false }
         if Self.cachedCodexRowsNeedIdentityRescan(cached) {
             return false
