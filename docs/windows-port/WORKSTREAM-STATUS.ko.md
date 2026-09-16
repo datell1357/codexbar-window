@@ -1,5 +1,7 @@
 # Windows 전용 제품 작업 현황
 
+- IMPL-572: 부모 세션 폴더 탐색을 native page/opaque handle token으로 분할하고 256회 visit 상한·기존 예산·1-unit 진행, partial page JSON/SQLite 보존 및 handle 소실 시 재열거 작성. EOF 전 missing 완료 제한과 eviction/취소/재개 fixture 미실행. recursive tree paging·전체 I/O/시간 budget·membership과 전체 제품 구현·Windows 검증은 남음. CODE_WRITTEN_UNVERIFIED.
+
 - IMPL-571: recursive source와 parent discovery에 native directory ID 방문 기록·junction cycle 제한·alias 관측 보존, hard-link 대표 선택 및 Claude/Vertex 다중 roots 중복 집계 방지 작성. 재개/retarget/실제 link 생성 fixture는 소스만 추가. 전체 I/O 예산·native tree paging·membership/특수 reparse와 전체 제품 구현·Windows 검증은 남음. CODE_WRITTEN_UNVERIFIED.
 
 - IMPL-570: 주 Codex 탐색 폴더/부재 관측을 완료 queue와 별개로 SQLite에 보존하고 refresh 전 native 재대조·legacy/변경 시 날짜/page 초기화·pending 보존·갱신 주기 우회 작성. 이전 refresh 관측의 최종 게시 포함 및 다중 root 페이지 예산 fixture 미실행. membership/전체 I/O 예산·tree paging·junction/alias와 전체 제품 구현·Windows 검증은 남음. CODE_WRITTEN_UNVERIFIED.

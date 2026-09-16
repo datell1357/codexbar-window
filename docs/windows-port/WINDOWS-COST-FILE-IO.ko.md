@@ -1,6 +1,6 @@
 # Windows 비용 파일 I/O 구현 경계
 
-IMPL-559~571. 상태: **CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION**.
+IMPL-559~572. 상태: **CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION**.
 Mac 호스트에서 소스를 작성한 기록이며 Windows 컴파일·실행·성능·파일 시스템 호환성을 입증하지 않는다. W06/W07 전체 기능 및 G0~G6 완료가 아니다.
 
 ## 파일 메타데이터와 캐시
@@ -157,9 +157,20 @@ Mac 호스트에서 소스를 작성한 기록이며 Windows 컴파일·실행·
 - `WindowsCostTraversalTests.swift`에 junction ancestor cycle, excluded directory/eligible alias, retarget과 hard-link publication, 여러 Claude roots의 unkeyed row 중복, 작은 budget→JSON checkpoint→parent 탐색 재개를 작성했다. fixture는 임시 폴더에 native link를 생성하는 코드이며 link를 먼저 해제한 경우에만 재귀 정리한다. API 실패는 skip하지 않는다. **컴파일·실행하지 않았고 필요한 Windows 파일 시스템/권한도 확인하지 않았다.**
 - 단일 native listing과 전체 queue·snapshot map은 아직 bulk 구조다. total metadata/content I/O·시간 budget, durable tree paging·hash 재개, membership 증거 및 junction 특성/alias 경로 선택과 모든 비용 source의 실제 통합 검증은 남는다. native ID가 안정적으로 제공되는 범위를 넘어서는 특수 reparse·네트워크 파일 시스템의 모든 동작을 보장하지 않는다.
 
+## IMPL-572: 부모 탐색의 제한된 native directory page
+
+- `WindowsCostDirectoryPages`는 최대 64개의 live native cursor를 토큰별로 관리한다. continuation의 version/path/native snapshot/offset/jsonl count와 registry의 같은 token/handle이 모두 일치해야 이어 읽는다. 같은 경로의 독립 reader도 다른 token을 쓰므로 서로의 열거 위치를 가져오지 않는다.
+- disk에 저장된 token은 프로세스 핸들을 복원하지 않는다. registry에 없거나 퇴출됐거나 metadata가 바뀌면 offset/count를 0부터 시작한다. Windows native 열거 순서가 정렬 계약이 없으므로 새로운 FindFirstFile handle에서 이전 숫자만큼 skip하지 않는다. 기존 후보는 경로 dedup을 거쳐 보존한다.
+- page의 visit limit는 숨김/비JSONL/dot 항목과 EOF 확인을 포함한 native next 시도를 제한한다. 반환 entry 배열도 이 상한 안에 있다. 선택 entry는 regular/directory 종류와 snapshot을 재대조하고 directory 자체도 마지막에 대조하여 ledger에 넣는다. 취소·I/O/source 변경이면 cursor를 제거하고 실패를 전달한다.
+- 부모 탐색은 한 page에 최대 256회 시도를 사용하며 각 시도를 기존 discovery admission에 정산한다. preflight admission에 첫 시도를 포함하여 1-unit budget도 cursor가 앞으로 나아가도록 했다. 이는 논리 visit 예산이며 모든 Win32 호출 수/실제 byte·시간 예산을 완전히 계산했다는 뜻은 아니다.
+- `CostUsageCodexSessionDiscovery.windowsDirectoryPage`는 path/snapshot/token/offset/file count를 기존 JSON/SQLite payload에 보존한다. partial page는 발견한 file/directory 후보를 추가하고 deferred로 반환한다. directory EOF 이전에는 final directory stamp/visited-ID/negative lookup 완료를 표시하지 않는다. 다음 호출은 이미 발견한 file head와 다음 page를 처리한다.
+- 현재 프로세스에서 cursor를 유지하면 작은 budget으로 나눠 큰 폴더를 계속 탐색할 수 있다. 강제 종료/반복 eviction이면 첫 page부터 재열거하므로, 프로세스가 매 page마다 종료되어도 전진을 보장하는 stable ordered spool/checkpoint 구현은 아니다. 완료/부재/오류 시 핸들을 닫고 root inventory reset 경로도 registry에 연결했다.
+- `WindowsCostDirectoryPagesTests.swift`에 제한된 page의 전체 커버리지, 재시작/eviction/독립 reader token, admission/취소·same-time directory 교체, SQLite payload→handle loss→parent lookup 및 1-unit budget 진행을 작성했다. **컴파일·테스트·Windows 실행은 하지 않았다.**
+- main date/flat pager는 기존 별도 registry를 사용하며 recursive Claude/legacy tree는 여전히 bulk 목록이다. 전체 pending tree/정렬·메타데이터 재관측·내용 지문·최종 publication의 총 I/O/벽시계 예산과 durable ordered enumeration은 남는다. folder membership 지문과 실제 대규모 Windows 성능/중단 복원 증거도 없다.
+
 ## 남은 연결
 
-1. 비페이지/legacy·부모 세션 index/캐시 부재 오류 전달은 IMPL-562에 작성했다. 대규모 재귀/단일 폴더의 bounded/pause/resume 통합, IMPL-565에서 parent discovery의 native directory/file snapshot과 legacy 재탐색을 작성했다. IMPL-570에서 main lookback의 관측 directory native snapshot/부재를 별도 metadata로 보존했다. IMPL-571에서 recursive/parent directory ID 방문 제어·alias 관측과 Claude 다중 root 파일 중복 방지를 작성했다. directory membership 증거·bounded tree paging·파일 시스템별 alias/reparse 동작 검증은 남는다. 실행 증거는 없다.
+1. 비페이지/legacy·부모 세션 index/캐시 부재 오류 전달은 IMPL-562에 작성했다. 대규모 재귀/단일 폴더의 bounded/pause/resume 통합, IMPL-565에서 parent discovery의 native directory/file snapshot과 legacy 재탐색을 작성했다. IMPL-570에서 main lookback의 관측 directory native snapshot/부재를 별도 metadata로 보존했다. IMPL-571에서 recursive/parent directory ID 방문 제어·alias 관측과 Claude 다중 root 파일 중복 방지를 작성했다. IMPL-572에서 parent directory page와 live-token 재개를 작성했다. directory membership 증거·recursive tree paging/프로세스 재시작 전진·파일 시스템별 alias/reparse 동작 검증은 남는다. 실행 증거는 없다.
 2. IMPL-561은 expected-file/열린 stream, IMPL-563~564는 게시 직전 metadata, IMPL-566은 usage native snapshot/전체 prefix, IMPL-567은 parser 실제 바이트/게시 내용 비교, IMPL-568은 parent head/negative discovery proof, IMPL-569는 Claude/Vertex parser·cache/memo proof를 작성했다. immutable multi-file snapshot, 관측 뒤 변경, 기타 비용 source와 directory membership 증거가 남는다. 주 lookback의 과거 native directory 관측은 IMPL-570에서 연결했다. hashing과 discovery 대조의 전체 I/O 예산·durable resume·경계 간 반복 읽기 공유도 후속 작업이다.
 3. 날짜/flat/legacy 루트, hard link/junction, case-sensitive NTFS, UNC/SMB, ReFS/FAT, 삭제 후 재생성, 장기 resume 및 모든 비용 source와의 통합. 파일 ID의 파일 시스템별 재사용·불안정성도 포함한다.
 4. 실제 Windows SDK 컴파일, x64/ARM64, native UI와 설치된 제품에서의 비용 표시, full WinUI3 제품 그래프 및 배포 준비.

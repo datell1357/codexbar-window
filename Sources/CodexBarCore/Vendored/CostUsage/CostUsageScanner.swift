@@ -26,6 +26,9 @@ enum CostUsageScanner {
 
     static func resetCodexDirectoryCursorsForTesting(under root: URL) {
         self.codexDirectoryCursorRegistry.reset(under: root)
+        #if os(Windows)
+        WindowsCostDirectoryPages.shared.reset(under: root)
+        #endif
     }
 
     final class CodexSessionHeadParseObserverStore: @unchecked Sendable {
@@ -1412,7 +1415,10 @@ enum CostUsageScanner {
         #endif
 
         private var hasScannedInventory: Bool {
-            self.discovery.headScan == nil
+            #if os(Windows)
+            guard self.discovery.windowsDirectoryPage == nil else { return false }
+            #endif
+            return self.discovery.headScan == nil
                 && self.discovery.nextFileIndex >= self.discovery.filePaths.count
                 && self.discovery.nextDirectoryIndex >= self.discovery.directoryPaths.count
         }
@@ -1549,6 +1555,9 @@ enum CostUsageScanner {
         }
 
         private func enumerateNextDirectory() throws -> Bool {
+            #if os(Windows)
+            return try self.enumerateNextWindowsDirectory()
+            #else
             let admittedWork: Int64
             if let scanBudget = self.scanBudget {
                 switch scanBudget.admit(workBytes: 1) {
@@ -1566,34 +1575,6 @@ enum CostUsageScanner {
             let path = self.discovery.directoryPaths[self.discovery.nextDirectoryIndex]
             let directoryURL = URL(fileURLWithPath: path, isDirectory: true)
             var jsonlFileCount = 0
-            #if os(Windows)
-            let observed = try WindowsCostFileMetadata.atURL(directoryURL)
-            if let observed, !observed.isDirectory { throw WindowsCostSourceInventory.Failure.unreadableDirectory }
-            let directorySnapshot: WindowsCostFileMetadata.Snapshot?
-            if let observed, self.windowsEnumeratedDirectoryIDs.contains(observed.fileID) {
-                // A junction to an ancestor or another visited folder has no new subtree.
-                // Keep its own path observation so retargeting cannot silently preserve missing IDs.
-                directorySnapshot = observed
-                try self.publicationObservations?.directory(directoryURL, snapshot: .init(native: observed))
-            } else {
-                let listing = try WindowsCostDirectoryInventory.read(
-                    in: directoryURL, checkCancellation: self.checkCancellation,
-                    publicationObservations: self.publicationObservations)
-                guard listing?.directorySnapshot == observed else { throw WindowsCostSourceInventory.Failure.sourceChanged }
-                directorySnapshot = listing?.directorySnapshot
-                for entry in (listing?.entries ?? []).sorted(by: { $0.url.path < $1.url.path }) {
-                    try self.checkCancellation?()
-                    if entry.snapshot.isDirectory {
-                        self.enqueueDirectory(entry.url)
-                    } else {
-                        jsonlFileCount += 1
-                        self.enqueueFile(entry.url)
-                    }
-                }
-                if let directorySnapshot { self.windowsEnumeratedDirectoryIDs.insert(directorySnapshot.fileID) }
-            }
-            let modificationTime = directorySnapshot?.mtimeUnixMs ?? 0
-            #else
             let items = (try? FileManager.default.contentsOfDirectory(
                 at: directoryURL,
                 includingPropertiesForKeys: [.isDirectoryKey, .isRegularFileKey],
@@ -1609,17 +1590,76 @@ enum CostUsageScanner {
                 }
             }
             let modificationTime = CostUsageScanner.codexFileMetadata(fileURL: directoryURL).mtimeUnixMs
-            #endif
-            var stamp = CostUsageCodexSessionDiscovery.DirectoryStamp(
+            let stamp = CostUsageCodexSessionDiscovery.DirectoryStamp(
                 mtimeUnixMs: modificationTime, jsonlFileCount: jsonlFileCount)
-            #if os(Windows)
-            stamp.windowsSnapshot = directorySnapshot.map { .init(native: $0) }
-            stamp.windowsObservedMissing = directorySnapshot == nil
-            #endif
             self.discovery.directoryStamps[path] = stamp
             self.discovery.nextDirectoryIndex += 1
             return !self.scanBudgetExhausted()
+            #endif
         }
+
+        #if os(Windows)
+        private func enumerateNextWindowsDirectory() throws -> Bool {
+            guard let preflightWork = self.admitInventoryValidation() else { return false }
+            let path = self.discovery.directoryPaths[self.discovery.nextDirectoryIndex]
+            let directoryURL = URL(fileURLWithPath: path, isDirectory: true)
+            let observed: WindowsCostFileMetadata.Snapshot?
+            do {
+                defer { self.completeInventoryValidation(preflightWork) }
+                try self.checkCancellation?()
+                observed = try WindowsCostFileMetadata.atURL(directoryURL)
+                if let observed, !observed.isDirectory { throw WindowsCostSourceInventory.Failure.unreadableDirectory }
+            }
+            let directorySnapshot: WindowsCostFileMetadata.Snapshot?
+            let jsonlFileCount: Int
+            if let observed, self.windowsEnumeratedDirectoryIDs.contains(observed.fileID) {
+                directorySnapshot = observed
+                jsonlFileCount = 0
+                WindowsCostDirectoryPages.shared.reset(under: directoryURL)
+                try self.publicationObservations?.directory(directoryURL, snapshot: .init(native: observed))
+            } else {
+                // The preflight admission also buys the first enumeration attempt. Even a
+                // one-unit refresh budget must advance instead of paying preflight forever.
+                var firstVisitAdmitted = true
+                let page = try WindowsCostDirectoryPages.shared.read(
+                    in: directoryURL, continuation: self.discovery.windowsDirectoryPage,
+                    visitLimit: 256,
+                    admitVisit: {
+                        if firstVisitAdmitted {
+                            firstVisitAdmitted = false
+                            return true
+                        }
+                        guard let work = self.admitInventoryValidation() else { return false }
+                        self.completeInventoryValidation(work)
+                        return true
+                    },
+                    checkCancellation: self.checkCancellation,
+                    publicationObservations: self.publicationObservations)
+                guard page.directorySnapshot == observed else { throw WindowsCostSourceInventory.Failure.sourceChanged }
+                for entry in page.entries.sorted(by: { $0.url.path < $1.url.path }) {
+                    try self.checkCancellation?()
+                    if entry.snapshot.isDirectory { self.enqueueDirectory(entry.url) }
+                    else { self.enqueueFile(entry.url) }
+                }
+                self.discovery.windowsDirectoryPage = page.continuation
+                if page.continuation != nil {
+                    // A page is candidate progress, never proof that this directory is complete.
+                    // The next refresh processes those candidates before reading another page.
+                    return false
+                }
+                directorySnapshot = page.directorySnapshot
+                jsonlFileCount = page.jsonlFileCount
+                if let directorySnapshot { self.windowsEnumeratedDirectoryIDs.insert(directorySnapshot.fileID) }
+            }
+            self.discovery.windowsDirectoryPage = nil
+            self.discovery.directoryStamps[path] = CostUsageCodexSessionDiscovery.DirectoryStamp(
+                mtimeUnixMs: directorySnapshot?.mtimeUnixMs ?? 0, jsonlFileCount: jsonlFileCount,
+                windowsSnapshot: directorySnapshot.map { .init(native: $0) },
+                windowsObservedMissing: directorySnapshot == nil)
+            self.discovery.nextDirectoryIndex += 1
+            return !self.scanBudgetExhausted()
+        }
+        #endif
 
         private func rebuildDiscoveryPathIndexes() {
             self.knownFilePaths = Set(self.discovery.filePaths)
@@ -6543,7 +6583,12 @@ enum CostUsageScanner {
                 range: scanRange, publicationObservations: publicationObservations,
                 checkCancellation: checkCancellation)
             if directoryInventoryChanged {
-                for root in roots { Self.codexDirectoryCursorRegistry.reset(under: root) }
+                for root in roots {
+                    Self.codexDirectoryCursorRegistry.reset(under: root)
+                    #if os(Windows)
+                    WindowsCostDirectoryPages.shared.reset(under: root)
+                    #endif
+                }
             }
         } else {
             directoryInventoryChanged = false

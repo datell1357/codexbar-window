@@ -5430,3 +5430,14 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - native junction/hard-link를 임시 fixture tree에 만드는 테스트 소스를 추가했다. ancestor cycle 종료, 허용 alias/제외 폴더, alias retarget 후 게시 거부, hard-link 대표/관측 보존, 여러 Claude roots의 중복 방지, 작은 budget 이후 부모 negative/positive lookup 재개를 작성했으나 컴파일·실행하지 않았다. link API 실패를 skip하지 않으며 실제 Windows fixture 권한/파일 시스템 전제는 미확인이다.
 - native listing/queue는 여전히 단일 폴더·전체 tree를 bulk 메모리로 보유한다. total metadata/content I/O·시간 budget/분할 재개, 폴더 membership 지문, 파일 시스템별 ID 안정성·특수 reparse/UNC/비NTFS 및 모든 source와의 통합 실행은 후속 작업이다. 전체 W01~W16/G0~G6 완료 아님.
 - CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·formatter·compiler/manifest·파일 fixture·Windows·실계정·CI 실행 검증 미실행. 직전 IMPL-570은 6073bfc17bbaa7ca8d0ac926219b82b898bdd97e로 origin/main 푸시 확인. 이번 단위도 별도 커밋·푸시한다.
+
+
+## IMPL-572 — Page Windows parent-session directory enumeration
+
+- native directory page registry를 추가했다. directory snapshot·경로·opaque cursor ID·실제 handle의 offset/file count가 모두 맞을 때만 다음 페이지를 이어 읽는다. registry는 최대 64개 handle을 보유하고, 재시작/퇴출/오래된 token/metadata 변경이면 새 handle에서 처음부터 열거한다. 저장된 숫자 offset만큼 건너뛰지 않는다.
+- 페이지는 모든 native next 시도에 visit 상한을 적용하며 숨김/비JSONL/dot 항목도 작업 예산을 소비한다. 선택된 entry와 디렉터리의 metadata 재관측·publication ledger·Task/custom 취소를 연결하고 오류 시 해당 handle을 버린다. 다른 reader의 같은 경로/offset으로 cursor를 공유하지 않는다.
+- Windows 부모 세션 탐색의 bulk directory read를 최대 256회 열거 시도/page로 변경했다. 기존 discovery 작업 예산에도 각 시도를 연결하며 1-unit 예산이 preflight만 반복하지 않도록 첫 시도를 포함한다. partial page는 후보만 추가하고 deferred로 반환하며 EOF 이전에는 directory stamp/visited ID/negative 완료를 만들지 않는다.
+- partial directory page 상태를 기존 discovery JSON/SQLite payload에 선택 필드로 저장한다. 이전 후보 queue와 head proof는 유지되며 caller 재구성 후 같은 live handle이면 다음 페이지, handle이 없어졌으면 재열거+기존 경로 dedup으로 재개한다. active directory inventory 변경과 테스트 정리의 cursor reset도 새 registry에 연결했다.
+- native page 방문 상한·전체 결과, token 없는 handle 재시작, eviction/독립 reader, admission/취소·같은 시각 폴더 교체, SQLite page round-trip·handle 소실 후 부모 missing 완료 및 1-unit 예산 진행용 합성 Windows fixture source를 작성했다. 컴파일·실행하지 않았다.
+- 이 변경은 parent directory 한 페이지의 열거량과 handle 수를 제한한다. main current/lookback pager와는 별도 registry이며 recursive Claude/legacy source의 bulk tree, 전체 metadata/content I/O·벽시계/동시 파일 변경·정렬·최종 대조 budget, 프로세스를 반복 종료해도 항상 앞으로 나아가는 durable ordered inventory는 아직 남는다. 전체 W01~W16/G0~G6 완료 아님.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·formatter·compiler/manifest·파일 fixture·Windows·실계정·CI 실행 검증 미실행. 직전 IMPL-571은 04e590241008a05d6fe2054c26d087ceb7abed7c로 origin/main 푸시 확인. 이번 단위도 별도 커밋·푸시한다.

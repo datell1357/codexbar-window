@@ -114,6 +114,7 @@ struct CostUsageCodexSessionDiscovery: Codable, Equatable {
     var validationDirectoryIndex: Int
     var isComplete: Bool
     var validationFileIndex: Int? = nil
+    var windowsDirectoryPage: CostUsageWindowsDirectoryPageState? = nil
 }
 
 struct CostUsageCodexPreviousReport: Codable, Equatable {
