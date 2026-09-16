@@ -7,6 +7,8 @@ package enum WindowsRecoveryProtection {
     package enum Purpose: String {
         case configuration = "CodexBar.Windows.ConfigurationRecovery.v1"
         case localSettings = "CodexBar.Windows.LocalSettingsRecovery.v1"
+        case historyManifest = "CodexBar.Windows.UsageHistoryManifest.v1"
+        case historyFile = "CodexBar.Windows.UsageHistoryFile.v1"
     }
     private typealias Failure = WindowsConfigurationBackup.Failure
 

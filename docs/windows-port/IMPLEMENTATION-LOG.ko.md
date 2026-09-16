@@ -5255,3 +5255,14 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - config-only 명령의 path/단일 handle/bounded/CreateNew 파일 처리와 DPAPI 변환을 공통 helper로 분리했다. 기존 archive의 magic/entropy 목적은 유지하며 local-settings 형식은 분리한다. 부분 출력 폴더/복구 사본은 자동 삭제하지 않는다.
 - LOCAL-SETTINGS-RECOVERY.ko.md에 실제 포함 저장소, 명령/교체 선택, 실패 및 복구 범위, 원본 API 근거와 남은 GUI/installer/전체 데이터 보존 연결을 기록했다. MSIX 제거의 backup NOT_CREATED 정책은 유지한다.
 - CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·compiler/manifest 평가·DPAPI·UserDefaults·명령·설치/제거·Windows 실행 검증 미실행. 직전 IMPL-553은 3542ef1bd1264b90334b13ecba8cb6f5c1b62abf로 origin/main 푸시 확인. IMPL-554도 별도 커밋·푸시 결과를 Git에서 보고한다.
+
+
+## IMPL-555 — Preserve raw Windows usage history files in encrypted archives
+
+- runtime의 실제 defaultDirectory/defaultFileURL을 사용해 plan-utilization-history의 provider JSON과 usage-history.jsonl 원본 바이트를 수집하도록 작성했다. 계정/legacy/unknown 필드를 모델로 재직렬화하거나 손상 행을 버리지 않으며 빈 파일/부재를 구분한다. 비용 SQLite/WAL·외부 session 로그·웹 cache/credential은 포함하지 않는다.
+- bounded provider 목록과 32 MiB 파일/512 MiB 전체 한도, 원본 재관측, file별 DPAPI payload, archive/entry/kind/provider ID 및 원본/암호문 크기·SHA256에 결합한 최종 암호화 manifest를 연결했다. incomplete archive/다른 archive chunk/중복 provider/미지원 source 항목을 조용히 건너뛰지 않는다. 데이터가 아닌 비어 있는 lock만 제외한다.
+- 앱 시작 전 --history-backup/--history-restore-new/--history-restore-missing 명령을 profile exclusive lease 아래 연결했다. 새 폴더 복원은 활성화하지 않으며, current 복원은 --restore-to-current-history 선택과 모든 대상 부재를 요구한다. provider store lock·CreateNew로 기존/동시 생성 파일을 덮지 않고 다른 provider 파일은 보존한다.
+- current 복원 전 암호화된 계획과 준비 기록, 완료/부분 실패 기록을 연결했다. 실패 시 게시된 파일을 자동 삭제/rollback하거나 기존 파일을 skip해 재시도하지 않는다. 부분 재개와 raw/legacy 이력의 소유권 검토·복원 후 runtime migration 경계는 남아 있다. 파일 게시 성공이 계정 소유권/의미 검증을 증명하지 않는다.
+- 공통 recovery I/O에 bounded directory 열거, 존재하는 regular directory pin, 누락 directory 생성 및 명시적인 빈 파일 보존을 추가했다. 기존 config/settings 명령의 빈 입력 거절 의미는 유지한다. archive/operation output은 live history data root 밖으로 제한하되 MSIX 전체 삭제 영향까지 증명하지 않는다.
+- USAGE-HISTORY-RECOVERY.ko.md와 관련 문서에 포함/제외 저장소, 명령, 암호화 directory 형식과 한도, 부분 실패 및 남은 범위를 기록했다. MSIX 제거의 backup NOT_CREATED 정책은 유지했다.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·compiler/manifest 평가·DPAPI·명령·파일/계정/Windows 실행 검증 미실행. IMPL-554는 67f79aa87b368d21ee15ac6327275b516dd5b3cf로 푸시 확인. IMPL-555도 별도 커밋·푸시 결과를 Git에서 보고한다.

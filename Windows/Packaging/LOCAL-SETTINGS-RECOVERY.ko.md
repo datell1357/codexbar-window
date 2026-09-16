@@ -4,6 +4,8 @@ IMPL-554에서 설정 파일, `CodexBar.Windows` persistent preferences, 위젯 
 
 ## 포함하는 저장소
 
+[사용량 이력 보존·복원](USAGE-HISTORY-RECOVERY.ko.md)은 별도 directory archive/명령으로 추가했다. 여기의 local-settings archive에 이력을 암묵적으로 포함하거나 기존 형식을 바꾸지 않는다. 비용 SQLite 등은 계속 별도다.
+
 | 저장소 | 백업/복원 계약 |
 | --- | --- |
 | 선택된 config | `CodexBarConfigStore.defaultURL()`의 기존 환경변수/기본 경로 선택을 사용한다. 없는 파일은 없다는 상태로 보존한다. 기존 파일은 읽기/형식/보호 실패를 부재로 바꾸지 않는다. |

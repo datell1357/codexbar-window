@@ -1,5 +1,7 @@
 # Windows 배포물 조립
 
+[사용량 이력 보존·복원](USAGE-HISTORY-RECOVERY.ko.md)은 provider별 JSON과 pace JSONL을 파일별 암호화하고 새 폴더 또는 기존 파일이 없는 현재 이력 위치로 복원하도록 작성했다. 비용 SQLite/credential/전체 제거 연동과 실제 동작은 여전히 미검증·미완료다.
+
 [로컬 설정 묶음 백업·복원](LOCAL-SETTINGS-RECOVERY.ko.md)은 config/Windows preferences/위젯 설정을 포함하며 새 폴더 복원과 명시적인 preferences 교체를 제공하도록 작성했다. 교체 전 백업 및 앱/복구 공유 잠금을 연결했으며 실제 실행과 전체 데이터 보존/제거 연동은 미완료다.
 
 [설정 파일 암호화 백업·새 파일 복원 명령](CONFIGURATION-RECOVERY.ko.md)을 추가했다. 설정 파일 하나만 다루며 전체 앱 데이터 보존이나 설치/제거 연동은 아직 완료되지 않았다. 구현 코드는 미실행·미검증이다.

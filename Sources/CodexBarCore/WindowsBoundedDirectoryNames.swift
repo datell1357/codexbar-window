@@ -3,10 +3,10 @@ import Foundation
 import WinSDK
 
 /// Enumerates one directory without recursion; failures never return a partial listing.
-enum WindowsBoundedDirectoryNames {
-    enum Failure: Error { case unavailable, oversized, invalidPath, timedOut }
+package enum WindowsBoundedDirectoryNames {
+    package enum Failure: Error { case unavailable, oversized, invalidPath, timedOut }
 
-    static func read(_ directory: URL, maximumEntries: Int = 100_000, deadline: Date) throws -> [String] {
+    package static func read(_ directory: URL, maximumEntries: Int = 100_000, deadline: Date) throws -> [String] {
         try self.check(deadline)
         let path = directory.path
         guard directory.isFileURL, NSString(string: path).isAbsolutePath,

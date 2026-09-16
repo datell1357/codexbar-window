@@ -63,7 +63,7 @@ enum WindowsRecoveryFileAccess {
         return try body()
     }
 
-    static func read(_ url: URL, limit: Int) throws -> Data {
+    static func read(_ url: URL, limit: Int, allowEmpty: Bool = false) throws -> Data {
         guard limit > 0, limit <= 64 * 1024 * 1024 else { throw Failure.invalidInput }
         return try self.withPinnedParents(url) {
             let opened = url.path.withCString(encodedAs: UTF16.self) {
@@ -80,7 +80,8 @@ enum WindowsRecoveryFileAccess {
             guard GetFileType(handle) == DWORD(FILE_TYPE_DISK), GetFileInformationByHandle(handle, &info) != 0,
                   info.dwFileAttributes & DWORD(FILE_ATTRIBUTE_DIRECTORY | FILE_ATTRIBUTE_REPARSE_POINT) == 0,
                   info.nNumberOfLinks == 1, info.nFileSizeHigh == 0,
-                  info.nFileSizeLow > 0, UInt64(info.nFileSizeLow) <= UInt64(limit) else { throw Failure.invalidInput }
+                  (allowEmpty || info.nFileSizeLow > 0),
+                  UInt64(info.nFileSizeLow) <= UInt64(limit) else { throw Failure.invalidInput }
             var result = Data()
             var buffer = [UInt8](repeating: 0, count: 65536)
             while true {
@@ -106,9 +107,31 @@ enum WindowsRecoveryFileAccess {
         }
     }
 
-    static func readIfPresent(_ url: URL, limit: Int) throws -> Data? {
-        do { return try self.read(url, limit: limit) }
+    static func readIfPresent(_ url: URL, limit: Int, allowEmpty: Bool = false) throws -> Data? {
+        do { return try self.read(url, limit: limit, allowEmpty: allowEmpty) }
         catch Failure.missingInput { return nil }
+    }
+
+    static func directoryNamesIfPresent(_ directory: URL, maximumEntries: Int) throws -> [String]? {
+        do {
+            return try self.withDirectory(directory) {
+                try WindowsBoundedDirectoryNames.read(directory, maximumEntries: maximumEntries,
+                    deadline: Date().addingTimeInterval(15))
+            }
+        } catch Failure.missingInput { return nil }
+    }
+
+    static func withDirectory<T>(_ directory: URL, body: () throws -> T) throws -> T {
+        try self.withPinnedParents(directory.appendingPathComponent("recovery-root"), body: body)
+    }
+
+    /// Existing directories are pinned and checked; files/reparse points are not accepted as stores.
+    static func withDirectoryCreatingIfMissing<T>(_ directory: URL, body: () throws -> T) throws -> T {
+        try self.withPinnedParents(directory) {
+            let created = directory.path.withCString(encodedAs: UTF16.self) { CreateDirectoryW($0, nil) }
+            if created == 0, GetLastError() != DWORD(ERROR_ALREADY_EXISTS) { throw Failure.unavailableOutput }
+            return try self.withDirectory(directory, body: body)
+        }
     }
 
     /// All children are fixed by the caller, never interpreted as paths supplied by an archive.
