@@ -45,6 +45,11 @@ struct WindowsSpendContinuationTests {
                 return Scan(inputs: [], subscriptionNames: [:], sourceFailures: [.init(sourceID: "local",
                     provider: .claude, localInventoryPending: true, discoveredFiles: 9, completedFiles: 3)], capturedAt: now)
             }
+            if self.resumes == 2 {
+                return Scan(inputs: [], subscriptionNames: [:], sourceFailures: [.init(sourceID: "local",
+                    provider: .claude, localInventoryPending: true, discoveredFiles: 9, completedFiles: 9,
+                    verifyingContent: true)], capturedAt: now)
+            }
             return Scan(inputs: [WindowsSpendContinuationTests.input("local", tokens: 20, now: now)],
                         subscriptionNames: [:], capturedAt: now)
         }
@@ -68,21 +73,23 @@ struct WindowsSpendContinuationTests {
         #expect(initial.sourceFailures.first?.localInventoryPending == true)
         let reading = try await session.resume(days: 30, sourceIDs: ["local"])
         #expect(reading.sourceFailures.first?.completedFiles == 3)
+        let verifying = try await session.resume(days: 30, sourceIDs: ["local"])
+        #expect(verifying.sourceFailures.first?.verifyingContent == true)
         let completed = try await session.resume(days: 30, sourceIDs: ["local"])
         #expect(completed.sourceFailures.isEmpty)
         #expect(completed.inputs.first { $0.id == "remote" }?.snapshot.last30DaysTokens == 8)
         #expect(completed.inputs.first { $0.id == "local" }?.snapshot.last30DaysTokens == 25)
         let requests = await native.requests
-        #expect(requests.count == 3)
+        #expect(requests.count == 4)
         #expect(requests[0].0 == nil)
-        #expect(requests[1].0 == ["local"] && requests[2].0 == ["local"])
+        #expect(requests[1].0 == ["local"] && requests[2].0 == ["local"] && requests[3].0 == ["local"])
         #expect(Set(requests.map { $0.1 }).count == 1)
         #expect(supplements.value == 1)
         do {
             _ = try await session.resume(days: 30, sourceIDs: ["remote"])
             Issue.record("Completed remote sources must not be admitted as continuations")
         } catch WindowsSpendCollectionSession.Failure.invalidContinuation { }
-        #expect(await native.requests.count == 3)
+        #expect(await native.requests.count == 4)
     }
 
     private actor Gate {

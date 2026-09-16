@@ -5491,3 +5491,17 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - 상태: CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·정적 QA 스크립트·UI·provider·원격 Windows·CI는 수행하지 않았다.
 
 - 직전 IMPL-575는 589215bbc043efb0287c0c14459ea6f7f3f806c0로 origin/main 푸시 확인. 이번 단위도 별도 커밋·푸시하며 자동화 설정은 변경하지 않았다.
+
+## IMPL-577: 최종 내용 대조의 분할과 publication 간 재사용
+
+- `WindowsCostReadLease`에 Win32 `FSCTL_REQUEST_OPLOCK`의 read-only R 요청을 작성했다. 파일은 read/write/delete 공유로 열며 write/handle caching이나 break ACK는 요청하지 않는다. `ERROR_IO_PENDING`만 granted로 취급하고 event가 signal/error 상태이면 근거를 재사용하지 않는다. OVERLAPPED/input/output 버퍼는 요청 완료까지 보유하고 취소 완료를 별도 utility queue에서 기다린 뒤 해제한다. 진행/cleanup을 합한 native 요청은 전역 256개까지다.
+- `WindowsCostPublicationVerifier`는 read lease가 유지되는 파일의 모든 read/committed anchor를 SHA로 분할 대조한다. Claude/Vertex parser/prefix 복구 후 남은 8 MiB 예산을 사용하며 metadata entry 방문은 기본 64개/호출이다. 완료한 내용 대조와 lease를 cache 저장 전·staged rename 전·memo 저장·반환 경계에 같은 객체로 전달한다. 각 경계에서 경로/native ID/폴더/부재를 다시 확인하고 전후 lease가 유효해야 내용 재읽기를 줄인다. metadata만으로 내용 대조를 통과시키지 않는다.
+- 비용 파일 proof가 64개 이하인 collection만 live lease 경로를 시도한다. 지원되지 않는 파일 시스템/원격 경로, 요청 불가, capacity 제한, 진행 중/확인 후 break는 기존 전체 content check로 전환한다. 이 fallback은 합계 확인을 생략하지 않으며, 해당 경우의 최종 읽기는 아직 byte budget 밖이다. 처음부터 오래 유지되는 read/write 공유 조건과 기존 로그 append 허용을 독점 lock으로 대체하지 않는다.
+- `WindowsCostPublicationVerifications`는 최대 4개 pending context를 single-use UUID와 정확한 entry/anchor binding으로 보관한다. disk checkpoint에는 token만 저장한다. 프로세스 재시작/축출/잘못된 binding이면 최종 대조를 처음부터 다시 수행한다. 최종 proof 목록을 canonical 형태로 구성해 어떤 slice에서 파일을 마쳤는지에 따라 token binding이 달라지지 않도록 했다.
+- 파일 parsing 완료 후에도 검증이 남으면 기존 완료 usage를 유지하고 `localContentVerificationPending`으로 자동 재개한다. 화면은 읽기 완료 파일 수와 함께 최종 내용 확인 중임을 표시한다. pending native 값이나 OpenCodeX 보충 값을 완료값으로 중복 게시하지 않는 기존 collection 경계를 유지한다.
+- `WindowsCostPublicationVerifierTests`에 지원 시 분할/반복 게시, 같은 stamp 재작성, 진행 중 변경, fallback/capacity/token binding 및 취소 fixture를 작성했다. Claude staged checkpoint와 Windows 자동 continuation fixture에도 최종 대조 단계를 연결했다. 실제 oplock 동작, 버퍼 수명, filesystem fallback, WinSDK 형식/컴파일 및 UI는 검증하지 않았다.
+- **남은 범위:** 64개 초과/remote/unsupported/활발한 쓰기에서의 bounded 최종 비교, 전체 metadata/publication sweep·JSON checkpoint 저장·메모리 예산, memo-hit와 다른 비용 source의 이 경로 통합, 반복 프로세스 종료 중 durable 전진·directory membership, 계정에 묶인 이전값 복원 및 전체 W01~W16/G0~G6. 이 경로는 immutable multi-file snapshot이나 실제 Windows 배포 준비 완료를 입증하지 않는다.
+- 구현 근거: [FSCTL_REQUEST_OPLOCK](https://learn.microsoft.com/en-us/windows/win32/api/winioctl/ni-winioctl-fsctl_request_oplock), [REQUEST_OPLOCK_INPUT_BUFFER](https://learn.microsoft.com/en-us/windows/win32/api/winioctl/ns-winioctl-request_oplock_input_buffer), [CancelIoEx](https://learn.microsoft.com/en-us/windows/win32/api/ioapiset/nf-ioapiset-cancelioex). 공식 API 문서 열람만 했으며 실행 검증은 하지 않았다.
+- 상태: CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·정적 QA 스크립트·UI·provider·원격 Windows·CI는 수행하지 않았다.
+
+- 직전 IMPL-576은 2d82369e61ba01e215bfb8116d34cfd02173c641로 origin/main 푸시 확인. 이번 단위도 별도 커밋·푸시하며 자동화 설정은 변경하지 않았다.

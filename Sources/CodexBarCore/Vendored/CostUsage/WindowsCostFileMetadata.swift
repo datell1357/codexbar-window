@@ -58,6 +58,12 @@ enum WindowsCostFileMetadata {
         return snapshot
     }
 
+    static func openedNativeFile(_ handle: HANDLE) throws -> Snapshot {
+        let snapshot = try self.read(handle)
+        guard !snapshot.isDirectory else { throw CocoaError(.fileReadUnknown) }
+        return snapshot
+    }
+
     private static func read(_ handle: HANDLE) throws -> Snapshot {
         guard GetFileType(handle) == DWORD(FILE_TYPE_DISK) else { throw CocoaError(.fileReadUnsupportedScheme) }
         var information = BY_HANDLE_FILE_INFORMATION()

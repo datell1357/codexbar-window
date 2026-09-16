@@ -70,11 +70,14 @@ struct WindowsClaudeContentCheckpointTests {
                 do { return try self.load(options, provider: provider) }
                 catch CostUsageError.localInventoryPending { }
                 catch CostUsageError.localContentPending { }
+                catch CostUsageError.localContentVerificationPending { }
             }
             throw FixtureFailure.didNotComplete
         }
 
         func cleanup() {
+            WindowsCostPublicationVerifications.shared.discard(self.cache().windowsContent?.verificationToken)
+            WindowsCostPublicationVerifications.shared.discard(self.cache(.vertexai).windowsContent?.verificationToken)
             WindowsCostDirectoryPages.shared.reset(under: self.root)
             WindowsCostContentContinuations.shared.reset(under: self.root)
             try? FileManager.default.removeItem(at: self.root)
@@ -114,6 +117,11 @@ struct WindowsClaudeContentCheckpointTests {
                 lastOffset = partial.readBytes
                 // Drop process-local directory handles; persisted body state remains authoritative.
                 WindowsCostDirectoryPages.shared.reset(under: fixture.logs)
+            } catch CostUsageError.localContentVerificationPending {
+                let cache = fixture.cache(provider)
+                #expect(cache.windowsContent?.nextFile == 1)
+                #expect(cache.windowsContent?.partial == nil)
+                #expect(cache.usage.files == before.usage.files)
             }
         }
         #expect(completed)

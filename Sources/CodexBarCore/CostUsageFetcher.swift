@@ -14,6 +14,7 @@ public enum CostUsageError: LocalizedError, Sendable {
     /// Local discovery has persisted a bounded slice; callers should retry without treating it as zero usage.
     case localInventoryPending(discoveredFiles: Int)
     case localContentPending(completedFiles: Int, totalFiles: Int)
+    case localContentVerificationPending(totalFiles: Int)
     case localInventoryCheckpointUnavailable
     case cursorPaginationIncomplete(expected: Int?, received: Int)
     case cursorPaginationInconsistent(expected: Int, received: Int)
@@ -31,6 +32,8 @@ public enum CostUsageError: LocalizedError, Sendable {
             return "Local cost discovery is still in progress (\(discoveredFiles) files found). Refresh to continue."
         case let .localContentPending(completedFiles, totalFiles):
             return "Local cost collection is still in progress (\(completedFiles) of \(totalFiles) files read). Refresh to continue."
+        case let .localContentVerificationPending(totalFiles):
+            return "Local cost collection is checking the content of \(totalFiles) files before updating totals. Refresh to continue."
         case .localInventoryCheckpointUnavailable:
             return "Local cost collection could not save its progress. Previous cost data has been preserved."
         case let .cursorPaginationIncomplete(expected, received):

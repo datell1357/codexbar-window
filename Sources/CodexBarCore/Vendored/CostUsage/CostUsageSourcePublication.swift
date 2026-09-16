@@ -11,13 +11,16 @@ struct CostUsageSourcePublication: Sendable {
         case missing
     }
 
-    struct Entry: Sendable {
+    struct Entry: Equatable, Sendable {
         let url: URL
         let expectation: Expectation
         var contentAnchors: [CostUsageCodexTokenIndexAnchor] = []
     }
 
     let entries: [Entry]
+    #if os(Windows)
+    var windowsVerifier: WindowsCostPublicationVerifier? = nil
+    #endif
 
     /// Only staged, non-report checkpoints may defer byte verification. Final cache/memo
     /// publication must retain the original ledger and all of its consumed-prefix anchors.
@@ -27,26 +30,17 @@ struct CostUsageSourcePublication: Sendable {
 
     func check(checkCancellation: (() throws -> Void)? = nil) throws {
         #if os(Windows)
+        if let windowsVerifier,
+           try windowsVerifier.canReuse(entries: self.entries, checkCancellation: checkCancellation) { return }
         for entry in self.entries {
             try Task.checkCancellation()
             try checkCancellation?()
-            let current = try WindowsCostFileMetadata.atURL(entry.url)
-            switch entry.expectation {
-            case .missing:
-                guard current == nil else { throw Failure.sourceChangedOrUnavailable }
-            case let .file(expected):
-                guard let current, !current.isDirectory,
-                      Self.allowsAppend(CostUsageFileReadSnapshot(native: current), from: expected)
-                else { throw Failure.sourceChangedOrUnavailable }
+            if let current = try Self.checkMetadata(entry) {
                 do {
                     try WindowsCostContentRead.validate(
                         entry.contentAnchors, fileURL: entry.url,
-                        expectedFile: CostUsageFileReadSnapshot(native: current), checkCancellation: checkCancellation)
+                        expectedFile: current, checkCancellation: checkCancellation)
                 } catch WindowsCostContentRead.Failure.digestMismatch {
-                    throw Failure.sourceChangedOrUnavailable
-                }
-            case let .directory(expected):
-                guard let current, current.isDirectory, CostUsageFileReadSnapshot(native: current) == expected else {
                     throw Failure.sourceChangedOrUnavailable
                 }
             }
@@ -54,6 +48,26 @@ struct CostUsageSourcePublication: Sendable {
         #endif
         try checkCancellation?()
     }
+
+    #if os(Windows)
+    static func checkMetadata(_ entry: Entry) throws -> CostUsageFileReadSnapshot? {
+        let current = try WindowsCostFileMetadata.atURL(entry.url)
+        switch entry.expectation {
+        case .missing:
+            guard current == nil else { throw Failure.sourceChangedOrUnavailable }
+        case let .file(expected):
+            guard let current, !current.isDirectory,
+                  Self.allowsAppend(CostUsageFileReadSnapshot(native: current), from: expected)
+            else { throw Failure.sourceChangedOrUnavailable }
+            return CostUsageFileReadSnapshot(native: current)
+        case let .directory(expected):
+            guard let current, current.isDirectory, CostUsageFileReadSnapshot(native: current) == expected else {
+                throw Failure.sourceChangedOrUnavailable
+            }
+        }
+        return nil
+    }
+    #endif
 
     var isCurrent: Bool {
         do { try self.check(); return true } catch { return false }

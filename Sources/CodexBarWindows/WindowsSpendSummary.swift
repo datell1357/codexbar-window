@@ -40,6 +40,9 @@ enum WindowsSpendSummary {
                     } else if let count = failure.discoveredFiles {
                         rows.append("Files discovered so far: \(count).")
                     }
+                    if failure.verifyingContent {
+                        rows.append("Checking file content before updating totals; the collection is not complete yet.")
+                    }
                     if let captured = snapshot.retainedSourceDates[failure.sourceID] {
                         rows.append("Previous value retained (stale), captured: "
                             + captured.formatted(date: .abbreviated, time: .shortened))

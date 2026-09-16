@@ -544,6 +544,7 @@ extension CostUsageScanner {
         var sourceFileIDs: [String: String]
         var windowsReadProofs: [String: CostUsageClaudeReadProof]
         var partial: CostUsageClaudeContentCheckpoint.File?
+        var completedPublication: CostUsageSourcePublication?
         let publicationObservations: CostUsagePublicationObservations?
         let range: CostUsageDayRange
         let providerFilter: ClaudeLogProviderFilter
@@ -782,6 +783,7 @@ extension CostUsageScanner {
         } else {
             WindowsCostDirectoryPages.shared.discard(artifact.windowsInventory?.page)
             WindowsCostContentContinuations.shared.discard(artifact.windowsContent?.partial?.contentContinuation)
+            WindowsCostPublicationVerifications.shared.discard(artifact.windowsContent?.verificationToken)
             artifact.windowsContent = nil
             state = fresh
         }
@@ -807,11 +809,13 @@ extension CostUsageScanner {
         } catch WindowsCostSourceInventory.Failure.sourceChanged {
             WindowsCostDirectoryPages.shared.discard(state.page)
             WindowsCostContentContinuations.shared.discard(artifact.windowsContent?.partial?.contentContinuation)
+            WindowsCostPublicationVerifications.shared.discard(artifact.windowsContent?.verificationToken)
             artifact.windowsContent = nil
             state = fresh
         } catch CostUsageSourcePublication.Failure.sourceChangedOrUnavailable {
             WindowsCostDirectoryPages.shared.discard(state.page)
             WindowsCostContentContinuations.shared.discard(artifact.windowsContent?.partial?.contentContinuation)
+            WindowsCostPublicationVerifications.shared.discard(artifact.windowsContent?.verificationToken)
             artifact.windowsContent = nil
             state = fresh
         }
@@ -847,6 +851,7 @@ extension CostUsageScanner {
             checkpoint = previous
         } else {
             WindowsCostContentContinuations.shared.discard(artifact.windowsContent?.partial?.contentContinuation)
+            WindowsCostPublicationVerifications.shared.discard(artifact.windowsContent?.verificationToken)
         }
         let state = ClaudeScanState(
             cache: checkpoint.cache, sourceFileIDs: checkpoint.sourceFileIDs,
@@ -855,8 +860,8 @@ extension CostUsageScanner {
             changedPaths: changedPaths, pricingResolver: pricingResolver, checkCancellation: checkCancellation)
         state.partial = checkpoint.partial
         do {
-            // Reconstitute evidence for files completed by earlier slices. The publication
-            // check below re-reads their prefixes before any new checkpoint/report is installed.
+            // Reconstitute evidence for files completed by earlier slices. Checkpoints keep
+            // these rows staged; final verification covers every prefix before report publication.
             for path in paths.prefix(checkpoint.nextFile) {
                 try checkCancellation?()
                 guard let source = inventory.files[path], let usage = state.cache.files[path],
@@ -886,11 +891,29 @@ extension CostUsageScanner {
                 throw CostUsageSourcePublication.Failure.sourceChangedOrUnavailable
             }
             if checkpoint.nextFile == paths.count {
-                try inventory.publicationObservations?.freeze().check(checkCancellation: checkCancellation)
-                artifact.windowsContent = nil
-                artifact.windowsInventory = nil
-                artifact.windowsForceContentRescan = false
-                return state
+                let publication = try Self.completedClaudePublication(inventory: inventory, state: state)
+                let verifier = WindowsCostPublicationVerifications.shared.take(
+                    checkpoint.verificationToken, entries: publication.entries)
+                switch try verifier.advance(
+                    maxBytes: remainingBytes, maxEntries: max(1, options.maxWindowsClaudeVerificationEntriesPerRefresh),
+                    checkCancellation: checkCancellation) {
+                case .pending:
+                    checkpoint.verificationToken = WindowsCostPublicationVerifications.shared.put(verifier)
+                case .complete:
+                    let verified = CostUsageSourcePublication(entries: publication.entries, windowsVerifier: verifier)
+                    try verified.check(checkCancellation: checkCancellation)
+                    state.completedPublication = verified
+                case .requiresFullCheck:
+                    // Remote/unsupported/busy streams and capacity limits retain full checks.
+                    try publication.check(checkCancellation: checkCancellation)
+                    state.completedPublication = publication
+                }
+                if state.completedPublication != nil {
+                    artifact.windowsContent = nil
+                    artifact.windowsInventory = nil
+                    artifact.windowsForceContentRescan = false
+                    return state
+                }
             }
             checkpoint.cache = state.cache
             checkpoint.sourceFileIDs = state.sourceFileIDs
@@ -916,7 +939,40 @@ extension CostUsageScanner {
                 artifact: &artifact, provider: reportKey.provider, options: options,
                 range: range, checkCancellation: checkCancellation)
         }
+        if checkpoint.nextFile == paths.count {
+            throw CostUsageError.localContentVerificationPending(totalFiles: paths.count)
+        }
         throw CostUsageError.localContentPending(completedFiles: checkpoint.nextFile, totalFiles: paths.count)
+    }
+
+    private static func completedClaudePublication(
+        inventory: ClaudeSourceInventory, state: ClaudeScanState) throws -> CostUsageSourcePublication
+    {
+        guard let observations = inventory.publicationObservations else {
+            throw CostUsageSourcePublication.Failure.sourceChangedOrUnavailable
+        }
+        // Canonical final proofs make the binding independent of which slice completed the
+        // final file. Intermediate/old prefix anchors must not change it between continuations.
+        var entries = observations.freeze().metadataOnly().entries
+        var bound: Set<String> = []
+        for index in entries.indices {
+            let path = entries[index].url.path
+            guard let source = inventory.files[path] else { continue }
+            guard case .file = entries[index].expectation, let proof = state.windowsReadProofs[path],
+                  proof.isUsable(for: source.stamp, allowAppend: false) else {
+                throw CostUsageSourcePublication.Failure.sourceChangedOrUnavailable
+            }
+            var anchors: [CostUsageCodexTokenIndexAnchor] = []
+            for anchor in [proof.committedAnchor, proof.readAnchor].compactMap({ $0 }) {
+                if !anchors.contains(anchor) { anchors.append(anchor) }
+            }
+            entries[index].contentAnchors = anchors
+            bound.insert(path)
+        }
+        guard bound == Set(inventory.files.keys) else {
+            throw CostUsageSourcePublication.Failure.sourceChangedOrUnavailable
+        }
+        return CostUsageSourcePublication(entries: entries)
     }
 
     private static func restartWindowsClaudeCollection(
@@ -924,6 +980,7 @@ extension CostUsageScanner {
         range: CostUsageDayRange, checkCancellation: CancellationCheck?) throws -> Never
     {
         WindowsCostContentContinuations.shared.discard(artifact.windowsContent?.partial?.contentContinuation)
+        WindowsCostPublicationVerifications.shared.discard(artifact.windowsContent?.verificationToken)
         artifact.windowsContent = nil
         artifact.windowsInventory = nil
         artifact.windowsForceContentRescan = true
@@ -1036,6 +1093,7 @@ extension CostUsageScanner {
         let shouldMutateCache = requiresContentPass
             || (shouldRefresh && (!hasStableProcessBaseline || options.forceRescan || windowExpanded))
         let pricingResolver = CostUsagePricing.ClaudeResolver(now: now, cacheRoot: options.cacheRoot)
+        var completedPublication: CostUsageSourcePublication?
 
         if shouldMutateCache {
             try checkCancellation?()
@@ -1080,6 +1138,7 @@ extension CostUsageScanner {
             try checkCancellation?()
 
             cache = scanState.cache
+            completedPublication = scanState.completedPublication
             artifact.sourceFileIDs = scanState.sourceFileIDs.filter { sourceInventory[$0.key] != nil }
             artifact.windowsReadProofs = scanState.windowsReadProofs.filter { sourceInventory[$0.key] != nil }
             #if os(Windows)
@@ -1105,7 +1164,7 @@ extension CostUsageScanner {
         try checkCancellation?()
 
         // Parsing and retained-row reuse add consumed-byte proofs after directory inventory.
-        let sourcePublication = inventory.publicationObservations?.freeze()
+        let sourcePublication = completedPublication ?? inventory.publicationObservations?.freeze()
         artifact.usage = cache
         let committedCacheStamp: CostUsageClaudeFileStamp? = if shouldMutateCache {
             try CostUsageClaudeCacheIO.save(

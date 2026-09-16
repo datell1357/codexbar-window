@@ -1,6 +1,6 @@
 # Windows 비용 파일 I/O 구현 경계
 
-IMPL-559~576. 상태: **CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION**.
+IMPL-559~577. 상태: **CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION**.
 Mac 호스트에서 소스를 작성한 기록이며 Windows 컴파일·실행·성능·파일 시스템 호환성을 입증하지 않는다. W06/W07 전체 기능 및 G0~G6 완료가 아니다.
 
 ## 파일 메타데이터와 캐시
@@ -207,10 +207,22 @@ Mac 호스트에서 소스를 작성한 기록이며 Windows 컴파일·실행·
 - **남은 범위:** 최종 전체 prefix verification과 memo hit 검증, 반복 publication 경계 공유, metadata sweep, JSON checkpoint 직렬화/저장 및 누적 행/목록 메모리는 아직 전체 byte/time/memory budget 밖이다. SHA 상태는 메모리에만 있어 프로세스가 반복 종료되면 prefix 복구를 다시 시작할 수 있다. durable 전진·directory membership·다른 비용 source·계정 소유권에 연결된 Claude/Vertex 화면 복원, 전체 W01~W16/G0~G6는 남는다.
 - 상태: CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·정적 QA 스크립트·UI·provider·원격 Windows·CI는 수행하지 않았다.
 
+## IMPL-577: 최종 내용 대조의 분할과 publication 간 재사용
+
+- `WindowsCostReadLease`에 Win32 `FSCTL_REQUEST_OPLOCK`의 read-only R 요청을 작성했다. 파일은 read/write/delete 공유로 열며 write/handle caching이나 break ACK는 요청하지 않는다. `ERROR_IO_PENDING`만 granted로 취급하고 event가 signal/error 상태이면 근거를 재사용하지 않는다. OVERLAPPED/input/output 버퍼는 요청 완료까지 보유하고 취소 완료를 별도 utility queue에서 기다린 뒤 해제한다. 진행/cleanup을 합한 native 요청은 전역 256개까지다.
+- `WindowsCostPublicationVerifier`는 read lease가 유지되는 파일의 모든 read/committed anchor를 SHA로 분할 대조한다. Claude/Vertex parser/prefix 복구 후 남은 8 MiB 예산을 사용하며 metadata entry 방문은 기본 64개/호출이다. 완료한 내용 대조와 lease를 cache 저장 전·staged rename 전·memo 저장·반환 경계에 같은 객체로 전달한다. 각 경계에서 경로/native ID/폴더/부재를 다시 확인하고 전후 lease가 유효해야 내용 재읽기를 줄인다. metadata만으로 내용 대조를 통과시키지 않는다.
+- 비용 파일 proof가 64개 이하인 collection만 live lease 경로를 시도한다. 지원되지 않는 파일 시스템/원격 경로, 요청 불가, capacity 제한, 진행 중/확인 후 break는 기존 전체 content check로 전환한다. 이 fallback은 합계 확인을 생략하지 않으며, 해당 경우의 최종 읽기는 아직 byte budget 밖이다. 처음부터 오래 유지되는 read/write 공유 조건과 기존 로그 append 허용을 독점 lock으로 대체하지 않는다.
+- `WindowsCostPublicationVerifications`는 최대 4개 pending context를 single-use UUID와 정확한 entry/anchor binding으로 보관한다. disk checkpoint에는 token만 저장한다. 프로세스 재시작/축출/잘못된 binding이면 최종 대조를 처음부터 다시 수행한다. 최종 proof 목록을 canonical 형태로 구성해 어떤 slice에서 파일을 마쳤는지에 따라 token binding이 달라지지 않도록 했다.
+- 파일 parsing 완료 후에도 검증이 남으면 기존 완료 usage를 유지하고 `localContentVerificationPending`으로 자동 재개한다. 화면은 읽기 완료 파일 수와 함께 최종 내용 확인 중임을 표시한다. pending native 값이나 OpenCodeX 보충 값을 완료값으로 중복 게시하지 않는 기존 collection 경계를 유지한다.
+- `WindowsCostPublicationVerifierTests`에 지원 시 분할/반복 게시, 같은 stamp 재작성, 진행 중 변경, fallback/capacity/token binding 및 취소 fixture를 작성했다. Claude staged checkpoint와 Windows 자동 continuation fixture에도 최종 대조 단계를 연결했다. 실제 oplock 동작, 버퍼 수명, filesystem fallback, WinSDK 형식/컴파일 및 UI는 검증하지 않았다.
+- **남은 범위:** 64개 초과/remote/unsupported/활발한 쓰기에서의 bounded 최종 비교, 전체 metadata/publication sweep·JSON checkpoint 저장·메모리 예산, memo-hit와 다른 비용 source의 이 경로 통합, 반복 프로세스 종료 중 durable 전진·directory membership, 계정에 묶인 이전값 복원 및 전체 W01~W16/G0~G6. 이 경로는 immutable multi-file snapshot이나 실제 Windows 배포 준비 완료를 입증하지 않는다.
+- 구현 근거: [FSCTL_REQUEST_OPLOCK](https://learn.microsoft.com/en-us/windows/win32/api/winioctl/ni-winioctl-fsctl_request_oplock), [REQUEST_OPLOCK_INPUT_BUFFER](https://learn.microsoft.com/en-us/windows/win32/api/winioctl/ns-winioctl-request_oplock_input_buffer), [CancelIoEx](https://learn.microsoft.com/en-us/windows/win32/api/ioapiset/nf-ioapiset-cancelioex). 공식 API 문서 열람만 했으며 실행 검증은 하지 않았다.
+- 상태: CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·정적 QA 스크립트·UI·provider·원격 Windows·CI는 수행하지 않았다.
+
 ## 남은 연결
 
 1. 비페이지/legacy·부모 세션 index/캐시 부재 오류 전달은 IMPL-562에 작성했다. 대규모 재귀/단일 폴더의 bounded/pause/resume 통합, IMPL-565에서 parent discovery의 native directory/file snapshot과 legacy 재탐색을 작성했다. IMPL-570에서 main lookback의 관측 directory native snapshot/부재를 별도 metadata로 보존했다. IMPL-571에서 recursive/parent directory ID 방문 제어·alias 관측과 Claude 다중 root 파일 중복 방지를 작성했다. IMPL-572에서 parent directory page와 live-token 재개, IMPL-573에서 Claude/Vertex 재귀 tree checkpoint/refresh 분할을 작성했다. directory membership 증거·legacy recursive 호출부 refresh 분할/active directory의 프로세스 재시작 전진·파일 시스템별 alias/reparse 동작 검증은 남는다. 실행 증거는 없다.
-2. IMPL-561은 expected-file/열린 stream, IMPL-563~564는 게시 직전 metadata, IMPL-566은 usage native snapshot/전체 prefix, IMPL-567은 parser 실제 바이트/게시 내용 비교, IMPL-568은 parent head/negative discovery proof, IMPL-569는 Claude/Vertex parser·cache/memo proof를 작성했다. immutable multi-file snapshot, 관측 뒤 변경, 기타 비용 source와 directory membership 증거가 남는다. 주 lookback의 과거 native directory 관측은 IMPL-570에서 연결했다. IMPL-575에서 Claude/Vertex 신규 본문 byte/file budget과 staged partial-line 재개를 작성했다. IMPL-576은 live SHA 재개와 손실 시 prefix 재구성을 parser와 같은 byte budget에 연결했다. 최종 hashing과 discovery/게시 대조·checkpoint 저장의 전체 I/O 예산 및 publication 경계 간 반복 읽기 공유는 후속 작업이다.
+2. IMPL-561은 expected-file/열린 stream, IMPL-563~564는 게시 직전 metadata, IMPL-566은 usage native snapshot/전체 prefix, IMPL-567은 parser 실제 바이트/게시 내용 비교, IMPL-568은 parent head/negative discovery proof, IMPL-569는 Claude/Vertex parser·cache/memo proof를 작성했다. immutable multi-file snapshot, 관측 뒤 변경, 기타 비용 source와 directory membership 증거가 남는다. 주 lookback의 과거 native directory 관측은 IMPL-570에서 연결했다. IMPL-575에서 Claude/Vertex 신규 본문 byte/file budget과 staged partial-line 재개를 작성했다. IMPL-576은 live SHA 재개와 손실 시 prefix 재구성을 parser와 같은 byte budget에 연결했다. IMPL-577은 read oplock 사용 가능한 최대 64개 proof 파일의 최종 SHA 대조를 분할하고 유효한 lease 아래 publication 간 확인을 공유하도록 작성했다. fallback·memo-hit·다른 source의 최종 hashing 및 discovery/게시 metadata·checkpoint 저장 전체 예산은 후속 작업이다.
 3. 날짜/flat/legacy 루트, hard link/junction, case-sensitive NTFS, UNC/SMB, ReFS/FAT, 삭제 후 재생성, 장기 resume 및 모든 비용 source와의 통합. 파일 ID의 파일 시스템별 재사용·불안정성도 포함한다.
 4. 실제 Windows SDK 컴파일, x64/ARM64, native UI와 설치된 제품에서의 비용 표시, full WinUI3 제품 그래프 및 배포 준비.
 

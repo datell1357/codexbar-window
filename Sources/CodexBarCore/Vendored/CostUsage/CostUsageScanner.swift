@@ -175,6 +175,7 @@ enum CostUsageScanner {
         /// Final publication verification, metadata and checkpoint I/O remain separate.
         var maxWindowsClaudeContentBytesPerRefresh: Int64 = 8 * 1024 * 1024
         var maxWindowsClaudeFilesPerRefresh: Int = 64
+        var maxWindowsClaudeVerificationEntriesPerRefresh: Int = 64
         var calendar: Calendar
         var refreshMinIntervalSeconds: TimeInterval = 60
         var claudeLogProviderFilter: ClaudeLogProviderFilter = .all

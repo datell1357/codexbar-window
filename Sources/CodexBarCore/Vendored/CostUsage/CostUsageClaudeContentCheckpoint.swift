@@ -76,4 +76,5 @@ struct CostUsageClaudeContentCheckpoint: Codable {
     var proofs: [String: CostUsageClaudeReadProof]
     var nextFile = 0
     var partial: File?
+    var verificationToken: UUID? = nil
 }

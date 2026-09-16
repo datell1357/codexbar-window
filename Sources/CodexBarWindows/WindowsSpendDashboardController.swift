@@ -11,6 +11,7 @@ actor WindowsSpendDashboardController {
         var localInventoryPending = false
         var discoveredFiles: Int? = nil
         var completedFiles: Int? = nil
+        var verifyingContent = false
         // Display a generic explanation; never retain raw provider/credential error text.
     }
     struct Scan: Sendable {
