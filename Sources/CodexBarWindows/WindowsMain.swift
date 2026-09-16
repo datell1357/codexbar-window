@@ -5,6 +5,9 @@ import WinSDK
 @main
 struct CodexBarWindowsMain {
     static func main() {
+        if let result = WindowsConfigurationBackupCommand.run(arguments: Array(CommandLine.arguments.dropFirst())) {
+            ExitProcess(result)
+        }
         do {
             let instance = try WindowsApplicationInstance.acquire()
             withExtendedLifetime(instance) {

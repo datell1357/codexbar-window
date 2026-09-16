@@ -9,9 +9,16 @@ import WinSDK
 /// after the handle is closed, using MoveFileExW replacement in the same
 /// directory.
 public enum WindowsCredentialFileWriter {
+    public enum Publication {
+        case replaceExisting
+        /// Refuse an existing destination at the final rename, including a concurrent creator.
+        case createNew
+    }
+
     public static func writePrivate(
         _ data: Data,
         to url: URL,
+        publication: Publication = .replaceExisting,
         beforePublish: ((URL) throws -> Void)? = nil) throws
     {
         let fm = FileManager.default
@@ -38,7 +45,7 @@ public enum WindowsCredentialFileWriter {
             // path is still private, so callback-side metadata changes cannot
             // widen access immediately before publication.
             try protect(at: staged)
-            try replace(staged, with: url)
+            try publish(staged, to: url, publication: publication)
             published = true
         } catch {
             if !published, stagedCreated { try? fm.removeItem(at: staged) }
@@ -140,15 +147,19 @@ public enum WindowsCredentialFileWriter {
         }
     }
 
-    private static func replace(_ staged: URL, with destination: URL) throws {
+    private static func publish(_ staged: URL, to destination: URL, publication: Publication) throws {
         let source = Array(staged.path.utf16) + [0]
         let target = Array(destination.path.utf16) + [0]
+        let flags: DWORD = switch publication {
+        case .replaceExisting: DWORD(MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)
+        case .createNew: DWORD(MOVEFILE_WRITE_THROUGH)
+        }
         let ok = source.withUnsafeBufferPointer { sourceBuffer in
             target.withUnsafeBufferPointer { targetBuffer in
                 MoveFileExW(
                     sourceBuffer.baseAddress,
                     targetBuffer.baseAddress,
-                    DWORD(MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH))
+                    flags)
             }
         }
         guard ok != 0 else { throw win32Error(path: destination.path) }

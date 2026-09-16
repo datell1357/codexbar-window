@@ -1,5 +1,7 @@
 # Windows 배포물 조립
 
+[설정 파일 암호화 백업·새 파일 복원 명령](CONFIGURATION-RECOVERY.ko.md)을 추가했다. 설정 파일 하나만 다루며 전체 앱 데이터 보존이나 설치/제거 연동은 아직 완료되지 않았다. 구현 코드는 미실행·미검증이다.
+
 구현만 작성했으며 실행·검증하지 않았다. `New-CodexBarDistribution.ps1`은 이미 준비된 파일의 명시적 목록으로 새 폴더를 조립한다. 빌드·DLL 의존성 분석·서명·압축·업로드·릴리스를 수행하지 않는다.
 
 입력 JSON은 `schemaVersion: 1`, `architecture: "x64"` 또는 `"arm64"`, `files` 배열이다. 각 항목은 `source`, `destination`, `kind`를 갖는다. source의 상대 경로는 입력 JSON 폴더 기준이고 destination은 배포 폴더 기준이다. kind는 application/cli/runtime/resource/license 중 하나다.

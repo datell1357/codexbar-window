@@ -1,5 +1,7 @@
 # Windows 전용 제품 작업 현황
 
+- IMPL-552: 앱 runtime 이전의 config 파일 전용 DPAPI 백업·새 파일 복원 명령, unknown 설정 보존·비밀 필드 재보호, bounded 단일 handle 읽기·부모 pin·CreateNew 게시 작성. 전체 저장소 백업/제거 연결과 실제 Windows 복원은 남음. CODE_WRITTEN_UNVERIFIED.
+
 - IMPL-551: 같은 설치 receipt/user/operation/full name에 결합한 중단 MSIX 제거 기록 조정·명시 재제출, 부재 관측 후 재등장 보호와 공유 receipt 생성/대조 작성. 실제 제거/재개/데이터 효과 미검증. CODE_WRITTEN_UNVERIFIED.
 
 - IMPL-550: 완료 설치 receipt·현재 user·정확한 package full name에 결합한 MSIX 제거, 데이터 제거 명시 선택·공유 lock·OS 등록 부재 관측·제거 기록 작성. 원본 MSIX/SDK 불필요. 실제 제거/데이터 효과 미검증, 보존/백업·복원은 남음. CODE_WRITTEN_UNVERIFIED.

@@ -5224,3 +5224,14 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - original operation ID/생성 시각/before와 source receipt를 유지하고 resume ID/시각·새 관측을 기록한다. 실패/불확실/부재 관측 후 기록 실패를 구분하며 previous/pending/다른 receipt는 자동 교체·삭제하지 않는다. 외부 재설치나 Windows 내부 종료를 snapshot만으로 증명하지 않는 한계를 문서화했다.
 - MSIX-REMOVAL-RECOVERY.ko.md에 상태별 동작과 future invocation을 기록했다. 데이터 보존/백업·복원, rollback, 손상 canonical 기록 선택 복구, UI/자동 업데이트 및 전체 Windows-only graph는 남아 있다.
 - CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. PowerShell·JSON/package 평가·Appx·제거/재개·데이터 삭제·빌드·테스트·lint·Windows 실행 검증 미실행. 직전 IMPL-550 0238cd7cb는 origin/main 푸시가 확인됐다. IMPL-551도 hook 비활성화 및 [skip ci]와 함께 별도 커밋·푸시 후 Git 결과를 보고한다.
+
+
+## IMPL-552 — Back up the Windows config and restore only to a new file
+
+- 앱 runtime/단일 인스턴스 생성 이전에 --config-backup, --config-restore-new, --config-backup-help를 처리하도록 연결했다. 잘못된 recovery 명령은 도움말/실패로 끝나며 트레이나 provider/plugin 조회를 시작하지 않는다. 기존 일반 시작 경로는 유지한다.
+- 기본 config 선택 규칙으로 파일 하나를 읽고, 원본 바이트와 schema/scope/UUID/시각을 별도 목적의 current-user DPAPI archive로 보호한다. legacy plaintext token/unknown 확장 값도 archive 외부에 내보내지 않는다. 설정 파일 32 MiB/archive 48 MiB 상한과 미래 config version·잘못된/중복 provider ID·보호 형식 실패를 처리한다. 모든 provider 설정의 의미 검증은 아니다.
+- 복원은 같은 profile에서 해독한 raw JSON을 공통 secret 보호 변환으로 다시 암호화하며 고정 UI 필드나 plugin registry 목록으로 재직렬화하지 않는다. 결과는 명시한 새 파일에만 저장하고 기존 config/환경변수/실행 중 앱/credential store를 변경하지 않는다. 이 archive는 다른 장치나 삭제된 Windows profile을 복구하는 독립 복구키 형식이 아니다.
+- native 단일 input handle/read-only sharing·파일 종류/단일 link/크기 조건·bounded 읽기와 local drive/부모 directory pin을 연결했다. private writer에 기본 교체 의미를 유지한 createNew 옵션을 추가해 최종 rename에서도 기존/동시 생성 파일을 덮지 않도록 작성했다. 이 코드는 OS 파일시스템 전체 transaction이나 MSIX 제거 영향 밖의 저장 위치를 입증하지 않는다.
+- CONFIGURATION-RECOVERY.ko.md와 배포/제거 문서에 호출 예시, 포함/제외 저장소, profile/key 제약, 새 config 수동 선택 및 미완료 installer/GUI/전체 데이터 복원 범위를 기록했다. MSIX 제거의 backup NOT_CREATED 정책은 그대로 유지하며 이 일부 백업을 전체 데이터 보존으로 취급하지 않는다.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 명령·DPAPI·빌드·테스트·lint·compiler/manifest 평가·round-trip·provider/credential 접근·설치/제거·Windows 실행 검증은 전부 미실행. 문서/소스 작성과 Git 작업만 진행했다.
+- 직전 IMPL-551은 5d8ad080edad48fb28b6ecf0bf7dd339feed28ed로 origin/main 푸시 확인. IMPL-552는 별도 구현 커밋·푸시 후 실제 Git 결과를 보고한다. W01–W16/G0–G6 전체 목표는 계속 진행 중이다.
