@@ -1,6 +1,6 @@
 # Windows 비용 파일 I/O 구현 경계
 
-IMPL-559. 상태: **CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION**.
+IMPL-559~560. 상태: **CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION**.
 Mac 호스트에서 소스를 작성한 기록이며 Windows 컴파일·실행·성능·파일 시스템 호환성을 입증하지 않는다. W06/W07 전체 기능 및 G0~G6 완료가 아니다.
 
 ## 파일 메타데이터와 캐시
@@ -25,9 +25,18 @@ Mac 호스트에서 소스를 작성한 기록이며 Windows 컴파일·실행·
 - cache는 게시 직전 cancellation callback을 다시 호출한다. callback 오류는 원래 오류로 전달하고 이전 destination을 교체하지 않는다. staging stamp와 게시 뒤 destination stamp가 일치할 때만 해당 stamp를 반환해 다른 writer의 결과에 이번 report를 결합하지 않는다.
 - cache/memo 저장은 기존 best-effort 의미를 유지한다. cache 쓰기 실패는 stamp 없음으로 반환하며 새 memo 기준으로 사용할 수 없다. 이 변경은 전체 비용 저장소의 transaction/backup/복구를 구현한 것이 아니다.
 
+## IMPL-560: Claude/Vertex inventory 오류 경계
+
+- Windows 재귀 목록은 기존 Foundation의 hidden/package 제외 정책을 사용하면서 error handler의 최초 실패를 수집하고 전체 호출을 실패시킨다. root는 native metadata로 부재/존재하는 빈 폴더/디렉터리가 아닌 대상/접근 실패를 구분한다. callback 오류는 경로가 없는 일반 오류로 전달한다.
+- 하위 폴더와 JSONL 파일의 native stamp를 보관하고 열거 종료 시 재관측한다. 폴더 접근/속성 읽기/목록 읽기 실패나 관측 후 부재·변경이 있으면 부분 목록을 반환하지 않는다. callback/Task 취소도 전달한다. 링크 디렉터리는 명시적으로 재귀 진입을 생략해 기존 DirectoryEnumerator 정책을 유지한다.
+- helper는 크기 0 로그도 관측한다. 상위 Claude 수집은 기존의 0-byte 파일 제외/사용량 제거 의미를 유지하되, 목록 완성 전 파일이 변하면 실패하도록 작성했다. 이 동작은 root를 실제로 삭제한 경우까지 기존 사용량을 영구 보존하는 정책이 아니다.
+- 파일별 cache 재사용 전과 파싱 후에 목록의 전체 stamp를 다시 대조한다. Windows Claude parser는 stream I/O나 사용자 정의 cancellation callback 오류를 `parsedBytes = startOffset`인 성공 결과로 바꾸지 않고 다시 던진다. inventory/parse가 실패하면 정상 cache/memo 게시 지점에 도달하지 않도록 연결했다.
+- 각 metadata 재관측 사이/마지막 재관측 후에는 변경이 가능하다. 같은 handle의 예상 identity 결합, 동일 ID·size·mtime로 덮어쓴 내용, 최종 게시까지의 모든 변경을 입증한 것은 아니다. 대규모 재귀 inventory는 현재 bulk 수집이며 페이지화와 장기 성능 증거도 남아 있다.
+- `WindowsCostSourceInventoryTests.swift`에 부재/빈/파일 root, 재귀·0-byte·jsonl 이름 폴더, 사용자 정의 취소, 목록 이후 append 거부용 합성 fixture를 작성했다. 실행하지 않았다. 실제 ACL/공유 오류·동시 변경·Windows Foundation traversal도 미검증이다.
+
 ## 남은 연결
 
-1. Claude 재귀 inventory와 Codex 비페이지/legacy Foundation 열거 경로의 부재·권한 오류 구분. 특히 기존 Claude inventory의 optional stamp 실패/열거 실패를 source 삭제로 해석하지 않도록 후속 구현해야 한다.
+1. Codex 비페이지/legacy Foundation 열거 경로의 부재·권한 오류 구분과 재귀 수집의 bounded/pause/resume 통합. Claude inventory 오류 전달은 IMPL-560에 작성했으며 실행 증거는 없다.
 2. parser의 expected file ID와 열린 stream ID 결합, 수집 중 replace/truncate/동일 크기 재작성, 읽기 완료 후 게시 시점의 변경 처리. 메타데이터만으로 같은 ID의 내용 변경 전체를 증명할 수 없다.
 3. 날짜/flat/legacy 루트, hard link/junction, case-sensitive NTFS, UNC/SMB, ReFS/FAT, 삭제 후 재생성, 장기 resume 및 모든 비용 source와의 통합. 파일 ID의 파일 시스템별 재사용·불안정성도 포함한다.
 4. 실제 Windows SDK 컴파일, x64/ARM64, native UI와 설치된 제품에서의 비용 표시, full WinUI3 제품 그래프 및 배포 준비.

@@ -12,10 +12,7 @@ struct CostUsageClaudeFileStamp: Equatable, Sendable, Codable {
 
     static func read(at url: URL) -> Self? {
         #if os(Windows)
-        guard let snapshot = try? WindowsCostFileMetadata.requiredFile(at: url) else { return nil }
-        return Self(
-            fileID: snapshot.fileID, size: snapshot.size,
-            modifiedSeconds: snapshot.modifiedSeconds, modifiedNanoseconds: snapshot.modifiedNanoseconds)
+        return try? self.readRequired(at: url)
         #else
         var info = stat()
         guard url.path.withCString({ fstatat(AT_FDCWD, $0, &info, 0) }) == 0 else { return nil }
@@ -34,6 +31,15 @@ struct CostUsageClaudeFileStamp: Equatable, Sendable, Codable {
             modifiedNanoseconds: modifiedNanoseconds)
         #endif
     }
+
+    #if os(Windows)
+    static func readRequired(at url: URL) throws -> Self {
+        let snapshot = try WindowsCostFileMetadata.requiredFile(at: url)
+        return Self(
+            fileID: snapshot.fileID, size: snapshot.size,
+            modifiedSeconds: snapshot.modifiedSeconds, modifiedNanoseconds: snapshot.modifiedNanoseconds)
+    }
+    #endif
 }
 
 struct CostUsageClaudeReportMemoKey: Equatable, Sendable, Codable {

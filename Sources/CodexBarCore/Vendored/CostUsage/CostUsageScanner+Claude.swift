@@ -239,7 +239,13 @@ extension CostUsageScanner {
         } catch is CancellationError {
             throw CancellationError()
         } catch {
+            #if os(Windows)
+            // A failed stream (including a custom cancellation callback) is not a completed
+            // parse. Do not publish partial rows with the source's full size/mtime stamp.
+            throw error
+            #else
             parsedBytes = startOffset
+            #endif
         }
 
         let rows = keyedRows.keys.sorted().compactMap { keyedRows[$0] } + unkeyedRows
@@ -540,6 +546,9 @@ extension CostUsageScanner {
         try state.checkCancellation?()
         let path = source.url.path
         let stamp = source.stamp
+        #if os(Windows)
+        try WindowsCostSourceInventory.requireUnchangedFile(at: source.url, stamp: stamp)
+        #endif
         let cached = state.cache.files[path]
         let sameFile = state.sourceFileIDs[path] == stamp.fileID
 
@@ -573,6 +582,9 @@ extension CostUsageScanner {
             startOffset: startOffset,
             pricingResolver: state.pricingResolver,
             checkCancellation: state.checkCancellation)
+        #if os(Windows)
+        try WindowsCostSourceInventory.requireUnchangedFile(at: source.url, stamp: stamp)
+        #endif
         let rows = startOffset > 0 ? Self.mergeClaudeRows(existing: cached?.claudeRows ?? [], delta: parsed.rows)
             : parsed.rows
         let usage = Self.makeFileUsage(
@@ -593,6 +605,13 @@ extension CostUsageScanner {
 
         for root in roots {
             try checkCancellation?()
+            #if os(Windows)
+            guard let files = try WindowsCostSourceInventory.jsonlFiles(in: root, checkCancellation: checkCancellation)
+            else { continue }
+            for (url, stamp) in files where stamp.size > 0 {
+                inventory.files[url.path] = ClaudeSourceFile(url: url, stamp: stamp)
+            }
+            #else
             let rootPath = root.path
             let rootCandidates = Self.claudeRootCandidates(for: rootPath)
             guard let existingRootPath = rootCandidates.first(where: { FileManager.default.fileExists(atPath: $0) })
@@ -610,6 +629,7 @@ extension CostUsageScanner {
                 guard let stamp = CostUsageClaudeFileStamp.read(at: url), stamp.size > 0 else { continue }
                 inventory.files[url.path] = ClaudeSourceFile(url: url, stamp: stamp)
             }
+            #endif
         }
         return inventory
     }

@@ -5306,3 +5306,12 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - Claude/Vertex cache와 report memo를 기존 Windows private/flush/replace writer에 연결했다. 게시 직전 취소 전달과 staging/destination stamp 대조를 작성하고 best-effort cache 실패는 새 memo stamp로 성공 처리하지 않는다.
 - 같은 크기/mtime 교체, stream/path ID, 한글/폴더 열거, 반복 cache 게시 및 게시 전 취소용 합성 Windows 회귀 fixture를 작성했으나 실행하지 않았다. WINDOWS-COST-FILE-IO.ko.md에 API 근거와 전체 inventory/read/publish race 및 플랫폼 검증의 남은 경계를 기록했다.
 - CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·formatter·compiler/manifest 평가·파일 I/O fixture·Windows·실계정·CI 실행 검증 미실행. 원본의 Windows 가능 전체 기능/W01~W16/G0~G6 완료를 뜻하지 않는다. 직전 IMPL-558은 36f5e964344eeb21b7b57d1ba7dccb11419ad17b로 origin/main 푸시 확인. 이번 단위도 별도 커밋·푸시한다.
+
+
+## IMPL-560 — Reject incomplete Windows Claude cost inventories
+
+- WindowsCostSourceInventory에 native root 부재/빈/다른 종류/접근 실패 구분과 Foundation 재귀 error handler를 연결했다. JSONL 파일/하위 폴더 metadata 실패를 skip하지 않고 전체 목록 호출을 실패시킨다. 기존 hidden/package 제외와 link directory 재귀 제외 의미를 유지한다.
+- 관측 폴더와 파일 stamp를 열거 끝에 다시 대조하고 Task/사용자 callback 취소를 전달한다. helper는 0-byte 파일도 관측하며 상위 수집의 기존 빈 로그 처리 의미를 유지한다. incomplete inventory로 기존 cache의 source를 삭제하는 경로에 들어가지 않도록 작성했다.
+- Claude/Vertex 파일의 cache 재사용 전과 파싱 후 목록 stamp를 대조한다. Windows parser가 stream/read/cancellation 오류를 부분 row 성공으로 바꾸던 경로를 throw로 연결했다. 다중 시점 관측은 atomic snapshot/최종 게시의 전체 file-version 증명이 아님을 문서화했다.
+- 부재/빈/파일 root·재귀/0-byte/jsonl 이름 폴더·custom cancellation·목록 이후 append 오류용 합성 Windows fixture를 작성했으나 실행하지 않았다. ACL/공유/교체 경쟁·Windows Foundation·대규모 성능 및 Codex 비페이지 수집/같은 열린 stream 결합은 남아 있다.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·formatter·compiler/manifest 평가·Windows·실계정·CI·파일 fixture 실행 검증 미실행. 전체 Windows 제품/W01~W16/G0~G6 완료 아님. 직전 IMPL-559는 fedeec87badbf3391b8b3036e3209edc38594bee로 origin/main 푸시 확인. 이번 단위도 별도 커밋·푸시한다.
