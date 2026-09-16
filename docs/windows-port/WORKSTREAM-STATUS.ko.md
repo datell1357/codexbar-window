@@ -1,5 +1,7 @@
 # Windows 전용 제품 작업 현황
 
+- IMPL-551: 같은 설치 receipt/user/operation/full name에 결합한 중단 MSIX 제거 기록 조정·명시 재제출, 부재 관측 후 재등장 보호와 공유 receipt 생성/대조 작성. 실제 제거/재개/데이터 효과 미검증. CODE_WRITTEN_UNVERIFIED.
+
 - IMPL-550: 완료 설치 receipt·현재 user·정확한 package full name에 결합한 MSIX 제거, 데이터 제거 명시 선택·공유 lock·OS 등록 부재 관측·제거 기록 작성. 원본 MSIX/SDK 불필요. 실제 제거/데이터 효과 미검증, 보존/백업·복원은 남음. CODE_WRITTEN_UNVERIFIED.
 
 - IMPL-549: 동일 signed 입력/user/operation에 결합한 중단 MSIX 기록 조정·명시 재제출, 공유 등록/lock/receipt helper와 CreateOnly 게시 작성. 기존 완료 target 변경/다른 receipt는 보존 후 중단. 실제 설치/재개 미검증. CODE_WRITTEN_UNVERIFIED.

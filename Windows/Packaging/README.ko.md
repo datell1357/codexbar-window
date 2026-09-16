@@ -270,3 +270,10 @@ Resume-CodexBarMSIXDeployment.ps1은 정확한 작업 ID·현재 user·같은 si
 Remove-CodexBarMSIXPackage.ps1은 설치 receipt·명시적 full name과 현재 Windows 등록을 대조해 해당 사용자 package 하나만 제거하도록 작성했다. 일반 signed MSIX에서 PreserveApplicationData로 보존을 보장하지 않고 패키지 데이터 제거에 대한 명시적 선택을 요구한다. 별도 외부 데이터 purge를 추가하지 않았으며 backup은 생성하지 않는다.
 
 [MSIX 제거 계약](MSIX-REMOVAL.ko.md)에 future invocation과 target/데이터/기록/중단 경계를 기록했다. 결과는 current-user main registration 부재의 관측 범위이며 데이터 삭제/보존이나 Windows 제품 완료 증거가 아니다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 실제 제거·삭제·PowerShell·Appx·빌드·테스트·Windows 실행 검증은 하지 않았다.
+
+
+## MSIX 제거 중단 기록 조정·명시 재시도
+
+Resume-CodexBarMSIXRemoval.ps1은 같은 설치 receipt·user·operation·full name을 현재 등록과 대조한다. 이미 등록이 없으면 Windows 제거 없이 receipt/journal을 조정하고, 원래 target이 그대로인 경우 두 명시적 재시도·데이터 제거 선택이 있어야 다시 제출하도록 작성했다. 부재 관측 뒤 재등장하거나 target/기록이 달라진 경우 자동 제거하지 않는다.
+
+최초 제거와 재개는 공유 helper로 target/data policy/receipt 생성·대조를 통일했다. 자세한 future invocation과 경계는 [MSIX 제거 재개 계약](MSIX-REMOVAL-RECOVERY.ko.md)을 따른다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 실제 PowerShell·Appx·제거/재개·데이터 삭제·빌드·테스트·Windows 실행 검증은 하지 않았다.

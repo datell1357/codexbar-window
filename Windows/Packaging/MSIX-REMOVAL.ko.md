@@ -50,4 +50,6 @@ dataPolicy는 패키지 데이터 제거 선택, 별도 외부 데이터 삭제 
 
 ## 남은 작업
 
-중단 제거의 기록 조정/명시 재시도, 데이터 보존/백업·복원, 명시적 rollback, GUI 및 자동 업데이트와 연결이 남아 있다. OS 배포·실행 중 앱·패키지 가상화·경로 race·ACL·백신·전원 차단·x64/ARM64 동작도 미검증이다. 이 단계로 W16 또는 전체 Windows 제품이 완료됐다고 판정하지 않는다.
+같은 설치 receipt·user·제거 operation·full name에 결합한 [중단 제거의 기록 조정/명시 재시도](MSIX-REMOVAL-RECOVERY.ko.md) 코드를 추가했다. 최초 제거와 재개가 대상/기록 위치/데이터 정책/receipt 생성·대조 helper를 공유하며, 최초 제거도 게시한 receipt를 다시 읽고 대조한 뒤 journal을 완료하도록 작성했다. 실제 제거/재개를 실행한 것은 아니다.
+
+데이터 보존/백업·복원, 명시적 rollback, 손상 canonical 기록의 generation 선택 복구, GUI 및 자동 업데이트와 연결이 남아 있다. OS 배포·실행 중 앱·패키지 가상화·경로 race·ACL·백신·전원 차단·x64/ARM64 동작도 미검증이다. 이 단계로 W16 또는 전체 Windows 제품이 완료됐다고 판정하지 않는다.

@@ -5213,3 +5213,14 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - 명령 후 현재 main registration 부재를 관측해야 UNREGISTERED_DATA_EFFECTS_UNVERIFIED receipt를 CreateOnly로 게시한다. 남은 다른 등록은 자동 제거하지 않으며 실패/불확실/관측 후 기록 실패를 구분한다. 패키지 데이터 제거 선택·별도 외부 삭제 요청 없음·백업 미생성 및 data/runtime NOT_RUN을 기록한다.
 - MSIX-REMOVAL.ko.md에 future invocation, 정확한 target·데이터 동의·기록 위치·관측 범위·중단 경계를 기록했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. PowerShell·JSON/패키지 평가·Appx·제거/삭제·설치·빌드·테스트·lint·실제 Windows 검증 미실행.
 - 중단 제거 조정/재시도·데이터 보존/복원·rollback·자동 업데이트/UI·전체 Windows-only graph와 검증은 남아 있다. 직전 IMPL-549 bbd91fe87은 origin/main 푸시가 확인됐다. IMPL-550도 검증 hook 비활성화 및 [skip ci]와 함께 별도 커밋·푸시 후 Git 결과를 보고한다.
+
+
+## IMPL-551 — Reconcile and deliberately retry interrupted MSIX removals
+
+- Read-CodexBarMSIXRemoval을 추가해 최초 제거와 재개가 target/기록 위치/data policy/완료 receipt 생성·대조를 공유하도록 연결했다. 최초 제거도 CreateOnly 게시 후 receipt를 열어 대조한 다음 journal 완료를 기록한다. 기존 schema 1 데이터 정책과 결과 상태는 유지했다.
+- Resume-CodexBarMSIXRemoval은 현재 user·명시한 operation ID/full name·같은 원래 설치 receipt byte hash 및 snapshot에 결합한 canonical 제거 기록만 받는다. 이미 main registration이 없으면 Remove-AppxPackage 없이 누락된 기록을 게시하거나 일치한 receipt를 재사용한다. 완성 기록이 이미 일치하면 다시 쓰지 않는다.
+- target이 그대로 있고 기존 완료/부재 관측 기록이 없는 경우에만 RetryIfUnchanged와 AcknowledgePackageDataRemoval을 모두 명시해 같은 full name 한 개를 재제출하도록 작성했다. 이미 부재를 관측한 뒤 패키지가 다시 나타난 경우는 기존 제거 작업으로 삭제하지 않는다.
+- 같은 operations.lock 획득 뒤 journal byte hash와 현재 OS snapshot/InstallLocation을 재대조한다. 조정 준비 중 부재를 보았는데 lock 대기 후 등록이 나타나면 재시도 옵션이 있어도 제거로 전환하지 않는다. saved 경로는 출력 제외 비교에만 사용하고 삭제 대상으로 열지 않는다.
+- original operation ID/생성 시각/before와 source receipt를 유지하고 resume ID/시각·새 관측을 기록한다. 실패/불확실/부재 관측 후 기록 실패를 구분하며 previous/pending/다른 receipt는 자동 교체·삭제하지 않는다. 외부 재설치나 Windows 내부 종료를 snapshot만으로 증명하지 않는 한계를 문서화했다.
+- MSIX-REMOVAL-RECOVERY.ko.md에 상태별 동작과 future invocation을 기록했다. 데이터 보존/백업·복원, rollback, 손상 canonical 기록 선택 복구, UI/자동 업데이트 및 전체 Windows-only graph는 남아 있다.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. PowerShell·JSON/package 평가·Appx·제거/재개·데이터 삭제·빌드·테스트·lint·Windows 실행 검증 미실행. 직전 IMPL-550 0238cd7cb는 origin/main 푸시가 확인됐다. IMPL-551도 hook 비활성화 및 [skip ci]와 함께 별도 커밋·푸시 후 Git 결과를 보고한다.
