@@ -1,5 +1,7 @@
 # Windows 전용 제품 작업 현황
 
+- IMPL-576: single-use/binding/capacity 제한 live SHA registry와 prefix 손실 시 분할 재구성, Claude/Vertex prefix+새 본문 공통 8 MiB budget 작성. 중간 저장은 staged 상태로만 보존하고 최종 전체 proof 확인 유지·내용 불일치 후 강제 전체 재시도 연결. fixture 미실행. 최종 verification/metadata/저장 전체 예산·durable 전진·전체 Windows 제품/검증은 남음. CODE_WRITTEN_UNVERIFIED.
+
 - IMPL-575: Claude/Vertex 새 본문 8 MiB·64 file/refresh, staged cache·부분 JSON/offset·실제 바이트 proof 저장과 고정 inventory 재개 작성. 기존 완료 데이터 보존, 교체 시 재탐색, content pending 자동 재개·파일 진행 표시 및 미실행 fixture 추가. hashing/게시/저장 전체 예산·ownership-bound 화면 복원·membership·전체 Windows 제품/검증은 남음. CODE_WRITTEN_UNVERIFIED.
 
 - IMPL-574: pending local source만 자동 재개하는 collection/controller task, 완료 source·첫 날짜·OpenCodeX 단일 capture 보존, source/provider 대조·계정/설정 철회·runtime 게시 순서 연결. stale 표시 기반은 기존 ownership eligibility 조건부이며 Claude/Vertex ownership adapter는 미구현. Windows async fixture/manifest는 미실행. 전체 content/I/O 예산·membership·제품 완성과 Windows 검증은 남음. CODE_WRITTEN_UNVERIFIED.

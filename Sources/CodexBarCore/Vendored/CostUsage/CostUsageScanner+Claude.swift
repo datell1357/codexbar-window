@@ -108,6 +108,8 @@ extension CostUsageScanner {
         expectedPrefixAnchor: CostUsageCodexTokenIndexAnchor? = nil,
         maxBytesToRead: Int64? = nil,
         resumeState: CostUsageJsonl.ResumeState? = nil,
+        expectedCommittedAnchor: CostUsageCodexTokenIndexAnchor? = nil,
+        windowsContentContinuation: UUID? = nil,
         checkCancellation: CancellationCheck? = nil) throws -> ClaudeParseResult
     {
         let readSnapshot = try expectedFile ?? CostUsageFileReadSnapshot.capture(at: fileURL)
@@ -151,6 +153,9 @@ extension CostUsageScanner {
                 expectedFile: readSnapshot,
                 captureWindowsContent: true,
                 expectedPrefixAnchor: expectedPrefixAnchor,
+                expectedCommittedAnchor: expectedCommittedAnchor,
+                windowsContentContinuation: windowsContentContinuation,
+                retainWindowsContent: maxBytesToRead != nil,
                 checkCancellation: checkCancellation,
                 onLine: { line in
                     guard !line.bytes.isEmpty else { return }
@@ -604,8 +609,14 @@ extension CostUsageScanner {
            previousProof.source.size == cached.size,
            previousProof.isUsable(for: stamp, allowAppend: true)
         {
-            canReuse = try previousProof.matchesContent(
-                at: source.url, stamp: stamp, checkCancellation: state.checkCancellation)
+            // Bounded work is staged only. The full publication check still validates every
+            // reused proof; append seed verification consumes the same budget as parser bytes.
+            canReuse = if maxBytesToRead != nil {
+                true
+            } else {
+                try previousProof.matchesContent(
+                    at: source.url, stamp: stamp, checkCancellation: state.checkCancellation)
+            }
         } else {
             canReuse = false
         }
@@ -660,6 +671,8 @@ extension CostUsageScanner {
             expectedPrefixAnchor: prefixAnchor,
             maxBytesToRead: maxBytesToRead,
             resumeState: partial?.resume,
+            expectedCommittedAnchor: partial == nil ? prefixAnchor : partial?.committedAnchor,
+            windowsContentContinuation: partial?.contentContinuation,
             checkCancellation: state.checkCancellation)
         let rows = if let partial {
             Self.mergeClaudeRows(existing: partial.rows, delta: parsed.rows)
@@ -668,7 +681,8 @@ extension CostUsageScanner {
         } else {
             parsed.rows
         }
-        let bytesRead = max(0, (parsed.progress?.readOffset ?? parsed.parsedBytes) - startOffset)
+        let bytesRead = parsed.progress?.windowsContentBytesRead
+            ?? max(0, (parsed.progress?.readOffset ?? parsed.parsedBytes) - startOffset)
         #if os(Windows)
         try WindowsCostSourceInventory.requireCompatibleFileAfterRead(at: source.url, stamp: stamp)
         guard let progress = parsed.progress else {
@@ -678,7 +692,8 @@ extension CostUsageScanner {
             let pending = CostUsageClaudeContentCheckpoint.File(
                 path: path, source: stamp, rows: rows, parsedBytes: parsed.parsedBytes,
                 readBytes: progress.readOffset, resume: progress.resumeState,
-                readAnchor: progress.windowsReadAnchor, committedAnchor: progress.windowsCommittedAnchor)
+                readAnchor: progress.windowsReadAnchor, committedAnchor: progress.windowsCommittedAnchor,
+                contentContinuation: progress.windowsContentContinuation)
             guard bytesRead > 0, pending.isUsable(path: path, stamp: stamp) else {
                 throw CostUsageSourcePublication.Failure.sourceChangedOrUnavailable
             }
@@ -766,6 +781,7 @@ extension CostUsageScanner {
             state = previous
         } else {
             WindowsCostDirectoryPages.shared.discard(artifact.windowsInventory?.page)
+            WindowsCostContentContinuations.shared.discard(artifact.windowsContent?.partial?.contentContinuation)
             artifact.windowsContent = nil
             state = fresh
         }
@@ -790,10 +806,12 @@ extension CostUsageScanner {
             }
         } catch WindowsCostSourceInventory.Failure.sourceChanged {
             WindowsCostDirectoryPages.shared.discard(state.page)
+            WindowsCostContentContinuations.shared.discard(artifact.windowsContent?.partial?.contentContinuation)
             artifact.windowsContent = nil
             state = fresh
         } catch CostUsageSourcePublication.Failure.sourceChangedOrUnavailable {
             WindowsCostDirectoryPages.shared.discard(state.page)
+            WindowsCostContentContinuations.shared.discard(artifact.windowsContent?.partial?.contentContinuation)
             artifact.windowsContent = nil
             state = fresh
         }
@@ -827,6 +845,8 @@ extension CostUsageScanner {
            previous.nextFile >= 0, previous.nextFile <= paths.count,
            previous.partial == nil || previous.nextFile < paths.count {
             checkpoint = previous
+        } else {
+            WindowsCostContentContinuations.shared.discard(artifact.windowsContent?.partial?.contentContinuation)
         }
         let state = ClaudeScanState(
             cache: checkpoint.cache, sourceFileIDs: checkpoint.sourceFileIDs,
@@ -846,7 +866,7 @@ extension CostUsageScanner {
                 else { throw CostUsageSourcePublication.Failure.sourceChangedOrUnavailable }
                 try proof.observe(at: source.url, stamp: source.stamp, in: inventory.publicationObservations)
             }
-            var remainingBytes = max(1, options.maxWindowsClaudeParseBytesPerRefresh)
+            var remainingBytes = max(1, options.maxWindowsClaudeContentBytesPerRefresh)
             var remainingFiles = max(1, options.maxWindowsClaudeFilesPerRefresh)
             while checkpoint.nextFile < paths.count, remainingBytes > 0, remainingFiles > 0 {
                 try checkCancellation?()
@@ -869,6 +889,7 @@ extension CostUsageScanner {
                 try inventory.publicationObservations?.freeze().check(checkCancellation: checkCancellation)
                 artifact.windowsContent = nil
                 artifact.windowsInventory = nil
+                artifact.windowsForceContentRescan = false
                 return state
             }
             checkpoint.cache = state.cache
@@ -879,7 +900,7 @@ extension CostUsageScanner {
             guard try CostUsageClaudeCacheIO.save(
                 provider: reportKey.provider, cache: artifact, cacheRoot: options.cacheRoot,
                 calendar: range.calendar, preserveUsageCalendar: true, checkCancellation: checkCancellation,
-                sourcePublication: inventory.publicationObservations?.freeze()) != nil else {
+                sourcePublication: inventory.publicationObservations?.freeze().metadataOnly()) != nil else {
                 throw CostUsageError.localInventoryCheckpointUnavailable
             }
         } catch CostUsageSourcePublication.Failure.sourceChangedOrUnavailable {
@@ -902,8 +923,10 @@ extension CostUsageScanner {
         artifact: inout CostUsageClaudeCache, provider: UsageProvider, options: Options,
         range: CostUsageDayRange, checkCancellation: CancellationCheck?) throws -> Never
     {
+        WindowsCostContentContinuations.shared.discard(artifact.windowsContent?.partial?.contentContinuation)
         artifact.windowsContent = nil
         artifact.windowsInventory = nil
+        artifact.windowsForceContentRescan = true
         guard try CostUsageClaudeCacheIO.save(
             provider: provider, cache: artifact, cacheRoot: options.cacheRoot,
             calendar: range.calendar, preserveUsageCalendar: true, checkCancellation: checkCancellation) != nil else {
@@ -947,8 +970,13 @@ extension CostUsageScanner {
         let memo = CostUsageClaudeReportMemo.shared
         let priorMemo = memo.entry(provider: provider, canonicalCachePath: canonicalCachePath)
         let sourceInventory = inventory.stamps
+        #if os(Windows)
+        let forcedContentRescan = artifact.windowsForceContentRescan
+        #else
+        let forcedContentRescan = false
+        #endif
 
-        if !options.forceRescan,
+        if !options.forceRescan, !forcedContentRescan,
            let priorMemo,
            priorMemo.sourceInventory == sourceInventory,
            priorMemo.reportKey == reportKey,
@@ -1029,7 +1057,7 @@ extension CostUsageScanner {
             let scanState = try Self.processWindowsClaudeCollection(
                 inventory: inventory, artifact: &artifact, baseCache: cache, reportKey: reportKey,
                 options: options, range: range,
-                forceFullScan: options.forceRescan || windowExpanded || scanConfigurationChanged,
+                forceFullScan: options.forceRescan || windowExpanded || scanConfigurationChanged || forcedContentRescan,
                 changedPaths: changedPaths, pricingResolver: pricingResolver, checkCancellation: checkCancellation)
             #else
             let scanState = ClaudeScanState(

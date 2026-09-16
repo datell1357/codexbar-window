@@ -34,6 +34,7 @@ struct CostUsageClaudeContentCheckpoint: Codable {
         let resume: CostUsageJsonl.ResumeState?
         let readAnchor: CostUsageCodexTokenIndexAnchor?
         let committedAnchor: CostUsageCodexTokenIndexAnchor?
+        var contentContinuation: UUID? = nil
 
         #if os(Windows)
         func isUsable(path: String, stamp: CostUsageClaudeFileStamp) -> Bool {

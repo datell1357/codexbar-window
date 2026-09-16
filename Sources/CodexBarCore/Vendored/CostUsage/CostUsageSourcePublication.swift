@@ -19,6 +19,12 @@ struct CostUsageSourcePublication: Sendable {
 
     let entries: [Entry]
 
+    /// Only staged, non-report checkpoints may defer byte verification. Final cache/memo
+    /// publication must retain the original ledger and all of its consumed-prefix anchors.
+    func metadataOnly() -> Self {
+        Self(entries: self.entries.map { Entry(url: $0.url, expectation: $0.expectation) })
+    }
+
     func check(checkCancellation: (() throws -> Void)? = nil) throws {
         #if os(Windows)
         for entry in self.entries {

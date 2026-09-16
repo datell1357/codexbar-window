@@ -342,9 +342,11 @@ struct CostUsageClaudeCache: Codable {
     var windowsScanConfiguration: CostUsageClaudeReportMemoKey.ScanConfiguration?
     var windowsInventory: CostUsageWindowsTreeInventory?
     var windowsContent: CostUsageClaudeContentCheckpoint?
+    var windowsForceContentRescan = false
 
     private enum CodingKeys: String, CodingKey {
         case sourceFileIDs, windowsReadProofs, windowsScanConfiguration, windowsInventory, windowsContent
+        case windowsForceContentRescan
     }
 
     init() {}
@@ -363,6 +365,8 @@ struct CostUsageClaudeCache: Codable {
         // Without it, the next Windows collection discovers and parses sources again.
         self.windowsContent = try? decoder.container(keyedBy: CodingKeys.self)
             .decodeIfPresent(CostUsageClaudeContentCheckpoint.self, forKey: .windowsContent)
+        self.windowsForceContentRescan = try decoder.container(keyedBy: CodingKeys.self)
+            .decodeIfPresent(Bool.self, forKey: .windowsForceContentRescan) ?? false
     }
 
     func encode(to encoder: any Encoder) throws {
@@ -375,6 +379,9 @@ struct CostUsageClaudeCache: Codable {
         try container.encodeIfPresent(self.windowsScanConfiguration, forKey: .windowsScanConfiguration)
         try container.encodeIfPresent(self.windowsInventory, forKey: .windowsInventory)
         try container.encodeIfPresent(self.windowsContent, forKey: .windowsContent)
+        if self.windowsForceContentRescan {
+            try container.encode(true, forKey: .windowsForceContentRescan)
+        }
     }
 }
 

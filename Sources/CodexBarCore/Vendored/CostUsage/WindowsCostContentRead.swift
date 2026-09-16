@@ -6,8 +6,8 @@ import Crypto
 #endif
 import Foundation
 
-/// Accumulates the exact Data passed to the JSONL parser. Hash state is local to one read;
-/// only immutable digest/offset pairs cross into persisted cache and publication checks.
+/// Accumulates the exact Data passed to the JSONL parser. Hash state may move between
+/// exclusive in-process continuations; only immutable digests and opaque tokens are persisted.
 final class WindowsCostContentRead {
     enum Failure: Error { case digestMismatch }
     private var digest = SHA256()
@@ -15,32 +15,56 @@ final class WindowsCostContentRead {
     private var readOffset: Int64 = 0
     private var committedOffset: Int64 = 0
 
-    init(
+    struct SeedProgress {
+        let bytesRead: Int64
+        let isComplete: Bool
+    }
+
+    init() {}
+
+    /// Recreate a lost in-memory prefix state in bounded slices. A live state is merely
+    /// staging evidence: the final publication still verifies the full consumed prefix.
+    func seed(
         file: FileHandle,
         startOffset: Int64,
         committedOffset: Int64,
         expectedPrefix: CostUsageCodexTokenIndexAnchor?,
+        expectedCommitted: CostUsageCodexTokenIndexAnchor?,
         readGuard: WindowsCostFileReadGuard,
-        checkCancellation: (() throws -> Void)?) throws
+        maxBytes: Int64?,
+        checkCancellation: (() throws -> Void)?) throws -> SeedProgress
     {
         try Task.checkCancellation()
         try checkCancellation?()
         guard startOffset >= 0, committedOffset >= 0, committedOffset <= startOffset,
-              startOffset <= readGuard.snapshot.size else { throw Self.failure }
-        try file.seek(toOffset: 0)
-        while self.readOffset < startOffset {
+              startOffset <= readGuard.snapshot.size, self.readOffset <= startOffset,
+              self.committedOffset <= committedOffset else { throw Self.failure }
+        let initialOffset = self.readOffset
+        let allowance = max(0, maxBytes ?? (startOffset - initialOffset))
+        try file.seek(toOffset: UInt64(initialOffset))
+        while self.readOffset < startOffset, self.readOffset - initialOffset < allowance {
             try Task.checkCancellation()
             try checkCancellation?()
             try readGuard.check()
-            let count = Int(min(64 * 1024, startOffset - self.readOffset))
+            let count = Int(min(64 * 1024, min(startOffset - self.readOffset,
+                                              allowance - (self.readOffset - initialOffset))))
             guard let chunk = try file.read(upToCount: count), !chunk.isEmpty else { throw Self.failure }
             try self.append(chunk, committedThrough: min(committedOffset, self.readOffset + Int64(chunk.count)))
         }
         try readGuard.check()
+        guard self.readOffset == startOffset else {
+            return SeedProgress(bytesRead: self.readOffset - initialOffset, isComplete: false)
+        }
+        guard self.committedOffset == committedOffset else { throw Self.failure }
         if let expectedPrefix {
             guard expectedPrefix.windowStart == 0, expectedPrefix.indexedBytes == startOffset,
                   try self.anchor(at: startOffset) == expectedPrefix else { throw Self.failure }
         }
+        if let expectedCommitted {
+            guard expectedCommitted.windowStart == 0, expectedCommitted.indexedBytes == committedOffset,
+                  try self.anchor(at: committedOffset) == expectedCommitted else { throw Self.failure }
+        }
+        return SeedProgress(bytesRead: self.readOffset - initialOffset, isComplete: true)
     }
 
     /// The scanner supplies its last complete line boundary after consuming this same chunk.

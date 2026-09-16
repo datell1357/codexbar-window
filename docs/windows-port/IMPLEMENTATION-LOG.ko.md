@@ -5479,3 +5479,15 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - 상태: CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·정적 QA 스크립트·실행·원격 Windows·CI는 수행하지 않았다.
 
 - 직전 IMPL-574는 69a783d92d24deb663822659743bd98b0c9932f7로 origin/main 푸시 확인. 이번 단위는 별도 커밋·푸시하며 자동화 설정을 변경하지 않았다.
+
+## IMPL-576: 진행 중 SHA 상태와 prefix 재계산 예산
+
+- `WindowsCostContentContinuations`에 최대 64개의 process-local SHA 상태를 보관하도록 작성했다. UUID는 single-use이며 normalized path·native snapshot·read/committed offset·두 anchor가 모두 맞아야 상태를 가져온다. 사용 시 registry에서 제거해 동시에 같은 mutable hash를 이어 쓰지 않도록 한다. 파일 handle을 장기간 보유하거나 SHA 내부 상태를 직렬화하지 않는다.
+- JSONL content scan은 살아 있는 상태를 이어 사용한다. token 부재/축출/프로세스 재시작이면 앞부분을 다시 해시하되 그 재구성 바이트와 새 parser 바이트를 같은 refresh 예산에서 차감한다. prefix만 처리한 slice는 기존 rows·partial JSON·parser offset을 그대로 반환하며, 재구성된 read/committed digest 대조 후 본문으로 넘어간다. Claude/Vertex 기본 8 MiB는 이제 이 두 종류의 읽기 합계이며 64-file 방문 제한을 유지한다.
+- pending checkpoint는 여전히 완료 cache/report가 아니다. 중간 저장에서는 source metadata를 확인하고 byte proof 대조는 전체 수집 완료와 기존 cache/memo/반환 publication 경계에서 수행한다. 완료된 각 파일의 실제 소비 바이트 anchor는 staged cache에 유지한다. 살아 있는 hash token도 metadata도 최종 내용 증거를 대신하지 않는다. 기존 unbounded scanner 호출은 opt-in 없이 이 경로로 전환하지 않는다.
+- bounded 수집의 기존 rows 재사용도 최종 전체 proof 확인을 통과해야 한다. 내용 불일치 후 같은 캐시를 계속 재사용하지 않도록 별도 `windowsForceContentRescan` 상태를 저장한다. 이전 완료 usage/rows/proofs는 보존하고 다음 수집에서 전체 재파싱하며, 성공한 전체 내용 대조 뒤 flag를 해제한다. source/context 폐기 시 관련 live token도 버린다.
+- `WindowsCostContentReadTests`에 새 바이트 한 번 해시·동일 예산 내 prefix 복구·부분 줄 유지/중복 방지, single-use/binding/capacity, 같은 stamp 변경의 최종 게시 거부, 재구성 중 변경 감지 fixture를 작성했다. Claude checkpoint fixture에 최종 digest mismatch→기존 완료 값 보존→전체 재시도 경로를 추가했다. 테스트·컴파일·실행은 하지 않았다.
+- **남은 범위:** 최종 전체 prefix verification과 memo hit 검증, 반복 publication 경계 공유, metadata sweep, JSON checkpoint 직렬화/저장 및 누적 행/목록 메모리는 아직 전체 byte/time/memory budget 밖이다. SHA 상태는 메모리에만 있어 프로세스가 반복 종료되면 prefix 복구를 다시 시작할 수 있다. durable 전진·directory membership·다른 비용 source·계정 소유권에 연결된 Claude/Vertex 화면 복원, 전체 W01~W16/G0~G6는 남는다.
+- 상태: CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·정적 QA 스크립트·UI·provider·원격 Windows·CI는 수행하지 않았다.
+
+- 직전 IMPL-575는 589215bbc043efb0287c0c14459ea6f7f3f806c0로 origin/main 푸시 확인. 이번 단위도 별도 커밋·푸시하며 자동화 설정은 변경하지 않았다.

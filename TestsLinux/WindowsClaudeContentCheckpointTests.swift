@@ -27,7 +27,7 @@ struct WindowsClaudeContentCheckpointTests {
             var options = CostUsageScanner.Options(
                 claudeProjectsRoots: [self.logs], cacheRoot: self.root.appendingPathComponent("cache"),
                 calendar: self.calendar)
-            options.maxWindowsClaudeParseBytesPerRefresh = bytes
+            options.maxWindowsClaudeContentBytesPerRefresh = bytes
             options.maxWindowsClaudeFilesPerRefresh = files
             return options
         }
@@ -76,6 +76,7 @@ struct WindowsClaudeContentCheckpointTests {
 
         func cleanup() {
             WindowsCostDirectoryPages.shared.reset(under: self.root)
+            WindowsCostContentContinuations.shared.reset(under: self.root)
             try? FileManager.default.removeItem(at: self.root)
         }
     }
@@ -107,7 +108,8 @@ struct WindowsClaudeContentCheckpointTests {
                 #expect(cache.usage.lastScanUnixMs == before.usage.lastScanUnixMs)
                 #expect(cache.windowsReadProofs == before.windowsReadProofs)
                 let partial = try #require(cache.windowsContent?.partial)
-                #expect(partial.readBytes > lastOffset && partial.readBytes - lastOffset <= 31)
+                // Rebuilding a lost prefix state may spend a slice without new parser bytes.
+                #expect(partial.readBytes >= lastOffset && partial.readBytes - lastOffset <= 31)
                 #expect(partial.readBytes < partial.source.size)
                 lastOffset = partial.readBytes
                 // Drop process-local directory handles; persisted body state remains authoritative.
@@ -245,6 +247,28 @@ struct WindowsClaudeContentCheckpointTests {
         limited.cacheRoot = blocked
         do { _ = try fixture.load(limited); Issue.record("Expected a checkpoint write failure") }
         catch CostUsageError.localInventoryCheckpointUnavailable { }
+    }
+
+    @Test
+    func `a final digest mismatch requires a full retry without erasing completed usage`() throws {
+        let fixture = try Fixture()
+        defer { fixture.cleanup() }
+        let file = fixture.logs.appendingPathComponent("same-stamp.jsonl")
+        let time = Date(timeIntervalSince1970: 1_700_000_000)
+        try fixture.event(14).write(to: file)
+        try FileManager.default.setAttributes([.modificationDate: time], ofItemAtPath: file.path)
+        _ = try fixture.load(fixture.options())
+        let before = fixture.cache()
+        let writer = try FileHandle(forWritingTo: file)
+        try writer.write(contentsOf: fixture.event(16))
+        try writer.close()
+        try FileManager.default.setAttributes([.modificationDate: time], ofItemAtPath: file.path)
+        do { _ = try fixture.load(fixture.options()); Issue.record("Expected content retry") }
+        catch CostUsageError.localInventoryPending { }
+        #expect(fixture.cache().windowsForceContentRescan)
+        #expect(fixture.cache().usage.files == before.usage.files)
+        #expect(try fixture.finish(fixture.options(bytes: 31)).summary?.totalInputTokens == 16)
+        #expect(!fixture.cache().windowsForceContentRescan)
     }
 }
 #endif

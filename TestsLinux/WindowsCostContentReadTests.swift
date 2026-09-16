@@ -9,7 +9,10 @@ extension WindowsCostPublicationTests {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("codexbar-content-read-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: root) }
+        defer {
+            WindowsCostContentContinuations.shared.reset(under: root)
+            try? FileManager.default.removeItem(at: root)
+        }
         try body(root, root.appendingPathComponent("source.jsonl"))
     }
 
@@ -24,6 +27,7 @@ extension WindowsCostPublicationTests {
         file: URL,
         limit: Int64? = nil,
         previous: CostUsageJsonl.ScanProgress? = nil,
+        retain: Bool = false,
         onLine: (CostUsageJsonl.Line) -> Void = { _ in }) throws -> CostUsageJsonl.ScanProgress
     {
         let snapshot = try #require(CostUsageFileReadSnapshot.capture(at: file))
@@ -31,7 +35,140 @@ extension WindowsCostPublicationTests {
             fileURL: file, offset: previous?.readOffset ?? 0, maxLineBytes: 256 * 1024,
             prefixBytes: 256 * 1024, maxBytesToRead: limit, resumeState: previous?.resumeState,
             expectedFile: snapshot, captureWindowsContent: true,
-            expectedPrefixAnchor: previous?.windowsReadAnchor, onLine: onLine)
+            expectedPrefixAnchor: previous?.windowsReadAnchor,
+            expectedCommittedAnchor: previous?.windowsCommittedAnchor,
+            windowsContentContinuation: previous?.windowsContentContinuation,
+            retainWindowsContent: retain, onLine: onLine)
+    }
+
+    @Test
+    func `live continuation hashes each newly parsed byte once within the shared budget`() throws {
+        try self.withContentSource { _, file in
+            let source = Data("{\"first\":1}\n{\"second\":22}\n{\"third\":333}\n".utf8)
+            try source.write(to: file)
+            var progress: CostUsageJsonl.ScanProgress?
+            var totalRead: Int64 = 0
+            var lines: [Data] = []
+            for _ in 0..<50 {
+                let next = try self.contentProgress(file: file, limit: 7, previous: progress, retain: true) {
+                    lines.append($0.bytes)
+                }
+                let read = try #require(next.windowsContentBytesRead)
+                #expect(read > 0 && read <= 7)
+                #expect(!next.windowsPrefixPending)
+                totalRead += read
+                progress = next
+                if next.readOffset == Int64(source.count) { break }
+            }
+            #expect(totalRead == Int64(source.count))
+            #expect(lines.count == 3)
+            #expect(progress?.windowsContentContinuation == nil)
+            #expect(progress?.windowsReadAnchor == CostUsageScanner.codexTokenIndexAnchor(
+                fileURL: file, indexedBytes: Int64(source.count)))
+        }
+    }
+
+    @Test
+    func `lost hash state reconstructs the prefix across bounded calls without repeating rows`() throws {
+        try self.withContentSource { root, file in
+            let source = Data("{\"first\":1}\n{\"second\":22222}\n{\"third\":33333}\n".utf8)
+            try source.write(to: file)
+            var lines: [Data] = []
+            var progress = try self.contentProgress(file: file, limit: 23, retain: true) { lines.append($0.bytes) }
+            let oldOffset = progress.readOffset
+            WindowsCostContentContinuations.shared.reset(under: root)
+            var totalRead: Int64 = 0
+            var prefixSlices = 0
+            for _ in 0..<50 {
+                let next = try self.contentProgress(file: file, limit: 5, previous: progress, retain: true) {
+                    lines.append($0.bytes)
+                }
+                let read = try #require(next.windowsContentBytesRead)
+                #expect(read > 0 && read <= 5)
+                totalRead += read
+                if next.windowsPrefixPending {
+                    prefixSlices += 1
+                    #expect(next.readOffset == oldOffset)
+                    #expect(next.committedOffset == progress.committedOffset)
+                    #expect(next.resumeState == progress.resumeState)
+                }
+                progress = next
+                if next.readOffset == Int64(source.count) { break }
+            }
+            #expect(prefixSlices > 1)
+            #expect(totalRead == Int64(source.count)) // old prefix once, then the remaining body
+            #expect(lines.count == 3)
+            #expect(progress.windowsReadAnchor == CostUsageScanner.codexTokenIndexAnchor(
+                fileURL: file, indexedBytes: Int64(source.count)))
+        }
+    }
+
+    @Test
+    func `same stamp edits retained in staged hash state are rejected by full publication`() throws {
+        try self.withContentSource { _, file in
+            let time = Date(timeIntervalSince1970: 1_700_000_000)
+            let original = Data("{\"id\":1}\n{\"tail\":22}\n".utf8)
+            try original.write(to: file)
+            try FileManager.default.setAttributes([.modificationDate: time], ofItemAtPath: file.path)
+            let snapshot = try #require(CostUsageFileReadSnapshot.capture(at: file))
+            let first = try self.contentProgress(file: file, limit: 13, retain: true)
+            try self.rewriteContent(Data("{\"id\":9}\n{\"tail\":22}\n".utf8), file: file, time: time)
+            let completed = try self.contentProgress(file: file, limit: 64, previous: first, retain: true)
+            let observations = CostUsagePublicationObservations()
+            try observations.content(file, snapshot: snapshot, anchor: #require(completed.windowsReadAnchor))
+            let publication = observations.freeze()
+            try publication.metadataOnly().check()
+            #expect(throws: CostUsageSourcePublication.Failure.self) { try publication.check() }
+        }
+    }
+
+    @Test
+    func `reconstructed changed prefix fails before any additional parser rows`() throws {
+        try self.withContentSource { root, file in
+            let time = Date(timeIntervalSince1970: 1_700_000_000)
+            try Data("{\"id\":1}\n{\"tail\":22}\n".utf8).write(to: file)
+            try FileManager.default.setAttributes([.modificationDate: time], ofItemAtPath: file.path)
+            var progress = try self.contentProgress(file: file, limit: 13, retain: true)
+            WindowsCostContentContinuations.shared.reset(under: root)
+            try self.rewriteContent(Data("{\"id\":9}\n{\"tail\":22}\n".utf8), file: file, time: time)
+            var delivered = 0
+            var rejected = false
+            for _ in 0..<10 {
+                do {
+                    progress = try self.contentProgress(file: file, limit: 3, previous: progress, retain: true) {
+                        _ in delivered += 1
+                    }
+                } catch CostUsageSourcePublication.Failure.sourceChangedOrUnavailable {
+                    rejected = true
+                    break
+                }
+            }
+            #expect(rejected)
+            #expect(delivered == 0)
+        }
+    }
+
+    @Test
+    func `hash continuation tokens are exclusive bound and capacity limited`() throws {
+        try self.withContentSource { _, file in
+            try Data("{}\n".utf8).write(to: file)
+            let source = try #require(CostUsageFileReadSnapshot.capture(at: file))
+            let binding = WindowsCostContentContinuations.Binding(
+                path: file.standardizedFileURL.path, source: source, readOffset: 0, committedOffset: 0,
+                readAnchor: nil, committedAnchor: nil)
+            let registry = WindowsCostContentContinuations(capacity: 1)
+            let first = registry.put(WindowsCostContentRead(), binding: binding)
+            let second = registry.put(WindowsCostContentRead(), binding: binding)
+            #expect(registry.take(first, binding: binding) == nil)
+            #expect(registry.take(second, binding: binding) != nil)
+            #expect(registry.take(second, binding: binding) == nil)
+            let third = registry.put(WindowsCostContentRead(), binding: binding)
+            let wrong = WindowsCostContentContinuations.Binding(
+                path: binding.path, source: source, readOffset: 1, committedOffset: 0,
+                readAnchor: nil, committedAnchor: nil)
+            #expect(registry.take(third, binding: wrong) == nil)
+            #expect(registry.take(third, binding: binding) == nil)
+        }
     }
 
     @Test

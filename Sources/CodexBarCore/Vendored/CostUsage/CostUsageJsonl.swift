@@ -52,6 +52,9 @@ enum CostUsageJsonl {
         let resumeState: ResumeState?
         var windowsReadAnchor: CostUsageCodexTokenIndexAnchor? = nil
         var windowsCommittedAnchor: CostUsageCodexTokenIndexAnchor? = nil
+        var windowsContentContinuation: UUID? = nil
+        var windowsContentBytesRead: Int64? = nil
+        var windowsPrefixPending = false
     }
 
     fileprivate struct JSONTailState: Codable, Equatable {
@@ -346,6 +349,9 @@ enum CostUsageJsonl {
         expectedFile: CostUsageFileReadSnapshot? = nil,
         captureWindowsContent: Bool = false,
         expectedPrefixAnchor: CostUsageCodexTokenIndexAnchor? = nil,
+        expectedCommittedAnchor: CostUsageCodexTokenIndexAnchor? = nil,
+        windowsContentContinuation: UUID? = nil,
+        retainWindowsContent: Bool = false,
         checkCancellation: (() throws -> Void)? = nil,
         onLine: (Line) -> Void) throws -> ScanProgress
     {
@@ -355,7 +361,7 @@ enum CostUsageJsonl {
         let startOffset = resumeState?.offset ?? max(0, offset)
         #if os(Windows)
         let readGuard = try expectedFile.map { try WindowsCostFileReadGuard(file: handle, url: fileURL, expected: $0) }
-        let readLimit: Int64?
+        var readLimit: Int64?
         if let readGuard {
             let remaining = try readGuard.remainingBytes(from: startOffset)
             readLimit = min(max(0, maxBytesToRead ?? remaining), remaining)
@@ -367,12 +373,40 @@ enum CostUsageJsonl {
         #endif
         #if os(Windows)
         let contentRead: WindowsCostContentRead?
+        var prefixBytesRead: Int64 = 0
         if captureWindowsContent {
             guard let readGuard else { throw CostUsageSourcePublication.Failure.sourceChangedOrUnavailable }
-            contentRead = try WindowsCostContentRead(
-                file: handle, startOffset: startOffset,
-                committedOffset: resumeState?.lineStartOffset ?? startOffset,
-                expectedPrefix: expectedPrefixAnchor, readGuard: readGuard, checkCancellation: checkCancellation)
+            let committedOffset = resumeState?.lineStartOffset ?? startOffset
+            let committedAnchor = expectedCommittedAnchor ?? (resumeState == nil ? expectedPrefixAnchor : nil)
+            let binding = WindowsCostContentContinuations.Binding(
+                path: fileURL.standardizedFileURL.path, source: readGuard.snapshot,
+                readOffset: startOffset, committedOffset: committedOffset,
+                readAnchor: expectedPrefixAnchor, committedAnchor: committedAnchor)
+            let content = (retainWindowsContent
+                ? WindowsCostContentContinuations.shared.take(windowsContentContinuation, binding: binding) : nil)
+                ?? WindowsCostContentRead()
+            let seed = try content.seed(
+                file: handle, startOffset: startOffset, committedOffset: committedOffset,
+                expectedPrefix: expectedPrefixAnchor, expectedCommitted: committedAnchor,
+                readGuard: readGuard, maxBytes: retainWindowsContent ? maxBytesToRead : nil,
+                checkCancellation: checkCancellation)
+            prefixBytesRead = seed.bytesRead
+            if retainWindowsContent, !seed.isComplete
+                || (seed.bytesRead >= (maxBytesToRead ?? Int64.max) && startOffset < readGuard.snapshot.size) {
+                try checkCancellation?()
+                let token = WindowsCostContentContinuations.shared.put(content, binding: binding)
+                // No new parser bytes have been consumed. These boundaries still belong to
+                // the previous staged rows; the new hash token only records prefix work.
+                return ScanProgress(
+                    committedOffset: committedOffset, readOffset: startOffset, resumeState: resumeState,
+                    windowsReadAnchor: expectedPrefixAnchor, windowsCommittedAnchor: committedAnchor,
+                    windowsContentContinuation: token, windowsContentBytesRead: seed.bytesRead,
+                    windowsPrefixPending: true)
+            }
+            if retainWindowsContent, let maxBytesToRead {
+                readLimit = min(readLimit ?? Int64.max, max(0, maxBytesToRead - seed.bytesRead))
+            }
+            contentRead = content
         } else {
             contentRead = nil
         }
@@ -537,15 +571,30 @@ enum CostUsageJsonl {
         try readGuard?.check()
         let readAnchor = try contentRead?.anchor(at: startOffset + bytesRead)
         let committedAnchor = try contentRead?.anchor(at: committedOffset)
+        let continuation: UUID?
+        if retainWindowsContent, let contentRead, let readGuard,
+           startOffset + bytesRead < readGuard.snapshot.size {
+            let binding = WindowsCostContentContinuations.Binding(
+                path: fileURL.standardizedFileURL.path, source: readGuard.snapshot,
+                readOffset: startOffset + bytesRead, committedOffset: committedOffset,
+                readAnchor: readAnchor, committedAnchor: committedAnchor)
+            continuation = WindowsCostContentContinuations.shared.put(contentRead, binding: binding)
+        } else {
+            continuation = nil
+        }
+        let contentBytes: Int64? = captureWindowsContent ? prefixBytesRead + bytesRead : nil
         #else
         let readAnchor: CostUsageCodexTokenIndexAnchor? = nil
         let committedAnchor: CostUsageCodexTokenIndexAnchor? = nil
+        let continuation: UUID? = nil
+        let contentBytes: Int64? = nil
         #endif
         return ScanProgress(
             committedOffset: committedOffset,
             readOffset: startOffset + bytesRead,
             resumeState: currentResumeState(),
             windowsReadAnchor: readAnchor,
-            windowsCommittedAnchor: committedAnchor)
+            windowsCommittedAnchor: committedAnchor,
+            windowsContentContinuation: continuation, windowsContentBytesRead: contentBytes)
     }
 }

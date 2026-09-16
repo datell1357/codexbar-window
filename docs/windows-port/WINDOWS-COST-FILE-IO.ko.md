@@ -1,6 +1,6 @@
 # Windows 비용 파일 I/O 구현 경계
 
-IMPL-559~575. 상태: **CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION**.
+IMPL-559~576. 상태: **CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION**.
 Mac 호스트에서 소스를 작성한 기록이며 Windows 컴파일·실행·성능·파일 시스템 호환성을 입증하지 않는다. W06/W07 전체 기능 및 G0~G6 완료가 아니다.
 
 ## 파일 메타데이터와 캐시
@@ -197,10 +197,20 @@ Mac 호스트에서 소스를 작성한 기록이며 Windows 컴파일·실행·
 - **예산 범위는 새 본문 파싱량과 파일 방문이다.** prefix seed/revalidation hashing, discovery/final publication metadata·내용 대조, JSON checkpoint 직렬화/저장, 누적 행/목록의 메모리는 아직 전체 byte/time/memory budget으로 제한되지 않는다. 디스크의 이전 완료 데이터 보존은 Claude/Vertex 계정 소유권 확인을 갖춘 화면 stale 복원이 아니다. directory membership, legacy Codex recursive refresh 분할 및 전체 W01~W16/G0~G6 의무는 남는다.
 - 상태: CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·정적 QA 스크립트·실행·원격 Windows·CI는 수행하지 않았다.
 
+## IMPL-576: 진행 중 SHA 상태와 prefix 재계산 예산
+
+- `WindowsCostContentContinuations`에 최대 64개의 process-local SHA 상태를 보관하도록 작성했다. UUID는 single-use이며 normalized path·native snapshot·read/committed offset·두 anchor가 모두 맞아야 상태를 가져온다. 사용 시 registry에서 제거해 동시에 같은 mutable hash를 이어 쓰지 않도록 한다. 파일 handle을 장기간 보유하거나 SHA 내부 상태를 직렬화하지 않는다.
+- JSONL content scan은 살아 있는 상태를 이어 사용한다. token 부재/축출/프로세스 재시작이면 앞부분을 다시 해시하되 그 재구성 바이트와 새 parser 바이트를 같은 refresh 예산에서 차감한다. prefix만 처리한 slice는 기존 rows·partial JSON·parser offset을 그대로 반환하며, 재구성된 read/committed digest 대조 후 본문으로 넘어간다. Claude/Vertex 기본 8 MiB는 이제 이 두 종류의 읽기 합계이며 64-file 방문 제한을 유지한다.
+- pending checkpoint는 여전히 완료 cache/report가 아니다. 중간 저장에서는 source metadata를 확인하고 byte proof 대조는 전체 수집 완료와 기존 cache/memo/반환 publication 경계에서 수행한다. 완료된 각 파일의 실제 소비 바이트 anchor는 staged cache에 유지한다. 살아 있는 hash token도 metadata도 최종 내용 증거를 대신하지 않는다. 기존 unbounded scanner 호출은 opt-in 없이 이 경로로 전환하지 않는다.
+- bounded 수집의 기존 rows 재사용도 최종 전체 proof 확인을 통과해야 한다. 내용 불일치 후 같은 캐시를 계속 재사용하지 않도록 별도 `windowsForceContentRescan` 상태를 저장한다. 이전 완료 usage/rows/proofs는 보존하고 다음 수집에서 전체 재파싱하며, 성공한 전체 내용 대조 뒤 flag를 해제한다. source/context 폐기 시 관련 live token도 버린다.
+- `WindowsCostContentReadTests`에 새 바이트 한 번 해시·동일 예산 내 prefix 복구·부분 줄 유지/중복 방지, single-use/binding/capacity, 같은 stamp 변경의 최종 게시 거부, 재구성 중 변경 감지 fixture를 작성했다. Claude checkpoint fixture에 최종 digest mismatch→기존 완료 값 보존→전체 재시도 경로를 추가했다. 테스트·컴파일·실행은 하지 않았다.
+- **남은 범위:** 최종 전체 prefix verification과 memo hit 검증, 반복 publication 경계 공유, metadata sweep, JSON checkpoint 직렬화/저장 및 누적 행/목록 메모리는 아직 전체 byte/time/memory budget 밖이다. SHA 상태는 메모리에만 있어 프로세스가 반복 종료되면 prefix 복구를 다시 시작할 수 있다. durable 전진·directory membership·다른 비용 source·계정 소유권에 연결된 Claude/Vertex 화면 복원, 전체 W01~W16/G0~G6는 남는다.
+- 상태: CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·정적 QA 스크립트·UI·provider·원격 Windows·CI는 수행하지 않았다.
+
 ## 남은 연결
 
 1. 비페이지/legacy·부모 세션 index/캐시 부재 오류 전달은 IMPL-562에 작성했다. 대규모 재귀/단일 폴더의 bounded/pause/resume 통합, IMPL-565에서 parent discovery의 native directory/file snapshot과 legacy 재탐색을 작성했다. IMPL-570에서 main lookback의 관측 directory native snapshot/부재를 별도 metadata로 보존했다. IMPL-571에서 recursive/parent directory ID 방문 제어·alias 관측과 Claude 다중 root 파일 중복 방지를 작성했다. IMPL-572에서 parent directory page와 live-token 재개, IMPL-573에서 Claude/Vertex 재귀 tree checkpoint/refresh 분할을 작성했다. directory membership 증거·legacy recursive 호출부 refresh 분할/active directory의 프로세스 재시작 전진·파일 시스템별 alias/reparse 동작 검증은 남는다. 실행 증거는 없다.
-2. IMPL-561은 expected-file/열린 stream, IMPL-563~564는 게시 직전 metadata, IMPL-566은 usage native snapshot/전체 prefix, IMPL-567은 parser 실제 바이트/게시 내용 비교, IMPL-568은 parent head/negative discovery proof, IMPL-569는 Claude/Vertex parser·cache/memo proof를 작성했다. immutable multi-file snapshot, 관측 뒤 변경, 기타 비용 source와 directory membership 증거가 남는다. 주 lookback의 과거 native directory 관측은 IMPL-570에서 연결했다. IMPL-575에서 Claude/Vertex 신규 본문 byte/file budget과 staged partial-line 재개를 작성했다. hashing과 discovery/게시 대조·checkpoint 저장의 전체 I/O 예산 및 경계 간 반복 읽기 공유는 후속 작업이다.
+2. IMPL-561은 expected-file/열린 stream, IMPL-563~564는 게시 직전 metadata, IMPL-566은 usage native snapshot/전체 prefix, IMPL-567은 parser 실제 바이트/게시 내용 비교, IMPL-568은 parent head/negative discovery proof, IMPL-569는 Claude/Vertex parser·cache/memo proof를 작성했다. immutable multi-file snapshot, 관측 뒤 변경, 기타 비용 source와 directory membership 증거가 남는다. 주 lookback의 과거 native directory 관측은 IMPL-570에서 연결했다. IMPL-575에서 Claude/Vertex 신규 본문 byte/file budget과 staged partial-line 재개를 작성했다. IMPL-576은 live SHA 재개와 손실 시 prefix 재구성을 parser와 같은 byte budget에 연결했다. 최종 hashing과 discovery/게시 대조·checkpoint 저장의 전체 I/O 예산 및 publication 경계 간 반복 읽기 공유는 후속 작업이다.
 3. 날짜/flat/legacy 루트, hard link/junction, case-sensitive NTFS, UNC/SMB, ReFS/FAT, 삭제 후 재생성, 장기 resume 및 모든 비용 source와의 통합. 파일 ID의 파일 시스템별 재사용·불안정성도 포함한다.
 4. 실제 Windows SDK 컴파일, x64/ARM64, native UI와 설치된 제품에서의 비용 표시, full WinUI3 제품 그래프 및 배포 준비.
 
