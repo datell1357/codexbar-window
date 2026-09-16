@@ -1,5 +1,7 @@
 # Windows 전용 제품 작업 현황
 
+- IMPL-570: 주 Codex 탐색 폴더/부재 관측을 완료 queue와 별개로 SQLite에 보존하고 refresh 전 native 재대조·legacy/변경 시 날짜/page 초기화·pending 보존·갱신 주기 우회 작성. 이전 refresh 관측의 최종 게시 포함 및 다중 root 페이지 예산 fixture 미실행. membership/전체 I/O 예산·tree paging·junction/alias와 전체 제품 구현·Windows 검증은 남음. CODE_WRITTEN_UNVERIFIED.
+
 - IMPL-569: Claude/Vertex parser의 실제 read/committed 지문과 cache·메모리/디스크 memo 보존, legacy 재파싱·memo miss의 refresh interval 우회, memo 없는 집계 설정 변경 재파싱 및 최종 게시 대조 작성. same-stamp/partial append/복원/staging 실패 fixture 미실행. 전체 I/O 예산·주 탐색 세대·기타 source와 전체 제품 구현·Windows 검증은 남음. CODE_WRITTEN_UNVERIFIED.
 
 - IMPL-568: 부모 세션 mapping/negative cache/partial head에 실제 읽기 지문과 proof version, windows-v3 이관 작성. 내용 불일치 재탐색과 I/O·취소 전달을 분리하고, 미완료 색인의 missing 확정 전 재대조·이전 refresh 관측의 최종 게시 포함을 연결. 같은 stamp 재작성/SQLite/분할 검사용 fixture 미실행. 전체 I/O 예산·주 탐색 세대·다른 비용 source 및 전체 제품 구현·Windows 검증은 남음. CODE_WRITTEN_UNVERIFIED.

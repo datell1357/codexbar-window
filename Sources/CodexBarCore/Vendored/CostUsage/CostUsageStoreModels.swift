@@ -188,6 +188,7 @@ struct CostUsageStoreMetadata: Codable, Equatable, Sendable {
     var previousReportPayload: Data?
     var priorityTurnStatePayload: Data?
     var projectMetadataVersion: Int?
+    var windowsDiscoveryInventory: CostUsageWindowsDiscoveryInventory? = nil
 
     static let empty = Self(
         lastScanUnixMs: 0,

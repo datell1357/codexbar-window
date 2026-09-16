@@ -25,6 +25,7 @@ struct CostUsageCache: Codable, Equatable, @unchecked Sendable {
     var codexPreviousReport: CostUsageCodexPreviousReport?
     var codexSessionDiscovery: CostUsageCodexSessionDiscovery?
     var codexActiveLookbackState: CostUsageCodexActiveLookbackState?
+    var codexWindowsDiscoveryInventory: CostUsageWindowsDiscoveryInventory?
     var files: [String: CostUsageFileUsage] = [:]
     var days: [String: [String: [Int]]] = [:]
     var roots: [String: Int64]?

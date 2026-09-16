@@ -5408,3 +5408,14 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - warm/cold Claude·Vertex의 동일 native stamp 재작성, cache/memo producer-consumer 복원, legacy proof 부재, memo 없는 filter 변경, partial tail append·변경된 prefix, cache/memo staging 변경 시 실패·기존 memo 보존·다음 재수집, 취소/접근 오류용 Windows 합성 fixture source를 작성했다. 컴파일·실행하지 않았다.
 - cache와 memo는 별도 게시이므로 cache 성공 뒤 memo 실패 시 이미 게시된 cache를 되돌리지 않는다. 다음 읽기는 그 cache proof를 다시 대조한다. immutable multi-file snapshot/최종 대조 뒤 변경 차단은 아니다. 전체 prefix I/O·시간 예산/분할 재개·반복 읽기 절감, main lookback 세대·junction/alias와 기타 비용 source 및 전체 Windows 제품 의무가 남는다.
 - CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·formatter·compiler/manifest·파일 fixture·Windows·실계정·CI 실행 검증 미실행. 전체 W01~W16/G0~G6 완료 아님. 직전 IMPL-568은 aaf3659a2b7d926bddfcb4c8dfbcb7ddf15371f4로 origin/main 푸시 확인. 이번 단위도 별도 커밋·푸시한다.
+
+
+## IMPL-570 — Persist Windows main discovery directory observations across refreshes
+
+- 주 Codex discovery의 폴더 native snapshot·명시적 부재, 루트/날짜 구간/시간대를 독립 Codable inventory로 추가했다. SQLite scan_metadata의 선택 필드에 encode/decode하므로 active lookback queue가 완료되어 없어져도 관측을 유지한다. 기존 JSON/SQLite에 새 필드가 없으면 Windows 탐색을 다시 시작한다.
+- refresh plan 이전에 이전 폴더 ID·size·정밀 시각/부재를 대조한다. 변경·범위 불일치·legacy이면 갱신 주기를 우회하고 날짜/page 완료 표식을 초기화한다. 기존 pending 및 해당 루트의 cached file 후보와 migration queue 상태를 보존하며, 새 탐색에서 재처리한다. 변경 시 native directory cursor도 재설정한다.
+- 일치하는 이전 관측은 전체 집합을 publication ledger에 다시 등록한다. 분할 수집의 앞선 호출에서 완료된 폴더도 이번 cache 저장/COMMIT/보고서 반환 직전 대조에 포함한다. cache 저장 시 전체 ledger의 폴더·부재를 다음 inventory로 보존한다.
+- 페이지 예산이 첫 루트에서 소진돼도 뒤 루트의 존재/부재를 잃지 않도록 모든 root를 먼저 관측한다. wrong-kind/I/O 및 Task/custom 취소는 완료/빈 목록으로 바꾸지 않는다. 변경된 directory inventory 이후에는 기존 근사 진행률을 재사용하지 않는다.
+- 같은 시각 폴더 교체와 queue 보존, legacy 완료 표식 무효화, 분할 refresh의 이전 관측 보존·마지막 대조, 완료 queue 없는 SQLite round-trip, 갱신 주기 내 새 파일, 미방문 archive root의 부재, 새 날짜 폴더와 wrong-kind/취소용 Windows fixture source를 작성했다. 컴파일·실행하지 않았다.
+- 폴더 metadata가 변하지 않는 이름 목록 변경까지 입증하는 membership 지문/파일 시스템 snapshot은 아니다. 모든 retained directory의 metadata 대조·정렬/후보 재편성은 아직 전체 시간·I/O budget으로 분할하지 않는다. full-prefix hashing 재개, tree paging·junction cycle/alias, 기타 비용 source 및 전체 W01~W16/G0~G6 의무가 남는다.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·formatter·compiler/manifest·파일 fixture·Windows·실계정·CI 실행 검증 미실행. 전체 Windows 제품 완료 아님. 직전 IMPL-569는 1cb9ec16ef8ca5999bcc86c78e85d1601319bbc8로 origin/main 푸시 확인. 이번 단위도 별도 커밋·푸시한다.

@@ -431,6 +431,7 @@ extension CostUsageStore {
         cache.codexScanInventoryPaths = metadata.scanInventoryPaths
         cache.roots = metadata.rootMtimes
         cache.codexProjectMetadataVersion = metadata.projectMetadataVersion
+        cache.codexWindowsDiscoveryInventory = metadata.windowsDiscoveryInventory
         cache.codexPreviousReport = metadata.previousReportPayload.flatMap {
             try? JSONDecoder().decode(CostUsageCodexPreviousReport.self, from: $0)
         }
@@ -1054,7 +1055,8 @@ extension CostUsageStore {
             rootMtimes: cache.roots,
             previousReportPayload: cache.codexPreviousReport.flatMap { try? JSONEncoder().encode($0) },
             priorityTurnStatePayload: self.priorityTurnStatePayload(cache: cache),
-            projectMetadataVersion: cache.codexProjectMetadataVersion)
+            projectMetadataVersion: cache.codexProjectMetadataVersion,
+            windowsDiscoveryInventory: cache.codexWindowsDiscoveryInventory)
     }
 
     private static func priorityTurnStatePayload(cache: CostUsageCache) -> Data? {

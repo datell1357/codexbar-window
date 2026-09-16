@@ -6512,6 +6512,26 @@ enum CostUsageScanner {
             range
         }
         let publicationObservations = CostUsagePublicationObservations.forCurrentPlatform()
+        let directoryInventoryChanged: Bool
+        if !options.forceRescan {
+            directoryInventoryChanged = try Self.reconcileWindowsCodexDiscovery(
+                cache: &cache, roots: roots, resolvedRootPaths: roots.map(Self.codexResolvedPath).sorted(),
+                range: scanRange, publicationObservations: publicationObservations,
+                checkCancellation: checkCancellation)
+            if directoryInventoryChanged {
+                for root in roots { Self.codexDirectoryCursorRegistry.reset(under: root) }
+            }
+        } else {
+            directoryInventoryChanged = false
+        }
+        #if os(Windows)
+        // A page can exhaust its visit budget before reaching the second root. Observe every
+        // root now so its absence/identity also survives in that partial inventory.
+        for root in roots {
+            try checkCancellation?()
+            _ = try Self.codexDirectoryExists(directoryURL: root, publicationObservations: publicationObservations)
+        }
+        #endif
         let cachedSourceChanges: CodexCachedSourceChanges
         if !options.forceRescan, cache.roots == Self.codexRootsFingerprint(roots) {
             cachedSourceChanges = try Self.observeCachedCodexSources(
@@ -6522,7 +6542,7 @@ enum CostUsageScanner {
         }
         let plan = Self.makeCodexRefreshPlan(
             cache: cache, range: scanRange, now: now, nowMs: nowMs, options: options,
-            sourceRefreshRequired: cachedSourceChanges.requiresRefresh)
+            sourceRefreshRequired: directoryInventoryChanged || cachedSourceChanges.requiresRefresh)
         let previousReport = Self.codexPreviousReportCandidate(
             cache: cache,
             range: range,
@@ -6570,10 +6590,10 @@ enum CostUsageScanner {
             // Timed discovery may already have finished these paths on an earlier pass.
             // Queue changed retained sources explicitly so refresh does not merely advance its clock.
             Self.appendCodexActiveLookbackPaths(cachedSourceChanges.files, state: &activeLookbackState)
-            let activeLookbackStateWasReset = cache.codexActiveLookbackState.map {
+            let activeLookbackStateWasReset = directoryInventoryChanged || (cache.codexActiveLookbackState.map {
                 $0.scanSinceKey != activeLookbackState.scanSinceKey
                     || $0.rootPaths != activeLookbackState.rootPaths
-            } ?? true
+            } ?? true)
             let isExactInventoryProofPass = scanBudget.hasTimeLimit
                 && !options.forceRescan
                 && cache.codexActiveLookbackState != nil
@@ -6959,6 +6979,7 @@ enum CostUsageScanner {
                 ? [cachedUntilKey, range.scanUntilKey].compactMap(\.self).max() ?? range.scanUntilKey
                 : range.scanUntilKey
             let canReuseApproximateProgress = !options.forceRescan
+                && !directoryInventoryChanged
                 && !plan.rootsChanged
                 && !plan.windowExpanded
                 && !plan.requiresAllFilesForCacheWideMigration
@@ -7034,6 +7055,14 @@ enum CostUsageScanner {
             }
             cache.lastScanUnixMs = nowMs
             try checkCancellation?()
+            #if os(Windows)
+            guard let directoryObservations = publicationObservations else {
+                throw CostUsageSourcePublication.Failure.sourceChangedOrUnavailable
+            }
+            cache.codexWindowsDiscoveryInventory = try CostUsageWindowsDiscoveryInventory.capture(
+                roots: roots, range: range, publication: directoryObservations.freeze(),
+                checkCancellation: checkCancellation)
+            #endif
             try Self.saveCodexCache(
                 &cache,
                 store: loadedCache.store,

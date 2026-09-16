@@ -1,6 +1,6 @@
 # Windows 비용 파일 I/O 구현 경계
 
-IMPL-559~569. 상태: **CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION**.
+IMPL-559~570. 상태: **CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION**.
 Mac 호스트에서 소스를 작성한 기록이며 Windows 컴파일·실행·성능·파일 시스템 호환성을 입증하지 않는다. W06/W07 전체 기능 및 G0~G6 완료가 아니다.
 
 ## 파일 메타데이터와 캐시
@@ -136,10 +136,21 @@ Mac 호스트에서 소스를 작성한 기록이며 Windows 컴파일·실행·
 - `WindowsCostClaudeContentTests.swift`에 Claude/Vertex warm/cold same-stamp 변경, cache/memo proof round-trip·legacy memo 우회 거부, 집계 설정 변경, 미완성 tail의 append/기존 prefix 변경, cache·memo staging에서 내용 변경 후 재수집, 취소/접근 오류용 임시 합성 fixture를 작성했다. **테스트·컴파일·Windows 실행은 하지 않았다.**
 - content validation은 전체 prefix의 순차 재읽기다. 하나의 파일의 여러 지문은 한 pass로 대조하지만 memo/source reuse/parser seed/각 publication 경계에서 다시 읽을 수 있다. 전체 byte/time budget과 durable hash 재개·중복 대조 공유는 아직 없으며 대형 transcript의 응답성을 입증하지 않는다. 최종 대조 뒤 변경과 immutable multi-file snapshot, 다른 비용 source와 실제 SDK/runtime 검증도 남는다.
 
+## IMPL-570: 주 탐색의 폴더 관측 보존과 재시작
+
+- `CostUsageWindowsDiscoveryInventory`는 root paths/scan window/time zone과 관측한 directory native snapshot·부재를 저장한다. missing 관측에는 discovery 과정과 cache 후보 확인에서 관측한 부재도 포함된다. 파일 본문은 별도의 usage proof가 담당한다. 디렉터리 이름 목록의 전체 hash는 아니다.
+- `CostUsageCache`와 SQLite `scan_metadata`의 선택 필드에 직접 encode/decode한다. active lookback queue가 완료되어 nil로 정리돼도 폴더 관측은 남는다. DDL 변경 없이 과거 payload를 읽되, Windows에서 새 inventory 없는 완료 표식은 다시 탐색하도록 작성했다.
+- refresh plan 이전에 저장된 루트/구간/시간대와 각 폴더의 전체 native ID·size·정밀 시각 또는 실제 부재를 대조한다. 불일치하면 갱신 주기와 관계없이 discovery를 다시 시작한다. 기존 날짜·page offsets/완료 root 목록과 근사 progress 증거는 초기화하되 pending file과 루트 내 cached file 후보·migration 상태는 유지한다. native cursor registry도 해당 루트에서 재설정한다.
+- access/native 오류·wrong-kind·Task/custom 취소는 refresh 실패로 전달한다. 일치하는 이전 집합만 현재 publication ledger에 추가하므로 변경된 과거 폴더 관측을 새 관측과 섞지 않는다. 일부 대조 뒤 실패하면 새 cache를 게시하지 않는다.
+- 앞선 refresh에서 읽은 폴더와 missing 경로도 최종 cache preflight/COMMIT/반환 경계에 포함한다. 수집 후 ledger의 전체 directory/missing 집합이 다음 영속 inventory가 된다. 여러 번의 제한된 수집 끝에서 초기 폴더가 바뀐 경우에도 같은 최종 게시 대조를 거친다.
+- 모든 root의 존재/부재는 실제 페이지 탐색 전에 관측한다. sessions 루트가 방문 예산을 모두 써서 archived_sessions를 아직 열거하지 못했더라도 해당 root 관측을 저장할 수 있다. 이 관측만으로 그 root의 탐색을 완료 표시하지는 않는다.
+- `WindowsCostDiscoveryInventoryTests.swift`에 폴더 ID 교체·pending 보존, legacy 무효화·분할 대조, queue 완료 후 SQLite 복원, 기존 파일은 그대로인 새 날짜 로그의 갱신 주기 우회, 뒤 root 미방문·부재 재등장·wrong-kind/취소 fixture를 작성했다. **컴파일·테스트·Windows 실행은 하지 않았다.**
+- 모든 retained directory 대조와 배열/정렬/후보 재편성은 현재 한 호출에서 수행한다. 전체 metadata I/O·시간 예산의 durable 재개가 아니며, 같은 metadata를 유지/복원한 이름 목록 변경을 완전히 검출한 것도 아니다. directory membership 증거, junction cycle/alias와 전체 tree paging·immutable snapshot·실제 파일 시스템별 동작은 후속 필수 작업이다.
+
 ## 남은 연결
 
-1. 비페이지/legacy·부모 세션 index/캐시 부재 오류 전달은 IMPL-562에 작성했다. 대규모 재귀/단일 폴더의 bounded/pause/resume 통합, IMPL-565에서 parent discovery의 native directory/file snapshot과 legacy 재탐색을 작성했다. main lookback의 완료 폴더 세대와 junction cycle/alias 처리는 남는다. 실행 증거는 없다.
-2. IMPL-561은 expected-file/열린 stream, IMPL-563~564는 게시 직전 metadata, IMPL-566은 usage native snapshot/전체 prefix, IMPL-567은 parser 실제 바이트/게시 내용 비교, IMPL-568은 parent head/negative discovery proof, IMPL-569는 Claude/Vertex parser·cache/memo proof를 작성했다. immutable multi-file snapshot, 관측 뒤 변경, 기타 비용 source와 주 lookback의 과거 directory 세대가 남는다. hashing과 discovery 대조의 전체 I/O 예산·durable resume·경계 간 반복 읽기 공유도 후속 작업이다.
+1. 비페이지/legacy·부모 세션 index/캐시 부재 오류 전달은 IMPL-562에 작성했다. 대규모 재귀/단일 폴더의 bounded/pause/resume 통합, IMPL-565에서 parent discovery의 native directory/file snapshot과 legacy 재탐색을 작성했다. IMPL-570에서 main lookback의 관측 directory native snapshot/부재를 별도 metadata로 보존했다. directory membership 증거와 junction cycle/alias·bounded tree paging은 남는다. 실행 증거는 없다.
+2. IMPL-561은 expected-file/열린 stream, IMPL-563~564는 게시 직전 metadata, IMPL-566은 usage native snapshot/전체 prefix, IMPL-567은 parser 실제 바이트/게시 내용 비교, IMPL-568은 parent head/negative discovery proof, IMPL-569는 Claude/Vertex parser·cache/memo proof를 작성했다. immutable multi-file snapshot, 관측 뒤 변경, 기타 비용 source와 directory membership 증거가 남는다. 주 lookback의 과거 native directory 관측은 IMPL-570에서 연결했다. hashing과 discovery 대조의 전체 I/O 예산·durable resume·경계 간 반복 읽기 공유도 후속 작업이다.
 3. 날짜/flat/legacy 루트, hard link/junction, case-sensitive NTFS, UNC/SMB, ReFS/FAT, 삭제 후 재생성, 장기 resume 및 모든 비용 source와의 통합. 파일 ID의 파일 시스템별 재사용·불안정성도 포함한다.
 4. 실제 Windows SDK 컴파일, x64/ARM64, native UI와 설치된 제품에서의 비용 표시, full WinUI3 제품 그래프 및 배포 준비.
 
