@@ -764,6 +764,40 @@ extension CostUsageScanner {
         #endif
     }
 
+    /// A missing cached path is removable; failure to inspect it is not absence evidence.
+    static func codexFileMetadataIfPresent(fileURL: URL) throws -> CodexFileMetadata? {
+        #if os(Windows)
+        try Task.checkCancellation()
+        guard let snapshot = try WindowsCostFileMetadata.atURL(fileURL) else { return nil }
+        guard !snapshot.isDirectory else { throw WindowsCostSourceInventory.Failure.sourceChanged }
+        return CodexFileMetadata(
+            path: fileURL.path, mtimeUnixMs: snapshot.mtimeUnixMs, size: snapshot.size, fileId: snapshot.fileID,
+            readSnapshot: CostUsageFileReadSnapshot(native: snapshot))
+        #else
+        guard FileManager.default.fileExists(atPath: fileURL.path) else { return nil }
+        return self.codexFileMetadata(fileURL: fileURL)
+        #endif
+    }
+
+    static func codexFileExists(fileURL: URL) throws -> Bool {
+        #if os(Windows)
+        return try self.codexFileMetadataIfPresent(fileURL: fileURL) != nil
+        #else
+        return FileManager.default.fileExists(atPath: fileURL.path)
+        #endif
+    }
+
+    static func codexDirectoryExists(directoryURL: URL) throws -> Bool {
+        #if os(Windows)
+        try Task.checkCancellation()
+        guard let snapshot = try WindowsCostFileMetadata.atURL(directoryURL) else { return false }
+        guard snapshot.isDirectory else { throw WindowsCostSourceInventory.Failure.unreadableDirectory }
+        return true
+        #else
+        return FileManager.default.fileExists(atPath: directoryURL.path)
+        #endif
+    }
+
     static func dropCachedCodexFile(
         path: String,
         cached: CostUsageFileUsage?,

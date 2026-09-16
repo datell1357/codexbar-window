@@ -5324,3 +5324,12 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - Codex session identifier/metadata·parent token·본문·token anchor와 Claude 본문에 연결했다. Windows Codex read 실패는 partial row 성공으로 바꾸지 않는다. 재수집의 기존 days 차감은 파싱 성공 뒤로 옮겼으며 증분 경로는 기존 committed-offset anchor와 file ID를 함께 요구한다. anchor는 전체 prefix가 아닌 최대 64 KiB 구간임을 명시했다.
 - 관측 후 교체·callback 중 append/후속 tail·truncate·같은 크기의 시각 변경·범위 밖 resume용 Windows 합성 fixture를 작성했다. 전체 prefix 재작성·Claude 이전 prefix·최종 cache 게시 결합·기타 비용 source 및 Codex 비페이지 inventory는 남아 있다.
 - CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·formatter·compiler/manifest 평가·파일 fixture·Windows·실계정·CI 실행 검증 미실행. 전체 Windows 제품/W01~W16/G0~G6 완료 아님. 직전 IMPL-560은 2ae59ba82e0c379edf1ed7fce48aa8f85479618e로 origin/main 푸시 확인. 이번 단위도 별도 커밋·푸시한다.
+
+
+## IMPL-562 — Propagate Windows Codex inventory failures before cache pruning
+
+- native 한 폴더 inventory를 추가해 absent/empty/wrong-kind/metadata·열거 오류를 구분하고 entry/폴더 재관측·Task/custom 취소·숨김 제외를 작성했다. Codex 날짜별 비페이지·flat·부모 세션 색인에 연결했다.
+- 최근/legacy 재귀 및 후보 mtime 필터의 Windows 실패를 skip/빈 성공으로 바꾸지 않고 lookback/refresh로 전달한다. legacy의 최상위 날짜 partition 제외 정책을 재귀 helper에 연결했다. Windows 구분자는 root/ancestor 비교에서 정규화하며 대소문자는 합치지 않는다.
+- cached session 목록·부모 mapping/head 조회·catch-up 완료 경로·마지막 캐시 삭제에서 native 부재 구분을 사용하도록 작성했다. 권한/조회 오류 및 regular file 대신 directory인 경우 missing/삭제/완료 증거로 사용하지 않는다. 비페이지 날짜 budget은 실패 시에도 정산한다.
+- root 부재/빈/잘못된 종류·JSONL/숨김/폴더 구분·취소·잘못된 부모 root/mapping용 Windows 합성 fixture를 작성했으나 실행하지 않았다. 대규모 bulk inventory의 paging·directory ID/alias/cycle·prefix/최종 게시 결합과 실제 SDK/파일 시스템 동작은 남아 있다.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·formatter·compiler/manifest 평가·Windows·파일 fixture·실계정·CI 실행 검증 미실행. 전체 Windows 제품/W01~W16/G0~G6 완료 아님. 직전 IMPL-561은 0603c3b076210e07b331c65d47577af9936f22cf로 origin/main 푸시 확인. 이번 단위도 별도 커밋·푸시한다.

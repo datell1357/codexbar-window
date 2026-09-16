@@ -1,5 +1,7 @@
 # Windows 전용 제품 작업 현황
 
+- IMPL-562: Codex 비페이지 날짜/flat·최근/legacy 재귀·부모 색인 목록에 Windows 오류 전달을 연결. cached session/head·catch-up 완료·캐시 삭제에서 실제 부재와 조회 실패 구분 작성. 얕은 native 목록 재관측·숨김/파일 종류·경로 구분자 비교와 fixture 추가. 실제 실행, 대규모 paging·directory ID/alias 및 최종 게시 결합은 남음. CODE_WRITTEN_UNVERIFIED.
+
 - IMPL-561: Codex/Claude 관측 metadata와 실제 열린 stream 결합, 최초 길이로 read boundary 고정·append 다음 수집 이월, 관측된 ID/크기/시각 변경 및 EOF/offset 오류 전달 작성. Codex metadata/parent/body 오류의 부분 성공 제거와 기존 합계 차감 지연·증분 anchor 요구. fixture 미실행. 전체 prefix/최종 게시/기타 source·실제 Windows 동작은 남음. CODE_WRITTEN_UNVERIFIED.
 
 - IMPL-560: Windows Claude/Vertex 재귀 inventory에서 root·폴더·파일 오류 및 취소 전달, 관측 stamp 재대조와 불완전 목록 반환 차단을 작성. parser의 stream 오류를 부분 성공으로 바꾸지 않고 cache 재사용 전/파싱 후 source stamp 대조. 합성 fixture 미실행. Codex 비페이지 inventory·열린 stream/최종 게시 결합·대규모 재귀 paging은 남음. CODE_WRITTEN_UNVERIFIED.

@@ -2,7 +2,7 @@
 import Foundation
 
 /// Preserve Foundation's hidden-file/package traversal policy, but never publish a partial
-/// Claude/Vertex source inventory as proof that previously cached sources were removed.
+/// source inventory as proof that previously cached sources were removed.
 enum WindowsCostSourceInventory {
     enum Failure: Error {
         case unreadableDirectory
@@ -30,6 +30,7 @@ enum WindowsCostSourceInventory {
     /// Zero-byte logs remain in this inventory so callers can distinguish truncation from absence.
     static func jsonlFiles(
         in root: URL,
+        descendIntoDirectory: ((URL) -> Bool)? = nil,
         checkCancellation: (() throws -> Void)? = nil) throws -> [URL: CostUsageClaudeFileStamp]?
     {
         try self.checkCancellation(checkCancellation)
@@ -54,6 +55,10 @@ enum WindowsCostSourceInventory {
             let values = try url.resourceValues(forKeys: keys)
             guard let isDirectory = values.isDirectory else { throw Failure.unreadableDirectory }
             if isDirectory {
+                if descendIntoDirectory?(url) == false {
+                    enumerator.skipDescendants()
+                    continue
+                }
                 guard let snapshot = try WindowsCostFileMetadata.atURL(url), snapshot.isDirectory else {
                     throw Failure.sourceChanged
                 }

@@ -1152,7 +1152,7 @@ enum CostUsageScanner {
         }
 
         func lookup(sessionId: String) throws -> Lookup {
-            if let cached = self.cachedFileURL(for: sessionId) {
+            if let cached = try self.cachedFileURL(for: sessionId) {
                 self.resolveRequest(sessionId: sessionId)
                 return .found(cached)
             }
@@ -1171,7 +1171,7 @@ enum CostUsageScanner {
                     self.discovery = Self.makeFreshDiscovery(
                         roots: self.roots,
                         files: self.files,
-                        cachedSessionFiles: self.cachedSessionFiles(),
+                        cachedSessionFiles: try self.cachedSessionFiles(),
                         retaining: self.discovery)
                     self.knownFilePaths = Set(self.discovery.filePaths)
                     self.knownDirectoryPaths = Set(self.discovery.directoryPaths)
@@ -1187,7 +1187,7 @@ enum CostUsageScanner {
                 self.discovery.isComplete = false
             }
             guard try self.resumeDiscovery(requestedSessionId: sessionId) else { return .deferred }
-            if let cached = self.cachedFileURL(for: sessionId) {
+            if let cached = try self.cachedFileURL(for: sessionId) {
                 self.resolveRequest(sessionId: sessionId)
                 return .found(cached)
             }
@@ -1196,18 +1196,18 @@ enum CostUsageScanner {
                 generation: self.discovery.generation ?? "unknown"))
         }
 
-        private func cachedFileURL(for sessionId: String) -> URL? {
+        private func cachedFileURL(for sessionId: String) throws -> URL? {
             guard let path = self.discovery.filePathBySessionId[sessionId] else { return nil }
-            guard FileManager.default.fileExists(atPath: path) else {
+            guard try CostUsageScanner.codexFileExists(fileURL: URL(fileURLWithPath: path)) else {
                 self.discovery.filePathBySessionId.removeValue(forKey: sessionId)
                 return nil
             }
             return URL(fileURLWithPath: path)
         }
 
-        private func cachedSessionFiles() -> [String: URL] {
-            self.discovery.filePathBySessionId.reduce(into: [:]) { result, entry in
-                guard FileManager.default.fileExists(atPath: entry.value) else { return }
+        private func cachedSessionFiles() throws -> [String: URL] {
+            try self.discovery.filePathBySessionId.reduce(into: [:]) { result, entry in
+                guard try CostUsageScanner.codexFileExists(fileURL: URL(fileURLWithPath: entry.value)) else { return }
                 result[entry.key] = URL(fileURLWithPath: entry.value)
             }
         }
@@ -1221,7 +1221,7 @@ enum CostUsageScanner {
         private func resumeDiscovery(requestedSessionId: String? = nil) throws -> Bool {
             while true {
                 try self.checkCancellation?()
-                if let requestedSessionId, self.cachedFileURL(for: requestedSessionId) != nil {
+                if let requestedSessionId, try self.cachedFileURL(for: requestedSessionId) != nil {
                     return true
                 }
 
@@ -1242,7 +1242,12 @@ enum CostUsageScanner {
         private func scanNextFileHead() throws -> Bool {
             let path = self.discovery.filePaths[self.discovery.nextFileIndex]
             let fileURL = URL(fileURLWithPath: path)
+            #if os(Windows)
+            let metadata = try CostUsageScanner.codexFileMetadataIfPresent(fileURL: fileURL)
+                ?? CostUsageScanner.CodexFileMetadata(path: fileURL.path, mtimeUnixMs: 0, size: 0, fileId: nil)
+            #else
             let metadata = CostUsageScanner.codexFileMetadata(fileURL: fileURL)
+            #endif
             guard metadata.fileId != nil else {
                 if let scanBudget = self.scanBudget {
                     switch scanBudget.admit(workBytes: 1) {
@@ -1332,11 +1337,25 @@ enum CostUsageScanner {
             try self.checkCancellation?()
             let path = self.discovery.directoryPaths[self.discovery.nextDirectoryIndex]
             let directoryURL = URL(fileURLWithPath: path, isDirectory: true)
+            var jsonlFileCount = 0
+            #if os(Windows)
+            let listing = try WindowsCostDirectoryInventory.read(
+                in: directoryURL, checkCancellation: self.checkCancellation)
+            for entry in listing?.entries ?? [] {
+                try self.checkCancellation?()
+                if entry.snapshot.isDirectory {
+                    self.enqueueDirectory(entry.url)
+                } else {
+                    jsonlFileCount += 1
+                    self.enqueueFile(entry.url)
+                }
+            }
+            let modificationTime = listing?.directorySnapshot.mtimeUnixMs ?? 0
+            #else
             let items = (try? FileManager.default.contentsOfDirectory(
                 at: directoryURL,
                 includingPropertiesForKeys: [.isDirectoryKey, .isRegularFileKey],
                 options: [.skipsHiddenFiles, .skipsPackageDescendants])) ?? []
-            var jsonlFileCount = 0
             for item in items {
                 try self.checkCancellation?()
                 let values = try? item.resourceValues(forKeys: [.isDirectoryKey, .isRegularFileKey])
@@ -1347,9 +1366,10 @@ enum CostUsageScanner {
                     self.enqueueFile(item)
                 }
             }
-            let metadata = CostUsageScanner.codexFileMetadata(fileURL: directoryURL)
+            let modificationTime = CostUsageScanner.codexFileMetadata(fileURL: directoryURL).mtimeUnixMs
+            #endif
             self.discovery.directoryStamps[path] = .init(
-                mtimeUnixMs: metadata.mtimeUnixMs,
+                mtimeUnixMs: modificationTime,
                 jsonlFileCount: jsonlFileCount)
             self.discovery.nextDirectoryIndex += 1
             return !self.scanBudgetExhausted()
@@ -1387,7 +1407,7 @@ enum CostUsageScanner {
                     }
                 }
                 // Cached mappings can outlive files already passed by the discovery cursor.
-                if self.cachedFileURL(for: sessionId) == nil,
+                if try self.cachedFileURL(for: sessionId) == nil,
                    !self.discovery.missingSessionIds.contains(sessionId)
                 {
                     self.discovery.missingSessionIds.append(sessionId)
@@ -2101,15 +2121,23 @@ enum CostUsageScanner {
         scanSinceKey: String,
         scanUntilKey: String,
         includeRecursive: Bool,
-        calendar: Calendar = .current) -> [URL]
+        calendar: Calendar = .current,
+        checkCancellation: CancellationCheck? = nil) throws -> [URL]
     {
-        let partitioned = self.listCodexSessionFilesByDatePartition(
+        let partitioned = try self.listCodexSessionFilesByDatePartition(
             root: root,
             scanSinceKey: scanSinceKey,
             scanUntilKey: scanUntilKey,
-            calendar: calendar).files
-        let flat = self.listCodexSessionFilesFlat(root: root, scanSinceKey: scanSinceKey, scanUntilKey: scanUntilKey)
-        let recursive = includeRecursive ? self.listCodexLegacySessionFilesRecursive(root: root) : []
+            calendar: calendar,
+            checkCancellation: checkCancellation).files
+        let flat = try self.listCodexSessionFilesFlat(
+            root: root, scanSinceKey: scanSinceKey, scanUntilKey: scanUntilKey, checkCancellation: checkCancellation)
+        let recursive: [URL]
+        if includeRecursive {
+            recursive = try self.listCodexLegacySessionFilesRecursive(root: root, checkCancellation: checkCancellation)
+        } else {
+            recursive = []
+        }
         var seen: Set<String> = []
         var out: [URL] = []
         for item in partitioned + flat + recursive where !seen.contains(Self.codexPathKey(item)) {
@@ -2123,18 +2151,18 @@ enum CostUsageScanner {
         cache: CostUsageCache,
         range: CostUsageDayRange,
         roots: [URL],
-        excludingPaths: Set<String>) -> [URL]
+        excludingPaths: Set<String>) throws -> [URL]
     {
-        cache.files.compactMap { path, usage in
+        try cache.files.compactMap { path, usage in
             guard !excludingPaths.contains(Self.codexPathKey(URL(fileURLWithPath: path))) else { return nil }
             let hasRelevantDay = usage.days.keys.contains {
                 CostUsageDayRange.isInRange(dayKey: $0, since: range.scanSinceKey, until: range.scanUntilKey)
             }
             let hasPendingWork = usage.codexScanComplete == false || usage.hasBufferedCodexForkRetryLines
             guard hasRelevantDay || hasPendingWork else { return nil }
-            guard FileManager.default.fileExists(atPath: path) else { return nil }
             let fileURL = URL(fileURLWithPath: path)
             guard Self.isWithinCodexRoots(fileURL: fileURL, roots: roots) else { return nil }
+            guard try Self.codexFileExists(fileURL: fileURL) else { return nil }
             return fileURL
         }
     }
@@ -2142,7 +2170,7 @@ enum CostUsageScanner {
     private static func cachedCodexSessionIndex(
         cache: CostUsageCache,
         roots: [URL],
-        knownExistingPaths: Set<String>) -> [String: URL]
+        knownExistingPaths: Set<String>) throws -> [String: URL]
     {
         var out: [String: URL] = [:]
         for (path, usage) in cache.files {
@@ -2151,9 +2179,9 @@ enum CostUsageScanner {
                 out[sessionId] = URL(fileURLWithPath: path)
                 continue
             }
-            guard FileManager.default.fileExists(atPath: path) else { continue }
             let fileURL = URL(fileURLWithPath: path)
             guard Self.isWithinCodexRoots(fileURL: fileURL, roots: roots) else { continue }
+            guard try Self.codexFileExists(fileURL: fileURL) else { continue }
             out[sessionId] = fileURL
         }
         return out
@@ -2417,7 +2445,8 @@ enum CostUsageScanner {
         modifiedSince: Date,
         scanBudget: CodexScanBudget,
         resumeDayKey: String?,
-        calendar: Calendar = .current) -> CodexDatePartitionListing
+        calendar: Calendar = .current,
+        checkCancellation: CancellationCheck? = nil) throws -> CodexDatePartitionListing
     {
         let lookbackSinceKey = self.dayKey(
             scanSinceKey,
@@ -2426,25 +2455,40 @@ enum CostUsageScanner {
             ?? scanSinceKey
         let lookbackUntilKey = self.dayKey(scanSinceKey, addingDays: -1, calendar: calendar)
             ?? lookbackSinceKey
-        let partitioned = self.listCodexSessionFilesByDatePartition(
+        let partitioned = try self.listCodexSessionFilesByDatePartition(
             root: root,
             scanSinceKey: lookbackSinceKey,
             scanUntilKey: lookbackUntilKey,
             calendar: calendar,
             scanBudget: scanBudget,
-            resumeDayKey: resumeDayKey)
+            resumeDayKey: resumeDayKey,
+            checkCancellation: checkCancellation)
         return CodexDatePartitionListing(
-            files: self.filterRecentlyModified(files: partitioned.files, modifiedSince: modifiedSince),
+            files: try self.filterRecentlyModified(
+                files: partitioned.files, modifiedSince: modifiedSince, checkCancellation: checkCancellation),
             isComplete: partitioned.isComplete,
             nextDayKey: partitioned.nextDayKey)
     }
 
-    private static func filterRecentlyModified(files: [URL], modifiedSince: Date) -> [URL] {
-        files.filter { fileURL in
+    private static func filterRecentlyModified(
+        files: [URL],
+        modifiedSince: Date,
+        checkCancellation: CancellationCheck? = nil) throws -> [URL]
+    {
+        try files.filter { fileURL in
+            try checkCancellation?()
+            #if os(Windows)
+            try Task.checkCancellation()
+            let snapshot = try WindowsCostFileMetadata.requiredFile(at: fileURL)
+            let modifiedAt = Date(timeIntervalSince1970:
+                Double(snapshot.modifiedSeconds) + Double(snapshot.modifiedNanoseconds) / 1_000_000_000)
+            return modifiedAt >= modifiedSince
+            #else
             let values = try? fileURL.resourceValues(forKeys: [.isRegularFileKey, .contentModificationDateKey])
             guard values?.isRegularFile == true else { return false }
             guard let modifiedAt = values?.contentModificationDate else { return false }
             return modifiedAt >= modifiedSince
+            #endif
         }
     }
 
@@ -2491,7 +2535,19 @@ enum CostUsageScanner {
         return out
     }
 
-    private static func listCodexRecentlyModifiedFilesRecursive(root: URL, modifiedSince: Date) -> [URL] {
+    private static func listCodexRecentlyModifiedFilesRecursive(
+        root: URL,
+        modifiedSince: Date,
+        checkCancellation: CancellationCheck? = nil) throws -> [URL]
+    {
+        #if os(Windows)
+        let files = try WindowsCostSourceInventory.jsonlFiles(in: root, checkCancellation: checkCancellation) ?? [:]
+        return files.compactMap { url, stamp in
+            let modifiedAt = Date(timeIntervalSince1970:
+                Double(stamp.modifiedSeconds) + Double(stamp.modifiedNanoseconds) / 1_000_000_000)
+            return modifiedAt >= modifiedSince ? url : nil
+        }
+        #else
         guard let enumerator = FileManager.default.enumerator(
             at: root,
             includingPropertiesForKeys: [.isRegularFileKey, .contentModificationDateKey],
@@ -2507,18 +2563,27 @@ enum CostUsageScanner {
             out.append(fileURL)
         }
         return out
+        #endif
     }
 
     static func isWithinCodexRoots(fileURL: URL, roots: [URL]) -> Bool {
-        let filePath = self.codexResolvedPath(fileURL)
+        let filePath = Self.codexComparisonPath(self.codexResolvedPath(fileURL))
         return roots.contains { root in
-            let rootPath = self.codexResolvedPath(root)
+            let rootPath = Self.codexComparisonPath(self.codexResolvedPath(root))
             if filePath == rootPath {
                 return true
             }
             let prefix = rootPath.hasSuffix("/") ? rootPath : rootPath + "/"
             return filePath.hasPrefix(prefix)
         }
+    }
+
+    private static func codexComparisonPath(_ path: String) -> String {
+        #if os(Windows)
+        return path.replacingOccurrences(of: "\\", with: "/")
+        #else
+        return path
+        #endif
     }
 
     private static func codexResolvedPath(_ url: URL) -> String {
@@ -2813,9 +2878,10 @@ enum CostUsageScanner {
         scanUntilKey: String,
         calendar: Calendar = .current,
         scanBudget: CodexScanBudget? = nil,
-        resumeDayKey: String? = nil) -> CodexDatePartitionListing
+        resumeDayKey: String? = nil,
+        checkCancellation: CancellationCheck? = nil) throws -> CodexDatePartitionListing
     {
-        guard FileManager.default.fileExists(atPath: root.path) else {
+        guard try Self.codexDirectoryExists(directoryURL: root) else {
             return CodexDatePartitionListing(files: [], isComplete: true, nextDayKey: nil)
         }
         let calendar = CostUsageDayRange.localGregorianCalendar(matching: calendar)
@@ -2830,6 +2896,7 @@ enum CostUsageScanner {
         }
 
         while date <= untilDate {
+            try checkCancellation?()
             let admittedWork: Int64
             if let scanBudget {
                 switch scanBudget.admit(workBytes: 1) {
@@ -2844,6 +2911,7 @@ enum CostUsageScanner {
                 admittedWork = 0
             }
 
+            defer { scanBudget?.complete(admittedWorkBytes: admittedWork, actualWorkBytes: admittedWork) }
             let comps = calendar.dateComponents([.year, .month, .day], from: date)
             let y = String(format: "%04d", comps.year ?? 1970)
             let m = String(format: "%02d", comps.month ?? 1)
@@ -2853,6 +2921,13 @@ enum CostUsageScanner {
                 .appendingPathComponent(m, isDirectory: true)
                 .appendingPathComponent(d, isDirectory: true)
 
+            #if os(Windows)
+            if let listing = try WindowsCostDirectoryInventory.read(
+                in: dayDir, includeDirectories: false, checkCancellation: checkCancellation)
+            {
+                out.append(contentsOf: listing.entries.map(\.url))
+            }
+            #else
             if let items = try? FileManager.default.contentsOfDirectory(
                 at: dayDir,
                 includingPropertiesForKeys: [.isRegularFileKey],
@@ -2862,7 +2937,7 @@ enum CostUsageScanner {
                     out.append(item)
                 }
             }
-            scanBudget?.complete(admittedWorkBytes: admittedWork, actualWorkBytes: admittedWork)
+            #endif
 
             date = calendar.date(byAdding: .day, value: 1, to: date) ?? untilDate.addingTimeInterval(1)
         }
@@ -2996,18 +3071,20 @@ enum CostUsageScanner {
         range: CostUsageDayRange,
         modifiedSince: Date,
         scanBudget: CodexScanBudget,
-        state: inout CostUsageCodexActiveLookbackState)
+        state: inout CostUsageCodexActiveLookbackState,
+        checkCancellation: CancellationCheck? = nil) throws
     {
         let rootPath = Self.codexResolvedPath(root)
         var completedRootPaths = Set(state.completedRootPaths)
         if !completedRootPaths.contains(rootPath) {
-            let listing = Self.listCodexRecentlyModifiedPartitionFiles(
+            let listing = try Self.listCodexRecentlyModifiedPartitionFiles(
                 root: root,
                 scanSinceKey: range.scanSinceKey,
                 modifiedSince: modifiedSince,
                 scanBudget: scanBudget,
                 resumeDayKey: state.nextDayKeyByRoot[rootPath],
-                calendar: range.calendar)
+                calendar: range.calendar,
+                checkCancellation: checkCancellation)
             Self.appendCodexActiveLookbackPaths(listing.files, state: &state)
             if listing.isComplete {
                 completedRootPaths.insert(rootPath)
@@ -3021,9 +3098,10 @@ enum CostUsageScanner {
         if completedRootPaths.contains(rootPath), legacyPendingRoots.remove(rootPath) != nil {
             // This recursive walk belongs only to the cold-start cycle. Later warm cycles
             // retain the bounded partition discovery above.
-            let legacy = Self.listCodexRecentlyModifiedFilesRecursive(
+            let legacy = try Self.listCodexRecentlyModifiedFilesRecursive(
                 root: root,
-                modifiedSince: modifiedSince)
+                modifiedSince: modifiedSince,
+                checkCancellation: checkCancellation)
             Self.appendCodexActiveLookbackPaths(legacy, state: &state)
         }
         state.completedRootPaths = completedRootPaths.sorted()
@@ -3064,7 +3142,7 @@ enum CostUsageScanner {
             calendar: range.calendar,
             workRecorder: workRecorder)
         remainingDiscoveryVisits -= page.visits
-        let discoveredFilePaths = Self.filterRecentlyModified(
+        let discoveredFilePaths = try Self.filterRecentlyModified(
             files: page.files,
             modifiedSince: modifiedSince).compactMap { fileURL in
             let path = Self.codexResolvedPath(fileURL)
@@ -3310,16 +3388,20 @@ enum CostUsageScanner {
         pendingPaths: Set<String>,
         attemptedPaths: Set<String>,
         processedPaths: Set<String>,
-        cache: CostUsageCache) -> Set<String>
+        cache: CostUsageCache) throws -> Set<String>
     {
-        Set(scheduledFiles.compactMap { fileURL -> String? in
+        Set(try scheduledFiles.compactMap { fileURL -> String? in
             guard attemptedPaths.contains(fileURL.path) else { return nil }
             let resolvedPath = Self.codexResolvedPath(fileURL)
             guard pendingPaths.contains(resolvedPath) else { return nil }
+            #if os(Windows)
+            guard let metadata = try Self.codexFileMetadataIfPresent(fileURL: fileURL) else { return resolvedPath }
+            #else
             let metadata = Self.codexFileMetadata(fileURL: fileURL)
             if metadata.fileId == nil, !FileManager.default.fileExists(atPath: fileURL.path) {
                 return resolvedPath
             }
+            #endif
             if processedPaths.contains(fileURL.path), cache.files[fileURL.path] == nil {
                 return resolvedPath
             }
@@ -3330,7 +3412,16 @@ enum CostUsageScanner {
         })
     }
 
-    private static func listCodexSessionFilesFlat(root: URL, scanSinceKey: String, scanUntilKey: String) -> [URL] {
+    private static func listCodexSessionFilesFlat(
+        root: URL,
+        scanSinceKey: String,
+        scanUntilKey: String,
+        checkCancellation: CancellationCheck? = nil) throws -> [URL]
+    {
+        #if os(Windows)
+        let items = try WindowsCostDirectoryInventory.read(
+            in: root, includeDirectories: false, checkCancellation: checkCancellation)?.entries.map(\.url) ?? []
+        #else
         guard FileManager.default.fileExists(atPath: root.path) else { return [] }
         guard let items = try? FileManager.default.contentsOfDirectory(
             at: root,
@@ -3338,6 +3429,7 @@ enum CostUsageScanner {
             options: [.skipsHiddenFiles, .skipsPackageDescendants])
         else { return [] }
 
+        #endif
         var out: [URL] = []
         for item in items where item.pathExtension.lowercased() == "jsonl" {
             if let dayKey = Self.dayKeyFromFilename(item.lastPathComponent) {
@@ -3350,7 +3442,18 @@ enum CostUsageScanner {
         return out
     }
 
-    private static func listCodexLegacySessionFilesRecursive(root: URL) -> [URL] {
+    private static func listCodexLegacySessionFilesRecursive(
+        root: URL,
+        checkCancellation: CancellationCheck? = nil) throws -> [URL]
+    {
+        #if os(Windows)
+        let rootPath = root.standardizedFileURL.path
+        let files = try WindowsCostSourceInventory.jsonlFiles(
+            in: root,
+            descendIntoDirectory: { !Self.isCodexDatePartitionAncestor($0, rootPath: rootPath) },
+            checkCancellation: checkCancellation) ?? [:]
+        return Array(files.keys)
+        #else
         guard FileManager.default.fileExists(atPath: root.path) else { return [] }
         let rootPath = root.standardizedFileURL.path
         guard let enumerator = FileManager.default.enumerator(
@@ -3369,12 +3472,15 @@ enum CostUsageScanner {
             out.append(item)
         }
         return out
+        #endif
     }
 
     private static func isCodexDatePartitionAncestor(_ url: URL, rootPath: String) -> Bool {
-        let path = url.standardizedFileURL.path
-        guard path.hasPrefix(rootPath + "/") else { return false }
-        let relative = String(path.dropFirst(rootPath.count + 1))
+        let path = Self.codexComparisonPath(url.standardizedFileURL.path)
+        let root = Self.codexComparisonPath(rootPath)
+        let prefix = root.hasSuffix("/") ? root : root + "/"
+        guard path.hasPrefix(prefix) else { return false }
+        let relative = String(path.dropFirst(prefix.count))
         let parts = relative.split(separator: "/")
         guard parts.count == 1 else { return false }
         return Self.isDatePartitionComponent(String(parts[0]), length: 4)
@@ -5988,12 +6094,13 @@ enum CostUsageScanner {
                         workRecorder: options.codexScanWorkRecorderForTesting,
                         state: &activeLookbackState)
                 } else {
-                    let rootFiles = Self.listCodexSessionFiles(
+                    let rootFiles = try Self.listCodexSessionFiles(
                         root: root,
                         scanSinceKey: range.scanSinceKey,
                         scanUntilKey: range.scanUntilKey,
                         includeRecursive: options.forceRescan || isExactInventoryProofPass,
-                        calendar: options.calendar)
+                        calendar: options.calendar,
+                        checkCancellation: checkCancellation)
                     for fileURL in rootFiles.sorted(by: { $0.path < $1.path }) {
                         let pathKey = Self.codexPathKey(fileURL)
                         guard seenPaths.insert(pathKey).inserted else { continue }
@@ -6031,12 +6138,13 @@ enum CostUsageScanner {
                             workRecorder: options.codexScanWorkRecorderForTesting,
                             state: &activeLookbackState)
                     } else {
-                        Self.advanceCodexActiveLookback(
+                        try Self.advanceCodexActiveLookback(
                             root: root,
                             range: range,
                             modifiedSince: coldCacheLookbackStart,
                             scanBudget: scanBudget,
-                            state: &activeLookbackState)
+                            state: &activeLookbackState,
+                            checkCancellation: checkCancellation)
                     }
                 }
             }
@@ -6060,7 +6168,7 @@ enum CostUsageScanner {
                 .count > materializedPendingPathCount
 
             if !shouldPageDiscovery {
-                for fileURL in Self.cachedCodexSessionFiles(
+                for fileURL in try Self.cachedCodexSessionFiles(
                     cache: cache,
                     range: range,
                     roots: plan.roots,
@@ -6144,15 +6252,17 @@ enum CostUsageScanner {
                 files: filesScheduledForRefresh.prefix(Self.codexCatchUpScanCandidateLimit),
                 cache: cache,
                 includePreviouslyCompletedSnapshots: true)
+            let cachedParentSessionFiles: [String: URL]
+            if shouldPageDiscovery {
+                cachedParentSessionFiles = [:]
+            } else {
+                cachedParentSessionFiles = try Self.cachedCodexSessionIndex(
+                    cache: cache, roots: plan.roots, knownExistingPaths: filePathsInScan)
+            }
             let fileIndex = CodexSessionFileIndex(
                 files: files,
                 roots: plan.roots,
-                cachedSessionFiles: shouldPageDiscovery
-                    ? [:]
-                    : Self.cachedCodexSessionIndex(
-                        cache: cache,
-                        roots: plan.roots,
-                        knownExistingPaths: filePathsInScan),
+                cachedSessionFiles: cachedParentSessionFiles,
                 cachedDiscovery: plan.rootsChanged ? nil : cache.codexSessionDiscovery,
                 scanBudget: scanBudget,
                 headParseObserver: self.codexSessionHeadParseObserverStore?.observer,
@@ -6211,7 +6321,7 @@ enum CostUsageScanner {
                 ? boundedQueuePathCount
                 : activeLookbackState.pendingFilePaths.count
             let pendingLookbackPaths = Set(activeLookbackState.pendingFilePaths.prefix(pendingLookbackPathCount))
-            let completedScheduledPaths = Self.completedCodexActiveLookbackPaths(
+            let completedScheduledPaths = try Self.completedCodexActiveLookbackPaths(
                 scheduledFiles: filesScheduledForRefresh,
                 pendingPaths: pendingLookbackPaths,
                 attemptedPaths: scanResult.attemptedPaths,
@@ -6286,7 +6396,7 @@ enum CostUsageScanner {
                         untilKey: range.scanUntilKey,
                         calendar: range.calendar)
                     else { continue }
-                    guard FileManager.default.fileExists(atPath: key) else {
+                    guard try Self.codexFileExists(fileURL: URL(fileURLWithPath: key)) else {
                         Self.applyFileDays(cache: &cache, fileDays: old.days, sign: -1)
                         cache.files.removeValue(forKey: key)
                         continue

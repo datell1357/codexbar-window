@@ -8,6 +8,7 @@ final class WindowsCostDirectoryCursor {
     struct Entry {
         let name: String
         let isDirectory: Bool
+        let isHidden: Bool
     }
 
     let snapshot: WindowsCostFileMetadata.Snapshot
@@ -56,7 +57,10 @@ final class WindowsCostDirectoryCursor {
         let name = withUnsafeBytes(of: data.cFileName) { raw in
             String(decoding: raw.bindMemory(to: UInt16.self).prefix(while: { $0 != 0 }), as: UTF16.self)
         }
-        return Entry(name: name, isDirectory: data.dwFileAttributes & DWORD(FILE_ATTRIBUTE_DIRECTORY) != 0)
+        return Entry(
+            name: name,
+            isDirectory: data.dwFileAttributes & DWORD(FILE_ATTRIBUTE_DIRECTORY) != 0,
+            isHidden: data.dwFileAttributes & DWORD(FILE_ATTRIBUTE_HIDDEN) != 0)
     }
 }
 #endif

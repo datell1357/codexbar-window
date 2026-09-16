@@ -1,6 +1,6 @@
 # Windows 비용 파일 I/O 구현 경계
 
-IMPL-559~561. 상태: **CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION**.
+IMPL-559~562. 상태: **CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION**.
 Mac 호스트에서 소스를 작성한 기록이며 Windows 컴파일·실행·성능·파일 시스템 호환성을 입증하지 않는다. W06/W07 전체 기능 및 G0~G6 완료가 아니다.
 
 ## 파일 메타데이터와 캐시
@@ -44,9 +44,18 @@ Mac 호스트에서 소스를 작성한 기록이며 Windows 컴파일·실행·
 - 합성 Windows fixture에 관측 후/open 전 교체, callback 중 append와 다음 scan의 tail 처리, callback 중 truncate, 같은 크기에서 수정 시각 변경, 범위 밖 resume를 작성했으나 실행하지 않았다. 활성 writer와 FileHandle의 실제 share mode 및 SDK 호환성도 미검증이다.
 - 관측 사이에 truncate 후 재성장하거나 ID/size/시각을 유지한 내용을 변경하는 경우까지 탐지하는 immutable snapshot은 아니다. prefix 재작성·Claude의 이전 prefix 확인, 최종 cache/SQLite 게시 직전의 전체 source-version 연결, Pi 등 다른 비용 source는 후속 구현 범위다. 정상 writer의 timestamp 지연 갱신도 재시도로 이어질 수 있으며 성능/진행성 결과는 없다.
 
+## IMPL-562: Codex 비페이지 inventory와 캐시 부재 판단
+
+- `WindowsCostDirectoryInventory`는 native cursor로 한 폴더의 JSONL 파일/하위 폴더를 모으고, 관측 entry와 폴더 metadata를 반환 전 다시 읽는다. 정확히 없는 폴더는 nil, 정상 빈 폴더는 빈 listing이며 종류 불일치·권한/목록/metadata 오류·관측 변경·취소는 throw다. 숨김 attribute와 점으로 시작하는 이름을 제외한다.
+- Codex 날짜별 비페이지 목록·최상위 로그·부모 세션 색인의 폴더 열거에 연결했다. 최근 변경 파일 및 legacy 재귀 탐색은 기존 Windows 재귀 inventory helper를 사용하도록 연결했다. legacy에서 날짜별 최상위 연도 폴더를 건너뛰는 정책을 유지한다. root 포함/날짜 ancestor 비교는 Windows 경로 구분자 두 종류를 비교용으로 정규화하되 case folding은 하지 않는다.
+- 발견한 후보의 수정 시각 조회 실패를 필터 제외로 바꾸지 않는다. 비페이지 lookback 및 refresh까지 오류/cancellation을 전달하고, 날짜별 budget 정산은 오류가 나도 defer에서 수행한다. 실제 Windows 실행/성능 결과는 없다.
+- cached session 후보·부모 색인의 기존 session mapping/파일 head·완료된 catch-up 경로 판단·마지막 캐시 삭제에 native 부재 구분을 연결했다. 실제 부재만 기존 삭제/완료 의미를 따르며, 조회 실패나 파일 자리에 폴더가 생긴 경우에는 missing session 또는 제거 가능한 cache로 간주하지 않는다.
+- Windows용 합성 fixture에 부재/빈/파일 root, 얕은 목록의 JSONL/폴더/점 숨김 구분, 취소, 잘못된 부모 root/디렉터리 session mapping의 실패를 작성했다. fixture와 ACL/공유 오류·실제 파일 시스템 I/O는 실행하지 않았다.
+- 이 공통 reader와 기존 재귀 inventory는 전체 목록을 메모리에 모으는 경로다. 대규모 단일 폴더/재귀 목록의 paging·시간 budget 세분화, native directory ID를 포함한 영속 색인 검증 및 junction cycle/alias, 목록 이후 최종 게시 사이 변경은 아직 남아 있다. 폴더/file stamp 대조는 atomic filesystem snapshot이 아니다.
+
 ## 남은 연결
 
-1. Codex 비페이지/legacy Foundation 열거 경로의 부재·권한 오류 구분과 재귀 수집의 bounded/pause/resume 통합. Claude inventory 오류 전달은 IMPL-560에 작성했으며 실행 증거는 없다.
+1. 비페이지/legacy·부모 세션 index/캐시 부재 오류 전달은 IMPL-562에 작성했다. 대규모 재귀/단일 폴더의 bounded/pause/resume 통합, directory ID를 포함한 영속 색인 증거 및 junction cycle/alias 처리가 남는다. 실행 증거는 없다.
 2. IMPL-561에서 Codex/Claude expected-file과 열린 stream을 연결했다. 아직 관측 사이 truncate 후 재성장/같은 ID·size·mtime의 prefix 재작성, Claude의 이전 prefix 확인, 다른 비용 source 및 최종 게시까지 전체 버전 연결이 남는다. 메타데이터와 64 KiB anchor만으로 전체 내용 불변성을 증명하지 않는다.
 3. 날짜/flat/legacy 루트, hard link/junction, case-sensitive NTFS, UNC/SMB, ReFS/FAT, 삭제 후 재생성, 장기 resume 및 모든 비용 source와의 통합. 파일 ID의 파일 시스템별 재사용·불안정성도 포함한다.
 4. 실제 Windows SDK 컴파일, x64/ARM64, native UI와 설치된 제품에서의 비용 표시, full WinUI3 제품 그래프 및 배포 준비.
