@@ -5201,3 +5201,15 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - 재개는 원래 작업 ID/생성 시각/before를 유지하고 resume ID/시각·새 관측을 기록한다. 완료와 실패/불확실/관측 후 기록 실패를 구분하며 source·journal generation·pending·receipt를 삭제하지 않는다. canonical 기록 손상 시 임의 generation 선택은 하지 않는다.
 - MSIX-RECOVERY.ko.md에 상태별 동작과 future invocation, WhatIf/PKI/동시 변경/중단 경계를 기록했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. PowerShell·JSON/XML/package 평가·Appx·signature trust·설치/복구·빌드·테스트·lint·Windows 실행 검증 미실행.
 - 제거/rollback·사용자 데이터 정책·자동 업데이트/UI·실제 리소스/Windows-only 제품 graph와 전체 검증은 남아 있다. 직전 IMPL-548 804f40dac은 origin/main 푸시가 확인됐다. IMPL-549도 검증 hook 비활성화 및 [skip ci]와 함께 별도 커밋·푸시 후 Git 결과를 보고한다.
+
+
+## IMPL-550 — Remove an explicitly selected current-user MSIX registration
+
+- Microsoft Remove-AppxPackage 문서에서 PreserveApplicationData가 loose development registration에만 적용됨을 읽었다. 일반 signed MSIX의 데이터 보존으로 표시하지 않고, 이번 제거 경로는 AcknowledgePackageDataRemoval 및 개발 opt-in을 요구하도록 작성했다. 보존/백업·복원 선택지는 남은 필수 작업이다.
+- 공유 deployment helper에 설치 receipt의 core schema/user/identity/hash/provenance 읽기를 추가했다. 원본 MSIX/SDK/private key 없이 현재 OS 등록과 명시한 exact PackageFullName에 대조하며 저장된 경로를 파일 삭제 대상으로 쓰지 않는다. receipt는 로컬 기록이며 설치 바이트 attestation이 아니다.
+- 현재 OS InstallLocation을 선택적으로 조회하도록 기존 helper를 확장하고, 제거용 입력/출력이 이 위치 또는 해당 package data root 아래에 있으면 거절한다. 기본 설치/재개 snapshot 형식은 유지한다. 작업 중 input receipt stream을 보관한다.
+- Remove-CodexBarMSIXPackage는 같은 operations.lock을 얻은 후 정확한 name/publisher/version/architecture/full/family name 및 관측 snapshot을 재대조한다. 손상된 상태의 정확한 대상 제거는 허용하고, 오래된 receipt로 업데이트된 다른 버전을 선택하지 않는다. 새 출력·ShouldProcess 확인 후 현재 사용자 Appx 제거 명령만 호출하도록 작성했다.
+- 별도 외부 파일/credential/registry purge, all-user/provisioning 변경, 재귀 파일 삭제 또는 Stop-Process를 추가하지 않았다. Windows의 패키지 데이터 정리/프로세스 동작은 미검증이며 외부 데이터 보존을 확인했다고 주장하지 않는다.
+- 명령 후 현재 main registration 부재를 관측해야 UNREGISTERED_DATA_EFFECTS_UNVERIFIED receipt를 CreateOnly로 게시한다. 남은 다른 등록은 자동 제거하지 않으며 실패/불확실/관측 후 기록 실패를 구분한다. 패키지 데이터 제거 선택·별도 외부 삭제 요청 없음·백업 미생성 및 data/runtime NOT_RUN을 기록한다.
+- MSIX-REMOVAL.ko.md에 future invocation, 정확한 target·데이터 동의·기록 위치·관측 범위·중단 경계를 기록했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. PowerShell·JSON/패키지 평가·Appx·제거/삭제·설치·빌드·테스트·lint·실제 Windows 검증 미실행.
+- 중단 제거 조정/재시도·데이터 보존/복원·rollback·자동 업데이트/UI·전체 Windows-only graph와 검증은 남아 있다. 직전 IMPL-549 bbd91fe87은 origin/main 푸시가 확인됐다. IMPL-550도 검증 hook 비활성화 및 [skip ci]와 함께 별도 커밋·푸시 후 Git 결과를 보고한다.

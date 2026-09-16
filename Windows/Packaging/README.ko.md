@@ -263,3 +263,10 @@ Install-CodexBarMSIXPackage.ps1에 signed MSIX/receipt/expected signer를 받아
 Resume-CodexBarMSIXDeployment.ps1은 정확한 작업 ID·현재 user·같은 signed 입력에 결합한 기존 기록과 Windows 등록을 대조하도록 작성했다. target이 등록됐으면 Add-AppxPackage 재호출 없이 receipt를 재사용/새로 게시하고 journal을 조정한다. 원래 상태일 때 다시 제출하려면 RetryIfUnchanged를 명시해야 한다. 설치와 재개가 공유 helper를 사용하며 새 receipt는 CreateOnly로 기존 파일을 보존한다.
 
 [MSIX 재개 계약](MSIX-RECOVERY.ko.md)에 상태별 동작, future invocation과 손상 기록/동시 변경/중단 경계를 기록했다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 실제 PowerShell·서명·Appx·설치/재개·빌드·테스트·Windows 실행 검증은 하지 않았다.
+
+
+## 현재 사용자 MSIX 제거
+
+Remove-CodexBarMSIXPackage.ps1은 설치 receipt·명시적 full name과 현재 Windows 등록을 대조해 해당 사용자 package 하나만 제거하도록 작성했다. 일반 signed MSIX에서 PreserveApplicationData로 보존을 보장하지 않고 패키지 데이터 제거에 대한 명시적 선택을 요구한다. 별도 외부 데이터 purge를 추가하지 않았으며 backup은 생성하지 않는다.
+
+[MSIX 제거 계약](MSIX-REMOVAL.ko.md)에 future invocation과 target/데이터/기록/중단 경계를 기록했다. 결과는 current-user main registration 부재의 관측 범위이며 데이터 삭제/보존이나 Windows 제품 완료 증거가 아니다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 실제 제거·삭제·PowerShell·Appx·빌드·테스트·Windows 실행 검증은 하지 않았다.

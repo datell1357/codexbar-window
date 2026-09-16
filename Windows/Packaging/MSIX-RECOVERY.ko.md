@@ -54,3 +54,5 @@ createdAt은 유효한 날짜 문자열과 JSON reader가 반환하는 DateTime/
 실패는 기존 DEPLOYMENT_FAILED_OR_INDETERMINATE 또는 REGISTRATION_OBSERVED_RECORD_INCOMPLETE로 기록하도록 작성했다. 이전 journal generation, pending 파일, signed 원본, 일치하는 receipt를 보존한다. canonical journal/receipt 자체가 손상됐거나 없으면 이전 generation을 임의로 골라 복구하지 않는다. 명시적 generation 선택/복구는 남은 작업이다.
 
 실제 PowerShell/Appx/PKI·호출 취소/중단·OS 등록 전환·x64/ARM64, 외부 writer와 경로 교체·전원 차단 내구성은 미검증이다. 제거·rollback·사용자 데이터 처리, 자동 업데이트/UI 및 Windows 제품 전체의 실행 검증도 계속 남아 있다.
+
+정확한 설치 receipt와 current-user package full name에 결합한 [MSIX 제거 코드](MSIX-REMOVAL.ko.md)를 추가했다. 패키지 데이터 제거를 명시적으로 수용하는 경로이며, 제거 중단 복구·데이터 보존/백업·복원 및 실제 동작 검증은 완료하지 않았다.
