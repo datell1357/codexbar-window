@@ -5235,3 +5235,11 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - CONFIGURATION-RECOVERY.ko.md와 배포/제거 문서에 호출 예시, 포함/제외 저장소, profile/key 제약, 새 config 수동 선택 및 미완료 installer/GUI/전체 데이터 복원 범위를 기록했다. MSIX 제거의 backup NOT_CREATED 정책은 그대로 유지하며 이 일부 백업을 전체 데이터 보존으로 취급하지 않는다.
 - CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 명령·DPAPI·빌드·테스트·lint·compiler/manifest 평가·round-trip·provider/credential 접근·설치/제거·Windows 실행 검증은 전부 미실행. 문서/소스 작성과 Git 작업만 진행했다.
 - 직전 IMPL-551은 5d8ad080edad48fb28b6ecf0bf7dd339feed28ed로 origin/main 푸시 확인. IMPL-552는 별도 구현 커밋·푸시 후 실제 Git 결과를 보고한다. W01–W16/G0–G6 전체 목표는 계속 진행 중이다.
+
+
+## IMPL-553 — Share config backup and recovery protection constraints
+
+- 백업 생성에도 복원의 secret 보호 변환과 변환 후 32 MiB 크기 제한을 적용했다. 원래 legacy plaintext 파일이 입력 상한을 만족해도 보호 후 커지거나 token 입력 조건을 위반하는 경우 archive 게시 전에 실패하도록 연결했다.
+- protectedConfiguration helper를 두 경로가 공유하고 invalidInput/invalidFormat을 설정 오류로 구분한다. archive 안에는 원래 바이트를 계속 보존하며 원본 파일을 수정하지 않는다. profile/key의 미래 가용성이나 모든 provider 설정 의미까지 보장하지 않는다.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·DPAPI·명령 및 round-trip 검증 미실행. 설정 전체 저장소의 백업/복원·GUI/제거 연동은 남아 있다.
+- IMPL-552는 b8b0be3d1a3b3c9943824104601abc98b1aa132c로 origin/main에 푸시했다. IMPL-553도 별도 커밋·푸시 후 실제 Git 결과를 보고한다.

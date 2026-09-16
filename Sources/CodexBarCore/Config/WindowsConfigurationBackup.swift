@@ -30,8 +30,10 @@ public enum WindowsConfigurationBackup {
     private static let scope = "config-file-only"
 
     public static func archive(storedConfiguration: Data) throws -> Data {
-        // Validate without constructing a runtime, discovering plugins or reserializing the model.
-        _ = try self.decodedConfiguration(storedConfiguration)
+        // Apply the same recovery conversion before publishing an archive. A legacy plaintext
+        // config can fit the input bound yet exceed the on-disk bound after secret protection.
+        // Keep the original bytes in the archive; this conversion only checks the recovery contract.
+        _ = try self.protectedConfiguration(storedConfiguration)
         let payload = Payload(version: 1, scope: self.scope, backupID: UUID(), createdAt: Date(),
                               storedConfiguration: storedConfiguration)
         let plaintext = try JSONEncoder().encode(payload)
@@ -46,13 +48,20 @@ public enum WindowsConfigurationBackup {
         guard let payload = try? JSONDecoder().decode(Payload.self, from: plaintext),
               payload.version == 1, payload.scope == self.scope,
               payload.createdAt.timeIntervalSince1970.isFinite else { throw Failure.invalidArchive }
-        let decoded = try self.decodedConfiguration(payload.storedConfiguration)
-        let protected: Data
-        do { protected = try WindowsProtectedTokenConfig.encode(decoded) }
-        catch { throw Failure.protectionUnavailable }
-        guard protected.count <= self.maximumConfigurationBytes else { throw Failure.invalidConfiguration }
+        let protected = try self.protectedConfiguration(payload.storedConfiguration)
         return RestoredConfiguration(backupID: payload.backupID, createdAt: payload.createdAt,
                                      storedData: protected)
+    }
+
+    private static func protectedConfiguration(_ stored: Data) throws -> Data {
+        let decoded = try self.decodedConfiguration(stored)
+        let protected: Data
+        do { protected = try WindowsProtectedTokenConfig.encode(decoded) }
+        catch WindowsTokenAccountProtection.Failure.invalidInput { throw Failure.invalidConfiguration }
+        catch WindowsProtectedTokenConfig.Failure.invalidFormat { throw Failure.invalidConfiguration }
+        catch { throw Failure.protectionUnavailable }
+        guard protected.count <= self.maximumConfigurationBytes else { throw Failure.invalidConfiguration }
+        return protected
     }
 
     private static func decodedConfiguration(_ stored: Data) throws -> Data {

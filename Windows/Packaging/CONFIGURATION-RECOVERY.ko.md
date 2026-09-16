@@ -1,6 +1,6 @@
 # Windows 설정 파일 백업과 새 파일 복원
 
-IMPL-552에서 코드 경로를 작성했다. 상태는 **CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION**이며 Windows 명령·DPAPI·파일 권한·백업/복원·빌드·테스트를 실행하지 않았다.
+IMPL-552에서 코드 경로를 작성하고 IMPL-553에서 백업 생성과 복원의 보호 변환 조건을 공유했다. 상태는 **CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION**이며 Windows 명령·DPAPI·파일 권한·백업/복원·빌드·테스트를 실행하지 않았다.
 
 `CodexBarWindows.exe`는 트레이/runtime를 만들기 전에 `--config-backup`, `--config-restore-new`, `--config-backup-help`를 처리하도록 연결했다. 이 명령은 provider 조회·plugin 실행·앱 시작·설치/제거를 요청하지 않는다. 성공 메시지와 오류 코드는 실제 해당 명령이 실행될 때의 경로이며, 현재 작업에서 생성한 백업이나 복원 결과물은 없다.
 
@@ -27,6 +27,8 @@ UserDefaults에 저장한 별도 표시/언어/알림 설정, 위젯 설정, 사
 복원은 새 파일 생성으로 끝나며 `CODEXBAR_CONFIG`, 기존 config, 실행 중인 앱, registry 및 credential store를 바꾸지 않는다. 실제로 사용하려면 앱을 종료하고 해당 복원 파일을 `CODEXBAR_CONFIG`로 명시적으로 선택해 다음 실행에 반영해야 한다. 다른 기존 설정 저장소를 함께 복원하거나 앱 데이터 경로 전체를 이관하지 않는다. 부분 복원 중 기존 config가 덮이는 단계나 자동 재시도/자동 활성화는 없다.
 
 ## 파일 처리 경계
+
+백업 생성 전에도 복원과 같은 보호 변환 및 변환 후 32 MiB 상한을 적용한다. legacy plaintext config 자체는 상한 이내여도 secret 보호 후 커지거나 token 값이 보호 입력 조건에 맞지 않으면 archive 게시 전에 거절한다. archive payload에는 계속 원래 파일 바이트를 넣으며 config 원본을 이관/변경하지 않는다. 이 조건을 코드에 추가한 사실은 실제 round-trip 성공, 이후 profile/key 가용성 또는 전원 차단 복구의 검증 결과가 아니다.
 
 설정 파일은 32 MiB, archive는 48 MiB로 제한한다. local fixed/removable drive의 절대 경로와 이미 존재하는 regular 부모 디렉터리만 받는다. UNC/device/stream 경로, traversal, 예약 파일명과 관측한 reparse point는 거절한다. 부모 디렉터리는 delete 공유 없이 열어 작업 중 이름 교체를 제한하고, 입력은 read 공유만 허용한 단일 handle에서 파일 종류·link 수·길이와 bounded 내용을 읽는다. Windows 파일 공유 규칙에 관한 경계이며 실제 OS 동작을 실행 검증한 것은 아니다. [Microsoft CreateFileW](https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-createfilew)
 

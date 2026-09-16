@@ -26,7 +26,7 @@
   "static_qa_status": "NOT_RUN_DURING_IMPLEMENTATION",
   "windows_runtime_status": "NOT_VALIDATED",
   "completion_claim": false,
-  "latest_completed_slice": "IMPL-552",
+  "latest_completed_slice": "IMPL-553",
   "next": "Implement remaining full Windows parity, including spend project/session exploration, ownership lifecycle and release integration; validation deferred by user instruction.",
   "inventory": {
     "baseline_entries": 2844,
@@ -49,7 +49,7 @@
     "widget_provider_choices": 17
   },
   "automation_action_this_revision": "Created active thread heartbeat codexbar-windows-30 at 30-minute intervals",
-  "publication_action_this_revision": "Implementation batches through IMPL-551 are pushed to origin/main (5d8ad080edad48fb28b6ecf0bf7dd339feed28ed). IMPL-552 follows as a separate implementation-only commit and push; report the result from Git output.",
+  "publication_action_this_revision": "Implementation batches through IMPL-552 are pushed to origin/main (b8b0be3d1a3b3c9943824104601abc98b1aa132c). IMPL-553 follows as a separate implementation-only commit and push; report the result from Git output.",
   "historical_state_before_2026_09_12": {
     "phase": "IMPLEMENTING",
     "repository": "/Users/yeoreum/Documents/codexbar-window/fork",
@@ -4422,6 +4422,17 @@
       "workstream": "W04 Settings / W16 Operations",
       "status": "CODE_WRITTEN_UNVERIFIED",
       "validation": "NOT_RUN_BY_USER_INSTRUCTION"
+    },
+    {
+      "id": "IMPL-553",
+      "contracts": [
+        "WIN-053",
+        "WIN-068",
+        "WIN-069"
+      ],
+      "workstream": "W04 Settings / W16 Operations",
+      "status": "CODE_WRITTEN_UNVERIFIED",
+      "validation": "NOT_RUN_BY_USER_INSTRUCTION"
     }
   ],
   "publication_policy": {
@@ -4432,8 +4443,8 @@
     "authorization": "User explicitly reaffirmed commit and push after every implementation on 2026-09-15."
   },
   "last_confirmed_code_publication": {
-    "through_slice": "IMPL-551",
-    "commit": "5d8ad080edad48fb28b6ecf0bf7dd339feed28ed",
+    "through_slice": "IMPL-552",
+    "commit": "b8b0be3d1a3b3c9943824104601abc98b1aa132c",
     "remote": "origin/main",
     "status": "PUSH_CONFIRMED",
     "validation": "NOT_RUN_BY_USER_INSTRUCTION"
