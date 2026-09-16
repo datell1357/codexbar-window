@@ -146,6 +146,18 @@ private final class WindowsTrayApplication: @unchecked Sendable {
                 self.host.postPlanHistory(requestID: requestID, result: result)
             }
         },
+        onPlanHistoryOwnershipRequested: { [weak self] requestID, providerID, contextToken, action in
+            guard let self else { return }
+            Task {
+                let result = await self.runtime.planHistoryOwnership(providerID: providerID,
+                    contextToken: contextToken, action: action)
+                self.host.postPlanHistory(requestID: requestID, result: result)
+            }
+        },
+        onPlanHistoryOwnershipCancel: { [weak self] reviewID in
+            guard let self else { return }
+            Task { await self.runtime.cancelPlanHistoryOwnership(reviewID: reviewID) }
+        },
         onCursorBrowserImportRequested: { [weak self] requestID in
             guard let self else { return }
             self.cursorBrowserImports.start(id: requestID) { [weak self] in

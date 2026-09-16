@@ -1,6 +1,6 @@
 # Windows 사용량 이력 보존과 복원
 
-IMPL-555~557에서 코드 경로를 작성했다. 상태는 **CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION**이다. 백업/복원 명령, DPAPI, 파일/잠금, 빌드·테스트·Windows 실행은 현재 작업에서 수행하지 않았다.
+IMPL-555~558에서 코드 경로를 작성했다. 상태는 **CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION**이다. 백업/복원 명령, DPAPI, 파일/잠금, 빌드·테스트·Windows 실행은 현재 작업에서 수행하지 않았다.
 
 ## 보존 범위
 
@@ -50,7 +50,7 @@ pace는 표식이 있으면 정확히 일치하는 canonical account key만 읽�
 
 표식만 게시된 중단 상태도 제한을 유지하고 새 restore-missing으로 덮지 않는다. 아래 명시적 resume은 같은 작업의 표식인 경우에만 남은 payload 게시를 허용한다. 명시적 plugin 삭제에서는 이력 파일과 표식을 모두 검토 화면에 표시하고 내용/잠금 대조 후 payload부터 삭제하도록 작성했다. 로드 실패로 ID를 모르는 plugin 파일 삭제에는 이력을 연결하지 않는다. 현재 작업에서 실제 삭제를 실행한 것은 아니다.
 
-미지정/legacy 이력의 사용자 소유권 검토·명시적 재귀속 UI는 남아 있다. IMPL-555만으로 이미 복원한 파일에는 표식이 없을 수 있으며 이번 구현이 과거 파일을 자동 판별하거나 소급 변환하지 않는다. 표식만 복사에서 제외하거나 외부 도구가 제거하면 이 경계가 유지된다고 보장하지 않는다. inactive 복원 폴더를 옮길 때는 표식을 포함한 전체 파일 쌍을 보존한다.
+IMPL-558은 first-party plan 이력 차트에 [명시적 소유권 검토·계정 연결](HISTORY-OWNERSHIP-RECOVERY.ko.md)을 연결했다. 계정이 식별된 표식 있는 plan 파일이 대상이며 pace/plugin 전용 UI·표식 없는 과거 자료와 동적 구간 분리/연결 취소는 남아 있다. IMPL-555만으로 이미 복원한 파일에는 표식이 없을 수 있으며 이번 구현이 과거 파일을 자동 판별하거나 소급 변환하지 않는다. 표식만 복사에서 제외하거나 외부 도구가 제거하면 이 경계가 유지된다고 보장하지 않는다. inactive 복원 폴더를 옮길 때는 표식을 포함한 전체 파일 쌍을 보존한다.
 
 ## 현재 저장소 복원의 기록과 부분 실패
 
@@ -92,4 +92,4 @@ IMPL-557부터 생성한 version 2 live restore 작업에 다음 명령을 사�
 
 출력은 현재 CodexBar 이력 데이터 root 밖이어야 하고, 복원 출력은 입력 archive 내부에도 만들지 않는다. live 복원에 사용하는 archive 역시 live data root 밖에 있어야 한다. 이 경로 제한은 모든 MSIX package/install 제거 영향 밖의 저장임을 증명하지 않는다. archive는 그런 제거 대상 밖에 별도로 보관해야 한다.
 
-비용 SQLite/웹 cache·credential 등 나머지 저장소, legacy 이력의 명시적 소유권 검토/재귀속과 과거 복원 자료 처리, legacy 작업 조정/복구와 재개 GUI, 제거 도구의 전체 보존 선택과 GUI, profile/key 복구 정책, Windows x64/ARM64 실제 round-trip/중단/ACL/가상화 동작은 남아 있다. [MSIX 제거](MSIX-REMOVAL.ko.md)의 `backup: NOT_CREATED` 정책은 이 일부 백업 구현만으로 바꾸지 않는다.
+비용 SQLite/웹 cache·credential 등 나머지 저장소, pace/plugin 전용 소유권 검토/재귀속과 과거 복원 자료 처리, legacy 작업 조정/복구와 재개 GUI, 제거 도구의 전체 보존 선택과 GUI, profile/key 복구 정책, Windows x64/ARM64 실제 round-trip/중단/ACL/가상화 동작은 남아 있다. [MSIX 제거](MSIX-REMOVAL.ko.md)의 `backup: NOT_CREATED` 정책은 이 일부 백업 구현만으로 바꾸지 않는다.

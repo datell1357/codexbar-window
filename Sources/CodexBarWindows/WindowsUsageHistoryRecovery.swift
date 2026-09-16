@@ -57,6 +57,22 @@ enum WindowsUsageHistoryRecovery {
     private static let fileMagic = Data("CodexBar.Windows.UsageHistoryFile.v1\0".utf8)
     private static let archiveStatus = "RAW_HISTORY_BACKUP_NOT_RUNTIME_VALIDATED"
 
+    /// Internal pre-mutation recovery copy. The caller holds the provider lock and supplies the
+    /// exact reviewed bytes. Reuses the normal archive/restore format, including DPAPI and limits.
+    static func preservePlanHistory(_ data: Data, providerID: ProviderInstanceID, archiveID: UUID,
+                                    in directory: URL) throws {
+        guard data.count <= self.maximumFileBytes else { throw Failure.tooLarge }
+        try WindowsRecoveryFileAccess.withNewDirectory(directory) {
+            let entry = try self.writeEntry(data, kind: .planUtilization, providerID: providerID.rawValue,
+                archiveID: archiveID, directory: directory)
+            let manifest = Manifest(version: 1, archiveID: archiveID, createdAt: Date(), status: self.archiveStatus,
+                planDirectoryPresent: true, pacePresent: false, entries: [entry])
+            try self.validate(manifest)
+            try WindowsRecoveryFileAccess.publish(self.sealManifest(manifest),
+                to: directory.appendingPathComponent(self.manifestName))
+        }
+    }
+
     /// Caller owns exclusive profile access for the whole operation, including the final manifest.
     static func backup(to directory: URL) throws -> Int {
         try self.requireOutsideLiveHistory(directory)

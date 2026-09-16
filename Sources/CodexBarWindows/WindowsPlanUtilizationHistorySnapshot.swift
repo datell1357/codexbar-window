@@ -20,10 +20,13 @@ struct WindowsPlanUtilizationHistorySnapshot: Sendable {
 
 enum WindowsPlanUtilizationHistoryResult: Sendable {
     case snapshot(WindowsPlanUtilizationHistorySnapshot)
+    case ownershipReview(WindowsPlanHistoryOwnershipReview)
+    case ownershipApplied(backupID: UUID, receiptRecorded: Bool)
+    case ownershipInterrupted(backupID: UUID?)
     case unavailable(Failure)
 
     enum Failure: Sendable {
-        case changed, noCurrentUsage, busy, invalidData, loadFailed, ownershipReviewRequired
+        case changed, noCurrentUsage, busy, invalidData, loadFailed, ownershipReviewRequired, ownershipHidden, ownershipNoCandidates
 
         var message: String {
             let key: String = switch self {
@@ -33,6 +36,8 @@ enum WindowsPlanUtilizationHistoryResult: Sendable {
             case .invalidData: "plan_history_invalidData"
             case .loadFailed: "plan_history_loadFailed"
             case .ownershipReviewRequired: "plan_history_recoveryOwnerRequired"
+            case .ownershipHidden: "history_owner_hidden"
+            case .ownershipNoCandidates: "history_owner_empty"
             }
             return WindowsStatusLocalization.text(key)
         }

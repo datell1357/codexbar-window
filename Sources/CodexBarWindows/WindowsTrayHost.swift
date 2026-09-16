@@ -29,6 +29,8 @@ public final class WindowsTrayHost: @unchecked Sendable {
     private static let planHistoryCommandBase = UINT_PTR(0xD800)
     private var popupPlanHistoryCommands: [UINT_PTR: (providerID: ProviderInstanceID, token: UUID)] = [:]
     private let onPlanHistoryRequested: @Sendable (UUID, ProviderInstanceID, UUID) -> Void
+    private let onPlanHistoryOwnershipRequested: @Sendable (UUID, ProviderInstanceID, UUID, WindowsPlanHistoryOwnershipAction) -> Void
+    private let onPlanHistoryOwnershipCancel: @Sendable (UUID) -> Void
     // Request identity, privacy and reply are protected by mailboxLock.
     private var planHistoryRequest: (id: UUID, providerID: ProviderInstanceID, token: UUID, privacy: Bool)?
     private var planHistoryMailbox: WindowsPlanUtilizationHistoryResult?
@@ -440,6 +442,8 @@ public final class WindowsTrayHost: @unchecked Sendable {
         onSpendHoursRequested: @escaping @Sendable (UUID, UInt64, Date, String) -> Void = { _, _, _, _ in },
         onSpendHistoryRequested: @escaping @Sendable (UUID) -> Void = { _ in },
         onPlanHistoryRequested: @escaping @Sendable (UUID, ProviderInstanceID, UUID) -> Void = { _, _, _ in },
+        onPlanHistoryOwnershipRequested: @escaping @Sendable (UUID, ProviderInstanceID, UUID, WindowsPlanHistoryOwnershipAction) -> Void = { _, _, _, _ in },
+        onPlanHistoryOwnershipCancel: @escaping @Sendable (UUID) -> Void = { _ in },
         onCursorBrowserImportRequested: @escaping @Sendable (UUID) -> Void = { _ in },
         onCursorBrowserImportSave: @escaping @Sendable (UUID, UUID, UUID, String) -> Void = { _, _, _, _ in },
         onCursorBrowserImportCancel: @escaping @Sendable (UUID) -> Void = { _ in },
@@ -535,6 +539,8 @@ public final class WindowsTrayHost: @unchecked Sendable {
         self.onSpendHoursRequested = onSpendHoursRequested
         self.onSpendHistoryRequested = onSpendHistoryRequested
         self.onPlanHistoryRequested = onPlanHistoryRequested
+        self.onPlanHistoryOwnershipRequested = onPlanHistoryOwnershipRequested
+        self.onPlanHistoryOwnershipCancel = onPlanHistoryOwnershipCancel
         self.onCursorBrowserImportRequested = onCursorBrowserImportRequested
         self.onAugmentBrowserImportRequested = onAugmentBrowserImportRequested
         self.onWindsurfBrowserImportRequested = onWindsurfBrowserImportRequested
@@ -1138,11 +1144,50 @@ public final class WindowsTrayHost: @unchecked Sendable {
         guard let request, let result else { return }
         let caption = WindowsStatusLocalization.text("plan_history_title")
         guard request.privacy == WindowsUsagePresentationSettings.load().hidePersonalInfo else {
+            if case let .ownershipReview(review) = result { self.onPlanHistoryOwnershipCancel(review.id) }
             self.showMessage(WindowsStatusLocalization.text("plan_history_changed"), caption: caption)
             return
         }
         switch result {
         case let .unavailable(failure): self.showMessage(failure.message, caption: caption)
+        case let .ownershipInterrupted(backupID):
+            let key = backupID == nil ? "history_owner_failed" : "history_owner_interrupted"
+            self.showMessage(WindowsStatusLocalization.text(key)
+                .replacingOccurrences(of: "{backup}", with: backupID?.uuidString.lowercased() ?? "")
+                .replacingOccurrences(of: "{path}", with: backupID.map { WindowsPlanUtilizationHistoryStore.ownershipBackupDirectory($0).path } ?? ""),
+                caption: caption)
+            self.onRefresh()
+        case let .ownershipApplied(backupID, receiptRecorded):
+            let key = receiptRecorded ? "history_owner_applied" : "history_owner_receiptMissing"
+            self.showMessage(WindowsStatusLocalization.text(key)
+                .replacingOccurrences(of: "{backup}", with: backupID.uuidString.lowercased())
+                .replacingOccurrences(of: "{path}", with: WindowsPlanUtilizationHistoryStore.ownershipBackupDirectory(backupID).path),
+                caption: caption)
+            self.onRefresh()
+        case let .ownershipReview(review):
+            guard review.providerID == request.providerID, review.contextToken == request.token, review.isCurrent() else {
+                self.onPlanHistoryOwnershipCancel(review.id)
+                self.showMessage(WindowsStatusLocalization.text("plan_history_changed"), caption: caption)
+                return
+            }
+            self.remoteEditorOpen = true
+            let choice = WindowsPlanHistoryOwnershipDialog.show(owner: window, review: review,
+                isCurrent: self.snapshotValidity.capture())
+            self.remoteEditorOpen = false
+            guard !self.quitInvoked else { self.onPlanHistoryOwnershipCancel(review.id); return }
+            PostMessageW(window, Self.wakeMessage, 0, 0)
+            switch choice {
+            case let .selected(candidateID):
+                self.requestPlanHistoryOwnership(providerID: request.providerID, token: request.token,
+                    action: .apply(reviewID: review.id, candidateID: candidateID))
+            case .cancelled: self.onPlanHistoryOwnershipCancel(review.id)
+            case .invalidated:
+                self.onPlanHistoryOwnershipCancel(review.id)
+                self.showMessage(WindowsStatusLocalization.text("plan_history_changed"), caption: caption)
+            case .failed:
+                self.onPlanHistoryOwnershipCancel(review.id)
+                self.showMessage(WindowsStatusLocalization.text("plan_history_displayFailed"), caption: caption)
+            }
         case let .snapshot(snapshot):
             guard snapshot.providerID == request.providerID, snapshot.contextToken == request.token,
                   snapshot.hidePersonalInfo == request.privacy, snapshot.isCurrent() else {
@@ -1157,11 +1202,31 @@ public final class WindowsTrayHost: @unchecked Sendable {
             PostMessageW(window, Self.wakeMessage, 0, 0)
             switch result {
             case .refresh?: self.onRefresh()
+            case .reviewOwnership?:
+                self.requestPlanHistoryOwnership(providerID: request.providerID, token: request.token, action: .review)
             case .closed?: break
             case .invalidated?: self.showMessage(WindowsStatusLocalization.text("plan_history_changed"), caption: caption)
             case nil: self.showMessage(WindowsStatusLocalization.text("plan_history_displayFailed"), caption: caption)
             }
         }
+    }
+
+    private func requestPlanHistoryOwnership(providerID: ProviderInstanceID, token: UUID,
+                                             action: WindowsPlanHistoryOwnershipAction) {
+        guard !self.quitInvoked else { return }
+        let requestID = UUID()
+        self.mailboxLock.lock()
+        let busy = self.planHistoryRequest != nil
+        if !busy {
+            self.planHistoryRequest = (requestID, providerID, token, WindowsUsagePresentationSettings.load().hidePersonalInfo)
+            self.planHistoryMailbox = nil
+        }
+        self.mailboxLock.unlock()
+        if busy {
+            if case let .apply(reviewID, _) = action { self.onPlanHistoryOwnershipCancel(reviewID) }
+            self.showMessage(WindowsStatusLocalization.text("plan_history_loading"),
+                caption: WindowsStatusLocalization.text("history_owner_title"))
+        } else { self.onPlanHistoryOwnershipRequested(requestID, providerID, token, action) }
     }
 
     private func drainShareStatsCopy() {

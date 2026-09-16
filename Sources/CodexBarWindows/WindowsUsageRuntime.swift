@@ -1002,6 +1002,8 @@ public actor WindowsUsageRuntime {
         let validity: WindowsSnapshotValidity
     }
     private var planHistoryContexts: [ProviderInstanceID: PlanHistoryContext] = [:]
+    private var planHistoryOwnershipDraft: (draft: WindowsPlanUtilizationHistoryStore.OwnershipDraft,
+        context: PlanHistoryContext, expires: Date)?
     private var planHistoryContextGeneration = UUID()
     private var planHistoryReadSelections: [ProviderInstanceID: WindowsPlanUtilizationHistoryStore.Selection] = [:]
     private var planHistoryBurnCaches: [ProviderInstanceID: SessionEquivalentBurnCacheCore] = [:]
@@ -4013,6 +4015,7 @@ public actor WindowsUsageRuntime {
     }
 
     private func invalidatePlanHistoryContexts(preserveForecastCaches: Bool = false) {
+        self.planHistoryOwnershipDraft = nil
         self.planHistoryContextGeneration = UUID()
         for context in self.planHistoryContexts.values { context.validity.invalidate() }
         self.planHistoryContexts.removeAll(keepingCapacity: true)
@@ -4150,6 +4153,84 @@ public actor WindowsUsageRuntime {
             self.invalidatePlanHistoryContexts()
             return .unavailable(.loadFailed)
         }
+    }
+
+    func planHistoryOwnership(providerID: ProviderInstanceID, contextToken: UUID,
+                              action: WindowsPlanHistoryOwnershipAction) -> WindowsPlanUtilizationHistoryResult {
+        switch action {
+        case .review: return self.preparePlanHistoryOwnership(providerID: providerID, contextToken: contextToken)
+        case let .apply(reviewID, candidateID):
+            return self.applyPlanHistoryOwnership(providerID: providerID, contextToken: contextToken,
+                reviewID: reviewID, candidateID: candidateID)
+        }
+    }
+
+    func cancelPlanHistoryOwnership(reviewID: UUID) {
+        if self.planHistoryOwnershipDraft?.draft.id == reviewID { self.planHistoryOwnershipDraft = nil }
+    }
+
+    private func preparePlanHistoryOwnership(providerID: ProviderInstanceID,
+                                             contextToken: UUID) -> WindowsPlanUtilizationHistoryResult {
+        self.planHistoryOwnershipDraft = nil
+        guard !WindowsUsagePresentationSettings.load().hidePersonalInfo else { return .unavailable(.ownershipHidden) }
+        guard !self.shuttingDown, !Task.isCancelled, let provider = providerID.firstPartyProvider,
+              let context = self.planHistoryContexts[providerID], context.token == contextToken else {
+            return .unavailable(.changed)
+        }
+        guard case let .scoped(key) = context.owner else { return .unavailable(.ownershipReviewRequired) }
+        do {
+            guard try self.planHistoryContextMatches(context, provider: provider) else { return .unavailable(.changed) }
+            let draft = try self.planUtilizationHistoryStore.prepareOwnershipTransfer(providerID: providerID, targetKey: key)
+            guard !draft.options.isEmpty else { return .unavailable(.ownershipNoCandidates) }
+            guard !WindowsUsagePresentationSettings.load().hidePersonalInfo,
+                  try self.planHistoryContextMatches(context, provider: provider) else { return .unavailable(.changed) }
+            let expires = Date().addingTimeInterval(180)
+            let isValid = context.validity.capture()
+            self.planHistoryOwnershipDraft = (draft, context, expires)
+            return .ownershipReview(.init(id: draft.id, providerID: providerID, contextToken: contextToken,
+                targetTitle: String(context.title.replacingOccurrences(of: "\0", with: "").prefix(240)),
+                documentSHA256: draft.documentSHA256, candidates: draft.options.map(\.summary),
+                isCurrent: { isValid() && Date() < expires && !WindowsUsagePresentationSettings.load().hidePersonalInfo }))
+        } catch let error as WindowsPlanUtilizationHistoryStore.Failure {
+            switch error {
+            case .busy: return .unavailable(.busy)
+            case .changed: return .unavailable(.changed)
+            case .invalidData, .tooLarge: return .unavailable(.invalidData)
+            case .ownershipReviewRequired: return .unavailable(.ownershipReviewRequired)
+            case .unavailable: return .unavailable(.loadFailed)
+            }
+        } catch { return .unavailable(.loadFailed) }
+    }
+
+    private func applyPlanHistoryOwnership(providerID: ProviderInstanceID, contextToken: UUID,
+                                           reviewID: UUID, candidateID: UUID) -> WindowsPlanUtilizationHistoryResult {
+        guard let pending = self.planHistoryOwnershipDraft, pending.draft.id == reviewID,
+              pending.draft.providerID == providerID, pending.context.token == contextToken,
+              let provider = providerID.firstPartyProvider else { return .unavailable(.changed) }
+        self.planHistoryOwnershipDraft = nil
+        defer { self.invalidatePlanHistoryContexts() }
+        do {
+            let ensureCurrent = {
+                guard Date() < pending.expires, !WindowsUsagePresentationSettings.load().hidePersonalInfo,
+                      try self.planHistoryContextMatches(pending.context, provider: provider) else {
+                    throw WindowsPlanUtilizationHistoryStore.Failure.changed
+                }
+            }
+            try ensureCurrent()
+            let result = try self.planUtilizationHistoryStore.commitOwnershipTransfer(pending.draft,
+                candidateID: candidateID, beforePublish: ensureCurrent)
+            return .ownershipApplied(backupID: result.backupID, receiptRecorded: result.receiptRecorded)
+        } catch let failure as WindowsPlanUtilizationHistoryStore.OwnershipCommitFailure {
+            switch failure { case let .interrupted(backupID): return .ownershipInterrupted(backupID: backupID) }
+        } catch let error as WindowsPlanUtilizationHistoryStore.Failure {
+            switch error {
+            case .busy: return .unavailable(.busy)
+            case .changed: return .unavailable(.changed)
+            case .invalidData, .tooLarge: return .unavailable(.invalidData)
+            case .ownershipReviewRequired: return .unavailable(.ownershipReviewRequired)
+            case .unavailable: return .unavailable(.loadFailed)
+            }
+        } catch { return .unavailable(.loadFailed) }
     }
 
     private struct PlanHistoryReadMigrationInputs: Equatable {

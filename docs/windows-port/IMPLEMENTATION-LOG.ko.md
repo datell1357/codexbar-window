@@ -5286,3 +5286,13 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - 재개 전 일치한 기존 파일을 새 attempt 준비 기록에 남기고 이후 실패 기록에 누적 관측/게시 ID를 보존한다. 다음 재개에서도 과거의 알려진 게시를 유지하며 기존 실패 기록을 교체하지 않는다. record/attempt/디렉터리 한도를 두고 malformed/알 수 없는 resume 기록은 중단한다.
 - 이전 schema 1 작업은 target binding/evidence가 부족해 자동 재개나 추정 upgrade를 하지 않는다. archive v1 자체는 새 복원에 계속 사용한다. 경로 문자열 hash의 한계, 유실된 receipt/게시 사이 중단의 모호성, 외부 writer·MSIX 가상화·앱에 의해 갱신된 이력의 별도 복구 필요를 문서화했다.
 - CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 명령·DPAPI·파일/잠금/복원·Windows·빌드·테스트·lint·compiler/manifest 평가 검증 미실행. GUI·명시적 legacy 소유권 검토·전체 저장소/제거 연동과 모든 W01~W16/G0~G6 완료는 남아 있다. 직전 IMPL-556은 ed3691d2ae39396e7fec4e458a9e62f5e237adc1로 origin/main 푸시 확인. 이번 단위도 별도 커밋·푸시한다.
+
+
+## IMPL-558 — Review and explicitly assign restored plan history to the current account
+
+- first-party 이력 차트의 복원 표식 안내에서 native 소유권 검토 창→runtime 일회성 review/candidate 선택→store 적용을 연결했다. 현재 scoped 계정이 필요하며 개인정보 숨기기는 검토 전에 해제하도록 안내한다. 초기 선택/체크 없음, 묶음 변경 시 확인 해제, 취소 기본 버튼, 3분 만료·context/privacy 변경 시 중단을 작성했다.
+- 원래 account key를 UI로 보내지 않고 묶음 종류·SHA256 식별값·series 기간/표본 수와 현재 대상 계정을 표시한다. 식별값은 소유권 증명이 아니며 사용자가 해당 계정의 자료임을 직접 확인하도록 안내한다. 원본/표식 revision과 현재 계정/config을 적용 직전에 다시 대조한다.
+- 공통 단일 bucket transfer는 선택한 unscoped/다른 계정 묶음만 기존 대상에 기존 hourly peak/리셋/한도 reducer로 병합한다. 다른 계정/root 확장은 JSON 값으로 유지하고 재작성할 bucket의 미지원 확장은 거절한다. pair 충돌은 무효화하며 일반 공급자의 후속 구간 전환에서 이전 session/weekly가 새로 시작될 수 있음을 명시했다. 복원 제한 표식은 유지한다.
+- provider lock·directory pin 안에서 원본 전체의 current-user DPAPI archive와 prepared 기록을 먼저 게시한다. 기존 usage-history archive/restore-new 형식을 재사용해 실제 소비 경로를 연결했다. 새 provider 원본 게시와 완료 receipt 누락을 구분하고 실패·부분 사본을 보존한다. 이후 context/read/forecast cache를 무효화하고 새로고침한다.
+- 한국어·영어 안내, native 키보드/기본 취소·DPI/resize/개인정보 타이머, 원본을 새 폴더로 꺼내는 미실행 명령과 데이터 효과를 문서화했다. 사본 ID·정확한 보관 경로를 표시하며 앱 제거 전 외부 보관을 안내한다. 이 내부 사본이 제거용 전체 백업을 대신하지 않는다.
+- pace/plugin 전용 UI·표식 없는 과거 자료·동적 구간 분리·연결 취소/중단 조정·전체 저장소/제거 연결 및 전체 Windows 제품 구현은 남아 있다. CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. UI·계정·DPAPI·파일·명령·빌드·테스트·lint·compiler/manifest·Windows 실행 검증 미실행. 직전 IMPL-557은 754ffb5d8231d029a6d9e4f61e387d12b52cbe76으로 origin/main 푸시 확인. 이번 단위도 별도 커밋·푸시한다.

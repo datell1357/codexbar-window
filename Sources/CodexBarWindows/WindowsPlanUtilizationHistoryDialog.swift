@@ -5,7 +5,7 @@ import WinSDK
 
 /// Captured quota history with native controls and a textual equivalent for every plotted point.
 enum WindowsPlanUtilizationHistoryDialog {
-    enum Result { case closed, refresh, invalidated }
+    enum Result { case closed, refresh, invalidated, reviewOwnership }
     private final class Context {
         let snapshot: WindowsPlanUtilizationHistorySnapshot
         let hostIsCurrent: @Sendable () -> Bool
@@ -70,7 +70,7 @@ enum WindowsPlanUtilizationHistoryDialog {
         }
     }
     private static let className = "CodexBar.PlanUtilizationHistoryDialog"
-    private static let controlIDs: [Int32] = [10, 11, 6, 4, 5, 7, 2, 3]
+    private static let controlIDs: [Int32] = [10, 11, 6, 4, 5, 7, 2, 3, 12]
 
     static func show(owner: HWND, snapshot: WindowsPlanUtilizationHistorySnapshot,
                      isCurrent: @escaping @Sendable () -> Bool) -> Result? {
@@ -172,10 +172,11 @@ enum WindowsPlanUtilizationHistoryDialog {
             if !context.snapshot.series.isEmpty, SendMessageW(combo, UINT(CB_SETCURSEL), 0, 0) != 0 { return -1 }
             for (id, key) in [(Int32(4), "plan_history_previous"), (Int32(5), "plan_history_next"),
                               (Int32(7), "plan_history_clear"), (Int32(2), "plan_history_close"),
-                              (Int32(3), "plan_history_refresh")] {
+                              (Int32(3), "plan_history_refresh"), (Int32(12), "history_owner_open")] {
                 guard Self.control(hwnd, kind: "BUTTON", title: context.text(key), id: id,
                     style: DWORD(WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON)) != nil else { return -1 }
             }
+            ShowWindow(GetDlgItem(hwnd, 12), Int32(context.snapshot.restoredExactOwnership ? SW_SHOW : SW_HIDE))
             guard SetTimer(hwnd, 1, 250, nil) != 0 else { return -1 }
             Self.updateFont(hwnd, context: context)
             Self.layout(hwnd, context: context); Self.updateDetails(hwnd, context: context)
@@ -210,6 +211,9 @@ enum WindowsPlanUtilizationHistoryDialog {
             switch Int32(wParam & 0xffff) {
             case 2: DestroyWindow(hwnd); return 0
             case 3: context.result = .refresh; DestroyWindow(hwnd); return 0
+            case 12:
+                guard context.snapshot.restoredExactOwnership else { return 0 }
+                context.result = .reviewOwnership; DestroyWindow(hwnd); return 0
             case 4: Self.select(-1, hwnd: hwnd, context: context); return 0
             case 5: Self.select(1, hwnd: hwnd, context: context); return 0
             case 7: context.selectedIndex = nil
@@ -251,8 +255,9 @@ enum WindowsPlanUtilizationHistoryDialog {
         MoveWindow(GetDlgItem(hwnd, 10), margin, margin, context.px(100), height, 1)
         MoveWindow(GetDlgItem(hwnd, 11), margin + context.px(108), margin, max(1, width - context.px(108)), context.px(230), 1)
         let bottom = max(margin, rect.bottom - margin - height)
-        let buttonWidth = max(1, (width - gap) / 2)
-        for (index, id) in [Int32(2), Int32(3)].enumerated() {
+        let buttons: [Int32] = context.snapshot.restoredExactOwnership ? [2, 3, 12] : [2, 3]
+        let buttonWidth = max(1, (width - gap * Int32(buttons.count - 1)) / Int32(buttons.count))
+        for (index, id) in buttons.enumerated() {
             MoveWindow(GetDlgItem(hwnd, id), margin + Int32(index) * (buttonWidth + gap), bottom, buttonWidth, height, 1)
         }
         let navigation = max(margin, bottom - height - gap)

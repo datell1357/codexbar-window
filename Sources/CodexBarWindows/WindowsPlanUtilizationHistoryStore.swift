@@ -195,4 +195,155 @@ struct WindowsPlanUtilizationHistoryStore: Sendable {
         return try operation()
     }
 }
+
+extension WindowsPlanUtilizationHistoryStore {
+    struct OwnershipDraft: Sendable {
+        struct Option: Sendable {
+            let source: PlanUtilizationHistoryOwnershipTransfer.Source
+            let summary: WindowsPlanHistoryOwnershipReview.Candidate
+        }
+        let id: UUID
+        let providerID: ProviderInstanceID
+        let targetKey: String
+        let revision: Data
+        let documentSHA256: String
+        let boundary: WindowsHistoryRecoveryBoundary.Record
+        let options: [Option]
+    }
+    enum OwnershipCommitFailure: Error { case interrupted(backupID: UUID?) }
+    struct OwnershipCommitResult: Sendable { let backupID: UUID; let receiptRecorded: Bool }
+
+    static func ownershipBackupDirectory(_ id: UUID) -> URL {
+        CodexBarPlatformPaths.codexBarDataDirectory().appendingPathComponent("history-ownership-backups", isDirectory: true)
+            .appendingPathComponent(id.uuidString.lowercased(), isDirectory: true)
+    }
+
+    func prepareOwnershipTransfer(providerID: ProviderInstanceID, targetKey: String) throws -> OwnershipDraft {
+        try self.withLock(providerID: providerID) {
+            try WindowsRecoveryFileAccess.withDirectory(self.directory) {
+                let url = self.fileURL(providerID: providerID)
+                guard let boundary = try WindowsHistoryRecoveryBoundary.read(for: url) else { throw Failure.ownershipReviewRequired }
+                let raw = try WindowsRecoveryFileAccess.read(url, limit: Self.maximumFileBytes)
+                let document = try self.decode(raw)
+                var sources: [PlanUtilizationHistoryOwnershipTransfer.Source] = []
+                if document.unscoped.contains(where: { !$0.entries.isEmpty }) { sources.append(.unscoped) }
+                for key in document.accounts.keys.sorted() where key != targetKey && key != "__unscoped__" && key != "__codexbar_unscoped__" {
+                    if document.accounts[key]?.contains(where: { !$0.entries.isEmpty }) == true { sources.append(.account(key)) }
+                }
+                let options = sources.map { source -> OwnershipDraft.Option in
+                    let key: String?
+                    switch source { case .unscoped: key = nil; case let .account(value): key = value }
+                    let series = document.histories(accountKey: key).map { series in
+                        WindowsPlanHistoryOwnershipReview.Series(name: series.name, minutes: series.windowMinutes,
+                            count: series.entries.count, first: series.entries.map(\.capturedAt).min(),
+                            last: series.entries.map(\.capturedAt).max())
+                    }
+                    return OwnershipDraft.Option(source: source, summary: .init(id: UUID(), unassigned: key == nil,
+                        fingerprint: Self.ownershipHash(Data((key ?? "__codexbar_unscoped__").utf8)), series: series))
+                }
+                guard let revision = try self.revision(raw, boundary: boundary) else { throw Failure.changed }
+                return OwnershipDraft(id: UUID(), providerID: providerID, targetKey: targetKey,
+                    revision: revision, documentSHA256: Self.ownershipHash(raw), boundary: boundary, options: options)
+            }
+        }
+    }
+
+    /// Applies one explicitly reviewed bucket. Other owners and the recovery restriction remain.
+    func commitOwnershipTransfer(_ draft: OwnershipDraft, candidateID: UUID,
+                                 beforePublish: @escaping () throws -> Void) throws -> OwnershipCommitResult {
+        guard let option = draft.options.first(where: { $0.summary.id == candidateID }) else { throw Failure.changed }
+        return try self.withLock(providerID: draft.providerID) {
+            try WindowsRecoveryFileAccess.withDirectory(self.directory) {
+                let url = self.fileURL(providerID: draft.providerID)
+                let raw = try WindowsRecoveryFileAccess.read(url, limit: Self.maximumFileBytes)
+                let boundary = try WindowsHistoryRecoveryBoundary.read(for: url)
+                guard boundary == draft.boundary, try self.revision(raw, boundary: boundary) == draft.revision else {
+                    throw Failure.changed
+                }
+                try beforePublish()
+                let document = try self.decode(raw)
+                let replacement = try PlanUtilizationHistoryOwnershipTransfer.apply(document, source: option.source, target: draft.targetKey)
+                let data = try self.encodeOwnershipTransfer(raw: raw, replacement: replacement, source: option.source, target: draft.targetKey)
+                guard data.count <= Self.maximumFileBytes else { throw Failure.tooLarge }
+                let backupID = UUID()
+                let archive = Self.ownershipBackupDirectory(backupID)
+                let parent = archive.deletingLastPathComponent()
+                var backedUp = false
+                do {
+                    try WindowsRecoveryFileAccess.withDirectoryCreatingIfMissing(parent) {
+                        try WindowsUsageHistoryRecovery.preservePlanHistory(raw, providerID: draft.providerID,
+                            archiveID: backupID, in: archive)
+                    }
+                    backedUp = true
+                    let record = OwnershipReceipt(version: 1, backupID: backupID, providerID: draft.providerID.rawValue,
+                        beforeSHA256: Self.ownershipHash(raw), afterSHA256: Self.ownershipHash(data), recordedAt: Date(),
+                        status: "OWNERSHIP_TRANSFER_PREPARED_RUNTIME_UNVERIFIED")
+                    try WindowsRecoveryFileAccess.publish(JSONEncoder().encode(record),
+                        to: archive.appendingPathComponent("ownership-transfer-prepared.json"))
+                    try WindowsCredentialFileWriter.writePrivate(data, to: url, beforePublish: { _ in
+                        guard try WindowsRecoveryFileAccess.read(url, limit: Self.maximumFileBytes) == raw,
+                              try WindowsHistoryRecoveryBoundary.read(for: url) == draft.boundary else { throw Failure.changed }
+                        try beforePublish()
+                    })
+                    // Keep a real backup even if the post-publication receipt cannot be saved.
+                    let applied = OwnershipReceipt(version: 1, backupID: backupID, providerID: draft.providerID.rawValue,
+                        beforeSHA256: record.beforeSHA256, afterSHA256: record.afterSHA256, recordedAt: Date(),
+                        status: "OWNERSHIP_TRANSFER_PUBLISHED_RUNTIME_UNVERIFIED")
+                    do {
+                        try WindowsRecoveryFileAccess.publish(JSONEncoder().encode(applied),
+                            to: archive.appendingPathComponent("ownership-transfer-applied.json"))
+                        return OwnershipCommitResult(backupID: backupID, receiptRecorded: true)
+                    } catch { return OwnershipCommitResult(backupID: backupID, receiptRecorded: false) }
+                } catch { throw OwnershipCommitFailure.interrupted(backupID: backedUp ? backupID : nil) }
+            }
+        }
+    }
+
+    private struct OwnershipReceipt: Encodable {
+        let version: Int
+        let backupID: UUID
+        let providerID: String
+        let beforeSHA256: String
+        let afterSHA256: String
+        let recordedAt: Date
+        let status: String
+    }
+
+    private func encodeOwnershipTransfer(raw: Data, replacement: PlanUtilizationHistoryCore.Document,
+                                         source: PlanUtilizationHistoryOwnershipTransfer.Source, target: String) throws -> Data {
+        guard var root = try JSONSerialization.jsonObject(with: raw) as? [String: Any],
+              var accounts = root["accounts"] as? [String: Any] else { throw Failure.invalidData }
+        let sourceKey: String?
+        switch source { case .unscoped: sourceKey = nil; case let .account(key): sourceKey = key }
+        let sourceBucket: Any? = if let sourceKey { accounts[sourceKey] } else { root["unscoped"] }
+        // Do not silently discard extensions on the two buckets being rewritten.
+        for bucket in [sourceBucket, accounts[target]] {
+            guard let bucket else { continue }
+            guard let series = bucket as? [[String: Any]] else { throw Failure.invalidData }
+            for value in series {
+                guard Set(value.keys).isSubset(of: ["name", "windowMinutes", "entries"]),
+                      let entries = value["entries"] as? [[String: Any]],
+                      entries.allSatisfy({ Set($0.keys).isSubset(of: ["capturedAt", "usedPercent", "resetsAt"]) }) else {
+                    throw Failure.invalidData
+                }
+            }
+        }
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        guard let updated = try JSONSerialization.jsonObject(with: encoder.encode(replacement)) as? [String: Any],
+              let updatedAccounts = updated["accounts"] as? [String: Any] else { throw Failure.invalidData }
+        accounts[target] = updatedAccounts[target]
+        if let sourceKey { accounts.removeValue(forKey: sourceKey) }
+        else { root["unscoped"] = updated["unscoped"] }
+        root["accounts"] = accounts
+        root["preferredAccountKey"] = updated["preferredAccountKey"]
+        root["sessionEquivalentWindowPairIdentities"] = updated["sessionEquivalentWindowPairIdentities"]
+        return try JSONSerialization.data(withJSONObject: root, options: [.sortedKeys])
+    }
+
+    private static func ownershipHash(_ data: Data) -> String {
+        SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+    }
+}
+
 #endif
