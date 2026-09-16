@@ -168,6 +168,9 @@ enum CostUsageScanner {
         var cacheRoot: URL?
         var codexTraceDatabaseURL: URL?
         var codexScanBudgetForTesting: CodexScanBudget?
+        /// Windows Claude/Vertex directory visits and metadata rechecks per refresh.
+        /// File parsing, content hashing and checkpoint serialization have separate pending budgets.
+        var maxWindowsClaudeInventoryWorkPerRefresh: Int = 4096
         var calendar: Calendar
         var refreshMinIntervalSeconds: TimeInterval = 60
         var claudeLogProviderFilter: ClaudeLogProviderFilter = .all

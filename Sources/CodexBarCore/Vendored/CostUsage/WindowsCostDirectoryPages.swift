@@ -142,6 +142,13 @@ final class WindowsCostDirectoryPages: @unchecked Sendable {
         }
     }
 
+    func discard(_ continuation: CostUsageWindowsDirectoryPageState?) {
+        guard let continuation else { return }
+        self.lock.lock()
+        defer { self.lock.unlock() }
+        self.discardUnlocked(continuation, path: continuation.path)
+    }
+
     func reset(under root: URL) {
         let path = root.standardizedFileURL.path.replacingOccurrences(of: "\\", with: "/")
         let prefix = path.hasSuffix("/") ? path : path + "/"

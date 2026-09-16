@@ -5441,3 +5441,16 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - native page 방문 상한·전체 결과, token 없는 handle 재시작, eviction/독립 reader, admission/취소·같은 시각 폴더 교체, SQLite page round-trip·handle 소실 후 부모 missing 완료 및 1-unit 예산 진행용 합성 Windows fixture source를 작성했다. 컴파일·실행하지 않았다.
 - 이 변경은 parent directory 한 페이지의 열거량과 handle 수를 제한한다. main current/lookback pager와는 별도 registry이며 recursive Claude/legacy source의 bulk tree, 전체 metadata/content I/O·벽시계/동시 파일 변경·정렬·최종 대조 budget, 프로세스를 반복 종료해도 항상 앞으로 나아가는 durable ordered inventory는 아직 남는다. 전체 W01~W16/G0~G6 완료 아님.
 - CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·formatter·compiler/manifest·파일 fixture·Windows·실계정·CI 실행 검증 미실행. 직전 IMPL-571은 04e590241008a05d6fe2054c26d087ceb7abed7c로 origin/main 푸시 확인. 이번 단위도 별도 커밋·푸시한다.
+
+
+## IMPL-573 — Resume recursive Windows cost inventory across refreshes
+
+- native tree inventory state machine을 작성했다. multi-root 후보 queue·active directory page·완료 directory ID·alias/file 관측·최종 directory/file 대조 위치를 Codable 상태로 보존한다. raw next(숨김/비JSONL/EOF 포함)와 최종 metadata 재대조를 작업 단위로 제한하며 1-unit에서도 진행한다. 개별 parent EOF 뒤 새 child 목록만 정렬하여 native page 경계에 따라 alias 선택이 달라지지 않도록 했다.
+- Claude/Vertex는 기본 4,096 work/refresh로 탐색하고 partial state를 기존 private cache artifact에 추가 저장한다. 완성되지 않은 목록으로 file cache를 prune하거나 memo/report를 게시하지 않고 typed pending을 반환한다. 파일 rows/proofs/lastScan/configuration은 보존한다. 시간대 변경 중에도 이전 완료 cache의 calendar를 checkpoint 저장으로 바꾸지 않고 최종 content pass에서 재구성한다.
+- 완료한 폴더와 관측은 재시작 후 유지한다. active handle 소실 시 해당 폴더만 replay/dedup하며 전체 tree를 무조건 처음부터 재시작하지 않는다. native directory/file 변경 또는 부재 불일치이면 이전 사용량을 보존하고 fresh discovery checkpoint를 저장한다. I/O/권한/취소는 성공으로 삼키지 않고, checkpoint 저장 실패도 pending과 별도 오류로 전달한다.
+- 완성 후 전체 관측을 publication ledger로 복원하여 과거 page의 alias/부재/파일도 최종 게시 대조에 포함한다. file ID별 대표는 정렬된 전체 관측에서 한 개를 선택해 hard-link·여러 roots 중복을 막는다. 기존 동기 recursive source API도 같은 page 엔진을 drain하며 제외 디렉터리와 cycle 처리를 유지한다. 이 동기 legacy API 자체의 refresh 분할은 아직 아니다.
+- Windows 비용 화면에서 local discovery pending을 일반 실패와 구분하고, 합계에서 제외됨과 다음 refresh 재개를 표시한다. 완성되지 않은 source를 0 usage 또는 share 가능한 완료 source로 표시하지 않는다. pending source 전용 자동 후속 수집·이전 화면값의 source별 stale 유지·구체적 진행률 표시는 후속 작업이다.
+- bounded tree coverage/final metadata 단계, JSON 복원·active handle 소실과 완료 폴더 유지, 과거 page publication, Claude/Vertex cache 보존→최종 합계, directory 교체 재시작·calendar 보존·취소·checkpoint 쓰기 실패 합성 테스트 source를 추가했다. 기존 junction/hard-link 회귀 fixture는 새 wrapper 경로를 사용한다. 모든 fixture는 미실행이다.
+- 페이지 사이 같은 native file ID의 정상 append는 관측 stamp를 갱신하며 계속 진행한다. 여러 alias의 append-compatible 관측을 허용하고 Claude parser는 관측된 prefix만 actual-byte proof와 함께 읽는다. 교체/축소/같은 크기의 metadata 변경은 완료로 받아들이지 않는다. 지속 append fixture도 미실행이다.
+- 전체 queue/관측 map·JSON cache 인코딩/디코딩·정렬·state shape 확인·완료 ledger/게시 대조 및 file parser/content hashing은 아직 총 byte/시간/메모리 상한에 포함되지 않는다. active directory를 매 page마다 프로세스 종료하면 해당 폴더 replay가 반복될 수 있고, 완전한 durable ordered spool이나 metadata를 되돌린 membership 변경 탐지는 아니다. 전체 W01~W16/G0~G6 완료 아님.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·formatter·compiler/manifest·파일 fixture·Windows·실계정·CI 검증 미실행. 직전 IMPL-572는 0792fe4fde3d550fe0a1d6c80303cf8ad8801068로 origin/main 푸시 확인. 이번 단위도 별도 커밋·푸시한다.

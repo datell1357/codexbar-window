@@ -25,9 +25,15 @@ enum WindowsSpendSummary {
         }
         if snapshot.stale { rows.append("Stale data: a new collection has not completed.") }
         if !snapshot.sourceFailures.isEmpty {
-            rows.append("Partial collection: \(snapshot.sourceFailures.count) source(s) failed. Totals exclude those sources.")
+            let pending = snapshot.sourceFailures.filter(\.localInventoryPending).count
+            let failed = snapshot.sourceFailures.count - pending
+            rows.append("Partial collection: \(pending) source(s) still discovering files; \(failed) failed. Totals exclude those sources.")
             for failure in snapshot.sourceFailures {
-                rows.append("Unavailable: " + ProviderDescriptorRegistry.descriptor(for: failure.provider).metadata.displayName)
+                rows.append((failure.localInventoryPending ? "Discovering local files: " : "Unavailable: ")
+                    + ProviderDescriptorRegistry.descriptor(for: failure.provider).metadata.displayName)
+                if failure.localInventoryPending {
+                    rows.append("Discovery progress is saved. Refresh to continue; no completed total is available yet.")
+                }
                 if failure.accountIdentityUnconfirmed {
                     rows.append("Account identity could not be confirmed. Import the intended account again; this source is excluded.")
                 }

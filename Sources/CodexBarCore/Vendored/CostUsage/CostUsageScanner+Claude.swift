@@ -572,7 +572,9 @@ extension CostUsageScanner {
         let path = source.url.path
         let stamp = source.stamp
         #if os(Windows)
-        try WindowsCostSourceInventory.requireUnchangedFile(at: source.url, stamp: stamp)
+        // Discovery may span refreshes. Parse only the observed prefix while allowing a log
+        // to grow; the parser and publication ledger still bind rows to actual consumed bytes.
+        try WindowsCostSourceInventory.requireCompatibleFileAfterRead(at: source.url, stamp: stamp)
         let readSnapshot: CostUsageFileReadSnapshot? = CostUsageFileReadSnapshot(claude: stamp)
         #else
         let readSnapshot: CostUsageFileReadSnapshot? = nil
@@ -708,6 +710,58 @@ extension CostUsageScanner {
         return inventory
     }
 
+    #if os(Windows)
+    private static func inventoryWindowsClaudeRoots(
+        _ roots: [URL], provider: UsageProvider, options: Options, range: CostUsageDayRange,
+        artifact: inout CostUsageClaudeCache,
+        checkCancellation: CancellationCheck?) throws -> ClaudeSourceInventory
+    {
+        let fresh = CostUsageWindowsTreeInventory(roots: roots)
+        var state: CostUsageWindowsTreeInventory
+        if let previous = artifact.windowsInventory, previous.version == fresh.version,
+           previous.roots == fresh.roots, previous.policy == fresh.policy, previous.phase != .complete {
+            state = previous
+        } else {
+            WindowsCostDirectoryPages.shared.discard(artifact.windowsInventory?.page)
+            state = fresh
+        }
+        do {
+            let progress = try WindowsCostTreeInventory.advance(
+                &state, maxWork: max(1, options.maxWindowsClaudeInventoryWorkPerRefresh),
+                checkCancellation: checkCancellation)
+            if progress.isComplete {
+                var inventory = ClaudeSourceInventory()
+                guard let observations = inventory.publicationObservations else {
+                    throw WindowsCostSourceInventory.Failure.sourceChanged
+                }
+                try WindowsCostTreeInventory.observe(state, in: observations, checkCancellation: checkCancellation)
+                try observations.freeze().check(checkCancellation: checkCancellation)
+                for (url, stamp) in try WindowsCostTreeInventory.representatives(
+                    state, checkCancellation: checkCancellation) where stamp.size > 0 {
+                    inventory.files[url.path] = ClaudeSourceFile(url: url, stamp: stamp)
+                }
+                artifact.windowsInventory = nil
+                return inventory
+            }
+        } catch WindowsCostSourceInventory.Failure.sourceChanged {
+            WindowsCostDirectoryPages.shared.discard(state.page)
+            state = fresh
+        } catch CostUsageSourcePublication.Failure.sourceChangedOrUnavailable {
+            WindowsCostDirectoryPages.shared.discard(state.page)
+            state = fresh
+        }
+        // Checkpoint only: preserve rows/proofs/configuration/lastScan verbatim. This is not a
+        // report publication, and an incomplete inventory may never prune absent cached paths.
+        artifact.windowsInventory = state
+        guard try CostUsageClaudeCacheIO.save(
+            provider: provider, cache: artifact, cacheRoot: options.cacheRoot,
+            calendar: range.calendar, preserveUsageCalendar: true, checkCancellation: checkCancellation) != nil else {
+            throw CostUsageError.localInventoryCheckpointUnavailable
+        }
+        throw CostUsageError.localInventoryPending(discoveredFiles: state.files.count)
+    }
+    #endif
+
     static func loadClaudeDaily(
         provider: UsageProvider,
         range: CostUsageDayRange,
@@ -716,7 +770,16 @@ extension CostUsageScanner {
         checkCancellation: CancellationCheck?) throws -> CostUsageDailyReport
     {
         let roots = self.defaultClaudeProjectsRoots(options: options)
+        #if os(Windows)
+        // Discovery may span a calendar change; retain the last completed cache until the
+        // replacement inventory and full content pass are ready to publish together.
+        var artifact = CostUsageClaudeCacheIO.load(provider: provider, cacheRoot: options.cacheRoot)
+        let inventory = try Self.inventoryWindowsClaudeRoots(
+            roots, provider: provider, options: options, range: range,
+            artifact: &artifact, checkCancellation: checkCancellation)
+        #else
         let inventory = try Self.inventoryClaudeRoots(roots, checkCancellation: checkCancellation)
+        #endif
         try checkCancellation?()
 
         let cacheURL = CostUsageClaudeCacheIO.cacheFileURL(provider: provider, cacheRoot: options.cacheRoot)
@@ -745,10 +808,12 @@ extension CostUsageScanner {
             return priorMemo.report
         }
 
+        #if !os(Windows)
         var artifact = CostUsageClaudeCacheIO.load(
             provider: provider,
             cacheRoot: options.cacheRoot,
             calendar: range.calendar)
+        #endif
         var cache = artifact.usage
         let nowMs = Int64(now.timeIntervalSince1970 * 1000)
         let refreshMs = Int64(max(0, options.refreshMinIntervalSeconds) * 1000)
@@ -759,6 +824,7 @@ extension CostUsageScanner {
         } ?? false
         #if os(Windows)
         let cachedConfigurationChanged = artifact.windowsScanConfiguration != reportKey.scanConfiguration
+            || artifact.usage.timeZoneIdentifier != range.calendar.timeZone.identifier
         #else
         let cachedConfigurationChanged = false
         #endif

@@ -80,7 +80,7 @@ public struct WindowsSpendHistorySnapshot: Sendable {
                 + "\r\nMissing samples are not zero; hourly totals may not explain the full daily total. UTC offsets distinguish repeated clock hours."
                 + (snapshot.stale ? "\r\nStale data: this view uses the previous collection while a refresh is pending or failed." : "")
                 + (snapshot.openCodexObservation == .unavailable ? "\r\nOpenCodeX logs are unavailable; this collection is partial." : "")
-                + (snapshot.sourceFailures.isEmpty ? "" : "\r\nPartial collection: \(snapshot.sourceFailures.count) failed source(s).")
+                + (snapshot.sourceFailures.isEmpty ? "" : "\r\nPartial collection: \(snapshot.sourceFailures.count) pending or failed source(s).")
             return Series(legend: daily.series.first { $0.code == group.currencyCode }?.legend ?? [], code: group.currencyCode,
                           days: slots, maximum: maximum, maximumLabel: WindowsShareStatsFormatting.currency(maximum, code: group.currencyCode), summary: summary)
         }
@@ -115,7 +115,7 @@ public struct WindowsSpendHistorySnapshot: Sendable {
         summary += "\r\nGreen intensity is logarithmic relative to the largest known day. Select a day for its exact tracked count."
         summary += "\r\nTracked counts include scanned sources; sources without coverage may be absent."
         if snapshot.openCodexObservation == .unavailable { summary += "\r\nOpenCodeX logs are unavailable; this collection is partial." }
-        if !snapshot.sourceFailures.isEmpty { summary += "\r\nPartial collection: \(snapshot.sourceFailures.count) failed source(s) are excluded." }
+        if !snapshot.sourceFailures.isEmpty { summary += "\r\nPartial collection: \(snapshot.sourceFailures.count) pending or failed source(s) are excluded." }
         return Self(kind: .tokens, series: [Series(legend: [], code: "Tokens", days: days, maximum: Double(maximum),
                                                    maximumLabel: maximum.formatted(), summary: summary)])
     }
@@ -159,7 +159,7 @@ public struct WindowsSpendHistorySnapshot: Sendable {
                            "Legend colors may group multiple sources; the selected-day text lists exact contributions."]
             summary.append(contentsOf: legend.map { "Color group \($0.paletteIndex + 1): " + $0.caption })
             if snapshot.openCodexObservation == .unavailable { summary.append("OpenCodeX logs are unavailable; this collection is partial.") }
-            if !snapshot.sourceFailures.isEmpty { summary.append("Partial collection: \(snapshot.sourceFailures.count) source(s) failed.") }
+            if !snapshot.sourceFailures.isEmpty { summary.append("Partial collection: \(snapshot.sourceFailures.count) source(s) pending or failed.") }
             if snapshot.stale { summary.append("Stale collection.") }
             summary.append(contentsOf: WindowsSpendSummary.accountingDetails(group))
             return Series(legend: legend, code: group.currencyCode, days: days, maximum: maximum,

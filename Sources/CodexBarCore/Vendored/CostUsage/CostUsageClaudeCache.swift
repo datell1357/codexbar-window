@@ -340,9 +340,10 @@ struct CostUsageClaudeCache: Codable {
     var sourceFileIDs: [String: String] = [:]
     var windowsReadProofs: [String: CostUsageClaudeReadProof] = [:]
     var windowsScanConfiguration: CostUsageClaudeReportMemoKey.ScanConfiguration?
+    var windowsInventory: CostUsageWindowsTreeInventory?
 
     private enum CodingKeys: String, CodingKey {
-        case sourceFileIDs, windowsReadProofs, windowsScanConfiguration
+        case sourceFileIDs, windowsReadProofs, windowsScanConfiguration, windowsInventory
     }
 
     init() {}
@@ -355,6 +356,8 @@ struct CostUsageClaudeCache: Codable {
             .decodeIfPresent([String: CostUsageClaudeReadProof].self, forKey: .windowsReadProofs) ?? [:]
         self.windowsScanConfiguration = try decoder.container(keyedBy: CodingKeys.self)
             .decodeIfPresent(CostUsageClaudeReportMemoKey.ScanConfiguration.self, forKey: .windowsScanConfiguration)
+        self.windowsInventory = try decoder.container(keyedBy: CodingKeys.self)
+            .decodeIfPresent(CostUsageWindowsTreeInventory.self, forKey: .windowsInventory)
     }
 
     func encode(to encoder: any Encoder) throws {
@@ -365,6 +368,7 @@ struct CostUsageClaudeCache: Codable {
             try container.encode(self.windowsReadProofs, forKey: .windowsReadProofs)
         }
         try container.encodeIfPresent(self.windowsScanConfiguration, forKey: .windowsScanConfiguration)
+        try container.encodeIfPresent(self.windowsInventory, forKey: .windowsInventory)
     }
 }
 
@@ -411,12 +415,13 @@ enum CostUsageClaudeCacheIO {
         cache: CostUsageClaudeCache,
         cacheRoot: URL? = nil,
         calendar: Calendar = .current,
+        preserveUsageCalendar: Bool = false,
         checkCancellation: CostUsageScanner.CancellationCheck? = nil,
         sourcePublication: CostUsageSourcePublication? = nil) throws -> CostUsageClaudeFileStamp?
     {
         let url = self.cacheFileURL(provider: provider, cacheRoot: cacheRoot)
         var cache = cache
-        cache.usage.timeZoneIdentifier = calendar.timeZone.identifier
+        if !preserveUsageCalendar { cache.usage.timeZoneIdentifier = calendar.timeZone.identifier }
         #if DEBUG
         CostUsageScanner.recordClaudeScanWork(.cacheEncode)
         #endif

@@ -8,6 +8,7 @@ actor WindowsSpendDashboardController {
         let sourceID: String
         let provider: UsageProvider
         var accountIdentityUnconfirmed = false
+        var localInventoryPending = false
         // Display a generic explanation; never retain raw provider/credential error text.
     }
     struct Scan: Sendable {

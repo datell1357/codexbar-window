@@ -1,6 +1,6 @@
 # Windows 비용 파일 I/O 구현 경계
 
-IMPL-559~572. 상태: **CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION**.
+IMPL-559~573. 상태: **CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION**.
 Mac 호스트에서 소스를 작성한 기록이며 Windows 컴파일·실행·성능·파일 시스템 호환성을 입증하지 않는다. W06/W07 전체 기능 및 G0~G6 완료가 아니다.
 
 ## 파일 메타데이터와 캐시
@@ -168,9 +168,20 @@ Mac 호스트에서 소스를 작성한 기록이며 Windows 컴파일·실행·
 - `WindowsCostDirectoryPagesTests.swift`에 제한된 page의 전체 커버리지, 재시작/eviction/독립 reader token, admission/취소·same-time directory 교체, SQLite payload→handle loss→parent lookup 및 1-unit budget 진행을 작성했다. **컴파일·테스트·Windows 실행은 하지 않았다.**
 - main date/flat pager는 기존 별도 registry를 사용하며 recursive Claude/legacy tree는 여전히 bulk 목록이다. 전체 pending tree/정렬·메타데이터 재관측·내용 지문·최종 publication의 총 I/O/벽시계 예산과 durable ordered enumeration은 남는다. folder membership 지문과 실제 대규모 Windows 성능/중단 복원 증거도 없다.
 
+## IMPL-573: 재귀 tree 탐색의 refresh 간 재개
+
+- `CostUsageWindowsTreeInventory`는 roots/policy, 후보 queue, active page, 완료 directory ID, directory/file/부재 관측과 최종 metadata 대조 위치를 저장한다. 개별 page는 256회 이하이고 전체 advance는 raw visit·부재/alias·metadata check의 논리 work로 제한한다. 숨김/비JSONL도 세며 1-unit에도 전진한다. child는 parent EOF 후 정렬하여 page 순서가 alias 선택을 결정하지 않도록 한다.
+- `WindowsCostTreeInventory`는 directory link를 native ID로 한 번 확장하고 alias 관측을 보존한다. 완료 후 file ID별 정렬된 대표를 선택한다. completed directory는 프로세스 재시작 후 재열거하지 않지만 active directory handle이 없으면 그 폴더를 replay한다. 과거 page의 전체 관측은 최종 publication에 다시 넣는다.
+- Claude/Vertex는 `maxWindowsClaudeInventoryWorkPerRefresh` 기본 4,096으로 호출하고 `windowsInventory`를 기존 private JSON cache에 선택 필드로 저장한다. partial 단계는 rows/read proof/lastScan/scan configuration/usage calendar를 보존하고 `localInventoryPending`을 반환한다. incomplete 목록으로 absent path를 prune하거나 memo/report를 만들지 않는다. 완료 뒤 기존 content proof·parse·publication 경로에서 전체 보고서를 만든다.
+- refresh 사이 정상 append는 native ID/크기/시각의 호환 관계로 받아들이고 관측 prefix까지 읽는다. alias 간 서로 다른 append 시점도 중복 집계하지 않으며 실제 parser/read proof/게시 대조는 유지한다. 파일 교체/축소/같은 크기 metadata 변경은 재탐색 또는 실패다.
+- timezone 변경 도중에도 이전 완료 usage calendar를 유지하며 최종 full content pass에서 새 calendar로 계산한다. source metadata 변경/사라짐이면 새 inventory 상태를 저장해 다음 refresh에서 재시작한다. cancellation/권한/I/O는 실패로 전파하며 checkpoint 저장 불가도 진행 성공과 분리한다.
+- Windows Spend source 상태와 요약/이력 설명에 pending을 구분했다. pending source는 합계/공유 가능한 완성 source에 포함되지 않는다. source별 이전 수치의 stale 유지, pending source만 자동 후속 수집, 단계/진행률 UX는 아직 남는다.
+- 기존 동기 `WindowsCostSourceInventory.jsonlFiles`도 같은 state machine을 여러 page로 drain한다. Codex legacy/recent recursive 호출부의 외부 계약은 여전히 전체 완료 목록이므로 refresh 사이 분할은 후속 작업이다. `WindowsCostTreeInventoryTests.swift` 및 기존 link fixture는 source만 작성/연결했고 컴파일·실행하지 않았다.
+- 전체 queue/map과 checkpoint JSON·정렬/shape 점검·완료 publication sweep, parser/content hash는 총 I/O/시간/메모리 상한 밖이다. 반복 process termination마다 active 폴더가 replay될 수 있고 directory timestamp를 되돌린 membership 변화는 아직 증명하지 못한다. 이는 immutable 파일 시스템 snapshot·대규모 성능·모든 재시작의 전진 보장이 아니다.
+
 ## 남은 연결
 
-1. 비페이지/legacy·부모 세션 index/캐시 부재 오류 전달은 IMPL-562에 작성했다. 대규모 재귀/단일 폴더의 bounded/pause/resume 통합, IMPL-565에서 parent discovery의 native directory/file snapshot과 legacy 재탐색을 작성했다. IMPL-570에서 main lookback의 관측 directory native snapshot/부재를 별도 metadata로 보존했다. IMPL-571에서 recursive/parent directory ID 방문 제어·alias 관측과 Claude 다중 root 파일 중복 방지를 작성했다. IMPL-572에서 parent directory page와 live-token 재개를 작성했다. directory membership 증거·recursive tree paging/프로세스 재시작 전진·파일 시스템별 alias/reparse 동작 검증은 남는다. 실행 증거는 없다.
+1. 비페이지/legacy·부모 세션 index/캐시 부재 오류 전달은 IMPL-562에 작성했다. 대규모 재귀/단일 폴더의 bounded/pause/resume 통합, IMPL-565에서 parent discovery의 native directory/file snapshot과 legacy 재탐색을 작성했다. IMPL-570에서 main lookback의 관측 directory native snapshot/부재를 별도 metadata로 보존했다. IMPL-571에서 recursive/parent directory ID 방문 제어·alias 관측과 Claude 다중 root 파일 중복 방지를 작성했다. IMPL-572에서 parent directory page와 live-token 재개, IMPL-573에서 Claude/Vertex 재귀 tree checkpoint/refresh 분할을 작성했다. directory membership 증거·legacy recursive 호출부 refresh 분할/active directory의 프로세스 재시작 전진·파일 시스템별 alias/reparse 동작 검증은 남는다. 실행 증거는 없다.
 2. IMPL-561은 expected-file/열린 stream, IMPL-563~564는 게시 직전 metadata, IMPL-566은 usage native snapshot/전체 prefix, IMPL-567은 parser 실제 바이트/게시 내용 비교, IMPL-568은 parent head/negative discovery proof, IMPL-569는 Claude/Vertex parser·cache/memo proof를 작성했다. immutable multi-file snapshot, 관측 뒤 변경, 기타 비용 source와 directory membership 증거가 남는다. 주 lookback의 과거 native directory 관측은 IMPL-570에서 연결했다. hashing과 discovery 대조의 전체 I/O 예산·durable resume·경계 간 반복 읽기 공유도 후속 작업이다.
 3. 날짜/flat/legacy 루트, hard link/junction, case-sensitive NTFS, UNC/SMB, ReFS/FAT, 삭제 후 재생성, 장기 resume 및 모든 비용 source와의 통합. 파일 ID의 파일 시스템별 재사용·불안정성도 포함한다.
 4. 실제 Windows SDK 컴파일, x64/ARM64, native UI와 설치된 제품에서의 비용 표시, full WinUI3 제품 그래프 및 배포 준비.

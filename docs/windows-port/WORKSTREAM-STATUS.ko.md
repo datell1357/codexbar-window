@@ -1,5 +1,7 @@
 # Windows 전용 제품 작업 현황
 
+- IMPL-573: recursive native tree page/checkpoint·metadata 대조 재개, Claude/Vertex 4,096 work/refresh와 기존 rows/calendar 보존·pending 오류/화면 구분 작성. 완료 폴더는 재시작 후 유지하고 source 변경 시 재탐색. legacy 동기 drain·전체 byte/time/memory 예산·pending 전용 자동 수집/이전 화면값·membership 및 전체 Windows 제품 검증은 남음. CODE_WRITTEN_UNVERIFIED.
+
 - IMPL-572: 부모 세션 폴더 탐색을 native page/opaque handle token으로 분할하고 256회 visit 상한·기존 예산·1-unit 진행, partial page JSON/SQLite 보존 및 handle 소실 시 재열거 작성. EOF 전 missing 완료 제한과 eviction/취소/재개 fixture 미실행. recursive tree paging·전체 I/O/시간 budget·membership과 전체 제품 구현·Windows 검증은 남음. CODE_WRITTEN_UNVERIFIED.
 
 - IMPL-571: recursive source와 parent discovery에 native directory ID 방문 기록·junction cycle 제한·alias 관측 보존, hard-link 대표 선택 및 Claude/Vertex 다중 roots 중복 집계 방지 작성. 재개/retarget/실제 link 생성 fixture는 소스만 추가. 전체 I/O 예산·native tree paging·membership/특수 reparse와 전체 제품 구현·Windows 검증은 남음. CODE_WRITTEN_UNVERIFIED.
