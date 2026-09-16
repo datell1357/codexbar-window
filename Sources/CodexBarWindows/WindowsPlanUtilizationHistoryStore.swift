@@ -7,7 +7,7 @@ import WinSDK
 /// Each mutation merges a fresh provider document under a per-provider process lock.
 /// No long-lived cache can republish history removed by another app instance.
 struct WindowsPlanUtilizationHistoryStore: Sendable {
-    enum Failure: Error, Sendable { case busy, changed, tooLarge, invalidData, unavailable }
+    enum Failure: Error, Sendable { case busy, changed, tooLarge, invalidData, unavailable, ownershipReviewRequired }
     static let maximumFileBytes = 32 * 1024 * 1024
     static var defaultDirectory: URL {
         CodexBarPlatformPaths.codexBarDataDirectory().appendingPathComponent("plan-utilization-history", isDirectory: true)
@@ -23,6 +23,7 @@ struct WindowsPlanUtilizationHistoryStore: Sendable {
         let pairIdentity: String?
         let codexMigrationOwnership: CodexHistoricalOwnershipContext?
         let accountMigration: PlanUtilizationAccountMigration?
+        let recoveryBoundary: WindowsHistoryRecoveryBoundary.Record?
     }
 
     init(directory: URL = Self.defaultDirectory) { self.directory = directory }
@@ -33,7 +34,8 @@ struct WindowsPlanUtilizationHistoryStore: Sendable {
 
     func load(providerID: ProviderInstanceID) throws -> PlanUtilizationHistoryCore.Document {
         try self.withLock(providerID: providerID) {
-            try self.decode(self.readRaw(self.fileURL(providerID: providerID)))
+            _ = try WindowsHistoryRecoveryBoundary.read(for: self.fileURL(providerID: providerID))
+            return try self.decode(self.readRaw(self.fileURL(providerID: providerID)))
         }
     }
 
@@ -44,25 +46,27 @@ struct WindowsPlanUtilizationHistoryStore: Sendable {
                        beforePublish: (() throws -> Void)? = nil) throws -> Selection {
         try self.withLock(providerID: providerID) {
             let fileURL = self.fileURL(providerID: providerID)
+            let boundary = try WindowsHistoryRecoveryBoundary.read(for: fileURL)
+            guard boundary == nil || accountKey != nil else { throw Failure.ownershipReviewRequired }
             let raw = try self.readRaw(fileURL)
-            var revision = raw.map { Data(SHA256.hash(data: $0)) }
+            var revision = try self.revision(raw, boundary: boundary)
             if let previous, previous.providerID == providerID, previous.accountKey == accountKey,
                previous.revision == revision, previous.codexMigrationOwnership == codexMigrationOwnership,
-               previous.accountMigration == accountMigration { return previous }
+               previous.accountMigration == accountMigration, previous.recoveryBoundary == boundary { return previous }
             var document = try self.decode(raw)
             if raw != nil {
                 let before = document
                 document = try self.materialize(document, providerID: providerID, accountKey: accountKey,
-                    codexOwnership: codexMigrationOwnership, accountMigration: accountMigration)
+                    codexOwnership: codexMigrationOwnership, accountMigration: accountMigration, boundary: boundary)
                 if document != before {
-                    let data = try self.publish(document, to: fileURL, previous: raw, beforePublish: beforePublish)
-                    revision = Data(SHA256.hash(data: data))
+                    let data = try self.publish(document, to: fileURL, previous: raw, boundary: boundary, beforePublish: beforePublish)
+                    revision = try self.revision(data, boundary: boundary)
                 }
             }
             return Selection(providerID: providerID, accountKey: accountKey, revision: revision,
                 histories: document.histories(accountKey: accountKey),
                 pairIdentity: document.sessionEquivalentWindowPairIdentities[accountKey ?? "__codexbar_unscoped__"],
-                codexMigrationOwnership: codexMigrationOwnership, accountMigration: accountMigration)
+                codexMigrationOwnership: codexMigrationOwnership, accountMigration: accountMigration, recoveryBoundary: boundary)
         }
     }
 
@@ -75,15 +79,17 @@ struct WindowsPlanUtilizationHistoryStore: Sendable {
                 beforePublish: (() throws -> Void)? = nil) throws -> PlanUtilizationHistoryCore.Document {
         try self.withLock(providerID: providerID) {
             let fileURL = self.fileURL(providerID: providerID)
+            let boundary = try WindowsHistoryRecoveryBoundary.read(for: fileURL)
+            guard boundary == nil || accountKey != nil else { throw Failure.ownershipReviewRequired }
             let previous = try self.readRaw(fileURL)
             var document = try self.decode(previous)
             let before = document
             document = try self.materialize(document, providerID: providerID, accountKey: accountKey,
-                codexOwnership: codexMigrationOwnership, accountMigration: accountMigration)
+                codexOwnership: codexMigrationOwnership, accountMigration: accountMigration, boundary: boundary)
             try document.record(samples, accountKey: accountKey, updatePreferred: updatePreferred,
                 identityTransition: identityTransition)
             guard document != before else { return document }
-            _ = try self.publish(document, to: fileURL, previous: previous, beforePublish: beforePublish)
+            _ = try self.publish(document, to: fileURL, previous: previous, boundary: boundary, beforePublish: beforePublish)
             return document
         }
     }
@@ -91,23 +97,27 @@ struct WindowsPlanUtilizationHistoryStore: Sendable {
     private func materialize(_ document: PlanUtilizationHistoryCore.Document,
                              providerID: ProviderInstanceID, accountKey: String?,
                              codexOwnership: CodexHistoricalOwnershipContext?,
-                             accountMigration: PlanUtilizationAccountMigration?) throws
+                             accountMigration: PlanUtilizationAccountMigration?,
+                             boundary: WindowsHistoryRecoveryBoundary.Record?) throws
         -> PlanUtilizationHistoryCore.Document
     {
         if let ownership = codexOwnership {
             guard accountMigration == nil, providerID == .codex,
                   let accountKey, accountKey == ownership.canonicalKey else { throw Failure.changed }
+            if boundary != nil { return document }
             return try CodexPlanUtilizationHistoryMigration.materialize(document, ownership: ownership)
         }
         if let migration = accountMigration {
             guard providerID.firstPartyProvider == migration.provider else { throw Failure.changed }
+            if boundary != nil { return document }
             return try migration.materialize(document, accountKey: accountKey)
         }
         return document
     }
 
     private func publish(_ document: PlanUtilizationHistoryCore.Document, to fileURL: URL,
-                         previous: Data?, beforePublish: (() throws -> Void)?) throws -> Data {
+                         previous: Data?, boundary: WindowsHistoryRecoveryBoundary.Record?,
+                         beforePublish: (() throws -> Void)?) throws -> Data {
         try document.validate()
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
@@ -116,9 +126,17 @@ struct WindowsPlanUtilizationHistoryStore: Sendable {
         guard data.count <= Self.maximumFileBytes else { throw Failure.tooLarge }
         try WindowsCredentialFileWriter.writePrivate(data, to: fileURL, beforePublish: { _ in
             guard try self.readRaw(fileURL) == previous else { throw Failure.changed }
+            guard try WindowsHistoryRecoveryBoundary.read(for: fileURL) == boundary else { throw Failure.changed }
             try beforePublish?()
         })
         return data
+    }
+
+    private func revision(_ raw: Data?, boundary: WindowsHistoryRecoveryBoundary.Record?) throws -> Data? {
+        guard let raw else { return nil }
+        let digest = Data(SHA256.hash(data: raw))
+        guard let boundary else { return digest }
+        return Data(SHA256.hash(data: digest + (try boundary.encoded())))
     }
 
     private func decode(_ data: Data?) throws -> PlanUtilizationHistoryCore.Document {

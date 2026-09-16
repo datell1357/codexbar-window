@@ -68,6 +68,7 @@ enum WindowsUsageHistoryRecovery {
         var total = 0
         return try WindowsRecoveryFileAccess.withNewDirectory(directory) {
             for providerID in providerNames ?? [] {
+                _ = try WindowsHistoryRecoveryBoundary.read(for: self.planURL(providerID))
                 let data = try WindowsRecoveryFileAccess.read(self.planURL(providerID),
                     limit: self.maximumFileBytes, allowEmpty: true)
                 total += data.count
@@ -77,6 +78,7 @@ enum WindowsUsageHistoryRecovery {
             }
             let pace = try WindowsRecoveryFileAccess.readIfPresent(HistoricalUsageHistoryStore.defaultFileURL(),
                 limit: self.maximumFileBytes, allowEmpty: true)
+            _ = try WindowsHistoryRecoveryBoundary.read(for: HistoricalUsageHistoryStore.defaultFileURL())
             if let pace {
                 total += pace.count
                 guard total <= self.maximumTotalBytes else { throw Failure.tooLarge }
@@ -115,6 +117,7 @@ enum WindowsUsageHistoryRecovery {
             }
             for entry in manifest.entries {
                 let target = self.destinationURL(entry, root: destination)
+                try self.publishBoundary(entry, manifest: manifest, target: target)
                 try WindowsRecoveryFileAccess.publish(self.readEntry(entry, manifest: manifest, directory: archive), to: target)
             }
             let record = OperationRecord(operationID: UUID(), archiveID: manifest.archiveID,
@@ -134,7 +137,10 @@ enum WindowsUsageHistoryRecovery {
         guard !self.contains(archive, operationDirectory) else { throw Failure.invalidDestination }
         let manifest = try self.readManifest(archive)
         try self.preflight(manifest, archive: archive)
-        for entry in manifest.entries { try self.requireAbsent(self.sourceURL(entry)) }
+        for entry in manifest.entries {
+            try self.requireAbsent(self.sourceURL(entry))
+            try self.requireAbsent(WindowsHistoryRecoveryBoundary.url(for: self.sourceURL(entry)))
+        }
         let operationID = UUID()
         var written: [UUID] = []
         var publicationStarted = false
@@ -159,6 +165,7 @@ enum WindowsUsageHistoryRecovery {
                         let publish = {
                             try self.requireAbsent(target)
                             publicationStarted = true
+                            try self.publishBoundary(entry, manifest: manifest, target: target)
                             try WindowsRecoveryFileAccess.publish(data, to: target)
                             written.append(entry.id)
                         }
@@ -191,11 +198,21 @@ enum WindowsUsageHistoryRecovery {
     private static func planProviderNames() throws -> [String]? {
         let directory = WindowsPlanUtilizationHistoryStore.defaultDirectory
         guard let names = try WindowsRecoveryFileAccess.directoryNamesIfPresent(directory,
-            maximumEntries: self.maximumProviders * 2) else { return nil }
+            maximumEntries: self.maximumProviders * 3) else { return nil }
         var providers: [String] = []
         var seen = Set<String>()
         for name in names {
             let canonical = name.lowercased()
+            let boundarySuffix = ".json." + WindowsHistoryRecoveryBoundary.extensionName
+            if canonical.hasSuffix(boundarySuffix) {
+                let id = String(canonical.dropLast(boundarySuffix.count))
+                guard ProviderInstanceID(rawValue: id) != nil,
+                      try WindowsHistoryRecoveryBoundary.read(for: self.planURL(id)) != nil else {
+                    throw Failure.unsupportedEntries
+                }
+                // Every new restore recreates this restrictive policy; it carries no history rows or grants.
+                continue
+            }
             if canonical.hasSuffix(".lock"), ProviderInstanceID(rawValue: String(canonical.dropLast(5))) != nil {
                 let lock = try WindowsRecoveryFileAccess.read(directory.appendingPathComponent(name), limit: 1, allowEmpty: true)
                 guard lock.isEmpty else { throw Failure.unsupportedEntries }
@@ -291,6 +308,12 @@ enum WindowsUsageHistoryRecovery {
         case .planUtilization: self.planURL(entry.providerID!) // Validated manifest / locally constructed entry.
         case .historicalPace: HistoricalUsageHistoryStore.defaultFileURL()
         }
+    }
+
+    private static func publishBoundary(_ entry: Entry, manifest: Manifest, target: URL) throws {
+        let record = WindowsHistoryRecoveryBoundary.Record(archiveID: manifest.archiveID, entryID: entry.id,
+            originalSHA256: entry.sha256, filename: target.lastPathComponent)
+        try WindowsRecoveryFileAccess.publish(record.encoded(), to: WindowsHistoryRecoveryBoundary.url(for: target))
     }
 
     private static func planURL(_ providerID: String) -> URL {

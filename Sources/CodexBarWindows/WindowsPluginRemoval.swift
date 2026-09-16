@@ -15,6 +15,7 @@ public struct WindowsPluginRemovalReview: Sendable {
     let sourceHash: String?
     let cacheCount: Int
     let historyFilename: String?
+    let historyBoundaryFilename: String?
 }
 
 public enum WindowsPluginRemovalFailure: String, Error, Sendable {
@@ -42,6 +43,7 @@ struct WindowsPluginRemovalPlan: Sendable {
     private let source: Artifact?
     private let caches: [Artifact]
     private let history: Artifact?
+    private let historyBoundary: Artifact?
     private let historyStore: WindowsPlanUtilizationHistoryStore?
 
     static func prepare(instanceID: ProviderInstanceID, installed: UserProviderPlugin?) throws -> Self {
@@ -50,14 +52,16 @@ struct WindowsPluginRemovalPlan: Sendable {
             let historyStore = WindowsPlanUtilizationHistoryStore()
             return try historyStore.withExclusiveAccess(providerID: instanceID) {
                 let history = try self.describeHistoryIfPresent(store: historyStore, providerID: instanceID)
+                let historyBoundary = try self.describeBoundaryIfPresent(store: historyStore, providerID: instanceID)
                 guard let installed else {
                     guard !UserProviderPluginLoader().discover().contains(where: { $0.instanceID == instanceID }) else {
                         throw WindowsPluginRemovalFailure.changed
                     }
                     return Self(review: WindowsPluginRemovalReview(token: UUID(), instanceID: instanceID,
                         sourceFilename: nil, sourceHash: nil, cacheCount: 0,
-                        historyFilename: history?.url.lastPathComponent), source: nil, caches: [],
-                        history: history, historyStore: historyStore)
+                        historyFilename: history?.url.lastPathComponent,
+                        historyBoundaryFilename: historyBoundary?.url.lastPathComponent), source: nil, caches: [],
+                        history: history, historyBoundary: historyBoundary, historyStore: historyStore)
                 }
                 guard installed.manifest.id == instanceID,
                       installed.fileURL.deletingLastPathComponent().standardizedFileURL ==
@@ -69,8 +73,9 @@ struct WindowsPluginRemovalPlan: Sendable {
                 let caches = try self.cacheURLs(for: source.url).map { try self.describe($0, byteLimit: 8 * 1024 * 1024) }
                 return Self(review: WindowsPluginRemovalReview(token: UUID(), instanceID: instanceID,
                     sourceFilename: source.url.lastPathComponent, sourceHash: source.hash, cacheCount: caches.count,
-                    historyFilename: history?.url.lastPathComponent),
-                    source: source, caches: caches, history: history, historyStore: historyStore)
+                    historyFilename: history?.url.lastPathComponent,
+                    historyBoundaryFilename: historyBoundary?.url.lastPathComponent),
+                    source: source, caches: caches, history: history, historyBoundary: historyBoundary, historyStore: historyStore)
             }
         }
     }
@@ -88,7 +93,8 @@ struct WindowsPluginRemovalPlan: Sendable {
             // file-only deletion contract; never infer config or cache ownership by filename.
             return Self(review: WindowsPluginRemovalReview(token: UUID(), instanceID: nil,
                 sourceFilename: sourceURL.lastPathComponent, sourceHash: source.hash, cacheCount: 0,
-                historyFilename: nil), source: source, caches: [], history: nil, historyStore: nil)
+                historyFilename: nil, historyBoundaryFilename: nil), source: source, caches: [],
+                history: nil, historyBoundary: nil, historyStore: nil)
         }
     }
 
@@ -152,6 +158,16 @@ struct WindowsPluginRemovalPlan: Sendable {
                 // A file created after review was not included in the user's confirmation.
                 throw WindowsPluginRemovalFailure.changed
             }
+            if let boundary = self.historyBoundary {
+                guard boundary.url == WindowsHistoryRecoveryBoundary.url(for: store.fileURL(providerID: providerID)) else {
+                    throw WindowsPluginRemovalFailure.changed
+                }
+                // Delete provenance only after its payload. A partial removal must not relax ownership.
+                files.append(try PinnedFile(boundary.url, byteLimit: boundary.byteLimit, deleting: true,
+                    expectedHash: boundary.hash))
+            } else if try Self.describeBoundaryIfPresent(store: store, providerID: providerID) != nil {
+                throw WindowsPluginRemovalFailure.changed
+            }
         }
         // Conditional approval revocation and protected config removal happen first.
         try beforeRemoval()
@@ -162,13 +178,25 @@ struct WindowsPluginRemovalPlan: Sendable {
                                                 providerID: ProviderInstanceID) throws -> Artifact? {
         guard providerID.firstPartyProvider == nil else { throw WindowsPluginRemovalFailure.changed }
         let url = store.fileURL(providerID: providerID)
+        return try self.describeIfPresent(url, byteLimit: WindowsPlanUtilizationHistoryStore.maximumFileBytes)
+    }
+
+    private static func describeBoundaryIfPresent(store: WindowsPlanUtilizationHistoryStore,
+                                                 providerID: ProviderInstanceID) throws -> Artifact? {
+        guard providerID.firstPartyProvider == nil else { throw WindowsPluginRemovalFailure.changed }
+        let url = WindowsHistoryRecoveryBoundary.url(for: store.fileURL(providerID: providerID))
+        // A malformed marker is still an exact named, reviewed artifact; do not silently retain it.
+        return try self.describeIfPresent(url, byteLimit: WindowsHistoryRecoveryBoundary.maximumBytes)
+    }
+
+    private static func describeIfPresent(_ url: URL, byteLimit: Int) throws -> Artifact? {
         let attributes = url.path.withCString(encodedAs: UTF16.self) { GetFileAttributesW($0) }
         if attributes == DWORD(INVALID_FILE_ATTRIBUTES) {
             let code = GetLastError()
             if code == ERROR_FILE_NOT_FOUND || code == ERROR_PATH_NOT_FOUND { return nil }
             throw WindowsPluginRemovalFailure.unavailable
         }
-        return try self.describe(url, byteLimit: WindowsPlanUtilizationHistoryStore.maximumFileBytes)
+        return try self.describe(url, byteLimit: byteLimit)
     }
 
     private static func describe(_ url: URL, byteLimit: Int) throws -> Artifact {

@@ -275,6 +275,7 @@ enum WindowsPlanUtilizationHistoryDialog {
     private static func updateDetails(_ hwnd: HWND, context: Context) {
         var lines = [context.text("plan_history_capture").replacingOccurrences(of: "{date}", with: context.date(context.snapshot.usageCapturedAt)),
                      context.text("plan_history_legend")]
+        if context.snapshot.restoredExactOwnership { lines.append(context.text("plan_history_recoveryExact")) }
         if let series = context.series, !series.points.isEmpty {
             lines.append(context.seriesTitle(series))
             if series.name == "weekly", series.windowMinutes == SessionEquivalentForecastCore.weeklyWindowMinutes,

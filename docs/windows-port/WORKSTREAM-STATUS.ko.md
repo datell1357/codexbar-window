@@ -1,5 +1,7 @@
 # Windows 전용 제품 작업 현황
 
+- IMPL-556: 복원 표식 선게시·정확한 account key만 사용, plan/pace 자동 계정 이관 제한과 cache invalidation·안내 연결. plugin 이력 삭제 검토에 표식 포함. legacy 명시 소유권 검토/재귀속·부분 재개와 실제 동작은 남음. CODE_WRITTEN_UNVERIFIED.
+
 - IMPL-555: provider별 plan JSON/pace JSONL의 원본 파일별 DPAPI 백업과 해시·ID 결합 final manifest, 새 폴더 복원 및 대상이 없는 현재 저장소의 명시적 CreateNew 복원 작성. 부분 게시 기록/원본 보존. 비용 SQLite/전체 저장소·소유권 검토·재개·제거 연동 및 실제 동작은 남음. CODE_WRITTEN_UNVERIFIED.
 
 - IMPL-554: config/Windows persistent preferences/위젯 설정 묶음 백업, 새 폴더 복원 및 명시적 preferences 교체·교체 전 암호화 복구 사본/준비·완료 기록 작성. 앱 공유 profile lock과 복구 exclusive lock 연결. 전체 이력/credential/제거 연동·실제 round-trip은 남음. CODE_WRITTEN_UNVERIFIED.

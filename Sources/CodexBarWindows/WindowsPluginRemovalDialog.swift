@@ -18,6 +18,8 @@ enum WindowsPluginRemovalDialog {
             .replacingOccurrences(of: "{count}", with: count)
             .replacingOccurrences(of: "{history}", with: review.historyFilename.map(self.displayFilename)
                 ?? localization.text("plugin_removeNoHistory"))
+            .replacingOccurrences(of: "{historyBoundary}", with: review.historyBoundaryFilename.map(self.displayFilename)
+                ?? localization.text("plugin_removeNoHistory"))
         return message.withCString(encodedAs: UTF16.self) { body in
             localization.text(review.instanceID == nil ? "plugin_removeFailedFileTitle" : "plugin_removeTitle").withCString(encodedAs: UTF16.self) { title in
                 MessageBoxW(owner, body, title, UINT(MB_YESNO | MB_DEFBUTTON2 | MB_ICONWARNING) |

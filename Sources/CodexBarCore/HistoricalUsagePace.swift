@@ -94,13 +94,16 @@ public actor HistoricalUsageHistoryStore {
     private let fileURL: URL
     private var records: [HistoricalUsageRecord] = []
     private var loaded = false
+    #if os(Windows)
+    private var recoveryBoundary: WindowsHistoryRecoveryBoundary.Record?
+    #endif
 
     public init(fileURL: URL? = nil) {
         self.fileURL = fileURL ?? HistoricalUsageHistoryStore.defaultFileURL()
     }
 
     public func loadCodexDataset(accountKey: String?) -> CodexHistoricalDataset? {
-        self.ensureLoaded()
+        guard self.ensureLoaded() else { return nil }
         return self.buildDataset(accountKey: accountKey)
     }
 
@@ -110,7 +113,7 @@ public actor HistoricalUsageHistoryStore {
         legacyEmailHash: String?,
         hasAdjacentMultiAccountVeto: Bool) -> CodexHistoricalDataset?
     {
-        self.ensureLoaded()
+        guard self.ensureLoaded() else { return nil }
         return self.buildDataset(
             canonicalAccountKey: canonicalAccountKey,
             canonicalEmailHashKey: canonicalEmailHashKey,
@@ -127,7 +130,7 @@ public actor HistoricalUsageHistoryStore {
         guard let windowMinutes = window.windowMinutes, windowMinutes > 0 else {
             return self.loadCodexDataset(accountKey: accountKey)
         }
-        self.ensureLoaded()
+        guard self.ensureLoaded(), self.permitsRecoveryOwner(accountKey) else { return nil }
         let resetsAt = Self.normalizeReset(rawResetsAt)
 
         let sample = HistoricalUsageRecord(
@@ -166,7 +169,7 @@ public actor HistoricalUsageHistoryStore {
         now: Date = .init(),
         accountKey: String?) -> CodexHistoricalDataset?
     {
-        self.ensureLoaded()
+        guard self.ensureLoaded(), self.permitsRecoveryOwner(accountKey) else { return nil }
         let existingDataset = self.buildDataset(accountKey: accountKey)
 
         guard let rawResetsAt = referenceWindow.resetsAt else { return existingDataset }
@@ -310,11 +313,31 @@ public actor HistoricalUsageHistoryStore {
         self.records.removeAll { $0.sampledAt < cutoff }
     }
 
-    private func ensureLoaded() {
-        guard !self.loaded else { return }
+    private func ensureLoaded() -> Bool {
+        #if os(Windows)
+        do {
+            let boundary = try WindowsHistoryRecoveryBoundary.read(for: self.fileURL)
+            if boundary != self.recoveryBoundary {
+                self.loaded = false
+                self.recoveryBoundary = boundary
+            }
+        } catch { return false }
+        #endif
+        guard !self.loaded else { return true }
         self.loaded = true
         self.records = self.readRecordsFromDisk()
         self.pruneOldRecords(now: .init())
+        return true
+    }
+
+    private func permitsRecoveryOwner(_ accountKey: String?) -> Bool {
+        #if os(Windows)
+        if self.recoveryBoundary != nil {
+            guard let accountKey, case let .canonical(normalized) = CodexHistoryOwnership.classifyPersistedKey(accountKey),
+                  normalized == accountKey else { return false }
+        }
+        #endif
+        return true
     }
 
     private func readRecordsFromDisk() -> [HistoricalUsageRecord] {
@@ -346,6 +369,11 @@ public actor HistoricalUsageHistoryStore {
     }
 
     private func persist() {
+        #if os(Windows)
+        do {
+            guard try WindowsHistoryRecoveryBoundary.read(for: self.fileURL) == self.recoveryBoundary else { return }
+        } catch { return }
+        #endif
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
         encoder.outputFormatting = [.sortedKeys]
@@ -372,6 +400,7 @@ public actor HistoricalUsageHistoryStore {
     }
 
     private func buildDataset(accountKey: String?) -> CodexHistoricalDataset? {
+        guard self.permitsRecoveryOwner(accountKey) else { return nil }
         let scoped = self.records.filter { record in
             guard Self.isCodexSecondaryRecord(record) else { return false }
             if let accountKey {
@@ -388,6 +417,13 @@ public actor HistoricalUsageHistoryStore {
         legacyEmailHash: String?,
         hasAdjacentMultiAccountVeto: Bool) -> CodexHistoricalDataset?
     {
+        #if os(Windows)
+        if self.recoveryBoundary != nil {
+            // A recovery archive does not prove single-account continuity, email alias ownership or
+            // an opaque legacy account's identity. Keep these rows; use only the exact stored key.
+            return self.buildDataset(accountKey: canonicalAccountKey)
+        }
+        #endif
         guard let canonicalAccountKey else {
             return self.buildDataset(accountKey: nil)
         }

@@ -89,7 +89,9 @@ enum WindowsUsageHistoryRecoveryCommand {
     its final manifest is incomplete. The original Windows profile/keys are required for decryption.
     Restore-new writes an inactive file set to a new folder. Restore-missing explicitly writes
     to current history locations only if every target file in the archive is absent. Even an existing
-    empty file blocks restoration.
+    empty file or recovery marker blocks restoration.
+    Restored histories use exact saved account keys only. Unassigned and legacy aliases are not
+    automatically attached to a current account; explicit ownership review remains necessary.
     No account merging, identity rewriting, replacement, deletion or automatic rollback is performed.
     A partial restore can leave published targets; preserve the archive and operation records.
     Raw history content is preserved, not repaired or certified as readable by this app version.

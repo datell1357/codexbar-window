@@ -4131,6 +4131,7 @@ public actor WindowsUsageRuntime {
                 title: String(title.replacingOccurrences(of: "\0", with: "").prefix(240)),
                 hidePersonalInfo: privacy, usageCapturedAt: context.result.usage.updatedAt,
                 loadedAt: now, series: series, sessionEquivalentForecast: forecast, forecastWorkDays: forecastWorkDays,
+                restoredExactOwnership: selection.recoveryBoundary != nil,
                 isCurrent: {
                     isValid() && privacy == WindowsUsagePresentationSettings.load().hidePersonalInfo &&
                         forecastWorkDays == WindowsPredictivePaceWarningSettings.load().weeklyProgressWorkDays
@@ -4141,6 +4142,7 @@ public actor WindowsUsageRuntime {
             case .changed: return .unavailable(.changed)
             case .tooLarge, .invalidData: return .unavailable(.invalidData)
             case .unavailable: return .unavailable(.loadFailed)
+            case .ownershipReviewRequired: return .unavailable(.ownershipReviewRequired)
             }
         } catch is PlanUtilizationHistoryCore.Failure {
             return .unavailable(.invalidData)
@@ -4382,7 +4384,11 @@ public actor WindowsUsageRuntime {
         } catch {
             if acceptedContext == nil { self.invalidateSessionQuotaOwner(id) }
             // A history failure does not turn a successful quota fetch into an authentication/network error.
-            self.planUtilizationHistoryNotices[id] = "plan_history_saveFailed"
+            if let failure = error as? WindowsPlanUtilizationHistoryStore.Failure, failure == .ownershipReviewRequired {
+                self.planUtilizationHistoryNotices[id] = "plan_history_recoveryOwnerRequired"
+            } else {
+                self.planUtilizationHistoryNotices[id] = "plan_history_saveFailed"
+            }
             return acceptedContext
         }
     }

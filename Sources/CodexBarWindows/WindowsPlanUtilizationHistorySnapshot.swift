@@ -14,6 +14,7 @@ struct WindowsPlanUtilizationHistorySnapshot: Sendable {
     let series: [PlanUtilizationHistoryChart.Series]
     let sessionEquivalentForecast: SessionEquivalentForecastCore?
     let forecastWorkDays: Int?
+    let restoredExactOwnership: Bool
     let isCurrent: @Sendable () -> Bool
 }
 
@@ -22,7 +23,7 @@ enum WindowsPlanUtilizationHistoryResult: Sendable {
     case unavailable(Failure)
 
     enum Failure: Sendable {
-        case changed, noCurrentUsage, busy, invalidData, loadFailed
+        case changed, noCurrentUsage, busy, invalidData, loadFailed, ownershipReviewRequired
 
         var message: String {
             let key: String = switch self {
@@ -31,6 +32,7 @@ enum WindowsPlanUtilizationHistoryResult: Sendable {
             case .busy: "plan_history_busy"
             case .invalidData: "plan_history_invalidData"
             case .loadFailed: "plan_history_loadFailed"
+            case .ownershipReviewRequired: "plan_history_recoveryOwnerRequired"
             }
             return WindowsStatusLocalization.text(key)
         }

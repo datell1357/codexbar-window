@@ -5266,3 +5266,13 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - 공통 recovery I/O에 bounded directory 열거, 존재하는 regular directory pin, 누락 directory 생성 및 명시적인 빈 파일 보존을 추가했다. 기존 config/settings 명령의 빈 입력 거절 의미는 유지한다. archive/operation output은 live history data root 밖으로 제한하되 MSIX 전체 삭제 영향까지 증명하지 않는다.
 - USAGE-HISTORY-RECOVERY.ko.md와 관련 문서에 포함/제외 저장소, 명령, 암호화 directory 형식과 한도, 부분 실패 및 남은 범위를 기록했다. MSIX 제거의 backup NOT_CREATED 정책은 유지했다.
 - CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·compiler/manifest 평가·DPAPI·명령·파일/계정/Windows 실행 검증 미실행. IMPL-554는 67f79aa87b368d21ee15ac6327275b516dd5b3cf로 푸시 확인. IMPL-555도 별도 커밋·푸시 결과를 Git에서 보고한다.
+
+
+## IMPL-556 — Keep restored history behind an exact-account ownership boundary
+
+- 새 history 복원은 원본 파일 전에 bounded/private CreateNew provenance 표식을 게시한다. archive/entry ID·원본 hash·파일명·exact-account 정책을 결합하고 malformed/unreadable 표식을 일반 이력으로 취급하지 않도록 Core reader를 작성했다. hash는 최초 원본 provenance이며 정상 이력 추가 후 현재 파일과 같아야 하는 조건은 아니다.
+- plan store 조회/기록에서 표식이 있으면 기존 Codex·Claude·generic alias/unscoped 자동 이관을 생략하고 정확한 account bucket만 사용한다. 계정 미식별은 별도 실패·안내로 처리한다. 표식을 read/forecast cache revision에 포함하고 저장 직전 변경을 대조하도록 작성했다.
+- pace store는 canonical exact-key 조회/기록만 허용하고 email/opaque/unscoped 연속성 추론을 생략한다. 매 호출에서 표식을 읽고 변경 시 cache를 다시 적재하며 읽기 실패 시 자료 사용을 중단한다. 기존 retention/parser/best-effort 저장 계약을 모두 교체한 것은 아니다.
+- 차트 상세의 복원 제한 안내, 미식별 계정 오류를 한국어·영어로 연결했다. plugin 삭제 검토에는 history와 표식을 따로 표시하며 검토 후 새로 생긴 표식은 삭제하지 않는다. 같은 provider lock 아래 각각 hash/handle을 대조하고 payload를 먼저 삭제하도록 작성했다. 실제 삭제는 수행하지 않았다.
+- backup inventory가 유효한 표식을 인식하고 다음 복원 때 제한 정책을 다시 생성한다. orphan 표식은 새 live restore를 막으며, IMPL-555만으로 이미 복원된 표식 없는 파일은 자동 식별/소급 이관하지 않는다. docs에 명시적 legacy 소유권 검토·재귀속 UI, 부분 복원 재개 및 원본 archive 보존 경계를 기록했다.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·compiler/manifest 평가·DPAPI·명령·파일 복원/삭제·Windows 실행 검증 미실행. 모든 W01~W16/G0~G6 완료를 뜻하지 않는다. 직전 IMPL-555는 572792e426ac83a8b02fad67d145f4acbcfcca66으로 origin/main 푸시 확인. 이번 단위도 별도 커밋·푸시 결과를 Git에서 보고한다.

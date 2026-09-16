@@ -1,6 +1,6 @@
 # Windows 사용량 이력 보존과 복원
 
-IMPL-555에서 코드 경로를 작성했다. 상태는 **CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION**이다. 백업/복원 명령, DPAPI, 파일/잠금, 빌드·테스트·Windows 실행은 현재 작업에서 수행하지 않았다.
+IMPL-555~556에서 코드 경로를 작성했다. 상태는 **CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION**이다. 백업/복원 명령, DPAPI, 파일/잠금, 빌드·테스트·Windows 실행은 현재 작업에서 수행하지 않았다.
 
 ## 보존 범위
 
@@ -38,7 +38,19 @@ restore는 magic/version/status, 중복 ID·provider·pace 항목, 크기·SHA25
 
 `--history-restore-new`는 모든 chunk를 먼저 읽어 대조한 뒤 새 폴더에만 원본 파일을 준비한다. 실제 쓰기 때도 같은 manifest에 다시 결합한다. 완료 기록은 `history-materialization.json`의 `HISTORY_FILES_MATERIALIZED_NOT_ACTIVATED`다. 앱의 활성 경로를 바꾸거나 현재 이력을 덮지 않는다.
 
-`--history-restore-missing`은 `--restore-to-current-history`가 필수이며 현재 runtime이 읽는 위치에 파일을 게시한다. **archive에 있는 모든 대상 파일이 없을 때만** 시작한다. 같은 내용이거나 빈 파일이라도 이미 존재하면 교체하지 않는다. archive에 없는 다른 공급자 파일은 보존한다. 계정 병합·선택 변경·키 재귀속·기존 파일 삭제는 수행하지 않는다. 원본 바이트를 게시한 후 앱의 기존 parser/계정 migration이 적용될 수 있으므로, 별도의 계정 소유권 검토와 실제 runtime 수락은 계속 필요하다. 이 명령은 ownership attestation을 제공하지 않는다.
+`--history-restore-missing`은 `--restore-to-current-history`가 필수이며 현재 runtime이 읽는 위치에 파일을 게시한다. **archive에 있는 모든 대상 파일과 해당 복원 표식이 없을 때만** 시작한다. 같은 내용이거나 빈 파일이라도 이미 존재하면 교체하지 않는다. archive에 없는 다른 공급자 파일은 보존한다. 계정 병합·선택 변경·키 재귀속·기존 파일 삭제는 수행하지 않는다. IMPL-556부터 원본 파일보다 먼저 복원 표식을 게시한다. 표식이 있는 이력에는 계정 자동 이관을 적용하지 않으며, 아래 소유권 경계를 따른다. 이 명령은 ownership attestation을 제공하지 않는다.
+
+## 복원 이력의 계정 소유권 경계
+
+IMPL-556 이후의 새 폴더/현재 저장소 복원은 각 파일보다 먼저 `<원래 파일명>.recovery-boundary.json`을 CreateNew로 게시한다. 표식에는 archive/entry ID, 원본 SHA256, 정확한 파일명과 `EXACT_STORED_ACCOUNT_KEYS_ONLY` 정책을 넣는다. 정상적인 이력 추가로 파일 내용은 바뀔 수 있으므로 원본 hash를 매번 현재 이력 hash와 일치해야 하는 조건으로 사용하지 않는다. 새 백업은 유효한 표식을 인식하고, 이후 복원 때 같은 제한 정책을 다시 생성한다.
+
+plan 이력은 저장된 account key가 현재 key와 정확히 일치하는 bucket만 선택한다. 복원 표식이 있으면 Codex opaque/email 별칭·unscoped 단일 계정 추론과 Claude/generic 계정 자동 이관을 생략한다. 계정을 식별하지 못하면 조회·새 표본 기록을 중단하고 안내한다. boundary가 바뀌면 read/forecast cache revision도 달라지며 저장 직전에 다시 대조한다. 이력 상세에는 제한 안내를 표시한다.
+
+pace는 표식이 있으면 정확히 일치하는 canonical account key만 읽고 기록한다. unscoped·legacy/email 별칭을 현재 canonical owner로 추정하지 않으며 표식 변경 시 메모리 자료를 다시 읽는다. 표식이 손상되거나 읽기 불가능한 경우 일반 로컬 이력으로 낮춰 처리하지 않는다. 이 제한은 계정 연결 정책이며 parser, retention 및 best-effort 저장의 기존 의미를 모두 교체하는 것은 아니다. 원본 보존용 archive를 계속 보관해야 한다.
+
+표식만 게시된 중단 상태도 제한을 유지하고 새 restore-missing으로 덮지 않는다. 명시적 plugin 삭제에서는 이력 파일과 표식을 모두 검토 화면에 표시하고 내용/잠금 대조 후 payload부터 삭제하도록 작성했다. 로드 실패로 ID를 모르는 plugin 파일 삭제에는 이력을 연결하지 않는다. 현재 작업에서 실제 삭제를 실행한 것은 아니다.
+
+미지정/legacy 이력의 사용자 소유권 검토·명시적 재귀속 UI는 남아 있다. IMPL-555만으로 이미 복원한 파일에는 표식이 없을 수 있으며 이번 구현이 과거 파일을 자동 판별하거나 소급 변환하지 않는다. 표식만 복사에서 제외하거나 외부 도구가 제거하면 이 경계가 유지된다고 보장하지 않는다. inactive 복원 폴더를 옮길 때는 표식을 포함한 전체 파일 쌍을 보존한다.
 
 ## 현재 저장소 복원의 기록과 부분 실패
 
@@ -54,4 +66,4 @@ restore는 magic/version/status, 중복 ID·provider·pace 항목, 크기·SHA25
 
 출력은 현재 CodexBar 이력 데이터 root 밖이어야 하고, 복원 출력은 입력 archive 내부에도 만들지 않는다. live 복원에 사용하는 archive 역시 live data root 밖에 있어야 한다. 이 경로 제한은 모든 MSIX package/install 제거 영향 밖의 저장임을 증명하지 않는다. archive는 그런 제거 대상 밖에 별도로 보관해야 한다.
 
-비용 SQLite/웹 cache·credential 등 나머지 저장소, legacy 이력의 소유권 검토와 복원 후 migration 경계, 부분 복원 재개, 제거 도구의 전체 보존 선택과 GUI, profile/key 복구 정책, Windows x64/ARM64 실제 round-trip/중단/ACL/가상화 동작은 남아 있다. [MSIX 제거](MSIX-REMOVAL.ko.md)의 `backup: NOT_CREATED` 정책은 이 일부 백업 구현만으로 바꾸지 않는다.
+비용 SQLite/웹 cache·credential 등 나머지 저장소, legacy 이력의 명시적 소유권 검토/재귀속과 과거 복원 자료 처리, 부분 복원 재개, 제거 도구의 전체 보존 선택과 GUI, profile/key 복구 정책, Windows x64/ARM64 실제 round-trip/중단/ACL/가상화 동작은 남아 있다. [MSIX 제거](MSIX-REMOVAL.ko.md)의 `backup: NOT_CREATED` 정책은 이 일부 백업 구현만으로 바꾸지 않는다.
