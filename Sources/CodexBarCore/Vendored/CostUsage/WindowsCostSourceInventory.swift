@@ -1,29 +1,12 @@
 #if os(Windows)
 import Foundation
 
-/// Preserve Foundation's hidden-file/package traversal policy, but never publish a partial
-/// source inventory as proof that previously cached sources were removed.
+/// Native traversal follows directory links once per volume/file ID. Aliases remain in the
+/// observation ledger even when their contents have already been enumerated through another path.
 enum WindowsCostSourceInventory {
     enum Failure: Error {
         case unreadableDirectory
         case sourceChanged
-    }
-
-    private final class EnumerationFailure: @unchecked Sendable {
-        private let lock = NSLock()
-        private var failed = false
-
-        func record() {
-            self.lock.lock()
-            defer { self.lock.unlock() }
-            self.failed = true
-        }
-
-        func check() throws {
-            self.lock.lock()
-            defer { self.lock.unlock() }
-            if self.failed { throw Failure.unreadableDirectory }
-        }
     }
 
     /// nil means the root was absent before enumeration; an existing empty root returns [:].
@@ -40,41 +23,50 @@ enum WindowsCostSourceInventory {
             return nil
         }
         guard rootSnapshot.isDirectory else { throw Failure.unreadableDirectory }
-        let failure = EnumerationFailure()
-        let keys: Set<URLResourceKey> = [.isDirectoryKey, .isSymbolicLinkKey]
-        guard let enumerator = FileManager.default.enumerator(
-            at: root,
-            includingPropertiesForKeys: Array(keys),
-            options: [.skipsHiddenFiles, .skipsPackageDescendants],
-            errorHandler: { _, _ in
-                failure.record()
-                return false
-            }) else { throw Failure.unreadableDirectory }
-
-        var directories: [URL: WindowsCostFileMetadata.Snapshot] = [root: rootSnapshot]
+        var pending: [(URL, WindowsCostFileMetadata.Snapshot)] = [(root, rootSnapshot)]
+        var nextDirectory = 0
+        var visitedDirectories: [String: WindowsCostFileMetadata.Snapshot] = [:]
+        var directories: [URL: WindowsCostFileMetadata.Snapshot] = [:]
+        var observedFiles: [URL: CostUsageClaudeFileStamp] = [:]
+        var fileOwners: [String: URL] = [:]
         var files: [URL: CostUsageClaudeFileStamp] = [:]
-        for case let url as URL in enumerator {
+        while nextDirectory < pending.count {
             try self.checkCancellation(checkCancellation)
-            try failure.check()
-            let values = try url.resourceValues(forKeys: keys)
-            guard let isDirectory = values.isDirectory else { throw Failure.unreadableDirectory }
-            if isDirectory {
-                if descendIntoDirectory?(url) == false {
-                    enumerator.skipDescendants()
-                    continue
+            let (directory, expected) = pending[nextDirectory]
+            nextDirectory += 1
+            guard try WindowsCostFileMetadata.atURL(directory) == expected else { throw Failure.sourceChanged }
+            directories[directory] = expected
+            if let visited = visitedDirectories[expected.fileID] {
+                guard visited == expected else { throw Failure.sourceChanged }
+                continue
+            }
+            guard directory == root || descendIntoDirectory?(directory) != false else { continue }
+            guard let listing = try WindowsCostDirectoryInventory.read(
+                in: directory, checkCancellation: checkCancellation,
+                publicationObservations: publicationObservations), listing.directorySnapshot == expected
+            else { throw Failure.sourceChanged }
+            visitedDirectories[expected.fileID] = expected
+            // Native enumeration order is unspecified. Keep the first representative stable
+            // across calls, without folding case-sensitive Windows directory names.
+            for entry in listing.entries.sorted(by: { $0.url.path < $1.url.path }) {
+                try self.checkCancellation(checkCancellation)
+                if entry.snapshot.isDirectory {
+                    pending.append((entry.url, entry.snapshot))
+                } else {
+                    let snapshot = entry.snapshot
+                    let stamp = CostUsageClaudeFileStamp(
+                        fileID: snapshot.fileID, size: snapshot.size,
+                        modifiedSeconds: snapshot.modifiedSeconds, modifiedNanoseconds: snapshot.modifiedNanoseconds)
+                    observedFiles[entry.url] = stamp
+                    if let owner = fileOwners[stamp.fileID] {
+                        guard files[owner] == stamp else { throw Failure.sourceChanged }
+                    } else {
+                        fileOwners[stamp.fileID] = entry.url
+                        files[entry.url] = stamp
+                    }
                 }
-                guard let snapshot = try WindowsCostFileMetadata.atURL(url), snapshot.isDirectory else {
-                    throw Failure.sourceChanged
-                }
-                directories[url] = snapshot
-                // Keep linked directory traversal explicit and finite, matching ordinary
-                // DirectoryEnumerator symbolic-link behavior instead of following cycles.
-                if values.isSymbolicLink == true { enumerator.skipDescendants() }
-            } else if url.pathExtension.lowercased() == "jsonl" {
-                files[url] = try CostUsageClaudeFileStamp.readRequired(at: url)
             }
         }
-        try failure.check()
         // Re-observation is a change detector, not an atomic filesystem snapshot. Do not accept
         // a root/subdirectory disappearing, an observed file changing, or an enumeration error.
         for (url, expected) in directories {
@@ -82,7 +74,7 @@ enum WindowsCostSourceInventory {
             guard try WindowsCostFileMetadata.atURL(url) == expected else { throw Failure.sourceChanged }
             try publicationObservations?.directory(url, snapshot: .init(native: expected))
         }
-        for (url, expected) in files {
+        for (url, expected) in observedFiles {
             try self.checkCancellation(checkCancellation)
             try self.requireUnchangedFile(at: url, stamp: expected)
             try publicationObservations?.file(url, snapshot: .init(claude: expected))

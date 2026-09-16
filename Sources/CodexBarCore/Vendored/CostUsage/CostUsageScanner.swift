@@ -1086,6 +1086,10 @@ enum CostUsageScanner {
         private var discovery: CostUsageCodexSessionDiscovery
         private var knownFilePaths: Set<String> = []
         private var knownDirectoryPaths: Set<String> = []
+        #if os(Windows)
+        // Visitation only: directoryStamps and publication checks still prove each alias path.
+        private var windowsEnumeratedDirectoryIDs: Set<String> = []
+        #endif
 
         init(
             files: [URL],
@@ -1111,8 +1115,7 @@ enum CostUsageScanner {
                 }
                 #endif
                 self.discovery = cachedDiscovery
-                self.knownFilePaths = Set(cachedDiscovery.filePaths)
-                self.knownDirectoryPaths = Set(cachedDiscovery.directoryPaths)
+                self.rebuildDiscoveryPathIndexes()
                 if !cachedDiscovery.isComplete {
                     self.enqueueCurrentFiles()
                 }
@@ -1126,8 +1129,7 @@ enum CostUsageScanner {
                     files: files,
                     cachedSessionFiles: cachedSessionFiles,
                     retaining: nil)
-                self.knownFilePaths = Set(self.discovery.filePaths)
-                self.knownDirectoryPaths = Set(self.discovery.directoryPaths)
+                self.rebuildDiscoveryPathIndexes()
             }
         }
 
@@ -1235,8 +1237,7 @@ enum CostUsageScanner {
                         files: self.files,
                         cachedSessionFiles: retainedMappings,
                         retaining: self.discovery)
-                    self.knownFilePaths = Set(self.discovery.filePaths)
-                    self.knownDirectoryPaths = Set(self.discovery.directoryPaths)
+                    self.rebuildDiscoveryPathIndexes()
                 case .deferred:
                     return .deferred
                 }
@@ -1392,8 +1393,7 @@ enum CostUsageScanner {
                     roots: self.roots, files: self.files,
                     cachedSessionFiles: [:], retaining: previous)
                 self.discovery.pendingSessionIds = previous.pendingSessionIds
-                self.knownFilePaths = Set(self.discovery.filePaths)
-                self.knownDirectoryPaths = Set(self.discovery.directoryPaths)
+                self.rebuildDiscoveryPathIndexes()
                 return
             }
             self.discovery.fileStamps.removeValue(forKey: path)
@@ -1567,19 +1567,32 @@ enum CostUsageScanner {
             let directoryURL = URL(fileURLWithPath: path, isDirectory: true)
             var jsonlFileCount = 0
             #if os(Windows)
-            let listing = try WindowsCostDirectoryInventory.read(
-                in: directoryURL, checkCancellation: self.checkCancellation,
-                publicationObservations: self.publicationObservations)
-            for entry in listing?.entries ?? [] {
-                try self.checkCancellation?()
-                if entry.snapshot.isDirectory {
-                    self.enqueueDirectory(entry.url)
-                } else {
-                    jsonlFileCount += 1
-                    self.enqueueFile(entry.url)
+            let observed = try WindowsCostFileMetadata.atURL(directoryURL)
+            if let observed, !observed.isDirectory { throw WindowsCostSourceInventory.Failure.unreadableDirectory }
+            let directorySnapshot: WindowsCostFileMetadata.Snapshot?
+            if let observed, self.windowsEnumeratedDirectoryIDs.contains(observed.fileID) {
+                // A junction to an ancestor or another visited folder has no new subtree.
+                // Keep its own path observation so retargeting cannot silently preserve missing IDs.
+                directorySnapshot = observed
+                try self.publicationObservations?.directory(directoryURL, snapshot: .init(native: observed))
+            } else {
+                let listing = try WindowsCostDirectoryInventory.read(
+                    in: directoryURL, checkCancellation: self.checkCancellation,
+                    publicationObservations: self.publicationObservations)
+                guard listing?.directorySnapshot == observed else { throw WindowsCostSourceInventory.Failure.sourceChanged }
+                directorySnapshot = listing?.directorySnapshot
+                for entry in (listing?.entries ?? []).sorted(by: { $0.url.path < $1.url.path }) {
+                    try self.checkCancellation?()
+                    if entry.snapshot.isDirectory {
+                        self.enqueueDirectory(entry.url)
+                    } else {
+                        jsonlFileCount += 1
+                        self.enqueueFile(entry.url)
+                    }
                 }
+                if let directorySnapshot { self.windowsEnumeratedDirectoryIDs.insert(directorySnapshot.fileID) }
             }
-            let modificationTime = listing?.directorySnapshot.mtimeUnixMs ?? 0
+            let modificationTime = directorySnapshot?.mtimeUnixMs ?? 0
             #else
             let items = (try? FileManager.default.contentsOfDirectory(
                 at: directoryURL,
@@ -1600,12 +1613,24 @@ enum CostUsageScanner {
             var stamp = CostUsageCodexSessionDiscovery.DirectoryStamp(
                 mtimeUnixMs: modificationTime, jsonlFileCount: jsonlFileCount)
             #if os(Windows)
-            stamp.windowsSnapshot = listing.map { .init(native: $0.directorySnapshot) }
-            stamp.windowsObservedMissing = listing == nil
+            stamp.windowsSnapshot = directorySnapshot.map { .init(native: $0) }
+            stamp.windowsObservedMissing = directorySnapshot == nil
             #endif
             self.discovery.directoryStamps[path] = stamp
             self.discovery.nextDirectoryIndex += 1
             return !self.scanBudgetExhausted()
+        }
+
+        private func rebuildDiscoveryPathIndexes() {
+            self.knownFilePaths = Set(self.discovery.filePaths)
+            self.knownDirectoryPaths = Set(self.discovery.directoryPaths)
+            #if os(Windows)
+            self.windowsEnumeratedDirectoryIDs = Set(self.discovery.directoryStamps.values.compactMap { stamp in
+                guard stamp.windowsObservedMissing == false, let snapshot = stamp.windowsSnapshot,
+                      snapshot.isValidWindowsObservation else { return nil }
+                return snapshot.fileID
+            })
+            #endif
         }
 
         private func enqueueCurrentFiles() {
@@ -1665,8 +1690,7 @@ enum CostUsageScanner {
                     roots: self.roots, files: self.files, cachedSessionFiles: [:], retaining: previous)
                 self.discovery.pendingSessionIds = Array(Set(
                     previous.pendingSessionIds + previous.missingSessionIds)).sorted()
-                self.knownFilePaths = Set(self.discovery.filePaths)
-                self.knownDirectoryPaths = Set(self.discovery.directoryPaths)
+                self.rebuildDiscoveryPathIndexes()
                 processedCount = 0
                 return false
             }

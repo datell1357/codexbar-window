@@ -1,6 +1,6 @@
 # Windows 비용 파일 I/O 구현 경계
 
-IMPL-559~570. 상태: **CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION**.
+IMPL-559~571. 상태: **CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION**.
 Mac 호스트에서 소스를 작성한 기록이며 Windows 컴파일·실행·성능·파일 시스템 호환성을 입증하지 않는다. W06/W07 전체 기능 및 G0~G6 완료가 아니다.
 
 ## 파일 메타데이터와 캐시
@@ -147,9 +147,19 @@ Mac 호스트에서 소스를 작성한 기록이며 Windows 컴파일·실행·
 - `WindowsCostDiscoveryInventoryTests.swift`에 폴더 ID 교체·pending 보존, legacy 무효화·분할 대조, queue 완료 후 SQLite 복원, 기존 파일은 그대로인 새 날짜 로그의 갱신 주기 우회, 뒤 root 미방문·부재 재등장·wrong-kind/취소 fixture를 작성했다. **컴파일·테스트·Windows 실행은 하지 않았다.**
 - 모든 retained directory 대조와 배열/정렬/후보 재편성은 현재 한 호출에서 수행한다. 전체 metadata I/O·시간 예산의 durable 재개가 아니며, 같은 metadata를 유지/복원한 이름 목록 변경을 완전히 검출한 것도 아니다. directory membership 증거, junction cycle/alias와 전체 tree paging·immutable snapshot·실제 파일 시스템별 동작은 후속 필수 작업이다.
 
+## IMPL-571: native ID에 따른 junction·alias 탐색
+
+- `WindowsCostSourceInventory`의 재귀 열거를 native `WindowsCostDirectoryInventory` 기반 queue로 작성했다. 디렉터리 junction/link는 현재 열린 대상의 volume/file ID를 기준으로 한 번 탐색한다. ancestor link나 다른 경로로 이미 방문한 폴더는 하위 내용을 다시 확장하지 않지만, 각 alias URL의 metadata 관측은 보존한다. duplicate 대상의 snapshot이 다르면 sourceChanged로 전달한다.
+- native hidden 속성·dot-name 제외와 JSONL 필터를 사용한다. Windows 로그 탐색에서 Foundation의 Mac package/symbolic-link descendant 판정에 의존하지 않는다. eligible directory를 실제로 열거했을 때만 visited ID를 등록하므로 제외된 date root에 대한 독립적인 허용 alias는 탐색할 수 있다. 대소문자를 임의로 합치지 않는다.
+- native listing 순서와 무관하게 entry 경로를 정렬하고 queue 순서의 첫 파일 ID 대표만 source 결과로 반환한다. 모든 hard-link 파일 alias와 directory alias는 별도 경로로 마지막 재관측·최종 publication 검사를 받는다. alias의 target 교체는 이전 대표를 재사용하는 경우에도 metadata 대조 대상으로 남는다.
+- Claude/Vertex source 합치기는 configured root 순서, 각 root의 정렬된 경로를 기준으로 같은 physical file ID를 한 번 선택한다. message/request ID 없는 legacy usage도 같은 hard link를 root마다 중복 집계하지 않도록 작성했다. 동일 ID의 snapshot 충돌은 실패다. 일반 Codex row 수집의 기존 seenFileIds/alias 처리는 유지한다.
+- 부모 session discovery는 열거가 끝난 directory ID set을 유지한다. alias에 도달하면 자체 snapshot/missing 증거를 저장하고 하위 queue를 중복 확장하지 않는다. 재시작 시 기존 directoryStamps에서 set을 복원하고 새 discovery로 전환하는 모든 경로에서 함께 재설정한다. 이 set은 방문 제어이며 metadata/head의 유효성 검사를 대체하지 않는다.
+- `WindowsCostTraversalTests.swift`에 junction ancestor cycle, excluded directory/eligible alias, retarget과 hard-link publication, 여러 Claude roots의 unkeyed row 중복, 작은 budget→JSON checkpoint→parent 탐색 재개를 작성했다. fixture는 임시 폴더에 native link를 생성하는 코드이며 link를 먼저 해제한 경우에만 재귀 정리한다. API 실패는 skip하지 않는다. **컴파일·실행하지 않았고 필요한 Windows 파일 시스템/권한도 확인하지 않았다.**
+- 단일 native listing과 전체 queue·snapshot map은 아직 bulk 구조다. total metadata/content I/O·시간 budget, durable tree paging·hash 재개, membership 증거 및 junction 특성/alias 경로 선택과 모든 비용 source의 실제 통합 검증은 남는다. native ID가 안정적으로 제공되는 범위를 넘어서는 특수 reparse·네트워크 파일 시스템의 모든 동작을 보장하지 않는다.
+
 ## 남은 연결
 
-1. 비페이지/legacy·부모 세션 index/캐시 부재 오류 전달은 IMPL-562에 작성했다. 대규모 재귀/단일 폴더의 bounded/pause/resume 통합, IMPL-565에서 parent discovery의 native directory/file snapshot과 legacy 재탐색을 작성했다. IMPL-570에서 main lookback의 관측 directory native snapshot/부재를 별도 metadata로 보존했다. directory membership 증거와 junction cycle/alias·bounded tree paging은 남는다. 실행 증거는 없다.
+1. 비페이지/legacy·부모 세션 index/캐시 부재 오류 전달은 IMPL-562에 작성했다. 대규모 재귀/단일 폴더의 bounded/pause/resume 통합, IMPL-565에서 parent discovery의 native directory/file snapshot과 legacy 재탐색을 작성했다. IMPL-570에서 main lookback의 관측 directory native snapshot/부재를 별도 metadata로 보존했다. IMPL-571에서 recursive/parent directory ID 방문 제어·alias 관측과 Claude 다중 root 파일 중복 방지를 작성했다. directory membership 증거·bounded tree paging·파일 시스템별 alias/reparse 동작 검증은 남는다. 실행 증거는 없다.
 2. IMPL-561은 expected-file/열린 stream, IMPL-563~564는 게시 직전 metadata, IMPL-566은 usage native snapshot/전체 prefix, IMPL-567은 parser 실제 바이트/게시 내용 비교, IMPL-568은 parent head/negative discovery proof, IMPL-569는 Claude/Vertex parser·cache/memo proof를 작성했다. immutable multi-file snapshot, 관측 뒤 변경, 기타 비용 source와 directory membership 증거가 남는다. 주 lookback의 과거 native directory 관측은 IMPL-570에서 연결했다. hashing과 discovery 대조의 전체 I/O 예산·durable resume·경계 간 반복 읽기 공유도 후속 작업이다.
 3. 날짜/flat/legacy 루트, hard link/junction, case-sensitive NTFS, UNC/SMB, ReFS/FAT, 삭제 후 재생성, 장기 resume 및 모든 비용 source와의 통합. 파일 ID의 파일 시스템별 재사용·불안정성도 포함한다.
 4. 실제 Windows SDK 컴파일, x64/ARM64, native UI와 설치된 제품에서의 비용 표시, full WinUI3 제품 그래프 및 배포 준비.
@@ -168,6 +178,8 @@ Mac 호스트에서 소스를 작성한 기록이며 Windows 컴파일·실행·
 
 - [FILE_ID_INFO](https://learn.microsoft.com/en-us/windows/win32/api/winbase/ns-winbase-file_id_info): volume과 128-bit file ID 결합.
 - [GetFileInformationByHandleEx](https://learn.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-getfileinformationbyhandleex): handle 기반 정보 class/구조체 계약.
+- [FSCTL_SET_REPARSE_POINT](https://learn.microsoft.com/en-us/windows/win32/api/winioctl/ni-winioctl-fsctl_set_reparse_point)와 [REPARSE_DATA_BUFFER](https://learn.microsoft.com/en-us/windows-hardware/drivers/ddi/ntifs/ns-ntifs-_reparse_data_buffer): junction fixture의 mount-point buffer/설정 요청 계약. Windows에서 권한·SDK 호출 가능 여부는 아직 검증하지 않았다.
+- [CreateHardLinkW](https://learn.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-createhardlinkw): 같은 볼륨의 파일 hard-link fixture 계약.
 - [FindFirstFileW](https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-findfirstfilew): 비정렬 열거, 첫 결과/FindClose 수명, 검색 및 경로 오류 조건.
 
 공식 API 문서는 구현 설계 근거다. 이 저장소 코드의 실제 동작 증거로 사용하지 않는다.

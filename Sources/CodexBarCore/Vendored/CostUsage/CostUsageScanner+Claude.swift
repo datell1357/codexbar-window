@@ -665,6 +665,9 @@ extension CostUsageScanner {
         checkCancellation: CancellationCheck?) throws -> ClaudeSourceInventory
     {
         var inventory = ClaudeSourceInventory()
+        #if os(Windows)
+        var owners: [String: CostUsageClaudeFileStamp] = [:]
+        #endif
 
         for root in roots {
             try checkCancellation?()
@@ -673,7 +676,13 @@ extension CostUsageScanner {
                 in: root, checkCancellation: checkCancellation,
                 publicationObservations: inventory.publicationObservations)
             else { continue }
-            for (url, stamp) in files where stamp.size > 0 {
+            for url in files.keys.sorted(by: { $0.path < $1.path }) {
+                guard let stamp = files[url], stamp.size > 0 else { continue }
+                if let previous = owners[stamp.fileID] {
+                    guard previous == stamp else { throw WindowsCostSourceInventory.Failure.sourceChanged }
+                    continue
+                }
+                owners[stamp.fileID] = stamp
                 inventory.files[url.path] = ClaudeSourceFile(url: url, stamp: stamp)
             }
             #else

@@ -5419,3 +5419,14 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - 같은 시각 폴더 교체와 queue 보존, legacy 완료 표식 무효화, 분할 refresh의 이전 관측 보존·마지막 대조, 완료 queue 없는 SQLite round-trip, 갱신 주기 내 새 파일, 미방문 archive root의 부재, 새 날짜 폴더와 wrong-kind/취소용 Windows fixture source를 작성했다. 컴파일·실행하지 않았다.
 - 폴더 metadata가 변하지 않는 이름 목록 변경까지 입증하는 membership 지문/파일 시스템 snapshot은 아니다. 모든 retained directory의 metadata 대조·정렬/후보 재편성은 아직 전체 시간·I/O budget으로 분할하지 않는다. full-prefix hashing 재개, tree paging·junction cycle/alias, 기타 비용 source 및 전체 W01~W16/G0~G6 의무가 남는다.
 - CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·formatter·compiler/manifest·파일 fixture·Windows·실계정·CI 실행 검증 미실행. 전체 Windows 제품 완료 아님. 직전 IMPL-569는 1cb9ec16ef8ca5999bcc86c78e85d1601319bbc8로 origin/main 푸시 확인. 이번 단위도 별도 커밋·푸시한다.
+
+
+## IMPL-571 — Traverse Windows cost directory links by native identity
+
+- Windows recursive source inventory를 Foundation의 symbolic-link 판정/descendant 제어에서 native shallow listing과 명시적 queue로 바꿨다. 폴더의 volume/file ID를 방문 기록에 보존하고 junction/디렉터리 link가 이미 방문한 대상에 도달하면 하위 탐색을 반복하지 않는다. 같은 ID의 서로 다른 snapshot은 source 변경으로 실패시킨다.
+- 폴더/파일의 모든 발견 alias는 재관측과 publication ledger에 남긴다. 같은 파일 native ID의 hard link는 결정적인 첫 대표 경로만 반환한다. 숨김 속성·dot-name·JSONL 필터를 유지하고, 제외된 폴더를 visited ID로 등록해 허용된 다른 alias까지 막지 않도록 작성했다. 경로 대소문자는 합치지 않는다.
+- Claude/Vertex의 여러 configured roots 사이에서도 전체 file ID를 대조해 한 물리 파일의 unkeyed usage row가 중복 집계되지 않도록 작성했다. 다른 root에서 같은 ID의 size/정밀 시각이 다르면 부분 inventory를 성공으로 게시하지 않는다.
+- 부모 세션 탐색도 이미 열거한 directory ID를 기억하고 alias의 자체 native 관측만 저장한다. 기존 directoryStamps에서 재개 시 방문 ID를 복원하며 모든 discovery reset에서 path/ID 색인을 함께 초기화한다. negative 최종 대조에는 대표·alias 경로의 원래 snapshot을 모두 유지한다.
+- native junction/hard-link를 임시 fixture tree에 만드는 테스트 소스를 추가했다. ancestor cycle 종료, 허용 alias/제외 폴더, alias retarget 후 게시 거부, hard-link 대표/관측 보존, 여러 Claude roots의 중복 방지, 작은 budget 이후 부모 negative/positive lookup 재개를 작성했으나 컴파일·실행하지 않았다. link API 실패를 skip하지 않으며 실제 Windows fixture 권한/파일 시스템 전제는 미확인이다.
+- native listing/queue는 여전히 단일 폴더·전체 tree를 bulk 메모리로 보유한다. total metadata/content I/O·시간 budget/분할 재개, 폴더 membership 지문, 파일 시스템별 ID 안정성·특수 reparse/UNC/비NTFS 및 모든 source와의 통합 실행은 후속 작업이다. 전체 W01~W16/G0~G6 완료 아님.
+- CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·formatter·compiler/manifest·파일 fixture·Windows·실계정·CI 실행 검증 미실행. 직전 IMPL-570은 6073bfc17bbaa7ca8d0ac926219b82b898bdd97e로 origin/main 푸시 확인. 이번 단위도 별도 커밋·푸시한다.
