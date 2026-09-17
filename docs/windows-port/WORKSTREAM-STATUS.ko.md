@@ -1,5 +1,7 @@
 # Windows 전용 제품 작업 현황
 
+- IMPL-578: Claude 세션 scope·Vertex ADC 지문의 계정 소유권 증거를 source 캡처→fetch 전후·widget·게시 경계 재대조에 연결하고 보존 표시 eligibility로 승격 작성. 소유권 변경은 pending이 아닌 identity-unconfirmed 실패로 표시. fixture 미실행. fallback/metadata/저장 예산·durable 전진·다른 provider adapter·전체 Windows 제품/검증은 남음. CODE_WRITTEN_UNVERIFIED.
+
 - IMPL-577: read oplock·최종 prefix 대조 분할, native stream 변경 추적 아래 cache/memo/반환 대조 재사용, 최대 4개 verification context·완료 전 pending UI/자동 재개 작성. unsupported/remote/64개 초과/lease break는 기존 전체 내용 비교로 fallback. native fixture 모두 미실행. 전체 fallback/metadata/저장 예산·durable 전진·전체 Windows 제품/검증은 남음. CODE_WRITTEN_UNVERIFIED.
 
 - IMPL-576: single-use/binding/capacity 제한 live SHA registry와 prefix 손실 시 분할 재구성, Claude/Vertex prefix+새 본문 공통 8 MiB budget 작성. 중간 저장은 staged 상태로만 보존하고 최종 전체 proof 확인 유지·내용 불일치 후 강제 전체 재시도 연결. fixture 미실행. 최종 verification/metadata/저장 전체 예산·durable 전진·전체 Windows 제품/검증은 남음. CODE_WRITTEN_UNVERIFIED.

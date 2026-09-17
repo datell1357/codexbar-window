@@ -75,7 +75,11 @@ enum WindowsSpendSourceResolver {
                 codexHomePath: home, cursorCookieHeader: provider == .cursor ? cookie.manualCookieHeader : nil,
                 subscriptionName: nil, allowVertexClaudeFallback: allowVertexClaudeFallback,
                 includePiSessions: includePiSessions,
-                expectedCursorAccountID: provider == .cursor ? account?.externalIdentifier : nil))
+                expectedCursorAccountID: provider == .cursor ? account?.externalIdentifier : nil,
+                expectedClaudeSessionScope: provider == .claude
+                    ? ClaudeAccountProfile.identifiedSessionScope(environment: scoped) : nil,
+                expectedVertexCredentialFingerprint: provider == .vertexai
+                    ? VertexAIOAuthCredentialsStore.credentialFileFingerprint(environment: scoped) : nil))
         }
         return sources
     }

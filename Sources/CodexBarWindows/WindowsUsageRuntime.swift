@@ -608,6 +608,9 @@ public actor WindowsUsageRuntime {
                 guard let account = source.expectedCursorAccountID, !account.isEmpty,
                       let cookie = CookieHeaderNormalizer.normalize(source.cursorCookieHeader) else { return source }
                 source.expectedWidgetScopeFingerprint = CookieHeaderCache.credentialFingerprint(cookie)
+            case .claude:
+                // The loader re-verifies this scope before and after the scan; nil cannot confirm ownership.
+                guard source.expectedClaudeSessionScope != nil else { return source }
             default:
                 // Other sources need an explicit ownership adapter; an environment or provider ID alone is not proof.
                 return source
@@ -3635,9 +3638,21 @@ public actor WindowsUsageRuntime {
             if let config = try self.configStore.load() {
                 let currentRevision = try self.widgetConfigurationRevision(config)
                 var ownersMatch = true
-                for source in sources where source.provider == .codex && source.verifyCodexOwner {
-                    guard let home = source.codexHomePath else { ownersMatch = false; break }
-                    if try CodexAuthFingerprint.fingerprintIfPresent(homePath: home) != source.expectedCodexAuthFingerprint {
+                for source in sources {
+                    if source.provider == .codex, source.verifyCodexOwner {
+                        guard let home = source.codexHomePath else { ownersMatch = false; break }
+                        if try CodexAuthFingerprint.fingerprintIfPresent(homePath: home) != source.expectedCodexAuthFingerprint {
+                            ownersMatch = false
+                            break
+                        }
+                    }
+                    if source.provider == .claude, let expected = source.expectedClaudeSessionScope,
+                       ClaudeAccountProfile.identifiedSessionScope(environment: source.environment) != expected {
+                        ownersMatch = false
+                        break
+                    }
+                    if source.provider == .vertexai, let expected = source.expectedVertexCredentialFingerprint,
+                       VertexAIOAuthCredentialsStore.credentialFileFingerprint(environment: source.environment) != expected {
                         ownersMatch = false
                         break
                     }

@@ -5505,3 +5505,16 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - 상태: CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·정적 QA 스크립트·UI·provider·원격 Windows·CI는 수행하지 않았다.
 
 - 직전 IMPL-576은 2d82369e61ba01e215bfb8116d34cfd02173c641로 origin/main 푸시 확인. 이번 단위도 별도 커밋·푸시하며 자동화 설정은 변경하지 않았다.
+
+## IMPL-578: Claude/Vertex 보존 표시의 계정 소유권 결합
+
+- `ClaudeAccountProfile.identifiedSessionScope`를 public으로 열어 Windows 비용 수집이 Claude 프로필의 config·credentials 경로와 계정 UUID에 묶인 소유권 키를 사용할 수 있게 했다. 로그인하지 않았거나 판정 불가한 프로필은 nil을 반환해 보존 표시가 닫힌 상태로 유지된다.
+- `VertexAIOAuthCredentialsStore.credentialFileFingerprint`를 추가했다. 해석된 ADC 경로·파일 바이트(256 KiB 상한)·해석된 project를 SHA-256으로 묶어 소유권 판별자로 쓰며, 파일 부재/읽기 실패/초과 크기는 nil로 닫힌다. 지문은 프로세스 밖으로 나가지 않고 로그에 남기지 않는다.
+- `WindowsSpendSnapshotLoader.Source`에 `expectedClaudeSessionScope`·`expectedVertexCredentialFingerprint`를 추가하고 `supportsRetainedCollection`을 확장했다. resolver가 scoped environment 기준으로 두 증거를 캡처하며, loader는 fetch 전후·widget 비용 게시 경계에서 현재 값을 재대조한다. 불일치는 `claudeOwnerChanged`/`vertexOwnerChanged`로 실패시켜 pending이 아닌 account-identity-unconfirmed 실패로 표시한다. codex 소유권 실패도 같은 표시로 통일했다.
+- `attachWidgetCostOwnership`에 Claude 경로를 연결했다. 세션 scope가 캡처된 Claude source만 widget account revision을 받고, Vertex는 widget 선택 불가 provider이므로 기본 fail-closed를 유지한다. `receiveSpendSnapshot`의 게시 전 재대조도 Codex 지문 외에 Claude scope·Vertex 지문을 확인해 계정이 바뀐 collection 결과를 게시하지 않는다.
+- 이제 Claude/Vertex source가 확인된 소유권을 가지면 `canReuse`의 `allSatisfy(supportsRetainedCollection)`를 통과해 controller가 재사용되고, local inventory pending 동안 이전 완료 값이 stale로 보존된다. 소유권 증거가 없거나 바뀌면 보존·재사용 모두 닫힌다.
+- `WindowsSpendOwnershipTests`에 scope 캡처/회전/로그아웃 실패, ADC 지문의 경로·내용 결합·결정성·fail-closed, loader의 소유권 실패가 pending이나 identity 확정으로 둔갑하지 않음을 검증하는 fixture를 작성했다. 테스트·컴파일·실행은 하지 않았다.
+- **남은 범위:** 64개 초과/remote/unsupported/활발한 쓰기의 bounded 최종 비교, 전체 metadata/publication sweep·JSON checkpoint 저장·메모리 예산, memo-hit와 다른 비용 source의 verification 경로 통합, 반복 종료 중 durable 전진·directory membership, 나머지 provider의 ownership adapter와 전체 W01~W16/G0~G6.
+- 상태: CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·정적 QA 스크립트·UI·provider·원격 Windows·CI는 수행하지 않았다.
+
+- 직전 IMPL-577은 b360ec8af79e63a68a22fec48155741e80cffeae로 origin/main 푸시 확인. 이번 단위도 별도 커밋·푸시하며 자동화 설정은 변경하지 않았다.

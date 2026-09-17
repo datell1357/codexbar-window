@@ -77,7 +77,7 @@ public enum ClaudeAccountProfile {
 
     /// A stable ownership key only when Claude's selected profile exposes an account identity.
     /// Background work must fail closed rather than let an unidentified profile inherit another profile's marker.
-    static func identifiedSessionScope(environment: [String: String]) -> String? {
+    public static func identifiedSessionScope(environment: [String: String]) -> String? {
         guard let identity = self.accountUuid(environment: environment) else { return nil }
         return self.makeSessionScope(environment: environment, identity: identity, fallbackID: UUID())
     }

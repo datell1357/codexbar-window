@@ -1,5 +1,11 @@
 import Foundation
 
+#if canImport(CryptoKit)
+import CryptoKit
+#else
+import Crypto
+#endif
+
 public struct VertexAIOAuthCredentials: Sendable {
     public let accessToken: String
     public let refreshToken: String
@@ -106,6 +112,36 @@ public enum VertexAIOAuthCredentialsStore {
             .appendingPathComponent("gcloud")
             .appendingPathComponent("configurations")
             .appendingPathComponent("config_default")
+    }
+
+    /// One-way discriminator for the application-default credential file that owns Vertex log
+    /// attribution. Covers the resolved path, the bounded file bytes, and the resolved project so a
+    /// rotated or replaced credential cannot inherit another account's retained display data.
+    /// Returns nil when no readable credential exists; callers must fail closed rather than guess an
+    /// owner. The digest never leaves the process and is never logged.
+    public static func credentialFileFingerprint(
+        environment: [String: String] = ProcessInfo.processInfo.environment) -> String?
+    {
+        let url = self.credentialsFilePath(environment: environment)
+        let limit = 256 * 1024
+        guard let handle = try? FileHandle(forReadingFrom: url) else { return nil }
+        defer { try? handle.close() }
+        // `read(upToCount:)` returns at most the requested count for regular files; one byte over
+        // the limit proves the file is larger than this fingerprint is willing to cover.
+        guard let data = try? handle.read(upToCount: limit + 1), data.count <= limit else { return nil }
+        var digest = SHA256()
+        let path = url.standardizedFileURL.path
+        digest.update(data: Data("vertex:adc-ownership:v1:\(path.utf8.count):".utf8))
+        digest.update(data: Data(path.utf8))
+        digest.update(data: Data(":\(data.count):".utf8))
+        digest.update(data: data)
+        if let project = self.loadProjectId(environment: environment)?
+            .trimmingCharacters(in: .whitespacesAndNewlines), !project.isEmpty
+        {
+            digest.update(data: Data(":\(project.utf8.count):".utf8))
+            digest.update(data: Data(project.utf8))
+        }
+        return digest.finalize().map { String(format: "%02x", $0) }.joined()
     }
 
     public static func hasCredentials(
