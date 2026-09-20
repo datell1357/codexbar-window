@@ -904,9 +904,20 @@ extension CostUsageScanner {
                     try verified.check(checkCancellation: checkCancellation)
                     state.completedPublication = verified
                 case .requiresFullCheck:
-                    // Remote/unsupported/busy streams and capacity limits retain full checks.
-                    try publication.check(checkCancellation: checkCancellation)
-                    state.completedPublication = publication
+                    // Remote/unsupported/busy streams and capacity limits keep the per-entry
+                    // check, sliced by a durable checkpoint cursor instead of one unbounded pass.
+                    // An incomplete slice falls through to the checkpoint save below, which
+                    // persists fallbackCheckedCount and rethrows the pending error.
+                    let checked = try publication.checkSlice(
+                        start: checkpoint.fallbackCheckedCount ?? 0,
+                        maxEntries: max(1, options.maxWindowsClaudeVerificationEntriesPerRefresh),
+                        checkCancellation: checkCancellation)
+                    if checked < publication.entries.count {
+                        checkpoint.fallbackCheckedCount = checked
+                    } else {
+                        checkpoint.fallbackCheckedCount = nil
+                        state.completedPublication = publication
+                    }
                 }
                 if state.completedPublication != nil {
                     artifact.windowsContent = nil

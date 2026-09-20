@@ -378,5 +378,48 @@ struct WindowsCostClaudeContentTests {
         #expect(work.snapshot().transcriptParses == 0)
         #expect(work.snapshot().incrementalTranscriptParses == 0)
     }
+
+    @Test
+    func `collection fallback verification resumes through the durable checkpoint cursor`() throws {
+        let fixture = try Fixture()
+        defer { fixture.cleanup() }
+        // Beyond the verifier's 64-lease capacity, so the completed collection's final check
+        // uses the per-entry fallback sliced by the persisted checkpoint cursor.
+        for index in 0..<65 {
+            let url = fixture.root.appendingPathComponent("logs/session-\(index).jsonl")
+            try fixture.event(input: 10, id: "f\(index)").write(to: url)
+            try FileManager.default.setAttributes([.modificationDate: fixture.timestamp], ofItemAtPath: url.path)
+        }
+        var bounded = fixture.options
+        bounded.maxWindowsClaudeVerificationEntriesPerRefresh = 1
+        let work = CostUsageScanner.ClaudeScanWorkRecorder()
+        var pendings = 0
+        var report: CostUsageDailyReport?
+        try CostUsageScanner.withClaudeScanWorkRecorderForTesting(work) {
+            for _ in 0..<160 {
+                if report != nil { break }
+                do {
+                    report = try CostUsageScanner.loadDailyReportCancellable(
+                        provider: .claude, since: fixture.day, until: fixture.day, now: fixture.day,
+                        options: bounded, checkCancellation: nil)
+                } catch let error as CostUsageError {
+                    switch error {
+                    case .localInventoryPending, .localContentPending, .localContentVerificationPending:
+                        pendings += 1
+                    default:
+                        throw error
+                    }
+                }
+            }
+        }
+        // Finishing within the bound proves the persisted cursor resumed: without it every
+        // refresh would re-check only the first entry and pend forever.
+        #expect(pendings >= 1)
+        let final = try #require(report)
+        #expect(final.summary?.totalInputTokens == 650)
+        // Parsing happened once per file during collection; verification retries reparse none.
+        #expect(work.snapshot().transcriptParses == 65)
+        #expect(work.snapshot().incrementalTranscriptParses == 0)
+    }
 }
 #endif

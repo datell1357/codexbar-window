@@ -67,6 +67,33 @@ struct CostUsageSourcePublication: Sendable {
         }
         return nil
     }
+
+    /// Bounded variant of `check` for sources whose streams cannot hold a read lease. Returns
+    /// the number of leading entries verified so far; equality with `entries.count` means the
+    /// whole publication passed. The caller persists the cursor and resumes it next refresh.
+    func checkSlice(
+        start: Int, maxEntries: Int, checkCancellation: (() throws -> Void)? = nil) throws -> Int
+    {
+        var index = max(0, min(start, self.entries.count))
+        var visits = max(0, maxEntries)
+        while index < self.entries.count, visits > 0 {
+            try Task.checkCancellation()
+            try checkCancellation?()
+            let entry = self.entries[index]
+            if let current = try Self.checkMetadata(entry) {
+                do {
+                    try WindowsCostContentRead.validate(
+                        entry.contentAnchors, fileURL: entry.url,
+                        expectedFile: current, checkCancellation: checkCancellation)
+                } catch WindowsCostContentRead.Failure.digestMismatch {
+                    throw Failure.sourceChangedOrUnavailable
+                }
+            }
+            index += 1
+            visits -= 1
+        }
+        return index
+    }
     #endif
 
     var isCurrent: Bool {

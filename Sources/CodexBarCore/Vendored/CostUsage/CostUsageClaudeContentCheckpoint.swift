@@ -77,4 +77,7 @@ struct CostUsageClaudeContentCheckpoint: Codable {
     var nextFile = 0
     var partial: File?
     var verificationToken: UUID? = nil
+    /// Durable progress of the lease-less final entry check, counted in the canonical
+    /// publication order. Persisted with the checkpoint so a process restart resumes it.
+    var fallbackCheckedCount: Int? = nil
 }

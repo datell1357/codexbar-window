@@ -5542,3 +5542,14 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - 상태: CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·정적 QA 스크립트·UI·provider·원격 Windows·CI는 수행하지 않았다.
 
 - 직전 IMPL-579는 fec07111c로 origin/main 푸시 확인. 이번 단위도 별도 커밋·푸시하며 자동화 설정은 변경하지 않았다.
+
+## IMPL-581: collection 완료 경로의 durable fallback 커서
+
+- `CostUsageSourcePublication.checkSlice`를 추가했다. lease를 잡지 못해 verifier가 `requiresFullCheck`로 돌아가는 collection 완료 경로가 entry를 `maxWindowsClaudeVerificationEntriesPerRefresh`개씩만 대조하고 진행 개수를 돌려준다. 기존 `check`와 같은 metadata+content anchor 검사를 항목별로 수행한다.
+- 진행 커서 `fallbackCheckedCount`는 `CostUsageClaudeContentCheckpoint`에 Codable 필드로 저장된다. memo의 프로세스 로컬 커서와 달리 checkpoint JSON에 같이 쓰이므로 프로세스 재시작 후에도 canonical publication 순서 기준으로 이어진다. 완료 시 nil로 정리하고 source 변경 재시작은 checkpoint 전체를 버린다.
+- 미완료 slice는 기존 checkpoint 저장·`localContentVerificationPending` 재던지기 경로를 그대로 타므로 pending UI와 자동 재개가 유지된다.
+- `WindowsCostClaudeContentTests`에 65개 파일 fixture를 작성했다. 파싱 파일 수 상한과 verification entry 상한을 함께 넘겨 collection 분할→fallback 분할 재개를 유도하고, 재시도만으로 완료·파일당 1회 파싱·정확한 합계를 확인한다. 테스트·컴파일·실행은 하지 않았다.
+- **남은 범위:** 전체 metadata/publication sweep·JSON checkpoint 저장·메모리 예산, 다른 비용 source의 verification 경로 통합, 반복 종료 중 durable 전진·directory membership, 나머지 provider의 ownership adapter와 전체 W01~W16/G0~G6.
+- 상태: CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·정적 QA 스크립트·UI·provider·원격 Windows·CI는 수행하지 않았다.
+
+- 직전 IMPL-580은 c36299e8e로 origin/main 푸시 확인. 이번 단위도 별도 커밋·푸시하며 자동화 설정은 변경하지 않았다.

@@ -1,5 +1,7 @@
 # Windows 전용 제품 작업 현황
 
+- IMPL-581: collection 완료 경로의 lease-less 최종 대조를 checkSlice로 분할하고 durable 커서를 checkpoint JSON에 작성. 재시작 후에도 canonical 순서로 재개. fixture 미실행. metadata/저장 예산·다른 비용 source·durable membership·provider adapter·전체 Windows 제품/검증은 남음. CODE_WRITTEN_UNVERIFIED.
+
 - IMPL-580: lease 불가 memo-hit fallback의 파일별 내용 대조를 refresh당 entry 수로 분할하고 진행 커서를 memo 프로세스 로컬 맵에 작성. 모든 파일의 proof 관측은 매 refresh 유지. fixture 미실행. collection fallback·metadata/저장 예산·durable 전진·다른 provider adapter·전체 Windows 제품/검증은 남음. CODE_WRITTEN_UNVERIFIED.
 
 - IMPL-579: Claude/Vertex memo-hit 최종 내용 대조를 leased·예산 분할 verifier에 연결하고 재개 토큰을 memo의 프로세스 로컬 맵으로 이동 작성. pending은 artifact를 다시 쓰지 않아 reportKey가 유지되고, 불일치는 memo miss로 재구성. fixture 미실행. fallback/metadata/저장 예산·durable 전진·다른 provider adapter·전체 Windows 제품/검증은 남음. CODE_WRITTEN_UNVERIFIED.
