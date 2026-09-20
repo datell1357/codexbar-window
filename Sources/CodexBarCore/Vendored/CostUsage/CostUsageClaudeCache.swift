@@ -101,6 +101,9 @@ final class CostUsageClaudeReportMemo: @unchecked Sendable {
     private let capacity = 8
     private var generation: UInt64 = 0
     private var entries: [String: StoredEntry] = [:]
+    /// Process-local resume tokens for a memo's sliced verification. They are never persisted:
+    /// a lost token simply restarts that memo's content pass from zero.
+    private var verificationTokens: [String: UUID] = [:]
 
     func entry(provider: UsageProvider, canonicalCachePath: String) -> Entry? {
         let key = Self.key(provider: provider, canonicalCachePath: canonicalCachePath)
@@ -144,7 +147,26 @@ final class CostUsageClaudeReportMemo: @unchecked Sendable {
         try sourcePublication?.check(checkCancellation: checkCancellation)
         self.lock.lock()
         self.installUnlocked(key: key, entry: entry)
+        // A stored memo replaces the identity a pending verification was bound to.
+        self.verificationTokens.removeValue(forKey: key)
         self.lock.unlock()
+    }
+
+    func verificationToken(provider: UsageProvider, canonicalCachePath: String) -> UUID? {
+        self.lock.lock()
+        defer { self.lock.unlock() }
+        return self.verificationTokens[Self.key(provider: provider, canonicalCachePath: canonicalCachePath)]
+    }
+
+    func setVerificationToken(_ token: UUID?, provider: UsageProvider, canonicalCachePath: String) {
+        self.lock.lock()
+        defer { self.lock.unlock() }
+        let key = Self.key(provider: provider, canonicalCachePath: canonicalCachePath)
+        if let token {
+            self.verificationTokens[key] = token
+        } else {
+            self.verificationTokens.removeValue(forKey: key)
+        }
     }
 
     #if DEBUG
@@ -153,6 +175,7 @@ final class CostUsageClaudeReportMemo: @unchecked Sendable {
         self.lock.lock()
         defer { self.lock.unlock() }
         self.entries.removeValue(forKey: key)
+        self.verificationTokens.removeValue(forKey: key)
     }
 
     func evictPersisted(canonicalCachePath: String) {
@@ -168,6 +191,7 @@ final class CostUsageClaudeReportMemo: @unchecked Sendable {
            let oldest = self.entries.min(by: { $0.value.generation < $1.value.generation })?.key
         {
             self.entries.removeValue(forKey: oldest)
+            self.verificationTokens.removeValue(forKey: oldest)
         }
     }
 

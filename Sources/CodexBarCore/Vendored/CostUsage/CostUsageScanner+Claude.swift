@@ -1036,12 +1036,18 @@ extension CostUsageScanner {
         if !options.forceRescan, !forcedContentRescan,
            let priorMemo,
            priorMemo.sourceInventory == sourceInventory,
-           priorMemo.reportKey == reportKey,
-           try Self.claudeMemoContentMatches(priorMemo, inventory: inventory, checkCancellation: checkCancellation)
+           priorMemo.reportKey == reportKey
         {
-            try checkCancellation?()
-            try inventory.publicationObservations?.freeze().check(checkCancellation: checkCancellation)
-            return priorMemo.report
+            // The memo-hit content pass shares the leased, budgeted verifier so a large inventory
+            // cannot monopolize a refresh. A pending pass persists its token and resumes next slice.
+            let memoMatches = try Self.claudeMemoContentMatches(priorMemo, inventory: inventory,
+                provider: provider, canonicalCachePath: canonicalCachePath,
+                options: options, checkCancellation: checkCancellation)
+            if memoMatches {
+                try checkCancellation?()
+                try inventory.publicationObservations?.freeze().check(checkCancellation: checkCancellation)
+                return priorMemo.report
+            }
         }
 
         #if !os(Windows)
@@ -1206,25 +1212,104 @@ extension CostUsageScanner {
         return report
     }
 
+    #if os(Windows)
+    /// Memo-hit verification shares the leased, budgeted publication verifier. A pass that cannot
+    /// finish inside one refresh persists a resume token and throws `localContentVerificationPending`
+    /// instead of falling through to a full rescan. Sources whose streams cannot hold a read lease
+    /// (remote/unsupported/busy or over-capacity sets) keep the unbounded per-file check.
     private static func claudeMemoContentMatches(
         _ memo: CostUsageClaudeReportMemo.Entry,
         inventory: ClaudeSourceInventory,
+        provider: UsageProvider,
+        canonicalCachePath: String,
+        options: Options,
         checkCancellation: CancellationCheck?) throws -> Bool
     {
-        #if os(Windows)
         guard let proofs = memo.windowsReadProofs, Set(proofs.keys) == Set(inventory.files.keys)
         else { return false }
+        func fullCheck() throws -> Bool {
+            for path in inventory.files.keys.sorted() {
+                try checkCancellation?()
+                guard let source = inventory.files[path], let proof = proofs[path],
+                      proof.isUsable(for: source.stamp, allowAppend: false),
+                      try proof.matchesContent(at: source.url, stamp: source.stamp, checkCancellation: checkCancellation)
+                else { return false }
+                try proof.observe(at: source.url, stamp: source.stamp, in: inventory.publicationObservations)
+            }
+            return true
+        }
+        guard let observations = inventory.publicationObservations else { return try fullCheck() }
+        // Record every usable proof first so the verifier's entry set covers the whole inventory.
         for path in inventory.files.keys.sorted() {
             try checkCancellation?()
             guard let source = inventory.files[path], let proof = proofs[path],
-                  proof.isUsable(for: source.stamp, allowAppend: false),
-                  try proof.matchesContent(at: source.url, stamp: source.stamp, checkCancellation: checkCancellation)
-            else { return false }
-            try proof.observe(at: source.url, stamp: source.stamp, in: inventory.publicationObservations)
+                  proof.isUsable(for: source.stamp, allowAppend: false) else { return false }
+            try proof.observe(at: source.url, stamp: source.stamp, in: observations)
         }
-        #endif
-        return true
+        // Canonical final proofs keep the token binding independent of observation order.
+        var entries = observations.freeze().metadataOnly().entries
+        var bound: Set<String> = []
+        for index in entries.indices {
+            let path = entries[index].url.path
+            guard let source = inventory.files[path], let proof = proofs[path],
+                  case .file = entries[index].expectation,
+                  proof.isUsable(for: source.stamp, allowAppend: false) else { continue }
+            var anchors: [CostUsageCodexTokenIndexAnchor] = []
+            for anchor in [proof.committedAnchor, proof.readAnchor].compactMap({ $0 }) {
+                if !anchors.contains(anchor) { anchors.append(anchor) }
+            }
+            entries[index].contentAnchors = anchors
+            bound.insert(path)
+        }
+        guard bound == Set(inventory.files.keys) else { return false }
+        // The resume token lives on the memo, not the cache artifact: persisting it would rewrite
+        // the cache file, change its stamp, and break the reportKey match the token depends on.
+        let memoStore = CostUsageClaudeReportMemo.shared
+        let verifier = WindowsCostPublicationVerifications.shared.take(
+            memoStore.verificationToken(provider: provider, canonicalCachePath: canonicalCachePath),
+            entries: entries)
+        do {
+            switch try verifier.advance(
+                maxBytes: max(1, options.maxWindowsClaudeContentBytesPerRefresh),
+                maxEntries: max(1, options.maxWindowsClaudeVerificationEntriesPerRefresh),
+                checkCancellation: checkCancellation) {
+            case .pending:
+                memoStore.setVerificationToken(
+                    WindowsCostPublicationVerifications.shared.put(verifier),
+                    provider: provider, canonicalCachePath: canonicalCachePath)
+                throw CostUsageError.localContentVerificationPending(totalFiles: inventory.files.count)
+            case .complete:
+                memoStore.setVerificationToken(nil, provider: provider, canonicalCachePath: canonicalCachePath)
+                let verified = CostUsageSourcePublication(entries: entries, windowsVerifier: verifier)
+                try verified.check(checkCancellation: checkCancellation)
+                return true
+            case .requiresFullCheck:
+                memoStore.setVerificationToken(nil, provider: provider, canonicalCachePath: canonicalCachePath)
+                return try fullCheck()
+            }
+        } catch CostUsageSourcePublication.Failure.sourceChangedOrUnavailable {
+            // A memo whose content no longer matches is a miss, not a failed refresh: the caller
+            // falls through to the scan path, which rebuilds proofs under the same inventory.
+            memoStore.setVerificationToken(nil, provider: provider, canonicalCachePath: canonicalCachePath)
+            return false
+        } catch WindowsCostFileReadGuard.Failure.sourceChanged {
+            memoStore.setVerificationToken(nil, provider: provider, canonicalCachePath: canonicalCachePath)
+            return false
+        }
     }
+
+    #else
+    private static func claudeMemoContentMatches(
+        _ memo: CostUsageClaudeReportMemo.Entry,
+        inventory: ClaudeSourceInventory,
+        provider: UsageProvider,
+        canonicalCachePath: String,
+        options: Options,
+        checkCancellation: CancellationCheck?) throws -> Bool
+    {
+        true
+    }
+    #endif
 
     private static func claudeReportMemoKey(
         provider: UsageProvider,

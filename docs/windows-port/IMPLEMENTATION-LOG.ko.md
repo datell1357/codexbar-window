@@ -5518,3 +5518,15 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - 상태: CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·정적 QA 스크립트·UI·provider·원격 Windows·CI는 수행하지 않았다.
 
 - 직전 IMPL-577은 b360ec8af79e63a68a22fec48155741e80cffeae로 origin/main 푸시 확인. 이번 단위도 별도 커밋·푸시하며 자동화 설정은 변경하지 않았다.
+
+## IMPL-579: memo-hit 내용 대조의 분할 재개와 프로세스 로컬 토큰
+
+- Claude/Vertex memo-hit 경로의 최종 내용 대조를 `WindowsCostPublicationVerifier`의 lease·예산 분할에 연결했다. 이전에는 memo가 inventory·reportKey와 일치하면 refresh마다 모든 파일의 내용을 무제한으로 다시 대조했다.
+- 재개 토큰은 cache artifact가 아니라 `CostUsageClaudeReportMemo`의 프로세스 로컬 맵에 둔다. artifact에 저장하면 cache 파일 stamp가 바뀌어 다음 refresh의 reportKey 일치가 깨지고 토큰이 고아가 되는 문제를 피한다. 프로세스 재시작 시 토큰은 사라지고 대조는 처음부터 다시 수행된다.
+- `store`·`evict`·LRU eviction이 토큰을 함께 정리해 맵이 memo 수명을 넘어 자라지 않는다.
+- pending이면 토큰을 저장하고 `localContentVerificationPending`을 던진다. cache artifact는 다시 쓰지 않아 stamp와 reportKey가 유지된다. complete면 entry를 canonical proof로 묶은 publication check를 통과한 뒤 memo report를 반환하고, requiresFullCheck·lease 불가·capacity 초과·remote/unsupported는 기존 전체 대조로 돌아간다. 내용 불일치는 실패가 아니라 memo miss로 떨어져 같은 inventory에서 proof를 다시 만든다.
+- `WindowsCostClaudeContentTests`에 분할 재개 fixture를 작성했다. refresh당 1 entry로 제한해 pending을 유도하고, 재시도만으로 완료되는 것·재파싱 0건·pending 동안 cache stamp 불변을 확인한다. 테스트·컴파일·실행은 하지 않았다.
+- **남은 범위:** 64개 초과/remote/unsupported/활발한 쓰기의 bounded 최종 비교, 전체 metadata/publication sweep·JSON checkpoint 저장·메모리 예산, 다른 비용 source의 verification 경로 통합, 반복 종료 중 durable 전진·directory membership, 나머지 provider의 ownership adapter와 전체 W01~W16/G0~G6.
+- 상태: CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·정적 QA 스크립트·UI·provider·원격 Windows·CI는 수행하지 않았다.
+
+- 직전 IMPL-578은 f2de1d414로 origin/main 푸시 확인. 이번 단위도 별도 커밋·푸시하며 자동화 설정은 변경하지 않았다.

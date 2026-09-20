@@ -299,5 +299,45 @@ struct WindowsCostClaudeContentTests {
             try proof.matchesContent(at: fixture.file, stamp: stamp, checkCancellation: nil)
         }
     }
+
+    @Test
+    func `bounded memo verification resumes across refreshes without reparsing or rewriting the cache`() throws {
+        let fixture = try Fixture()
+        defer { fixture.cleanup() }
+        try fixture.write(fixture.event(input: 10))
+        let second = fixture.root.appendingPathComponent("logs/session-b.jsonl")
+        try fixture.event(input: 20, id: "second").write(to: second)
+        try FileManager.default.setAttributes([.modificationDate: fixture.timestamp], ofItemAtPath: second.path)
+        #expect(try fixture.load().summary?.totalInputTokens == 30)
+        var bounded = fixture.options
+        bounded.maxWindowsClaudeVerificationEntriesPerRefresh = 1
+        let cacheStamp = try CostUsageClaudeFileStamp.readRequired(at: fixture.cacheURL())
+        let work = CostUsageScanner.ClaudeScanWorkRecorder()
+        var pendings = 0
+        var report: CostUsageDailyReport?
+        try CostUsageScanner.withClaudeScanWorkRecorderForTesting(work) {
+            for _ in 0..<16 {
+                if report != nil { break }
+                do {
+                    report = try CostUsageScanner.loadDailyReportCancellable(
+                        provider: .claude, since: fixture.day, until: fixture.day, now: fixture.day,
+                        options: bounded, checkCancellation: nil)
+                } catch let error as CostUsageError {
+                    guard case .localContentVerificationPending = error else { throw error }
+                    pendings += 1
+                }
+            }
+        }
+        // With one entry per refresh and several observed paths, finishing at all proves the
+        // memo-owned resume token carried the verifier forward instead of restarting each pass.
+        #expect(pendings >= 1)
+        let final = try #require(report)
+        #expect(final.summary?.totalInputTokens == 30)
+        #expect(work.snapshot().transcriptParses == 0)
+        #expect(work.snapshot().incrementalTranscriptParses == 0)
+        // A pending verification must not rewrite the cache artifact: a new stamp would break the
+        // reportKey match that the next refresh depends on.
+        #expect(try CostUsageClaudeFileStamp.readRequired(at: fixture.cacheURL()) == cacheStamp)
+    }
 }
 #endif
