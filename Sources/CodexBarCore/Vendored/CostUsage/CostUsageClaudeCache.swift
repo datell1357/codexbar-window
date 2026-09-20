@@ -104,6 +104,9 @@ final class CostUsageClaudeReportMemo: @unchecked Sendable {
     /// Process-local resume tokens for a memo's sliced verification. They are never persisted:
     /// a lost token simply restarts that memo's content pass from zero.
     private var verificationTokens: [String: UUID] = [:]
+    /// Process-local progress for a memo's fallback content pass, counted in the inventory's
+    /// sorted-path order. A lost cursor likewise restarts that pass from zero.
+    private var fallbackCheckProgress: [String: Int] = [:]
 
     func entry(provider: UsageProvider, canonicalCachePath: String) -> Entry? {
         let key = Self.key(provider: provider, canonicalCachePath: canonicalCachePath)
@@ -149,6 +152,7 @@ final class CostUsageClaudeReportMemo: @unchecked Sendable {
         self.installUnlocked(key: key, entry: entry)
         // A stored memo replaces the identity a pending verification was bound to.
         self.verificationTokens.removeValue(forKey: key)
+        self.fallbackCheckProgress.removeValue(forKey: key)
         self.lock.unlock()
     }
 
@@ -169,6 +173,23 @@ final class CostUsageClaudeReportMemo: @unchecked Sendable {
         }
     }
 
+    func fallbackCheckedCount(provider: UsageProvider, canonicalCachePath: String) -> Int? {
+        self.lock.lock()
+        defer { self.lock.unlock() }
+        return self.fallbackCheckProgress[Self.key(provider: provider, canonicalCachePath: canonicalCachePath)]
+    }
+
+    func setFallbackCheckedCount(_ count: Int?, provider: UsageProvider, canonicalCachePath: String) {
+        self.lock.lock()
+        defer { self.lock.unlock() }
+        let key = Self.key(provider: provider, canonicalCachePath: canonicalCachePath)
+        if let count {
+            self.fallbackCheckProgress[key] = count
+        } else {
+            self.fallbackCheckProgress.removeValue(forKey: key)
+        }
+    }
+
     #if DEBUG
     func evict(provider: UsageProvider, canonicalCachePath: String) {
         let key = Self.key(provider: provider, canonicalCachePath: canonicalCachePath)
@@ -176,6 +197,7 @@ final class CostUsageClaudeReportMemo: @unchecked Sendable {
         defer { self.lock.unlock() }
         self.entries.removeValue(forKey: key)
         self.verificationTokens.removeValue(forKey: key)
+        self.fallbackCheckProgress.removeValue(forKey: key)
     }
 
     func evictPersisted(canonicalCachePath: String) {
@@ -192,6 +214,7 @@ final class CostUsageClaudeReportMemo: @unchecked Sendable {
         {
             self.entries.removeValue(forKey: oldest)
             self.verificationTokens.removeValue(forKey: oldest)
+            self.fallbackCheckProgress.removeValue(forKey: oldest)
         }
     }
 

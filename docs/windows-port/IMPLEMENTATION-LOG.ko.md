@@ -5530,3 +5530,15 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - 상태: CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·정적 QA 스크립트·UI·provider·원격 Windows·CI는 수행하지 않았다.
 
 - 직전 IMPL-578은 f2de1d414로 origin/main 푸시 확인. 이번 단위도 별도 커밋·푸시하며 자동화 설정은 변경하지 않았다.
+
+## IMPL-580: memo fallback 내용 대조의 entry 단위 분할
+
+- lease를 잡을 수 없어 verifier가 `requiresFullCheck`로 돌아가는 memo-hit 경로(64개 초과 entry·remote/unsupported/busy 스트림)의 파일별 내용 대조를 refresh당 `maxWindowsClaudeVerificationEntriesPerRefresh`개로 분할했다. 이전에는 fallback이 한 refresh 안에 모든 파일의 digest를 무제한으로 다시 읽었다.
+- 진행 커서는 `CostUsageClaudeReportMemo`의 프로세스 로컬 맵에 두며 정렬된 inventory 경로 순서의 완료 개수를 저장한다. memo가 inventory·reportKey와 일치하는 동안만 유효하고, `store`·`evict`·LRU eviction이 함께 정리한다. 프로세스 재시작 시 커서는 사라지고 대조는 처음부터 다시 수행된다.
+- 분할 중에도 모든 파일의 proof는 매 refresh observe한다. 최종 publication check가 이번 refresh의 관측 집합 전체를 대조하므로, 건너뛴 prefix의 metadata 증거가 빠지지 않는다. 다만 lease 없는 fallback은 파일별 대조가 여러 refresh에 걸쳐, 대조 통과 후 완료 전 같은 stamp 재작성을 감지하지 못하는 창이 단일 refresh보다 넓어진다. lease 경로가 유지되는 한 fallback은 best-effort다.
+- 커밋되지 않은 채 남아 있던 IMPL-579의 절반 이전 상태(artifact 필드 참조)도 이번에 함께 정리해 일관된 memo 소유 토큰/커서 설계로 완료했다.
+- `WindowsCostClaudeContentTests`에 65개 파일로 lease capacity를 넘긴 fallback 분할 fixture를 작성했다. refresh당 1 entry로 제한해 재시도만으로 완료되는 것과 재파싱 0건을 확인한다. 테스트·컴파일·실행은 하지 않았다.
+- **남은 범위:** collection 완료 경로의 `publication.check` fallback 분할, 전체 metadata/publication sweep·JSON checkpoint 저장·메모리 예산, 다른 비용 source의 verification 경로 통합, 반복 종료 중 durable 전진·directory membership, 나머지 provider의 ownership adapter와 전체 W01~W16/G0~G6.
+- 상태: CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·정적 QA 스크립트·UI·provider·원격 Windows·CI는 수행하지 않았다.
+
+- 직전 IMPL-579는 fec07111c로 origin/main 푸시 확인. 이번 단위도 별도 커밋·푸시하며 자동화 설정은 변경하지 않았다.

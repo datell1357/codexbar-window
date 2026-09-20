@@ -339,5 +339,44 @@ struct WindowsCostClaudeContentTests {
         // reportKey match that the next refresh depends on.
         #expect(try CostUsageClaudeFileStamp.readRequired(at: fixture.cacheURL()) == cacheStamp)
     }
+
+    @Test
+    func `fallback memo verification beyond lease capacity resumes by entry count`() throws {
+        let fixture = try Fixture()
+        defer { fixture.cleanup() }
+        // More than the verifier's 64-lease capacity, so memo verification must use the
+        // per-file fallback check sliced by entry count rather than native leases.
+        for index in 0..<65 {
+            let url = fixture.root.appendingPathComponent("logs/session-\(index).jsonl")
+            try fixture.event(input: 10, id: "f\(index)").write(to: url)
+            try FileManager.default.setAttributes([.modificationDate: fixture.timestamp], ofItemAtPath: url.path)
+        }
+        #expect(try fixture.load().summary?.totalInputTokens == 650)
+        var bounded = fixture.options
+        bounded.maxWindowsClaudeVerificationEntriesPerRefresh = 1
+        let work = CostUsageScanner.ClaudeScanWorkRecorder()
+        var pendings = 0
+        var report: CostUsageDailyReport?
+        try CostUsageScanner.withClaudeScanWorkRecorderForTesting(work) {
+            for _ in 0..<80 {
+                if report != nil { break }
+                do {
+                    report = try CostUsageScanner.loadDailyReportCancellable(
+                        provider: .claude, since: fixture.day, until: fixture.day, now: fixture.day,
+                        options: bounded, checkCancellation: nil)
+                } catch let error as CostUsageError {
+                    guard case .localContentVerificationPending = error else { throw error }
+                    pendings += 1
+                }
+            }
+        }
+        // Finishing within the iteration bound proves the fallback cursor resumed: a restart
+        // from zero would pend forever with one entry checked per refresh.
+        #expect(pendings >= 1)
+        let final = try #require(report)
+        #expect(final.summary?.totalInputTokens == 650)
+        #expect(work.snapshot().transcriptParses == 0)
+        #expect(work.snapshot().incrementalTranscriptParses == 0)
+    }
 }
 #endif

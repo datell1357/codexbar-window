@@ -1,5 +1,7 @@
 # Windows 전용 제품 작업 현황
 
+- IMPL-580: lease 불가 memo-hit fallback의 파일별 내용 대조를 refresh당 entry 수로 분할하고 진행 커서를 memo 프로세스 로컬 맵에 작성. 모든 파일의 proof 관측은 매 refresh 유지. fixture 미실행. collection fallback·metadata/저장 예산·durable 전진·다른 provider adapter·전체 Windows 제품/검증은 남음. CODE_WRITTEN_UNVERIFIED.
+
 - IMPL-579: Claude/Vertex memo-hit 최종 내용 대조를 leased·예산 분할 verifier에 연결하고 재개 토큰을 memo의 프로세스 로컬 맵으로 이동 작성. pending은 artifact를 다시 쓰지 않아 reportKey가 유지되고, 불일치는 memo miss로 재구성. fixture 미실행. fallback/metadata/저장 예산·durable 전진·다른 provider adapter·전체 Windows 제품/검증은 남음. CODE_WRITTEN_UNVERIFIED.
 
 - IMPL-578: Claude 세션 scope·Vertex ADC 지문의 계정 소유권 증거를 source 캡처→fetch 전후·widget·게시 경계 재대조에 연결하고 보존 표시 eligibility로 승격 작성. 소유권 변경은 pending이 아닌 identity-unconfirmed 실패로 표시. fixture 미실행. fallback/metadata/저장 예산·durable 전진·다른 provider adapter·전체 Windows 제품/검증은 남음. CODE_WRITTEN_UNVERIFIED.
