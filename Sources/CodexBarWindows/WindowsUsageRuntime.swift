@@ -618,7 +618,11 @@ public actor WindowsUsageRuntime {
                 else { return source }
                 source.expectedWidgetScopeFingerprint = expected
             default:
-                // Other sources need an explicit ownership adapter; an environment or provider ID alone is not proof.
+                // Remaining selectable providers cannot publish widget costs on Windows today:
+                // opencodego and mistral have no local cost collection in loadTokenSnapshot
+                // (remote returns nil, the scanner emits an empty report), and other providers
+                // lack re-verifiable ownership material. An environment or provider ID alone
+                // is not proof; an adapter requires fetch-time re-verification.
                 return source
             }
             let previous = self.widgetCostOwners[source.id]

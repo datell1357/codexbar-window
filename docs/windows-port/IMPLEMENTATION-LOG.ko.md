@@ -5671,3 +5671,13 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - 상태: CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·정적 QA 스크립트·UI·provider·원격 Windows·CI는 수행하지 않았다.
 
 - 직전 IMPL-591은 3f5ad7a15로 origin/main 푸시 확인. 이번 단위도 별도 커밋·푸시하며 자동화 설정은 변경하지 않았다.
+
+## IMPL-593: 나머지 selectable 비용 provider의 ownership 가능성 조사 완료
+
+- selectable ∩ supportsTokenCost 중 adapter 미보유 provider(opencodego·mistral)의 비용 수집 경로를 전수 확인했다. `CostUsageFetcher.loadRemoteTokenSnapshot`은 bedrock/cursor만 처리하고, `CostUsageScanner.loadDailyReportCancellable`은 codex/claude/vertexai 외에 emptyReport를 반환한다. 즉 opencodego·mistral은 Windows에서 비용 수집 자체가 없어 ownership adapter가 join할 대상이 없다.
+- `OpenCodeGoLocalUsageReader`(SQLite)와 mistral quota snapshot 기반 비용은 Mac 전용 경로이며 Windows spend loader에 연결돼 있지 않다. 이들의 adapter는 비용 수집 지원이 먼저 필요한 별도 gap이다. `attachWidgetCostOwnership`의 default 주석에 이 결론을 기록했다.
+- 결론: Windows에서 비용을 생산하는 provider(codex·claude·cursor·antigravity + 비선택 vertexai)의 ownership adapter는 완비됐다. 코드 변경은 주석뿐이며 테스트·컴파일·실행은 하지 않았다.
+- **남은 범위:** opencodego/mistral 등의 Windows 비용 수집 지원(별도 gap), metadata/저장·메모리 예산, W10 위젯 완성·W15 Sync/Fleet·WinUI 3 앱 등 대형 표면과 전체 W01~W16/G0~G6.
+- 상태: CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·정적 QA 스크립트·UI·provider·원격 Windows·CI는 수행하지 않았다.
+
+- 직전 IMPL-592는 578b8a621로 origin/main 푸시 확인. 이번 단위도 별도 커밋·푸시하며 자동화 설정은 변경하지 않았다.
