@@ -17,6 +17,11 @@
     "square44Logo": "ApplicationAssets/Square44x44Logo.png"
   },
   "providerIcon": "WidgetAssets/ProviderIcon.png",
+  "startupTask": {
+    "taskId": "CodexBarStartup",
+    "displayName": "CodexBar",
+    "enabled": false
+  },
   "widgets": [
     {
       "id": "CodexBarSwitcherWidget",

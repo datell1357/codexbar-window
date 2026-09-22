@@ -97,6 +97,7 @@ function Use-Label([string] $Value) {
 $foundation = 'http://schemas.microsoft.com/appx/manifest/foundation/windows10'
 $uap = 'http://schemas.microsoft.com/appx/manifest/uap/windows10'
 $uap3 = 'http://schemas.microsoft.com/appx/manifest/uap/windows10/3'
+$uap5 = 'http://schemas.microsoft.com/appx/manifest/uap/windows10/5'
 $com = 'http://schemas.microsoft.com/appx/manifest/com/windows10'
 $rescap = 'http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities'
 $document = [Xml.XmlDocument]::new()
@@ -167,8 +168,8 @@ try {
     $minimum = Get-Version (Get-Text $configuration 'minimumWindowsVersion')
     $maximum = Get-Version (Get-Text $configuration 'maximumTestedWindowsVersion')
     if ($minimum -lt [version] '10.0.22000.0' -or $maximum -lt $minimum) { throw 'This widget host requires Windows 11 or later.' }
-    $package = Add-Element $document 'Package' @{ IgnorableNamespaces = 'uap uap3 com rescap' }
-    foreach ($pair in @(@('uap', $uap), @('uap3', $uap3), @('com', $com), @('rescap', $rescap))) {
+    $package = Add-Element $document 'Package' @{ IgnorableNamespaces = 'uap uap3 uap5 com rescap' }
+    foreach ($pair in @(@('uap', $uap), @('uap3', $uap3), @('uap5', $uap5), @('com', $com), @('rescap', $rescap))) {
         $package.SetAttribute(('xmlns:' + $pair[0]), $pair[1])
     }
     $null = Add-Element $package 'Identity' @{ Name = $name; Publisher = $publisher; Version = $version.ToString(); ProcessorArchitecture = $inventory.architecture }
@@ -246,6 +247,20 @@ try {
             $property = $widget.PSObject.Properties[$mode]
             if ($null -ne $property) { Add-Theme (Add-Element $theme $mode) $property.Value }
         }
+    }
+    $startupTask = $configuration.startupTask
+    if ($null -ne $startupTask) {
+        $taskId = Get-Text $startupTask 'taskId' 64
+        if ($taskId -cnotmatch '^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$') { throw 'Invalid startup task id.' }
+        $enabledProperty = $startupTask.PSObject.Properties['enabled']
+        if ($null -ne $enabledProperty -and $enabledProperty.Value -isnot [bool]) { throw 'Invalid startup task enabled flag.' }
+        $startupEnabled = if ($null -ne $enabledProperty -and $enabledProperty.Value) { 'true' } else { 'false' }
+        $startupExtension = Add-Element $extensions 'uap5:Extension' @{ Category = 'windows.startupTask' } $uap5
+        $null = Add-Element $startupExtension 'uap5:StartupTask' @{
+            TaskId = $taskId
+            Enabled = $startupEnabled
+            DisplayName = (Use-Label (Get-Text $startupTask 'displayName' 256))
+        } $uap5
     }
     $output = [IO.Path]::GetFullPath($OutputManifest)
     if ([IO.Path]::GetFileName($output) -cne 'AppxManifest.xml') { throw 'Output must be named AppxManifest.xml.' }

@@ -29,9 +29,11 @@ enum WindowsStartupRegistration {
                     "The entry must not be assumed absent. Reopen this dialog to retry the read; " +
                     "contact your administrator if startup settings are managed."
             case .packaged:
-                return "This app has Windows package identity. Packaged startup integration is not implemented yet. " +
-                    "CodexBar does not use the unpackaged registration path here. " +
-                    "Windows Settings can show existing startup entries, but opening it cannot add the missing integration."
+                return "This app has Windows package identity. Its package manifest declares a startup task, " +
+                    "so Windows lists CodexBar under Settings > Apps > Startup and Task Manager > Startup apps " +
+                    "once the packaged build is installed. Use those Windows controls to enable or disable " +
+                    "sign-in startup. CodexBar does not use the unpackaged registration path here, and changing " +
+                    "the packaged startup state from inside the app is not implemented yet."
             }
         }
     }

@@ -2630,7 +2630,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
         case .registered: startupTitle = "Registered at sign-in (Windows policy may override)"
         case .conflict: startupTitle = "Startup entry belongs to a different command"
         case .unavailable: startupTitle = "Startup registration unavailable for this executable"
-        case .packaged: startupTitle = "Packaged startup integration is not implemented yet"
+        case .packaged: startupTitle = "Startup managed in Windows Settings (packaged app)"
         }
         startupTitle.withCString(encodedAs: UTF16.self) {
             let disabled = startupState == .conflict || startupState == .unavailable || startupState == .packaged

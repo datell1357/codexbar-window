@@ -5576,3 +5576,13 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - 상태: CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·정적 QA 스크립트·UI·provider·원격 Windows·CI는 수행하지 않았다.
 
 - 직전 IMPL-582는 278225893으로 origin/main 푸시 확인. 이번 단위도 별도 커밋·푸시하며 자동화 설정은 변경하지 않았다.
+
+## IMPL-584: 패키지 시작 작업 선언과 packaged 안내 갱신
+
+- MSIX 매니페스트 생성기가 선택적 `startupTask` 구성을 `uap5:Extension Category="windows.startupTask"` + `uap5:StartupTask`로 출력한다. taskId는 64자 식별자 패턴으로 제한하고 enabled는 bool만 허용하며 기본값은 false(옵트인)다. displayName은 ms-resource 레이블을 허용해 resources.pri 의존을 함께 확인한다.
+- 예시 구성에 `CodexBarStartup` 작업을 추가했다. 선언만으로 Windows 설정 > 앱 > 시작 앱과 작업 관리자 > 시작 앱에 CodexBar가 표시되어 사용자가 시작 여부를 제어할 수 있다.
+- Swift 측 `WindowsStartupRegistration`의 `.packaged` 안내와 트레이 메뉴 제목을 새 계약에 맞춰 갱신했다. 앱 내 토글은 여전히 미구현이며 메뉴 항목은 회색으로 유지하고 Startup registration details 대화상자가 ms-settings:startupapps를 연다. 실제 StartupTask WinRT interop(RoGetActivationFactory + IAsyncOperation ABI)은 미검증 위험이 커서 이번 범위에서 제외했다.
+- **남은 범위:** packaged in-app 토글용 WinRT StartupTask interop, metadata/publication sweep·checkpoint 저장·메모리 예산, durable membership, 나머지 provider의 ownership adapter와 전체 W01~W16/G0~G6.
+- 상태: CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·정적 QA 스크립트·UI·provider·원격 Windows·CI는 수행하지 않았다.
+
+- 직전 IMPL-583은 4dfd83abb로 origin/main 푸시 확인. 이번 단위도 별도 커밋·푸시하며 자동화 설정은 변경하지 않았다.
