@@ -6699,7 +6699,7 @@ enum CostUsageScanner {
         if !options.forceRescan {
             directoryInventoryChanged = try Self.reconcileWindowsCodexDiscovery(
                 cache: &cache, roots: roots, resolvedRootPaths: roots.map(Self.codexResolvedPath).sorted(),
-                range: scanRange, publicationObservations: publicationObservations,
+                range: scanRange, options: options, publicationObservations: publicationObservations,
                 checkCancellation: checkCancellation)
             if directoryInventoryChanged {
                 for root in roots {

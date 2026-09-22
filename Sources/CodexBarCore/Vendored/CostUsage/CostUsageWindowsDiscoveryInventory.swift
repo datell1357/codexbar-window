@@ -14,6 +14,10 @@ struct CostUsageWindowsDiscoveryInventory: Codable, Equatable, Sendable {
     let scanUntilKey: String
     let timeZoneIdentifier: String
     let observations: [String: Observation]
+    /// Durable cursor for the bounded membership revalidation pass, counted in leading keys of
+    /// the sorted observation order. nil means no pass is mid-flight; a completed pass wraps
+    /// to nil so the next refresh starts a fresh cycle. Persisted with the inventory.
+    var matchCheckedCount: Int? = nil
 
     #if os(Windows)
     static func capture(
@@ -42,9 +46,14 @@ struct CostUsageWindowsDiscoveryInventory: Codable, Equatable, Sendable {
             timeZoneIdentifier: range.calendar.timeZone.identifier, observations: observations)
     }
 
-    func matches(
+    /// Bounded membership revalidation: verifies up to maxEntries observations per call,
+    /// rotating through the sorted key order across refreshes. A mismatch in any checked entry
+    /// fails immediately; a partial pass still returns true, and the publication ledger the
+    /// caller registers afterwards keeps every entry covered before a report is served.
+    mutating func matches(
         roots: [URL],
         range: CostUsageScanner.CostUsageDayRange,
+        maxEntries: Int,
         checkCancellation: CostUsageScanner.CancellationCheck?) throws -> Bool
     {
         guard self.version == 1,
@@ -53,9 +62,13 @@ struct CostUsageWindowsDiscoveryInventory: Codable, Equatable, Sendable {
               self.timeZoneIdentifier == range.calendar.timeZone.identifier,
               self.rootPaths.allSatisfy({ self.observations[$0] != nil })
         else { return false }
-        for path in self.observations.keys.sorted() {
+        let keys = self.observations.keys.sorted()
+        var index = min(self.matchCheckedCount ?? 0, keys.count)
+        var visits = max(1, maxEntries)
+        while index < keys.count, visits > 0 {
             try Task.checkCancellation()
             try checkCancellation?()
+            let path = keys[index]
             let current = try WindowsCostFileMetadata.atURL(URL(fileURLWithPath: path))
             switch self.observations[path] {
             case let .some(.directory(expected)):
@@ -68,7 +81,10 @@ struct CostUsageWindowsDiscoveryInventory: Codable, Equatable, Sendable {
                 guard current == nil else { return false }
             case nil: return false
             }
+            index += 1
+            visits -= 1
         }
+        self.matchCheckedCount = index < keys.count ? index : nil
         return true
     }
 
@@ -100,15 +116,20 @@ extension CostUsageScanner {
         roots: [URL],
         resolvedRootPaths: [String],
         range: CostUsageDayRange,
+        options: Options,
         publicationObservations: CostUsagePublicationObservations?,
         checkCancellation: CancellationCheck?) throws -> Bool
     {
         #if os(Windows)
         try Task.checkCancellation()
         try checkCancellation?()
-        if let inventory = cache.codexWindowsDiscoveryInventory,
-           try inventory.matches(roots: roots, range: range, checkCancellation: checkCancellation)
+        if var inventory = cache.codexWindowsDiscoveryInventory,
+           try inventory.matches(
+               roots: roots, range: range,
+               maxEntries: max(1, options.maxWindowsCodexVerificationEntriesPerRefresh),
+               checkCancellation: checkCancellation)
         {
+            cache.codexWindowsDiscoveryInventory = inventory
             try inventory.observe(in: publicationObservations, checkCancellation: checkCancellation)
             return false
         }

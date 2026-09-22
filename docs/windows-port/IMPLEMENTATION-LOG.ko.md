@@ -5608,3 +5608,14 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - 상태: CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·정적 QA 스크립트·UI·provider·원격 Windows·CI는 수행하지 않았다.
 
 - 직전 IMPL-585는 1c7505db2로 origin/main 푸시 확인. 이번 단위도 별도 커밋·푸시하며 자동화 설정은 변경하지 않았다.
+
+## IMPL-587: Codex discovery membership 재검증의 분할 회전
+
+- `CostUsageWindowsDiscoveryInventory.matches`가 매 refresh 보존 관측 전체를 `WindowsCostFileMetadata.atURL`로 stat하던 무제한 sweep를, 정렬 키 순서로 회전하는 durable 커서 `matchCheckedCount`의 분할 검증으로 교체했다. 커서는 inventory와 함께 Codable로 cache에 저장되고 한 바퀴가 끝나면 nil로 감아 다음 주기를 연다. 예산은 `maxWindowsCodexVerificationEntriesPerRefresh`를 사용한다.
+- 비차단 설계: 부분 통과도 true를 반환해 reconcile이 계속 진행하고, 호출자가 이어서 등록하는 publication ledger와 보고 경계 대조가 모든 관측 entry를 다시 확인한다. 확인된 slice 안의 불일치는 즉시 false·directory 손상은 기존 `unreadableDirectory`를 던진다.
+- `reconcileWindowsCodexDiscovery`에 `options` 매개변수를 추가해 예산을 전달하고, mutating matches의 커서 갱신을 cache에 다시 쓰도록 연결했다.
+- 테스트 1개 작성: entry 상한 1로 커서가 1→count-1→nil→1로 회전하고, 교체된 directory가 회전 slice에 도달하면 검출되는지 확인. 테스트·컴파일·실행은 하지 않았다.
+- **남은 범위:** checkpoint 저장 경계의 metadataOnly 대조·memo.store의 3중 대조·standalone `jsonlFiles` 경계 등 write/report 시점의 원자적 guard(분할 불가 위치의 정리 여부), metadata/저장·메모리 예산, 나머지 provider의 ownership adapter와 전체 W01~W16/G0~G6.
+- 상태: CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·정적 QA 스크립트·UI·provider·원격 Windows·CI는 수행하지 않았다.
+
+- 직전 IMPL-586는 3043652ac로 origin/main 푸시 확인. 이번 단위도 별도 커밋·푸시하며 자동화 설정은 변경하지 않았다.

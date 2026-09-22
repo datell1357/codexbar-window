@@ -52,7 +52,7 @@ extension WindowsCostPublicationTests {
         {
             try CostUsageScanner.reconcileWindowsCodexDiscovery(
                 cache: &cache, roots: [self.logs], resolvedRootPaths: self.rootPaths, range: self.range,
-                publicationObservations: observations, checkCancellation: checkCancellation)
+                options: self.options, publicationObservations: observations, checkCancellation: checkCancellation)
         }
 
         func writeSession(name: String, input: Int) throws {
@@ -135,6 +135,41 @@ extension WindowsCostPublicationTests {
         #expect(cache.codexActiveLookbackState?.completedRootPaths.isEmpty == true)
         let legacy = try JSONDecoder().decode(CostUsageCache.self, from: JSONEncoder().encode(CostUsageCache()))
         #expect(legacy.codexWindowsDiscoveryInventory == nil)
+    }
+
+    @Test
+    func `membership revalidation rotates through a durable cursor`() throws {
+        let fixture = try DiscoveryFixture()
+        defer { fixture.cleanup() }
+        try fixture.setTime(fixture.logs)
+        try fixture.setTime(fixture.dayDirectory)
+        var inventory = try fixture.inventory()
+        let count = inventory.observations.count
+        #expect(count >= 2)
+        var cursors: [Int?] = []
+        for _ in 0...count {
+            #expect(try inventory.matches(
+                roots: [fixture.logs], range: fixture.range, maxEntries: 1, checkCancellation: nil))
+            cursors.append(inventory.matchCheckedCount)
+        }
+        // One entry per call: the cursor walks the sorted key order, wraps to nil when the
+        // pass completes, and starts the next cycle at the first entry again.
+        #expect(cursors == (1..<count).map { $0 } + [nil, 1])
+        // A replaced directory is caught when the rotating pass reaches its entry.
+        try FileManager.default.moveItem(
+            at: fixture.dayDirectory, to: fixture.root.appendingPathComponent("retained-day"))
+        try FileManager.default.createDirectory(at: fixture.dayDirectory, withIntermediateDirectories: false)
+        try fixture.setTime(fixture.dayDirectory)
+        var detected = false
+        for _ in 0..<count where !detected {
+            if try inventory.matches(
+                roots: [fixture.logs], range: fixture.range, maxEntries: 1,
+                checkCancellation: nil) == false
+            {
+                detected = true
+            }
+        }
+        #expect(detected)
     }
 
     @Test
