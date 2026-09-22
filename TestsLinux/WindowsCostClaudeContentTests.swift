@@ -351,7 +351,23 @@ struct WindowsCostClaudeContentTests {
             try fixture.event(input: 10, id: "f\(index)").write(to: url)
             try FileManager.default.setAttributes([.modificationDate: fixture.timestamp], ofItemAtPath: url.path)
         }
-        #expect(try fixture.load().summary?.totalInputTokens == 650)
+        // The default file budget publishes 65 files over two collection refreshes, so the
+        // first report must tolerate pending slices instead of a single load call.
+        var initial: CostUsageDailyReport?
+        for _ in 0..<8 {
+            if initial != nil { break }
+            do {
+                initial = try fixture.load()
+            } catch let error as CostUsageError {
+                switch error {
+                case .localInventoryPending, .localContentPending, .localContentVerificationPending:
+                    break
+                default:
+                    throw error
+                }
+            }
+        }
+        #expect(initial?.summary?.totalInputTokens == 650)
         var bounded = fixture.options
         bounded.maxWindowsClaudeVerificationEntriesPerRefresh = 1
         let work = CostUsageScanner.ClaudeScanWorkRecorder()
@@ -419,6 +435,107 @@ struct WindowsCostClaudeContentTests {
         #expect(final.summary?.totalInputTokens == 650)
         // Parsing happened once per file during collection; verification retries reparse none.
         #expect(work.snapshot().transcriptParses == 65)
+        #expect(work.snapshot().incrementalTranscriptParses == 0)
+    }
+
+    @Test
+    func `inventory revalidation rotates through a durable cursor`() throws {
+        let fixture = try Fixture()
+        defer { fixture.cleanup() }
+        for index in 0..<4 {
+            let url = fixture.root.appendingPathComponent("logs/session-\(index).jsonl")
+            try fixture.event(input: 10, id: "f\(index)").write(to: url)
+            try FileManager.default.setAttributes([.modificationDate: fixture.timestamp], ofItemAtPath: url.path)
+        }
+        var bounded = fixture.options
+        bounded.maxWindowsClaudeInventoryWorkPerRefresh = 1
+        bounded.maxWindowsClaudeFilesPerRefresh = 1
+        var cursors: [Int] = []
+        var report: CostUsageDailyReport?
+        for _ in 0..<96 {
+            if report != nil { break }
+            do {
+                report = try CostUsageScanner.loadDailyReportCancellable(
+                    provider: .claude, since: fixture.day, until: fixture.day, now: fixture.day,
+                    options: bounded, checkCancellation: nil)
+            } catch let error as CostUsageError {
+                switch error {
+                case .localInventoryPending, .localContentVerificationPending:
+                    break
+                case .localContentPending:
+                    if let cursor = CostUsageClaudeCacheIO.load(
+                        provider: .claude, cacheRoot: bounded.cacheRoot
+                    ).windowsInventory?.publicationCheckedCount {
+                        cursors.append(cursor)
+                    }
+                default:
+                    throw error
+                }
+            }
+        }
+        // The durable cursor must advance through the canonical entry order across collection
+        // pendings; a reset would pin it at the first entry forever.
+        #expect(cursors == [1, 2, 3, 4])
+        let final = try #require(report)
+        #expect(final.summary?.totalInputTokens == 40)
+    }
+
+    @Test
+    func `lease-less memo boundary resumes through the sliced ledger pass`() throws {
+        let fixture = try Fixture()
+        defer { fixture.cleanup() }
+        // Beyond the verifier's 64-lease capacity, so memo verification stays lease-less and
+        // the report boundary must slice the ledger check through its process-local cursor.
+        for index in 0..<65 {
+            let url = fixture.root.appendingPathComponent("logs/session-\(index).jsonl")
+            try fixture.event(input: 10, id: "f\(index)").write(to: url)
+            try FileManager.default.setAttributes([.modificationDate: fixture.timestamp], ofItemAtPath: url.path)
+        }
+        // The default file budget publishes 65 files over two collection refreshes, so the
+        // first report must tolerate pending slices instead of a single load call.
+        var initial: CostUsageDailyReport?
+        for _ in 0..<8 {
+            if initial != nil { break }
+            do {
+                initial = try fixture.load()
+            } catch let error as CostUsageError {
+                switch error {
+                case .localInventoryPending, .localContentPending, .localContentVerificationPending:
+                    break
+                default:
+                    throw error
+                }
+            }
+        }
+        #expect(initial?.summary?.totalInputTokens == 650)
+        var bounded = fixture.options
+        bounded.maxWindowsClaudeVerificationEntriesPerRefresh = 1
+        let work = CostUsageScanner.ClaudeScanWorkRecorder()
+        var pendings = 0
+        var report: CostUsageDailyReport?
+        try CostUsageScanner.withClaudeScanWorkRecorderForTesting(work) {
+            for _ in 0..<200 {
+                if report != nil { break }
+                do {
+                    report = try CostUsageScanner.loadDailyReportCancellable(
+                        provider: .claude, since: fixture.day, until: fixture.day, now: fixture.day,
+                        options: bounded, checkCancellation: nil)
+                } catch let error as CostUsageError {
+                    switch error {
+                    case .localInventoryPending, .localContentPending, .localContentVerificationPending:
+                        pendings += 1
+                    default:
+                        throw error
+                    }
+                }
+            }
+        }
+        // Finishing within the bound proves the completed content pass stayed valid while
+        // boundary slices resumed: restarting the digest pass each pending would never finish.
+        #expect(pendings >= 1)
+        let final = try #require(report)
+        #expect(final.summary?.totalInputTokens == 650)
+        #expect(work.snapshot().transcriptParses == 0)
         #expect(work.snapshot().incrementalTranscriptParses == 0)
     }
 }

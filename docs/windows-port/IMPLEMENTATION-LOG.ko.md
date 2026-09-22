@@ -5586,3 +5586,14 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - 상태: CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·정적 QA 스크립트·UI·provider·원격 Windows·CI는 수행하지 않았다.
 
 - 직전 IMPL-583은 4dfd83abb로 origin/main 푸시 확인. 이번 단위도 별도 커밋·푸시하며 자동화 설정은 변경하지 않았다.
+
+## IMPL-585: Claude 경로의 무제한 메타데이터/게시 sweep 분할
+
+- inventory 완료 후 재검증(`freeze().check`)을 canonical entry 순서로 회전하는 durable 커서 `publicationCheckedCount`의 `checkSlice`로 교체했다. 커서는 checkpointed tree inventory 상태에 실려 프로세스 재시작 후에도 이어지며, 한 바퀴가 끝나면 nil로 감아 다음 주기를 연다. 예산은 `maxWindowsClaudeInventoryWorkPerRefresh`(메타데이터 재확인 작업)를 재사용한다. 비차단 설계로 매 refresh 대조와 collection 진행이 함께 간다. 파일별 read guard와 최종 게시 대조가 여전히 모든 entry를 덮는다.
+- memo-hit 보고 경계의 `freeze().check`가 매 refresh 모든 anchor 바이트를 다시 읽던 것을 없앴다. `claudeMemoContentMatches`가 `ClaudeMemoVerification` enum을 반환한다: `.leased(verified)`는 완료된 verifier를 경계에서 `verified.check`(canReuse: entry당 stat + lease 확인)로 재사용해 digest 재읽기를 제거한다. `.leaseLess`는 ledger를 `checkSlice`로 entry 수 예산 분할하고 ResumeKeys `claude-memo-boundary|path` 커서로 재개한다.
+- lease-less 내용 통과 완료를 표시하는 memo 소유 `contentPassCompleted` 플래그를 추가했다. 없으면 경계 pending마다 digest 통과가 처음부터 다시 돌아 entry×file 지연이 된다. 완료·실패·store·evict·LRU에서 함께 지워 다음 주기가 다시 검증한다. 플래그가 있어도 매 refresh proof 관측(isUsable + ledger anchor 기록)은 유지된다.
+- 테스트 2개 작성: inventory 재검증이 durable 커서로 회전하는지(content pending 동안 커서가 1→4로 진행), lease-less memo 경계가 분할 ledger 통과로 재개되는지(65 파일·entry 상한 1, 재파싱 0). 기존 65 파일 테스트의 잠재 결함도 수정했다 — 기본 파일 예산 64로 첫 load가 pending을 던지므로 pending 허용 루프로 교체. 테스트·컴파일·실행은 하지 않았다.
+- **남은 범위:** leased 경계 canReuse의 entry당 stat sweep(무제한 개수), checkpoint 저장 경계의 metadataOnly 대조·memo.store의 3중 대조, standalone `jsonlFiles` 경계, metadata/저장·메모리 예산, durable membership, 나머지 provider의 ownership adapter와 전체 W01~W16/G0~G6.
+- 상태: CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·정적 QA 스크립트·UI·provider·원격 Windows·CI는 수행하지 않았다.
+
+- 직전 IMPL-584는 620024b61로 origin/main 푸시 확인. 이번 단위도 별도 커밋·푸시하며 자동화 설정은 변경하지 않았다.

@@ -25,6 +25,10 @@ struct CostUsageWindowsTreeInventory: Codable, Equatable, Sendable {
     var validationDirectories: [String] = []
     var validationFiles: [String] = []
     var validationIndex = 0
+    /// Durable cursor for the bounded post-completion revalidation pass, counted in leading
+    /// entries of the canonical frozen publication. nil means no pass is mid-flight; a pass
+    /// that reaches the end wraps to nil so the next refresh starts a fresh cycle.
+    var publicationCheckedCount: Int? = nil
 
     init(roots: [URL], policy: String = "all-jsonl-v1") {
         self.roots = Array(Set(roots.map(\.standardizedFileURL.path))).sorted()

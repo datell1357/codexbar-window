@@ -107,6 +107,10 @@ final class CostUsageClaudeReportMemo: @unchecked Sendable {
     /// Process-local progress for a memo's fallback content pass, counted in the inventory's
     /// sorted-path order. A lost cursor likewise restarts that pass from zero.
     private var fallbackCheckProgress: [String: Int] = [:]
+    /// Process-local marker that a memo's lease-less content pass completed. Boundary slices
+    /// may then span refreshes without re-running the digest pass; it is cleared wherever the
+    /// other resume state is invalidated so the next cycle verifies content again.
+    private var contentPassCompleted: Set<String> = []
 
     func entry(provider: UsageProvider, canonicalCachePath: String) -> Entry? {
         let key = Self.key(provider: provider, canonicalCachePath: canonicalCachePath)
@@ -153,6 +157,7 @@ final class CostUsageClaudeReportMemo: @unchecked Sendable {
         // A stored memo replaces the identity a pending verification was bound to.
         self.verificationTokens.removeValue(forKey: key)
         self.fallbackCheckProgress.removeValue(forKey: key)
+        self.contentPassCompleted.remove(key)
         self.lock.unlock()
     }
 
@@ -190,6 +195,24 @@ final class CostUsageClaudeReportMemo: @unchecked Sendable {
         }
     }
 
+    func hasContentPassCompleted(provider: UsageProvider, canonicalCachePath: String) -> Bool {
+        self.lock.lock()
+        defer { self.lock.unlock() }
+        return self.contentPassCompleted.contains(
+            Self.key(provider: provider, canonicalCachePath: canonicalCachePath))
+    }
+
+    func setContentPassCompleted(_ completed: Bool, provider: UsageProvider, canonicalCachePath: String) {
+        self.lock.lock()
+        defer { self.lock.unlock() }
+        let key = Self.key(provider: provider, canonicalCachePath: canonicalCachePath)
+        if completed {
+            self.contentPassCompleted.insert(key)
+        } else {
+            self.contentPassCompleted.remove(key)
+        }
+    }
+
     #if DEBUG
     func evict(provider: UsageProvider, canonicalCachePath: String) {
         let key = Self.key(provider: provider, canonicalCachePath: canonicalCachePath)
@@ -198,6 +221,7 @@ final class CostUsageClaudeReportMemo: @unchecked Sendable {
         self.entries.removeValue(forKey: key)
         self.verificationTokens.removeValue(forKey: key)
         self.fallbackCheckProgress.removeValue(forKey: key)
+        self.contentPassCompleted.remove(key)
     }
 
     func evictPersisted(canonicalCachePath: String) {
@@ -215,6 +239,7 @@ final class CostUsageClaudeReportMemo: @unchecked Sendable {
             self.entries.removeValue(forKey: oldest)
             self.verificationTokens.removeValue(forKey: oldest)
             self.fallbackCheckProgress.removeValue(forKey: oldest)
+            self.contentPassCompleted.remove(oldest)
         }
     }
 
