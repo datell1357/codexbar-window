@@ -277,6 +277,7 @@ extension WindowsCostPublicationTests {
             options.maxWindowsCodexVerificationEntriesPerRefresh = 1
             var verificationPendings = 0
             var report: CostUsageDailyReport?
+            var savedDuringPending = false
             for _ in 0..<160 {
                 if report != nil { break }
                 do {
@@ -289,6 +290,11 @@ extension WindowsCostPublicationTests {
                         continue
                     case .localContentVerificationPending:
                         verificationPendings += 1
+                        // A pending store-boundary check still persists scan progress; only the
+                        // display boundary waits for verification to finish.
+                        if !CostUsageStoreAccess.read(cacheRoot: cacheRoot, calendar: calendar).files.isEmpty {
+                            savedDuringPending = true
+                        }
                     default:
                         throw error
                     }
@@ -297,6 +303,7 @@ extension WindowsCostPublicationTests {
             // Finishing within the bound proves resume: restarting each pass at entry zero
             // would pend forever with one entry checked per refresh.
             #expect(verificationPendings >= 1)
+            #expect(savedDuringPending)
             let final = try #require(report)
             #expect(final.summary?.totalInputTokens == 650)
         }

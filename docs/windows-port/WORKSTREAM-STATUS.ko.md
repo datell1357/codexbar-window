@@ -1,5 +1,7 @@
 # Windows 전용 제품 작업 현황
 
+- IMPL-583: saveCodexCache의 pre/post 저장 경계 대조를 분할 검증으로 교체하고 pending이어도 스캔 진행 저장을 유지하도록 작성. store 자체 원자 검증과 다음 refresh 보고 대조가 표시 전 확인을 담당. fixture 미실행. metadata/저장 예산·durable membership·provider adapter·전체 Windows 제품/검증은 남음. CODE_WRITTEN_UNVERIFIED.
+
 - IMPL-582: Codex 일일 보고의 세 게시 경계 대조를 leased verifier·checkSlice 분할로 교체하고 재개 토큰/커서를 프로세스 로컬 키 저장소에 작성. Codex 전용 verification 예산 추가. fixture 미실행. 저장 경계 대조·metadata/저장 예산·durable membership·provider adapter·전체 Windows 제품/검증은 남음. CODE_WRITTEN_UNVERIFIED.
 
 - IMPL-581: collection 완료 경로의 lease-less 최종 대조를 checkSlice로 분할하고 durable 커서를 checkpoint JSON에 작성. 재시작 후에도 canonical 순서로 재개. fixture 미실행. metadata/저장 예산·다른 비용 source·durable membership·provider adapter·전체 Windows 제품/검증은 남음. CODE_WRITTEN_UNVERIFIED.

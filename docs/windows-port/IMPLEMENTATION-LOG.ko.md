@@ -5565,3 +5565,14 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - 상태: CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·정적 QA 스크립트·UI·provider·원격 Windows·CI는 수행하지 않았다.
 
 - 직전 IMPL-581은 38af24e42로 origin/main 푸시 확인. 이번 단위도 별도 커밋·푸시하며 자동화 설정은 변경하지 않았다.
+
+## IMPL-583: Codex 저장 경계 대조의 분할과 진행 보존
+
+- `saveCodexCache`의 pre/post `sourcePublication.check`를 `checkCodexSlicedPublication`으로 교체했다. 보고 경계와 같은 leased verifier·`checkSlice` fallback을 사용하되 키를 `codex-store-pre|path`·`codex-store-post|path`로 분리해 entry 집합이 달라도 재개가 충돌하지 않는다.
+- pending이어도 저장은 계속한다. pre-check 미완료는 스캔 중 source 변경 미확인을 뜻할 뿐 실패가 아니며, 저장 자체의 `sourceValidationFailed`가 쓰기 순간의 원자적 검증을 담당하고 다음 refresh의 보고 경계 대조가 표시 전에 모든 관측 entry를 다시 확인한다. 이 설계로 pending 때문에 매 refresh 스캔을 처음부터 다시 하는 낭비를 피한다. 대조 실패(sourceChanged 계열)는 여전히 즉시 저장을 중단한다.
+- 공용 헬퍼를 `checkCodexReportPublication`(관측 freeze→`codex-report|path`)·`checkCodexStorePublication`(frozen publication→phase 키)·`checkCodexSlicedPublication`(verifier/fallback/재개 상태)로 분리했다.
+- `WindowsCostUsageSourceTests`의 65개 세션 fixture에 pending 중 저장 진행 보존 확인을 추가했다. 테스트·컴파일·실행은 하지 않았다.
+- **남은 범위:** metadata/publication sweep·checkpoint 저장·메모리 예산, durable membership, 나머지 provider의 ownership adapter와 전체 W01~W16/G0~G6.
+- 상태: CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·정적 QA 스크립트·UI·provider·원격 Windows·CI는 수행하지 않았다.
+
+- 직전 IMPL-582는 278225893으로 origin/main 푸시 확인. 이번 단위도 별도 커밋·푸시하며 자동화 설정은 변경하지 않았다.

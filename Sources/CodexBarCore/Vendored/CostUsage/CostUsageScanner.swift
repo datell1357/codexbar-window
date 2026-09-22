@@ -6518,9 +6518,23 @@ enum CostUsageScanner {
         history: CodexScanHistoryHydrator,
         previousReport: CostUsageCodexPreviousReport?,
         sourcePublication: CostUsageSourcePublication?,
+        options: Options,
         checkCancellation: CancellationCheck?) throws
     {
+        // A sliced check that cannot finish inside this refresh still saves scan progress:
+        // the store's own atomic validation guards the write, and the next refresh's report
+        // boundary re-verifies every observed entry before anything is displayed.
+        var storeCheckPending = false
+        #if os(Windows)
+        do {
+            try Self.checkCodexStorePublication(
+                sourcePublication, phase: "pre", options: options, checkCancellation: checkCancellation)
+        } catch CostUsageError.localContentVerificationPending {
+            storeCheckPending = true
+        }
+        #else
         try sourcePublication?.check(checkCancellation: checkCancellation)
+        #endif
         // The serial scan queue remains the per-process writer boundary. The store actor owns
         // the sole writable connection; app and CLI readers take independent WAL snapshots.
         let saveResult = CostUsageStoreAccess.save(
@@ -6537,10 +6551,23 @@ enum CostUsageScanner {
             try checkCancellation?()
             throw CostUsageSourcePublication.Failure.sourceChangedOrUnavailable
         }
+        #if os(Windows)
+        do {
+            try Self.checkCodexStorePublication(
+                sourcePublication, phase: "post", options: options, checkCancellation: checkCancellation)
+        } catch CostUsageError.localContentVerificationPending {
+            storeCheckPending = true
+        }
+        #else
         try sourcePublication?.check(checkCancellation: checkCancellation)
+        #endif
         if saveResult.catchUpRequired {
             cache.codexScanCatchUpPending = true
             cache.codexPreviousReport = previousReport
+        }
+        if storeCheckPending {
+            throw CostUsageError.localContentVerificationPending(
+                totalFiles: sourcePublication?.entries.count ?? 0)
         }
     }
 
@@ -6556,7 +6583,35 @@ enum CostUsageScanner {
     {
         guard let observations else { return }
         let publication = observations.freeze()
-        let key = "codex|" + (options.cacheRoot?.standardizedFileURL.resolvingSymlinksInPath().path ?? "")
+        try Self.checkCodexSlicedPublication(
+            publication, key: "codex-report|" + Self.codexPublicationKey(options: options),
+            options: options, checkCancellation: checkCancellation)
+    }
+
+    /// Same sliced check at the store boundary. The caller decides whether a pending pass
+    /// still saves scan progress; the verification itself always resumes under `key`.
+    private static func checkCodexStorePublication(
+        _ publication: CostUsageSourcePublication?,
+        phase: String,
+        options: Options,
+        checkCancellation: CancellationCheck?) throws
+    {
+        guard let publication else { return }
+        try Self.checkCodexSlicedPublication(
+            publication, key: "codex-store-\(phase)|" + Self.codexPublicationKey(options: options),
+            options: options, checkCancellation: checkCancellation)
+    }
+
+    private static func codexPublicationKey(options: Options) -> String {
+        options.cacheRoot?.standardizedFileURL.resolvingSymlinksInPath().path ?? ""
+    }
+
+    private static func checkCodexSlicedPublication(
+        _ publication: CostUsageSourcePublication,
+        key: String,
+        options: Options,
+        checkCancellation: CancellationCheck?) throws
+    {
         let resume = WindowsCostPublicationResumeKeys.shared
         let verifier = WindowsCostPublicationVerifications.shared.take(
             resume.token(for: key), entries: publication.entries)
@@ -7209,6 +7264,7 @@ enum CostUsageScanner {
                 history: history,
                 previousReport: previousReport,
                 sourcePublication: publicationObservations?.freeze(),
+                options: options,
                 checkCancellation: checkCancellation)
         }
 
