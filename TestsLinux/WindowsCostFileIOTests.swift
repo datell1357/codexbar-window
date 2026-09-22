@@ -101,5 +101,32 @@ struct WindowsCostFileIOTests {
             #expect(CostUsageClaudeFileStamp.read(at: url) == second)
         }
     }
+
+    @Test
+    func `bounded reader honors its limit and fails closed on overflow`() throws {
+        try self.withDirectory { root in
+            let file = root.appendingPathComponent("bounded.json")
+            try Data(repeating: 0x41, count: 128).write(to: file)
+            #expect(try WindowsBoundedFileReader.readIfPresent(at: file, maximumBytes: 128)?.count == 128)
+            #expect(throws: WindowsBoundedFileReader.Failure.self) {
+                _ = try WindowsBoundedFileReader.readIfPresent(at: file, maximumBytes: 64)
+            }
+            #expect(try WindowsBoundedFileReader.readIfPresent(
+                at: root.appendingPathComponent("missing.json"), maximumBytes: 64) == nil)
+        }
+    }
+
+    @Test
+    func `an oversized persisted cache artifact fails closed to an empty cache`() throws {
+        try self.withDirectory { root in
+            let url = CostUsageClaudeCacheIO.cacheFileURL(provider: .claude, cacheRoot: root)
+            try FileManager.default.createDirectory(
+                at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try Data(repeating: 0x7B, count: CostUsageClaudeCacheIO.maximumPersistedBytes + 1).write(to: url)
+            let cache = CostUsageClaudeCacheIO.load(provider: .claude, cacheRoot: root)
+            #expect(cache.usage.files.isEmpty)
+            #expect(cache.windowsContent == nil)
+        }
+    }
 }
 #endif

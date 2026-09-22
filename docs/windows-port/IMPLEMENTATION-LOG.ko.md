@@ -5681,3 +5681,13 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - 상태: CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·정적 QA 스크립트·UI·provider·원격 Windows·CI는 수행하지 않았다.
 
 - 직전 IMPL-592는 578b8a621로 origin/main 푸시 확인. 이번 단위도 별도 커밋·푸시하며 자동화 설정은 변경하지 않았다.
+
+## IMPL-594: Claude/Vertex 지속 아티팩트의 저장 상한
+
+- `CostUsageClaudeCacheIO`의 cache·report-memo JSON이 읽기(`Data(contentsOf:)`)·쓰기 모두 무제한이었다. Windows 경로에 `maximumPersistedBytes`(64 MiB, `WindowsBoundedFileReader` 상한과 동일)를 두고, load·loadPersisted는 bounded reader로 fail closed(초과/손상 시 빈 cache·memo miss), save·persist는 상한 초과 인코딩을 게시하지 않는다.
+- 읽기 상한은 손상되거나 비대해진 아티팩트가 메모리로 무제한 디코드되는 것을 막고, 쓰기 상한은 reader가 거부할 파일을 만들지 않는다. 메모리 내 구조는 이미 상한이 있다(verifications 4·resume keys 8·memo 8·directory pages 64·content continuations 64).
+- 테스트 2개 작성: bounded reader의 limit/overflow/missing 동작과, 상한+1바이트 cache 아티팩트의 fail-closed 빈 cache 반환. 테스트·컴파일·실행은 하지 않았다.
+- **남은 범위:** opencodego/mistral 등의 Windows 비용 수집 지원(별도 gap), W10 위젯 완성·W15 Sync/Fleet·WinUI 3 앱·packaged in-app 토글 등 대형 표면과 전체 W01~W16/G0~G6.
+- 상태: CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·정적 QA 스크립트·UI·provider·원격 Windows·CI는 수행하지 않았다.
+
+- 직전 IMPL-593은 847e3d79f로 origin/main 푸시 확인. 이번 단위도 별도 커밋·푸시하며 자동화 설정은 변경하지 않았다.

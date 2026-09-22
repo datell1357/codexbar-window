@@ -259,7 +259,14 @@ final class CostUsageClaudeReportMemo: @unchecked Sendable {
 
     private static func loadPersisted(canonicalCachePath: String) -> Entry? {
         let url = Self.reportMemoFileURL(cacheFileURL: URL(fileURLWithPath: canonicalCachePath))
+        #if os(Windows)
+        // A corrupt or oversized artifact fails closed to a memo miss instead of decoding
+        // unbounded bytes into memory.
+        guard let data = try? WindowsBoundedFileReader.readIfPresent(
+            at: url, maximumBytes: CostUsageClaudeCacheIO.maximumPersistedBytes),
+        #else
         guard let data = try? Data(contentsOf: url),
+        #endif
               let envelope = try? JSONDecoder().decode(PersistedEnvelope.self, from: data),
               envelope.version == Self.persistedVersion,
               envelope.reportSemanticsVersion == Self.reportSemanticsVersion
@@ -287,6 +294,9 @@ final class CostUsageClaudeReportMemo: @unchecked Sendable {
             windowsReadProofs: entry.windowsReadProofs)
         guard let data = try? JSONEncoder().encode(envelope) else { return }
         #if os(Windows)
+        // Persisted memo is optional; an artifact over the persistence cap is skipped
+        // rather than written where readers would reject it.
+        guard data.count <= CostUsageClaudeCacheIO.maximumPersistedBytes else { return }
         // Persisted memo is optional; a failed publication must not replace the previous file.
         var publicationFailure: (any Error)?
         do {
@@ -464,6 +474,12 @@ struct CostUsageClaudeCache: Codable {
 /// Claude and Vertex retain their small transcript cache. Codex deliberately has no route
 /// through this JSON I/O boundary; its only persistence authority is `CostUsageStore`.
 enum CostUsageClaudeCacheIO {
+    #if os(Windows)
+    /// Persisted cache/memo artifacts share the bounded reader ceiling: an oversized file
+    /// fails closed on load and is skipped on write, so unbounded growth cannot persist.
+    static let maximumPersistedBytes = 64 * 1024 * 1024
+    #endif
+
     private static func defaultCacheRoot() -> URL {
         let root = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first!
         return root.appendingPathComponent("CodexBar", isDirectory: true)
@@ -486,7 +502,12 @@ enum CostUsageClaudeCacheIO {
         calendar: Calendar? = nil) -> CostUsageClaudeCache
     {
         let url = self.cacheFileURL(provider: provider, cacheRoot: cacheRoot)
+        #if os(Windows)
+        guard let data = try? WindowsBoundedFileReader.readIfPresent(
+            at: url, maximumBytes: Self.maximumPersistedBytes) else { return CostUsageClaudeCache() }
+        #else
         guard let data = try? Data(contentsOf: url) else { return CostUsageClaudeCache() }
+        #endif
         #if DEBUG
         CostUsageScanner.recordClaudeScanWork(.cacheDecode)
         #endif
@@ -516,6 +537,9 @@ enum CostUsageClaudeCacheIO {
         #endif
         guard let data = try? JSONEncoder().encode(cache) else { return nil }
         try checkCancellation?()
+        #if os(Windows)
+        guard data.count <= Self.maximumPersistedBytes else { return nil }
+        #endif
         // Atomic commit guard: pairs with the staged-window check inside writePrivate below.
         try sourcePublication?.check(checkCancellation: checkCancellation)
         #if os(Windows)
