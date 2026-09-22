@@ -1,5 +1,7 @@
 # Windows 전용 제품 작업 현황
 
+- IMPL-589: Claude checkpoint 완료 경계의 verifier 재대조를 canReuseSlice 예산 분할로 교체하고 lease-less/lease-lost를 공통 ledger slice 헬퍼로 통합 작성. 부분 통과는 verifier를 checkpoint 토큰에 주차. fixture 미실행. Claude 최종 보고 경계·원자 guard 정리·provider adapter·전체 Windows 제품/검증은 남음. CODE_WRITTEN_UNVERIFIED.
+
 - IMPL-588: Codex 게시 경계의 verifier 완료 재대조를 canReuseSlice 예산 분할로 교체하고 lease-less/lease-lost 경로를 공통 ledger slice 헬퍼로 통합 작성. 부분 통과는 verifier를 같은 재개 키에 주차. fixture 미실행. Claude checkpoint/최종 보고 경계·원자 guard 정리·provider adapter·전체 Windows 제품/검증은 남음. CODE_WRITTEN_UNVERIFIED.
 
 - IMPL-587: Codex discovery membership 재검증을 durable 회전 커서의 분할 matches로 교체하고 reconcile에 options 예산 연결 작성. 비차단으로 부분 통과도 진행하며 ledger/보고 대조가 전체를 덮음. fixture 미실행. 저장 경계 대조·provider adapter·전체 Windows 제품/검증은 남음. CODE_WRITTEN_UNVERIFIED.

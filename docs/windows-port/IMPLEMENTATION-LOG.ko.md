@@ -5629,3 +5629,13 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - 상태: CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·정적 QA 스크립트·UI·provider·원격 Windows·CI는 수행하지 않았다.
 
 - 직전 IMPL-587은 b847432bc로 origin/main 푸시 확인. 이번 단위도 별도 커밋·푸시하며 자동화 설정은 변경하지 않았다.
+
+## IMPL-589: Claude checkpoint 완료 경계의 verifier 재대조 분할
+
+- `processWindowsClaudeCollection`의 `.complete` 분기가 `verified.check`로 전체 entry를 한 번에 재-stat하던 무제한 sweep를, IMPL-588과 같은 `canReuseSlice` 예산 분할로 교체했다. 부분 통과는 verifier(lease+`metadataChecked` 커서)를 `checkpoint.verificationToken` 아래 다시 주차하고 checkpoint 저장 후 pending을 던져 다음 refresh가 같은 커서에서 재개한다.
+- lease 상실(nil 반환)과 `.requiresFullCheck`는 새 private 헬퍼 `checkClaudeCheckpointLedgerSlice`로 통합해 `checkpoint.fallbackCheckedCount` durable 커서의 per-entry ledger slice를 공유한다. checkpoint는 struct이므로 inout으로 커서를 갱신한다.
+- 테스트 1개 작성: 2개 파일과 verification entry 상한 1로 pending이 1회 이상 발생하고 부분 usage가 게시되지 않으며 최종 합계가 완료되는지 확인. lease 지원 여부에 따라 leased 경계 slice 또는 ledger slice를 거친다. 테스트·컴파일·실행은 하지 않았다.
+- **남은 범위:** Claude 최종 보고 경계(`sourcePublication?.check`)의 분할, standalone `jsonlFiles`·standalone caller 경계와 memo.store/persist/save 원자 guard의 분할 불가 정리 문서화, metadata/저장·메모리 예산, 나머지 provider ownership adapter와 전체 W01~W16/G0~G6.
+- 상태: CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·정적 QA 스크립트·UI·provider·원격 Windows·CI는 수행하지 않았다.
+
+- 직전 IMPL-588은 91aecf53a로 origin/main 푸시 확인. 이번 단위도 별도 커밋·푸시하며 자동화 설정은 변경하지 않았다.

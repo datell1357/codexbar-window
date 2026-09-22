@@ -278,5 +278,33 @@ struct WindowsClaudeContentCheckpointTests {
         #expect(try fixture.finish(fixture.options(bytes: 31)).summary?.totalInputTokens == 16)
         #expect(!fixture.cache().windowsForceContentRescan)
     }
+
+    @Test
+    func `verification entry limits split the completed boundary re-check across refreshes`() throws {
+        let fixture = try Fixture()
+        defer { fixture.cleanup() }
+        try fixture.event(3).write(to: fixture.logs.appendingPathComponent("a.jsonl"))
+        try fixture.event(5).write(to: fixture.logs.appendingPathComponent("b.jsonl"))
+        var limited = fixture.options()
+        limited.maxWindowsClaudeVerificationEntriesPerRefresh = 1
+        var pending = 0
+        var completed = false
+        for _ in 0..<100 {
+            do {
+                let report = try fixture.load(limited)
+                #expect(report.summary?.totalInputTokens == 8)
+                completed = true
+                break
+            } catch CostUsageError.localContentVerificationPending {
+                pending += 1
+                // A parked boundary pass never publishes partial usage.
+                #expect(fixture.cache().usage.files.isEmpty)
+            }
+        }
+        #expect(completed)
+        // Leased sources spend one boundary slice per entry; lease-less sources spend ledger slices.
+        #expect(pending >= 1)
+        #expect(fixture.cache().windowsContent == nil)
+    }
 }
 #endif

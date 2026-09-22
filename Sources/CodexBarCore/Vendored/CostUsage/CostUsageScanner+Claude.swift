@@ -909,22 +909,35 @@ extension CostUsageScanner {
                 case .pending:
                     checkpoint.verificationToken = WindowsCostPublicationVerifications.shared.put(verifier)
                 case .complete:
-                    let verified = CostUsageSourcePublication(entries: publication.entries, windowsVerifier: verifier)
-                    try verified.check(checkCancellation: checkCancellation)
-                    state.completedPublication = verified
+                    // The boundary re-stat uses the same entry budget as the advance. A
+                    // partial pass parks the verifier (leases + metadataChecked cursor)
+                    // under the checkpoint token so the next refresh resumes in place.
+                    if let checked = try verifier.canReuseSlice(
+                        entries: publication.entries,
+                        maxEntries: max(1, options.maxWindowsClaudeVerificationEntriesPerRefresh),
+                        checkCancellation: checkCancellation)
+                    {
+                        if checked == publication.entries.count {
+                            state.completedPublication = CostUsageSourcePublication(
+                                entries: publication.entries, windowsVerifier: verifier)
+                        } else {
+                            checkpoint.verificationToken = WindowsCostPublicationVerifications.shared.put(verifier)
+                        }
+                    } else if try Self.checkClaudeCheckpointLedgerSlice(
+                        publication, checkpoint: &checkpoint,
+                        options: options, checkCancellation: checkCancellation)
+                    {
+                        state.completedPublication = publication
+                    }
                 case .requiresFullCheck:
                     // Remote/unsupported/busy streams and capacity limits keep the per-entry
                     // check, sliced by a durable checkpoint cursor instead of one unbounded pass.
                     // An incomplete slice falls through to the checkpoint save below, which
                     // persists fallbackCheckedCount and rethrows the pending error.
-                    let checked = try publication.checkSlice(
-                        start: checkpoint.fallbackCheckedCount ?? 0,
-                        maxEntries: max(1, options.maxWindowsClaudeVerificationEntriesPerRefresh),
-                        checkCancellation: checkCancellation)
-                    if checked < publication.entries.count {
-                        checkpoint.fallbackCheckedCount = checked
-                    } else {
-                        checkpoint.fallbackCheckedCount = nil
+                    if try Self.checkClaudeCheckpointLedgerSlice(
+                        publication, checkpoint: &checkpoint,
+                        options: options, checkCancellation: checkCancellation)
+                    {
                         state.completedPublication = publication
                     }
                 }
@@ -1010,6 +1023,27 @@ extension CostUsageScanner {
             throw CostUsageError.localInventoryCheckpointUnavailable
         }
         throw CostUsageError.localInventoryPending(discoveredFiles: 0)
+    }
+
+    /// Per-entry ledger slice for the checkpoint boundary's lease-less and lease-lost paths.
+    /// Returns true when the whole publication passed; a partial pass persists its
+    /// leading-entry cursor on the checkpoint and returns false so the caller saves+rethrows.
+    private static func checkClaudeCheckpointLedgerSlice(
+        _ publication: CostUsageSourcePublication,
+        checkpoint: inout CostUsageClaudeContentCheckpoint,
+        options: Options,
+        checkCancellation: CancellationCheck?) throws -> Bool
+    {
+        let checked = try publication.checkSlice(
+            start: checkpoint.fallbackCheckedCount ?? 0,
+            maxEntries: max(1, options.maxWindowsClaudeVerificationEntriesPerRefresh),
+            checkCancellation: checkCancellation)
+        if checked < publication.entries.count {
+            checkpoint.fallbackCheckedCount = checked
+            return false
+        }
+        checkpoint.fallbackCheckedCount = nil
+        return true
     }
     #endif
 
