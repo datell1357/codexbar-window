@@ -1,4 +1,9 @@
 import Foundation
+#if canImport(CryptoKit)
+import CryptoKit
+#else
+import Crypto
+#endif
 
 public struct AntigravityOAuthCredentials: Codable, Sendable, Equatable {
     public var accessToken: String?
@@ -533,6 +538,45 @@ public struct AntigravityOAuthCredentialsStore: @unchecked Sendable {
     public static func defaultURL(home: URL = FileManager.default.homeDirectoryForCurrentUser) -> URL {
         self.defaultDirectoryURL(home: home)
             .appendingPathComponent("oauth_creds.json")
+    }
+
+    /// One-way discriminator for the credential material that owns Antigravity local-log
+    /// attribution. An injected ANTIGRAVITY_OAUTH_CREDENTIALS_JSON value is itself the captured
+    /// credential, so the digest covers it directly; otherwise it covers the resolved store path
+    /// and its bounded bytes, plus the resolved account email when decodable. Returns nil when no
+    /// readable credential exists; callers must fail closed rather than guess an owner.
+    /// The digest never leaves the process and is never logged.
+    public static func credentialFileFingerprint(
+        environment: [String: String] = ProcessInfo.processInfo.environment) -> String?
+    {
+        var digest = SHA256()
+        if let injected = environment[Self.environmentCredentialsKey]?
+            .trimmingCharacters(in: .whitespacesAndNewlines), !injected.isEmpty
+        {
+            digest.update(data: Data("antigravity:env-ownership:v1:".utf8))
+            digest.update(data: Data(injected.utf8))
+            if let email = Self.credentials(fromTokenAccountValue: injected)?.resolvedAccountEmail?
+                .trimmingCharacters(in: .whitespacesAndNewlines), !email.isEmpty
+            {
+                digest.update(data: Data(":\(email.utf8.count):".utf8))
+                digest.update(data: Data(email.utf8))
+            }
+            return digest.finalize().map { String(format: "%02x", $0) }.joined()
+        }
+        let home = environment["HOME"].map { URL(fileURLWithPath: $0, isDirectory: true) }
+            ?? FileManager.default.homeDirectoryForCurrentUser
+        let url = Self.defaultURL(home: home)
+        let limit = 256 * 1024
+        guard let handle = try? FileHandle(forReadingFrom: url) else { return nil }
+        defer { try? handle.close() }
+        // One byte over the limit proves the file is larger than this fingerprint covers.
+        guard let data = try? handle.read(upToCount: limit + 1), data.count <= limit else { return nil }
+        let path = url.standardizedFileURL.path
+        digest.update(data: Data("antigravity:store-ownership:v1:\(path.utf8.count):".utf8))
+        digest.update(data: Data(path.utf8))
+        digest.update(data: Data(":\(data.count):".utf8))
+        digest.update(data: data)
+        return digest.finalize().map { String(format: "%02x", $0) }.joined()
     }
 
     public static func tokenAccountValue(for credentials: AntigravityOAuthCredentials) throws -> String {

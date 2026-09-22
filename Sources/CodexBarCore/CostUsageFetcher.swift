@@ -1257,6 +1257,10 @@ public struct CostUsageFetcher: Sendable {
                 context: context, calendar: cal, checkCancellation: checkCancellation)
         }
         guard reportResult.isAvailable else { return nil }
+        // The credential scope that owns this attribution is re-verified by the spend loader;
+        // embedding it lets widget publication compare the fetched scope with the expected one.
+        let scopeFingerprint = AntigravityOAuthCredentialsStore.credentialFileFingerprint(
+            environment: context.environment)
         let report = reportResult.report
         if report.data.isEmpty {
             guard reportResult.isComplete else { return nil }
@@ -1267,7 +1271,8 @@ public struct CostUsageFetcher: Sendable {
                 useCurrentLocalDayForSession: true,
                 calendar: cal,
                 historyCoverageIsEstablished: true,
-                costProvenance: .unknown)
+                costProvenance: .unknown,
+                credentialScopeFingerprint: scopeFingerprint)
         }
         let since = cal.date(byAdding: .day, value: -(historyDays - 1), to: cal.startOfDay(for: now)) ?? now
         let sinceKey = CostUsageLocalDay.key(from: since, calendar: cal)
@@ -1299,7 +1304,8 @@ public struct CostUsageFetcher: Sendable {
             useCurrentLocalDayForSession: true,
             calendar: cal,
             historyCoverageIsEstablished: reportResult.isComplete,
-            costProvenance: .unknown)
+            costProvenance: .unknown,
+            credentialScopeFingerprint: scopeFingerprint)
     }
 
     static func tokenSnapshot(

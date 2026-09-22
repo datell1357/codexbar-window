@@ -79,7 +79,9 @@ enum WindowsSpendSourceResolver {
                 expectedClaudeSessionScope: provider == .claude
                     ? ClaudeAccountProfile.identifiedSessionScope(environment: scoped) : nil,
                 expectedVertexCredentialFingerprint: provider == .vertexai
-                    ? VertexAIOAuthCredentialsStore.credentialFileFingerprint(environment: scoped) : nil))
+                    ? VertexAIOAuthCredentialsStore.credentialFileFingerprint(environment: scoped) : nil,
+                expectedAntigravityCredentialFingerprint: provider == .antigravity
+                    ? AntigravityOAuthCredentialsStore.credentialFileFingerprint(environment: scoped) : nil))
         }
         return sources
     }

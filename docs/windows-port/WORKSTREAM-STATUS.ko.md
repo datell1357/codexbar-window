@@ -1,5 +1,7 @@
 # Windows 전용 제품 작업 현황
 
+- IMPL-592: Antigravity 위젯 비용 ownership adapter 작성. credentialFileFingerprint(env JSON/저장소 파일+이메일) 신설, snapshot credentialScopeFingerprint 심기, resolver/loader 전후 재검증·widget 경계·retention eligibility 연결. widget 실패의 claude/vertex owner 변경도 identityUnconfirmed로 보정. fixture 미실행. opencodego/mistral adapter·대형 표면·전체 Windows 제품/검증은 남음. CODE_WRITTEN_UNVERIFIED.
+
 - IMPL-591: 남은 무제한 check를 전수 분류하고 원자 guard(memo.store/persist/save staged 대조·standalone jsonlFiles·standalone caller)를 분할 불가로 확정해 근거 주석 작성. 보고/저장/체크포인트 경계 분할은 완료. fixture 해당 없음(주석). provider adapter·대형 표면·전체 Windows 제품/검증은 남음. CODE_WRITTEN_UNVERIFIED.
 
 - IMPL-590: Claude 최종 보고 경계를 checkClaudeReportBoundary로 분할 작성. 주차 verifier→자체 verifier→ledger slice 순 예산 검증, 커밋 후 pending은 memo 경계로 이어짐. fixture 미실행. 원자 guard 정리·provider adapter·전체 Windows 제품/검증은 남음. CODE_WRITTEN_UNVERIFIED.

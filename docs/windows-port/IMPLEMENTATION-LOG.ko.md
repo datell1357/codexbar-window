@@ -5660,3 +5660,14 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - 상태: CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·정적 QA 스크립트·UI·provider·원격 Windows·CI는 수행하지 않았다.
 
 - 직전 IMPL-590은 f20587b0d로 origin/main 푸시 확인. 이번 단위도 별도 커밋·푸시하며 자동화 설정은 변경하지 않았다.
+
+## IMPL-592: Antigravity 위젯 비용 ownership adapter
+
+- selectable ∩ supportsTokenCost 교집합 중 adapter가 없던 provider(antigravity·opencodego·mistral)를 조사해, re-verifiable 자격증명 재료가 있는 antigravity에 ownership adapter를 작성했다. `AntigravityOAuthCredentialsStore.credentialFileFingerprint(environment:)`는 주입된 ANTIGRAVITY_OAUTH_CREDENTIALS_JSON을 그대로 digest하거나, 없으면 HOME 기준 저장소 경로+제한 바이트(+디코드 가능 시 계정 이메일)를 digest한다. 읽을 수 있는 자격증명이 없으면 nil을 반환해 fail closed.
+- `loadAntigravityLocalSnapshot`이 반환하는 snapshot에 `credentialScopeFingerprint`를 심어, fetched snapshot이 어느 자격증명 범위의 귀속인지 스스로 선언하게 했다. Mac 측 소비자는 cursor 게이트라 Mac 동작은 변하지 않는다.
+- `Source.expectedAntigravityCredentialFingerprint`·`supportsRetainedCollection`·`Failure.antigravityOwnerChanged`·resolver 캡처·loader fetch 전후 재검증·widget 경계 guard·`attachWidgetCostOwnership`의 `expectedWidgetScopeFingerprint` 연결을 작성했다. loader의 widget 실패 매핑에 claude/vertex/antigravity owner 변경을 `accountIdentityUnconfirmed`로 보정했다(기존에는 codex만 표시됐다).
+- 테스트 2개 작성: env 주입/저장소 파일의 fingerprint 바인딩·회전 감지·보존 eligibility, 교체된 자격증명의 source 실패와 `accountIdentityUnconfirmed`. 테스트·컴파일·실행은 하지 않았다.
+- **남은 범위:** opencodego·mistral의 re-verifiable ownership 재료 조사와 adapter, metadata/저장·메모리 예산, W10 위젯 완성·W15 Sync/Fleet·WinUI 3 앱 등 대형 표면과 전체 W01~W16/G0~G6.
+- 상태: CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·정적 QA 스크립트·UI·provider·원격 Windows·CI는 수행하지 않았다.
+
+- 직전 IMPL-591은 3f5ad7a15로 origin/main 푸시 확인. 이번 단위도 별도 커밋·푸시하며 자동화 설정은 변경하지 않았다.

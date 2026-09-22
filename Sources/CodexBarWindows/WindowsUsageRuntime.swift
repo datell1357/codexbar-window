@@ -611,6 +611,12 @@ public actor WindowsUsageRuntime {
             case .claude:
                 // The loader re-verifies this scope before and after the scan; nil cannot confirm ownership.
                 guard source.expectedClaudeSessionScope != nil else { return source }
+            case .antigravity:
+                // Same ownership contract as Vertex: the credential fingerprint is re-read at
+                // fetch boundaries, and the fetched snapshot must echo the same scope.
+                guard let expected = source.expectedAntigravityCredentialFingerprint, !expected.isEmpty
+                else { return source }
+                source.expectedWidgetScopeFingerprint = expected
             default:
                 // Other sources need an explicit ownership adapter; an environment or provider ID alone is not proof.
                 return source
