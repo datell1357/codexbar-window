@@ -6624,21 +6624,29 @@ enum CostUsageScanner {
                 resume.setToken(WindowsCostPublicationVerifications.shared.put(verifier), for: key)
                 throw CostUsageError.localContentVerificationPending(totalFiles: publication.entries.count)
             case .complete:
-                resume.clear(for: key)
-                let verified = CostUsageSourcePublication(entries: publication.entries, windowsVerifier: verifier)
-                try verified.check(checkCancellation: checkCancellation)
-            case .requiresFullCheck:
-                resume.setToken(nil, for: key)
-                let checked = try publication.checkSlice(
-                    start: resume.checkedCount(for: key) ?? 0,
+                // The boundary re-stat shares the advance's entry budget. A partial pass
+                // parks the verifier (leases and cursor) under the same resume key so the
+                // next refresh resumes instead of re-statting every entry in one sweep.
+                if let checked = try verifier.canReuseSlice(
+                    entries: publication.entries,
                     maxEntries: max(1, options.maxWindowsCodexVerificationEntriesPerRefresh),
                     checkCancellation: checkCancellation)
-                guard checked < publication.entries.count else {
-                    resume.clear(for: key)
-                    return
+                {
+                    guard checked < publication.entries.count else {
+                        resume.clear(for: key)
+                        return
+                    }
+                    resume.setToken(WindowsCostPublicationVerifications.shared.put(verifier), for: key)
+                    throw CostUsageError.localContentVerificationPending(totalFiles: publication.entries.count)
                 }
-                resume.setCheckedCount(checked, for: key)
-                throw CostUsageError.localContentVerificationPending(totalFiles: publication.entries.count)
+                // Lost leases cannot back a reuse; continue through the per-entry ledger slice.
+                resume.setToken(nil, for: key)
+                try Self.checkCodexSlicedLedger(
+                    publication, key: key, options: options, checkCancellation: checkCancellation)
+            case .requiresFullCheck:
+                resume.setToken(nil, for: key)
+                try Self.checkCodexSlicedLedger(
+                    publication, key: key, options: options, checkCancellation: checkCancellation)
             }
         } catch CostUsageSourcePublication.Failure.sourceChangedOrUnavailable {
             resume.clear(for: key)
@@ -6647,6 +6655,27 @@ enum CostUsageScanner {
             resume.clear(for: key)
             throw WindowsCostFileReadGuard.Failure.sourceChanged
         }
+    }
+
+    /// Per-entry ledger slice shared by the lease-less and lease-lost publication paths. A
+    /// partial pass persists its leading-entry cursor under `key` and rethrows as pending.
+    private static func checkCodexSlicedLedger(
+        _ publication: CostUsageSourcePublication,
+        key: String,
+        options: Options,
+        checkCancellation: CancellationCheck?) throws
+    {
+        let resume = WindowsCostPublicationResumeKeys.shared
+        let checked = try publication.checkSlice(
+            start: resume.checkedCount(for: key) ?? 0,
+            maxEntries: max(1, options.maxWindowsCodexVerificationEntriesPerRefresh),
+            checkCancellation: checkCancellation)
+        guard checked < publication.entries.count else {
+            resume.clear(for: key)
+            return
+        }
+        resume.setCheckedCount(checked, for: key)
+        throw CostUsageError.localContentVerificationPending(totalFiles: publication.entries.count)
     }
     #endif
 

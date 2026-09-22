@@ -71,6 +71,32 @@ struct WindowsCostPublicationVerifierTests {
     }
 
     @Test
+    func `boundary re-stat slices resume the cursor and wrap after a completed pass`() throws {
+        let fixture = try Fixture()
+        defer { fixture.cleanup() }
+        let source = try fixture.publication()
+        let verifier = WindowsCostPublicationVerifier(entries: source.entries)
+        defer { verifier.invalidate() }
+        var result = WindowsCostPublicationVerifier.Progress.pending
+        for _ in 0..<100 {
+            result = try verifier.advance(maxBytes: 7, maxEntries: 1, checkCancellation: nil)
+            if result != .pending { break }
+        }
+        guard result == .complete else {
+            // Lease-less sources cannot exercise the sliced boundary path.
+            #expect(result == .requiresFullCheck)
+            return
+        }
+        // A zero-visit slice stays partial; a one-visit slice completes the single entry.
+        #expect(try verifier.canReuseSlice(entries: source.entries, maxEntries: 0, checkCancellation: nil) == 0)
+        #expect(try verifier.canReuseSlice(entries: source.entries, maxEntries: 1, checkCancellation: nil) == 1)
+        // A completed pass wraps the cursor so the next boundary starts fresh.
+        #expect(try verifier.canReuseSlice(entries: source.entries, maxEntries: 1, checkCancellation: nil) == 1)
+        try fixture.mutate()
+        #expect(try verifier.canReuseSlice(entries: source.entries, maxEntries: 1, checkCancellation: nil) == nil)
+    }
+
+    @Test
     func `same stamp rewrite after verification cannot reuse the previous digest`() throws {
         let fixture = try Fixture()
         defer { fixture.cleanup() }

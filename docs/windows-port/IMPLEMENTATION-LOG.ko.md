@@ -5619,3 +5619,13 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - 상태: CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·정적 QA 스크립트·UI·provider·원격 Windows·CI는 수행하지 않았다.
 
 - 직전 IMPL-586는 3043652ac로 origin/main 푸시 확인. 이번 단위도 별도 커밋·푸시하며 자동화 설정은 변경하지 않았다.
+
+## IMPL-588: Codex 게시 경계의 verifier 완료 재대조 분할
+
+- `checkCodexSlicedPublication`의 `.complete` 분기가 `verified.check`로 모든 entry의 이름/native ID를 한 번에 재-stat하던 무제한 sweep를, `canReuseSlice`의 예산 분할 재검사로 교체했다. 부분 통과는 verifier(lease+`metadataChecked` 커서)를 같은 재개 키 아래 다시 주차하고 `localContentVerificationPending`을 던져 다음 refresh가 같은 커서에서 이어간다. 완료 시 재개 상태를 지우고 반환한다.
+- lease 상실(`canReuseSlice`의 nil 반환)과 `.requiresFullCheck`는 새 private 헬퍼 `checkCodexSlicedLedger`로 통합해, 기존과 같은 `checkedCount` 위치 커서의 per-entry ledger slice를 공유한다.
+- 테스트 1개 작성: 완료된 verifier의 `canReuseSlice`가 0-visit에서는 부분(0), 1-visit에서는 완료(1)와 커서 래핑을 반환하고, 파일 교체 후에는 nil을 반환하는지 확인. 테스트·컴파일·실행은 하지 않았다.
+- **남은 범위:** Claude checkpoint `.complete` 경계의 동일 무제한 재대조, Claude 최종 보고 경계(`sourcePublication?.check`), standalone `jsonlFiles`·standalone caller 경계와 memo.store/persist/save 원자 guard의 분할 불가 정리 문서화, metadata/저장·메모리 예산, 나머지 provider ownership adapter와 전체 W01~W16/G0~G6.
+- 상태: CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·정적 QA 스크립트·UI·provider·원격 Windows·CI는 수행하지 않았다.
+
+- 직전 IMPL-587은 b847432bc로 origin/main 푸시 확인. 이번 단위도 별도 커밋·푸시하며 자동화 설정은 변경하지 않았다.
