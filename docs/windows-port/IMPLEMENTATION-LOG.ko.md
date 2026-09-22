@@ -5597,3 +5597,14 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - 상태: CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·정적 QA 스크립트·UI·provider·원격 Windows·CI는 수행하지 않았다.
 
 - 직전 IMPL-584는 620024b61로 origin/main 푸시 확인. 이번 단위도 별도 커밋·푸시하며 자동화 설정은 변경하지 않았다.
+
+## IMPL-586: leased memo 경계의 재개 가능 verifier 분할
+
+- `WindowsCostPublicationVerifier`에 `canReuseSlice`를 추가했다. `canReuse`의 entry당 metadata 재확인을 verifier 소유 `metadataChecked` 커서로 분할해 refresh당 entry 수만큼만 stat한다. 커서는 verifier 객체에 있어 registry take/put을 오가며 유지되고, 한 바퀴가 끝나면 0으로 감아 다음 경계에서 새 주기를 연다. lease가 재사용을 뒷받침하지 못하면 nil을 반환해 호출자가 per-entry 대조로 내려간다.
+- `claudeMemoContentMatches`의 `.leased`가 검증된 publication 대신 완료된 verifier를 직접 넘긴다. 함수 안의 `verified.check`(무제한 stat sweep)를 제거하고 경계 게이트를 `checkClaudeMemoReportBoundary`의 분할 canReuseSlice로 옮겼다. 경계가 pending이면 완료된 verifier를 memo의 재개 토큰 아래 registry에 다시 주차해 다음 refresh가 같은 lease와 커서로 이어진다.
+- lease가 끊기거나 재사용 불가면 lease-less 경로와 같은 분할 ledger 대조로 내려간다. 경계 완료 시 재개 키와 contentPassCompleted를 함께 정리한다.
+- 테스트 1개 작성: 3 파일·entry 상한 1로 leased memo 경계가 verifier 분할로 재개되는지(완료까지 진행·재파싱 0). 테스트·컴파일·실행은 하지 않았다.
+- **남은 범위:** checkpoint 저장 경계의 metadataOnly 대조·memo.store의 3중 대조, standalone `jsonlFiles` 경계, metadata/저장·메모리 예산, durable membership, 나머지 provider의 ownership adapter와 전체 W01~W16/G0~G6.
+- 상태: CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·정적 QA 스크립트·UI·provider·원격 Windows·CI는 수행하지 않았다.
+
+- 직전 IMPL-585는 1c7505db2로 origin/main 푸시 확인. 이번 단위도 별도 커밋·푸시하며 자동화 설정은 변경하지 않았다.

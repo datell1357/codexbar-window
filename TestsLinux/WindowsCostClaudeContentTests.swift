@@ -538,5 +538,46 @@ struct WindowsCostClaudeContentTests {
         #expect(work.snapshot().transcriptParses == 0)
         #expect(work.snapshot().incrementalTranscriptParses == 0)
     }
+
+    @Test
+    func `leased memo boundary resumes through verifier slices`() throws {
+        let fixture = try Fixture()
+        defer { fixture.cleanup() }
+        for index in 0..<3 {
+            let url = fixture.root.appendingPathComponent("logs/session-\(index).jsonl")
+            try fixture.event(input: 10, id: "f\(index)").write(to: url)
+            try FileManager.default.setAttributes([.modificationDate: fixture.timestamp], ofItemAtPath: url.path)
+        }
+        #expect(try fixture.load().summary?.totalInputTokens == 30)
+        var bounded = fixture.options
+        bounded.maxWindowsClaudeVerificationEntriesPerRefresh = 1
+        let work = CostUsageScanner.ClaudeScanWorkRecorder()
+        var pendings = 0
+        var report: CostUsageDailyReport?
+        try CostUsageScanner.withClaudeScanWorkRecorderForTesting(work) {
+            for _ in 0..<48 {
+                if report != nil { break }
+                do {
+                    report = try CostUsageScanner.loadDailyReportCancellable(
+                        provider: .claude, since: fixture.day, until: fixture.day, now: fixture.day,
+                        options: bounded, checkCancellation: nil)
+                } catch let error as CostUsageError {
+                    switch error {
+                    case .localInventoryPending, .localContentPending, .localContentVerificationPending:
+                        pendings += 1
+                    default:
+                        throw error
+                    }
+                }
+            }
+        }
+        // Finishing within the bound proves the parked verifier resumed its metadata cursor:
+        // a cursor that reset each refresh would re-check only the first entry and pend forever.
+        #expect(pendings >= 1)
+        let final = try #require(report)
+        #expect(final.summary?.totalInputTokens == 30)
+        #expect(work.snapshot().transcriptParses == 0)
+        #expect(work.snapshot().incrementalTranscriptParses == 0)
+    }
 }
 #endif

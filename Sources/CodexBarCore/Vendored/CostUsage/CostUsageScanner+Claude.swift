@@ -1248,10 +1248,10 @@ extension CostUsageScanner {
 
     #if os(Windows)
     /// Result of a memo-hit content pass. `.leased` carries the publication verified under
-    /// read leases so the report boundary can re-check it metadata-only; `.leaseLess` means
-    /// the per-file content check passed without a verifier and the boundary needs its own pass.
+    /// read leases so the report boundary can re-check it through the same leases; `.leaseLess`
+    /// means the per-file content check passed without a verifier and the boundary needs its own pass.
     private enum ClaudeMemoVerification {
-        case leased(CostUsageSourcePublication)
+        case leased(WindowsCostPublicationVerifier)
         case leaseLess
     }
 
@@ -1358,9 +1358,9 @@ extension CostUsageScanner {
                 throw CostUsageError.localContentVerificationPending(totalFiles: inventory.files.count)
             case .complete:
                 memoStore.setVerificationToken(nil, provider: provider, canonicalCachePath: canonicalCachePath)
-                let verified = CostUsageSourcePublication(entries: entries, windowsVerifier: verifier)
-                try verified.check(checkCancellation: checkCancellation)
-                return .leased(verified)
+                // The completed verifier is the boundary's evidence: its resumable metadata
+                // pass re-checks names and leases per entry without re-reading anchored bytes.
+                return .leased(verifier)
             case .requiresFullCheck:
                 memoStore.setVerificationToken(nil, provider: provider, canonicalCachePath: canonicalCachePath)
                 return try fullCheck() ? .leaseLess : nil
@@ -1377,9 +1377,9 @@ extension CostUsageScanner {
     }
 
     /// Boundary re-check before a memo report is returned. Leased publications re-verify
-    /// metadata through their intact verifier instead of re-reading every anchored byte;
-    /// lease-less passes keep the per-entry check, sliced under the same entry cap with a
-    /// process-local cursor so a missed cursor simply restarts the pass.
+    /// metadata through their intact verifier in resumable slices instead of re-reading every
+    /// anchored byte; lease-less passes keep the per-entry check, sliced under the same entry
+    /// cap with a process-local cursor so a missed cursor simply restarts the pass.
     private static func checkClaudeMemoReportBoundary(
         _ verification: ClaudeMemoVerification,
         observations: CostUsagePublicationObservations?,
@@ -1388,39 +1388,57 @@ extension CostUsageScanner {
         options: Options,
         checkCancellation: CancellationCheck?) throws
     {
-        switch verification {
-        case let .leased(verified):
-            try verified.check(checkCancellation: checkCancellation)
-        case .leaseLess:
-            guard let publication = observations?.freeze() else { return }
-            let key = "claude-memo-boundary|" + canonicalCachePath
-            let resume = WindowsCostPublicationResumeKeys.shared
-            let memoStore = CostUsageClaudeReportMemo.shared
-            do {
-                let checked = try publication.checkSlice(
-                    start: resume.checkedCount(for: key) ?? 0,
-                    maxEntries: max(1, options.maxWindowsClaudeVerificationEntriesPerRefresh),
-                    checkCancellation: checkCancellation)
-                guard checked < publication.entries.count else {
+        let key = "claude-memo-boundary|" + canonicalCachePath
+        let resume = WindowsCostPublicationResumeKeys.shared
+        let memoStore = CostUsageClaudeReportMemo.shared
+        if case let .leased(verifier) = verification {
+            // A pending boundary pass parks the completed verifier under the memo's resume
+            // token, so the next refresh resumes the same leases and the same cursor instead
+            // of reopening streams or re-reading anchored bytes.
+            if let checked = try verifier.canReuseSlice(
+                entries: verifier.entries,
+                maxEntries: max(1, options.maxWindowsClaudeVerificationEntriesPerRefresh),
+                checkCancellation: checkCancellation)
+            {
+                guard checked < verifier.entries.count else {
                     resume.clear(for: key)
                     memoStore.setContentPassCompleted(
                         false, provider: provider, canonicalCachePath: canonicalCachePath)
                     return
                 }
-                resume.setCheckedCount(checked, for: key)
+                memoStore.setVerificationToken(
+                    WindowsCostPublicationVerifications.shared.put(verifier),
+                    provider: provider, canonicalCachePath: canonicalCachePath)
                 throw CostUsageError.localContentVerificationPending(
-                    totalFiles: publication.entries.count)
-            } catch CostUsageSourcePublication.Failure.sourceChangedOrUnavailable {
-                resume.clear(for: key)
-                memoStore.setContentPassCompleted(
-                    false, provider: provider, canonicalCachePath: canonicalCachePath)
-                throw CostUsageSourcePublication.Failure.sourceChangedOrUnavailable
-            } catch WindowsCostFileReadGuard.Failure.sourceChanged {
-                resume.clear(for: key)
-                memoStore.setContentPassCompleted(
-                    false, provider: provider, canonicalCachePath: canonicalCachePath)
-                throw WindowsCostFileReadGuard.Failure.sourceChanged
+                    totalFiles: verifier.entries.count)
             }
+            // Leases could not back a reuse: continue through the per-entry ledger check.
+        }
+        guard let publication = observations?.freeze() else { return }
+        do {
+            let checked = try publication.checkSlice(
+                start: resume.checkedCount(for: key) ?? 0,
+                maxEntries: max(1, options.maxWindowsClaudeVerificationEntriesPerRefresh),
+                checkCancellation: checkCancellation)
+            guard checked < publication.entries.count else {
+                resume.clear(for: key)
+                memoStore.setContentPassCompleted(
+                    false, provider: provider, canonicalCachePath: canonicalCachePath)
+                return
+            }
+            resume.setCheckedCount(checked, for: key)
+            throw CostUsageError.localContentVerificationPending(
+                totalFiles: publication.entries.count)
+        } catch CostUsageSourcePublication.Failure.sourceChangedOrUnavailable {
+            resume.clear(for: key)
+            memoStore.setContentPassCompleted(
+                false, provider: provider, canonicalCachePath: canonicalCachePath)
+            throw CostUsageSourcePublication.Failure.sourceChangedOrUnavailable
+        } catch WindowsCostFileReadGuard.Failure.sourceChanged {
+            resume.clear(for: key)
+            memoStore.setContentPassCompleted(
+                false, provider: provider, canonicalCachePath: canonicalCachePath)
+            throw WindowsCostFileReadGuard.Failure.sourceChanged
         }
     }
 

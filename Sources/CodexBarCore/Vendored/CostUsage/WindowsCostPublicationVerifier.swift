@@ -82,6 +82,9 @@ final class WindowsCostPublicationVerifier: @unchecked Sendable {
     private var nextEntry = 0
     private var contents: [Int: Content] = [:]
     private var fallback = false
+    /// Resumable cursor for `canReuseSlice`, counted in leading entries of `self.entries`.
+    /// It survives registry take/put cycles because it lives on the verifier itself.
+    private var metadataChecked = 0
 
     init(entries: [CostUsageSourcePublication.Entry]) {
         self.entries = entries
@@ -138,6 +141,7 @@ final class WindowsCostPublicationVerifier: @unchecked Sendable {
         guard self.leasesIntact else { self.abandon(); return false }
         // Recheck names/native IDs/directories at each actual publication boundary. An
         // intact lease proves only its opened stream, not that a path still names that stream.
+        self.metadataChecked = 0
         for entry in entries {
             try Task.checkCancellation()
             try checkCancellation?()
@@ -145,6 +149,36 @@ final class WindowsCostPublicationVerifier: @unchecked Sendable {
         }
         guard self.leasesIntact else { self.abandon(); return false }
         return true
+    }
+
+    /// Resumable variant of `canReuse` for callers that cannot spend one refresh re-statting
+    /// every entry. Returns the number of leading entries re-checked so far; equality with
+    /// `entries.count` completes the pass and wraps the cursor so the next boundary starts
+    /// fresh. Returns nil when the held leases can no longer back a reuse, leaving the caller
+    /// to fall back to the ordinary per-entry check.
+    func canReuseSlice(
+        entries: [CostUsageSourcePublication.Entry],
+        maxEntries: Int,
+        checkCancellation: (() throws -> Void)?) throws -> Int?
+    {
+        self.lock.lock()
+        defer { self.lock.unlock() }
+        guard entries == self.entries, !self.fallback, self.nextEntry == entries.count else { return nil }
+        guard self.leasesIntact else { self.abandon(); return nil }
+        var visits = max(0, maxEntries)
+        while self.metadataChecked < entries.count, visits > 0 {
+            try Task.checkCancellation()
+            try checkCancellation?()
+            _ = try CostUsageSourcePublication.checkMetadata(entries[self.metadataChecked])
+            self.metadataChecked += 1
+            visits -= 1
+        }
+        guard self.leasesIntact else { self.abandon(); return nil }
+        if self.metadataChecked == entries.count {
+            self.metadataChecked = 0
+            return entries.count
+        }
+        return self.metadataChecked
     }
 
     private var leasesIntact: Bool { self.contents.values.allSatisfy { $0.lease.isIntact } }
@@ -158,6 +192,7 @@ final class WindowsCostPublicationVerifier: @unchecked Sendable {
     private func abandon() {
         self.fallback = true
         self.contents.removeAll()
+        self.metadataChecked = 0
     }
 }
 
