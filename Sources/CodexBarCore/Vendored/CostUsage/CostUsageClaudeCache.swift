@@ -146,11 +146,14 @@ final class CostUsageClaudeReportMemo: @unchecked Sendable {
         let entry = Entry(
             sourceInventory: sourceInventory, reportKey: reportKey, report: report,
             windowsReadProofs: windowsReadProofs)
+        // Atomic commit guard: the staged write below re-validates inside the writer's
+        // staging window, so this pre-check must finish in one pass and stays unsliced.
         try sourcePublication?.check(checkCancellation: checkCancellation)
         try Self.persist(
             entry, canonicalCachePath: canonicalCachePath,
             sourcePublication: sourcePublication, checkCancellation: checkCancellation)
         try checkCancellation?()
+        // Post-write guard: a superseded source must not install this memo.
         try sourcePublication?.check(checkCancellation: checkCancellation)
         self.lock.lock()
         self.installUnlocked(key: key, entry: entry)
@@ -290,6 +293,7 @@ final class CostUsageClaudeReportMemo: @unchecked Sendable {
             try WindowsCredentialFileWriter.writePrivate(data, to: url) { _ in
                 do {
                     try checkCancellation?()
+                    // Runs inside the writer's staging window; stays atomic with the commit.
                     try sourcePublication?.check(checkCancellation: checkCancellation)
                 } catch {
                     publicationFailure = error
@@ -512,6 +516,7 @@ enum CostUsageClaudeCacheIO {
         #endif
         guard let data = try? JSONEncoder().encode(cache) else { return nil }
         try checkCancellation?()
+        // Atomic commit guard: pairs with the staged-window check inside writePrivate below.
         try sourcePublication?.check(checkCancellation: checkCancellation)
         #if os(Windows)
         var publicationFailure: (any Error)?
@@ -520,6 +525,7 @@ enum CostUsageClaudeCacheIO {
             try WindowsCredentialFileWriter.writePrivate(data, to: url) { stagedURL in
                 do {
                     try checkCancellation?()
+                    // Staging-window validation; cannot defer or slice without splitting the commit.
                     try sourcePublication?.check(checkCancellation: checkCancellation)
                 } catch {
                     publicationFailure = error

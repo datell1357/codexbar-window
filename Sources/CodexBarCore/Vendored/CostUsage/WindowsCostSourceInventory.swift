@@ -24,6 +24,9 @@ enum WindowsCostSourceInventory {
             checkCancellation: checkCancellation).isComplete {}
         let observations = publicationObservations ?? CostUsagePublicationObservations()
         try WindowsCostTreeInventory.observe(state, in: observations, checkCancellation: checkCancellation)
+        // Standalone callers have no later publication boundary; this synchronous pass is
+        // their only ledger validation, so it stays unsliced. Callers sharing an observations
+        // ledger get an early fail-fast here plus the final boundary re-check downstream.
         try observations.freeze().check(checkCancellation: checkCancellation)
         if state.missingRoots.contains(root.standardizedFileURL.path) { return nil }
         return try WindowsCostTreeInventory.representatives(state, checkCancellation: checkCancellation)

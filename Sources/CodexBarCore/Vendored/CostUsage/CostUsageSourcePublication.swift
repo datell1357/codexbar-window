@@ -28,6 +28,9 @@ struct CostUsageSourcePublication: Sendable {
         Self(entries: self.entries.map { Entry(url: $0.url, expectation: $0.expectation) })
     }
 
+    /// Full one-pass validation. On Windows this stays reserved for atomic commit guards
+    /// (staged cache/memo writes and standalone listing boundaries) that cannot defer; every
+    /// report or checkpoint boundary uses the sliced verifier/checkSlice passes instead.
     func check(checkCancellation: (() throws -> Void)? = nil) throws {
         #if os(Windows)
         if let windowsVerifier,

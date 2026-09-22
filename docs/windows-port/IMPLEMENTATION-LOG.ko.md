@@ -5649,3 +5649,14 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - 상태: CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·정적 QA 스크립트·UI·provider·원격 Windows·CI는 수행하지 않았다.
 
 - 직전 IMPL-589는 3d0ef15d9로 origin/main 푸시 확인. 이번 단위도 별도 커밋·푸시하며 자동화 설정은 변경하지 않았다.
+
+## IMPL-591: 분할 불가 원자 경계의 정리와 문서화
+
+- 남은 무제한 `check` 호출을 전수 분류했다. 보고·저장·체크포인트 경계는 IMPL-582~590에서 모두 분할 검증으로 교체됐고, Windows 경로에 남은 무제한 `check`는 의도적으로 분할하지 않는 원자 guard뿐이다.
+- 분할 불가로 확정한 위치: (1) `CostUsageClaudeReportMemo.store`의 persist 전후 대조와 `persist`·`CostUsageClaudeCacheIO.save`의 staged-write 콜백 대조 — writer의 staging 창 안에서 커밋과 원자적으로 검증해야 하므로 분할하면 대체된 source를 커밋할 수 있다. (2) `WindowsCostSourceInventory.jsonlFiles`의 standalone 대조 — 공유 ledger가 없는 호출자의 유일한 경계이며, 목록을 동기적으로 반환해야 해 재시도 간 위치 커서를 안전하게 묶을 수 없다. (3) `recordInventoryEvidence`의 standalone 호출자 대조 — 같은 이유. (4) `CostUsageSourcePublication.check`의 leased fast path(`canReuse`) — 위 원자 guard 경유 시에만 도달한다.
+- 각 위치에 "atomic commit guard"/"stays unsliced" 근거 주석을 추가하고, `check` 자체에 Windows에서는 원자 guard 전용이며 보고·체크포인트 경계는 sliced verifier/`checkSlice`를 쓴다는 문서를 달았다.
+- 코드 변경은 주석뿐이며 테스트·컴파일·실행은 하지 않았다.
+- **남은 범위:** metadata/저장·메모리 예산, 나머지 provider ownership adapter, W10 위젯 완성·W15 Sync/Fleet·WinUI 3 앱 등 대형 표면과 전체 W01~W16/G0~G6.
+- 상태: CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·정적 QA 스크립트·UI·provider·원격 Windows·CI는 수행하지 않았다.
+
+- 직전 IMPL-590은 f20587b0d로 origin/main 푸시 확인. 이번 단위도 별도 커밋·푸시하며 자동화 설정은 변경하지 않았다.
