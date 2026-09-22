@@ -1,5 +1,7 @@
 # Windows 전용 제품 작업 현황
 
+- IMPL-590: Claude 최종 보고 경계를 checkClaudeReportBoundary로 분할 작성. 주차 verifier→자체 verifier→ledger slice 순 예산 검증, 커밋 후 pending은 memo 경계로 이어짐. fixture 미실행. 원자 guard 정리·provider adapter·전체 Windows 제품/검증은 남음. CODE_WRITTEN_UNVERIFIED.
+
 - IMPL-589: Claude checkpoint 완료 경계의 verifier 재대조를 canReuseSlice 예산 분할로 교체하고 lease-less/lease-lost를 공통 ledger slice 헬퍼로 통합 작성. 부분 통과는 verifier를 checkpoint 토큰에 주차. fixture 미실행. Claude 최종 보고 경계·원자 guard 정리·provider adapter·전체 Windows 제품/검증은 남음. CODE_WRITTEN_UNVERIFIED.
 
 - IMPL-588: Codex 게시 경계의 verifier 완료 재대조를 canReuseSlice 예산 분할로 교체하고 lease-less/lease-lost 경로를 공통 ledger slice 헬퍼로 통합 작성. 부분 통과는 verifier를 같은 재개 키에 주차. fixture 미실행. Claude checkpoint/최종 보고 경계·원자 guard 정리·provider adapter·전체 Windows 제품/검증은 남음. CODE_WRITTEN_UNVERIFIED.

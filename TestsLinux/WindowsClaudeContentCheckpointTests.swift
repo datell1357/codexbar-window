@@ -306,5 +306,35 @@ struct WindowsClaudeContentCheckpointTests {
         #expect(pending >= 1)
         #expect(fixture.cache().windowsContent == nil)
     }
+
+    @Test
+    func `post-commit boundary slices preserve committed usage while pending`() throws {
+        let fixture = try Fixture()
+        defer { fixture.cleanup() }
+        try fixture.event(3).write(to: fixture.logs.appendingPathComponent("a.jsonl"))
+        try fixture.event(5).write(to: fixture.logs.appendingPathComponent("b.jsonl"))
+        var limited = fixture.options()
+        limited.maxWindowsClaudeVerificationEntriesPerRefresh = 1
+        var sawPostCommitPending = false
+        var completed = false
+        for _ in 0..<100 {
+            do {
+                let report = try fixture.load(limited)
+                #expect(report.summary?.totalInputTokens == 8)
+                completed = true
+                break
+            } catch CostUsageError.localContentVerificationPending {
+                let cache = fixture.cache()
+                if cache.windowsContent == nil, !cache.usage.files.isEmpty {
+                    // Past the checkpoint save: a report/memo boundary slice pends after the
+                    // cache commit and must keep the committed usage visible for next refresh.
+                    sawPostCommitPending = true
+                    #expect(cache.usage.files.count == 2)
+                }
+            }
+        }
+        #expect(completed)
+        #expect(sawPostCommitPending)
+    }
 }
 #endif

@@ -5639,3 +5639,13 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - 상태: CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·정적 QA 스크립트·UI·provider·원격 Windows·CI는 수행하지 않았다.
 
 - 직전 IMPL-588은 91aecf53a로 origin/main 푸시 확인. 이번 단위도 별도 커밋·푸시하며 자동화 설정은 변경하지 않았다.
+
+## IMPL-590: Claude 최종 보고 경계의 분할 검증
+
+- `loadClaudeDaily` 끝의 `sourcePublication?.check`가 cache 저장·memo.store 이후 전체 ledger를 한 번에 재검증하던 무제한 sweep였다. Windows 경로를 새 `checkClaudeReportBoundary`로 교체해, `claude-report|canonicalCachePath` 재개 키 아래 (1) 이전 pending이 주차한 verifier, (2) 이번 publication 자체의 완료된 verifier, (3) per-entry ledger slice 순으로 예산 분할 검증한다.
+- 주차된 verifier는 `take(token, entries:)`의 canonical entry 일치로만 재사용되고, 불일치·lease 상실·fresh verifier는 `canReuseSlice`의 nil 반환으로 자연스럽게 ledger slice로 내려간다. 부분 통과는 verifier를 재개 키에 다시 주차하고 `localContentVerificationPending`을 던진다. cache/memo 커밋은 이미 끝난 뒤이므로 pending은 다음 refresh의 memo 경계 검증으로 이어진다.
+- 테스트 1개 작성: 2개 파일과 verification entry 상한 1로, 커밋 후 경계 pending(저장된 windowsContent가 nil이고 usage.files가 채워진 상태)이 1회 이상 관측되고 최종 합계가 완료되는지 확인. 테스트·컴파일·실행은 하지 않았다.
+- **남은 범위:** standalone `jsonlFiles` 경계·standalone caller 경계와 memo.store/persist/save 원자 guard의 분할 불가 정리 문서화, metadata/저장·메모리 예산, 나머지 provider ownership adapter와 전체 W01~W16/G0~G6.
+- 상태: CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·정적 QA 스크립트·UI·provider·원격 Windows·CI는 수행하지 않았다.
+
+- 직전 IMPL-589는 3d0ef15d9로 origin/main 푸시 확인. 이번 단위도 별도 커밋·푸시하며 자동화 설정은 변경하지 않았다.

@@ -1276,7 +1276,13 @@ extension CostUsageScanner {
                 sourcePublication: sourcePublication,
                 checkCancellation: checkCancellation)
         }
+        #if os(Windows)
+        try Self.checkClaudeReportBoundary(
+            sourcePublication, canonicalCachePath: canonicalCachePath,
+            options: options, checkCancellation: checkCancellation)
+        #else
         try sourcePublication?.check(checkCancellation: checkCancellation)
+        #endif
         return report
     }
 
@@ -1472,6 +1478,64 @@ extension CostUsageScanner {
             resume.clear(for: key)
             memoStore.setContentPassCompleted(
                 false, provider: provider, canonicalCachePath: canonicalCachePath)
+            throw WindowsCostFileReadGuard.Failure.sourceChanged
+        }
+    }
+
+    /// Sliced final publication check for the Claude report boundary. A verifier parked by an
+    /// earlier pending pass resumes its leases and cursor first, then this publication's own
+    /// completed verifier, then the per-entry ledger slice. Resume state is process-local
+    /// under `claude-report|canonicalCachePath`; a lost token or cursor restarts the pass
+    /// from zero while canonical entry equality keeps the binding honest.
+    private static func checkClaudeReportBoundary(
+        _ publication: CostUsageSourcePublication?,
+        canonicalCachePath: String,
+        options: Options,
+        checkCancellation: CancellationCheck?) throws
+    {
+        guard let publication else { return }
+        let key = "claude-report|" + canonicalCachePath
+        let resume = WindowsCostPublicationResumeKeys.shared
+        let budget = max(1, options.maxWindowsClaudeVerificationEntriesPerRefresh)
+        var verifiers: [WindowsCostPublicationVerifier] = []
+        if let token = resume.token(for: key) {
+            verifiers.append(WindowsCostPublicationVerifications.shared.take(
+                token, entries: publication.entries))
+        }
+        if let own = publication.windowsVerifier, !verifiers.contains(where: { $0 === own }) {
+            verifiers.append(own)
+        }
+        do {
+            for verifier in verifiers {
+                guard let checked = try verifier.canReuseSlice(
+                    entries: publication.entries, maxEntries: budget,
+                    checkCancellation: checkCancellation)
+                else { continue }
+                guard checked < publication.entries.count else {
+                    resume.clear(for: key)
+                    return
+                }
+                resume.setToken(WindowsCostPublicationVerifications.shared.put(verifier), for: key)
+                throw CostUsageError.localContentVerificationPending(totalFiles: publication.entries.count)
+            }
+            // No verifier could back a reuse; drop any stale token and let the ledger slice
+            // resume its own leading-entry cursor.
+            resume.setToken(nil, for: key)
+            let checked = try publication.checkSlice(
+                start: resume.checkedCount(for: key) ?? 0,
+                maxEntries: budget,
+                checkCancellation: checkCancellation)
+            guard checked < publication.entries.count else {
+                resume.clear(for: key)
+                return
+            }
+            resume.setCheckedCount(checked, for: key)
+            throw CostUsageError.localContentVerificationPending(totalFiles: publication.entries.count)
+        } catch CostUsageSourcePublication.Failure.sourceChangedOrUnavailable {
+            resume.clear(for: key)
+            throw CostUsageSourcePublication.Failure.sourceChangedOrUnavailable
+        } catch WindowsCostFileReadGuard.Failure.sourceChanged {
+            resume.clear(for: key)
             throw WindowsCostFileReadGuard.Failure.sourceChanged
         }
     }
