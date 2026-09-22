@@ -176,6 +176,10 @@ enum CostUsageScanner {
         var maxWindowsClaudeContentBytesPerRefresh: Int64 = 8 * 1024 * 1024
         var maxWindowsClaudeFilesPerRefresh: Int = 64
         var maxWindowsClaudeVerificationEntriesPerRefresh: Int = 64
+        /// Final Codex report publication checks share the leased verifier under these budgets.
+        /// Lease-less sources keep the per-entry check under the same entry cap.
+        var maxWindowsCodexVerificationBytesPerRefresh: Int64 = 8 * 1024 * 1024
+        var maxWindowsCodexVerificationEntriesPerRefresh: Int = 64
         var calendar: Calendar
         var refreshMinIntervalSeconds: TimeInterval = 60
         var claudeLogProviderFilter: ClaudeLogProviderFilter = .all
@@ -6540,6 +6544,57 @@ enum CostUsageScanner {
         }
     }
 
+    #if os(Windows)
+    /// Sliced final publication check for the Codex report boundary. Leased entries share the
+    /// budgeted verifier; lease-less sources keep the per-entry check under the same entry cap.
+    /// Resume state is process-local: a lost token or cursor restarts the pass from zero while
+    /// canonical entry equality keeps the binding honest.
+    private static func checkCodexReportPublication(
+        _ observations: CostUsagePublicationObservations?,
+        options: Options,
+        checkCancellation: CancellationCheck?) throws
+    {
+        guard let observations else { return }
+        let publication = observations.freeze()
+        let key = "codex|" + (options.cacheRoot?.standardizedFileURL.resolvingSymlinksInPath().path ?? "")
+        let resume = WindowsCostPublicationResumeKeys.shared
+        let verifier = WindowsCostPublicationVerifications.shared.take(
+            resume.token(for: key), entries: publication.entries)
+        do {
+            switch try verifier.advance(
+                maxBytes: max(1, options.maxWindowsCodexVerificationBytesPerRefresh),
+                maxEntries: max(1, options.maxWindowsCodexVerificationEntriesPerRefresh),
+                checkCancellation: checkCancellation) {
+            case .pending:
+                resume.setToken(WindowsCostPublicationVerifications.shared.put(verifier), for: key)
+                throw CostUsageError.localContentVerificationPending(totalFiles: publication.entries.count)
+            case .complete:
+                resume.clear(for: key)
+                let verified = CostUsageSourcePublication(entries: publication.entries, windowsVerifier: verifier)
+                try verified.check(checkCancellation: checkCancellation)
+            case .requiresFullCheck:
+                resume.setToken(nil, for: key)
+                let checked = try publication.checkSlice(
+                    start: resume.checkedCount(for: key) ?? 0,
+                    maxEntries: max(1, options.maxWindowsCodexVerificationEntriesPerRefresh),
+                    checkCancellation: checkCancellation)
+                guard checked < publication.entries.count else {
+                    resume.clear(for: key)
+                    return
+                }
+                resume.setCheckedCount(checked, for: key)
+                throw CostUsageError.localContentVerificationPending(totalFiles: publication.entries.count)
+            }
+        } catch CostUsageSourcePublication.Failure.sourceChangedOrUnavailable {
+            resume.clear(for: key)
+            throw CostUsageSourcePublication.Failure.sourceChangedOrUnavailable
+        } catch WindowsCostFileReadGuard.Failure.sourceChanged {
+            resume.clear(for: key)
+            throw WindowsCostFileReadGuard.Failure.sourceChanged
+        }
+    }
+    #endif
+
     // swiftlint:disable:next cyclomatic_complexity function_body_length
     private static func loadCodexDaily(
         range: CostUsageDayRange,
@@ -6640,7 +6695,12 @@ enum CostUsageScanner {
                 modelsDevCatalog: plan.modelsDevCatalog,
                 modelsDevCacheRoot: options.cacheRoot,
                 priorityTurns: Self.validatedPriorityTurns(cache: cache, calendar: range.calendar))
+            #if os(Windows)
+            try Self.checkCodexReportPublication(
+                publicationObservations, options: options, checkCancellation: checkCancellation)
+            #else
             try publicationObservations?.freeze().check(checkCancellation: checkCancellation)
+            #endif
             return report
         }
 
@@ -7157,7 +7217,12 @@ enum CostUsageScanner {
             range: range,
             rootsFingerprint: plan.rootsFingerprint)
         {
+            #if os(Windows)
+            try Self.checkCodexReportPublication(
+                publicationObservations, options: options, checkCancellation: checkCancellation)
+            #else
             try publicationObservations?.freeze().check(checkCancellation: checkCancellation)
+            #endif
             return previous.report
         }
         let report = Self.buildCodexReportFromCache(
@@ -7166,7 +7231,12 @@ enum CostUsageScanner {
             modelsDevCatalog: plan.modelsDevCatalog,
             modelsDevCacheRoot: options.cacheRoot,
             priorityTurns: plan.priorityTurns)
+        #if os(Windows)
+        try Self.checkCodexReportPublication(
+            publicationObservations, options: options, checkCancellation: checkCancellation)
+        #else
         try publicationObservations?.freeze().check(checkCancellation: checkCancellation)
+        #endif
         return report
     }
 

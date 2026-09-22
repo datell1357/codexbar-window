@@ -202,4 +202,70 @@ final class WindowsCostPublicationVerifications: @unchecked Sendable {
         self.order.removeAll { $0 == token }
     }
 }
+
+/// Resume keys for sliced publication checks that have no durable home, such as the Codex
+/// report boundary. Process-local: a lost token or cursor restarts the pass from zero, and
+/// canonical entry equality does the real binding. Keys are caller-chosen identities.
+final class WindowsCostPublicationResumeKeys: @unchecked Sendable {
+    static let shared = WindowsCostPublicationResumeKeys()
+    private let lock = NSLock()
+    private var tokens: [String: UUID] = [:]
+    private var checked: [String: Int] = [:]
+    private var order: [String] = []
+    private let capacity = 8
+
+    func token(for key: String) -> UUID? {
+        self.lock.lock()
+        defer { self.lock.unlock() }
+        return self.tokens[key]
+    }
+
+    func setToken(_ token: UUID?, for key: String) {
+        self.lock.lock()
+        defer { self.lock.unlock() }
+        self.order.removeAll { $0 == key }
+        if let token {
+            self.tokens[key] = token
+            self.order.append(key)
+        } else {
+            self.tokens.removeValue(forKey: key)
+        }
+        self.evictIfNeeded()
+    }
+
+    func checkedCount(for key: String) -> Int? {
+        self.lock.lock()
+        defer { self.lock.unlock() }
+        return self.checked[key]
+    }
+
+    func setCheckedCount(_ count: Int?, for key: String) {
+        self.lock.lock()
+        defer { self.lock.unlock() }
+        self.order.removeAll { $0 == key }
+        if let count {
+            self.checked[key] = count
+            self.order.append(key)
+        } else {
+            self.checked.removeValue(forKey: key)
+        }
+        self.evictIfNeeded()
+    }
+
+    func clear(for key: String) {
+        self.lock.lock()
+        defer { self.lock.unlock() }
+        self.tokens.removeValue(forKey: key)
+        self.checked.removeValue(forKey: key)
+        self.order.removeAll { $0 == key }
+    }
+
+    private func evictIfNeeded() {
+        while self.order.count > self.capacity, let oldest = self.order.first {
+            self.order.removeFirst()
+            self.tokens.removeValue(forKey: oldest)
+            self.checked.removeValue(forKey: oldest)
+        }
+    }
+}
 #endif

@@ -5553,3 +5553,15 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - 상태: CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·정적 QA 스크립트·UI·provider·원격 Windows·CI는 수행하지 않았다.
 
 - 직전 IMPL-580은 c36299e8e로 origin/main 푸시 확인. 이번 단위도 별도 커밋·푸시하며 자동화 설정은 변경하지 않았다.
+
+## IMPL-582: Codex 보고 경계의 분할 게시 대조
+
+- `loadCodexDaily`의 세 보고 경계(priority 보류 반환·이전 report 재사용·최종 report)가 `publicationObservations.freeze().check`로 관측 entry 전체를 한 refresh에 대조하던 것을, leased verifier + lease-less `checkSlice` 분할로 교체했다.
+- 재개 상태는 `WindowsCostPublicationResumeKeys`라는 프로세스 로컬 키 저장소에 둔다. verifier 토큰과 fallback 진행 개수를 provider+cacheRoot 정규 경로 키로 보관하고 최대 8키 LRU로 축출한다. 잃어버리면 처음부터 다시 대조하며 canonical entry 일치가 실제 결합을 담당한다.
+- pending은 `localContentVerificationPending`을 던져 기존 pending UI·자동 재개 경로를 탄다. source 변경·가드 실패는 재개 상태를 정리하고 같은 오류를 다시 던져 기존 실패 의미를 유지한다. 취소는 재개 상태를 보존해 다음 refresh에서 이어진다.
+- `Options`에 `maxWindowsCodexVerificationBytesPerRefresh`(8 MiB)·`maxWindowsCodexVerificationEntriesPerRefresh`(64)를 추가했다. `saveCodexCache`의 저장 경계 check 두 곳은 아직 무제한이며, pending 시 스캔 진행 저장과의 순서를 별도로 설계해야 해서 이번 범위에서 제외했다.
+- `WindowsCostUsageSourceTests`에 65개 세션 fixture를 작성했다. entry 상한 1로 제한해 fallback 분할 재개를 유도하고 재시도만으로 완료·정확한 합계를 확인한다. 테스트·컴파일·실행은 하지 않았다.
+- **남은 범위:** `saveCodexCache` 저장 경계 대조 분할, metadata/publication sweep·checkpoint 저장·메모리 예산, durable membership, 나머지 provider의 ownership adapter와 전체 W01~W16/G0~G6.
+- 상태: CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·정적 QA 스크립트·UI·provider·원격 Windows·CI는 수행하지 않았다.
+
+- 직전 IMPL-581은 38af24e42로 origin/main 푸시 확인. 이번 단위도 별도 커밋·푸시하며 자동화 설정은 변경하지 않았다.

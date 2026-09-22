@@ -234,5 +234,72 @@ extension WindowsCostPublicationTests {
             #expect(current.codexWindowsContentGeneration != oldGeneration)
         }
     }
+
+    @Test
+    func `codex report publication check resumes through sliced verification`() throws {
+        try self.withUsageSource { root, _ in
+            let sessions = root.appendingPathComponent("logs", isDirectory: true)
+            try FileManager.default.createDirectory(at: sessions, withIntermediateDirectories: false)
+            func source(_ id: String, input: Int) throws -> Data {
+                let lines: [[String: Any]] = [
+                    ["type": "session_meta", "timestamp": "2026-08-01T12:00:00Z",
+                     "payload": ["id": id, "cwd": "C:/\(id)"]],
+                    ["type": "turn_context", "timestamp": "2026-08-01T12:00:00Z",
+                     "payload": ["model": "synthetic-cost-model"]],
+                    ["type": "event_msg", "timestamp": "2026-08-01T12:00:01Z",
+                     "payload": ["type": "token_count", "info": ["total_token_usage": [
+                        "input_tokens": input, "cached_input_tokens": 0, "output_tokens": 0]]]],
+                ]
+                var data = Data()
+                for line in lines {
+                    data.append(try JSONSerialization.data(withJSONObject: line, options: [.sortedKeys]))
+                    data.append(10)
+                }
+                return data
+            }
+            let time = Date(timeIntervalSince1970: 1_700_000_000)
+            // Beyond the verifier's 64-lease capacity so the report boundary must use the
+            // per-entry fallback check sliced by the process-local resume cursor.
+            for index in 0..<65 {
+                let file = sessions.appendingPathComponent("session-\(index).jsonl")
+                try source("s\(index)", input: 10).write(to: file)
+                try FileManager.default.setAttributes([.modificationDate: time], ofItemAtPath: file.path)
+            }
+            let cacheRoot = root.appendingPathComponent("cache", isDirectory: true)
+            var calendar = Calendar(identifier: .gregorian)
+            calendar.timeZone = try #require(TimeZone(secondsFromGMT: 0))
+            let day = try #require(calendar.date(from: DateComponents(year: 2026, month: 8, day: 1)))
+            var options = CostUsageScanner.Options(
+                codexSessionsRoot: sessions, cacheRoot: cacheRoot,
+                codexTraceDatabaseURL: root.appendingPathComponent("absent-trace.sqlite"),
+                calendar: calendar)
+            options.refreshMinIntervalSeconds = 3600
+            options.maxWindowsCodexVerificationEntriesPerRefresh = 1
+            var verificationPendings = 0
+            var report: CostUsageDailyReport?
+            for _ in 0..<160 {
+                if report != nil { break }
+                do {
+                    report = try CostUsageScanner.loadDailyReportCancellable(
+                        provider: .codex, since: day, until: day, now: day,
+                        options: options, checkCancellation: nil)
+                } catch let error as CostUsageError {
+                    switch error {
+                    case .localInventoryPending, .localContentPending:
+                        continue
+                    case .localContentVerificationPending:
+                        verificationPendings += 1
+                    default:
+                        throw error
+                    }
+                }
+            }
+            // Finishing within the bound proves resume: restarting each pass at entry zero
+            // would pend forever with one entry checked per refresh.
+            #expect(verificationPendings >= 1)
+            let final = try #require(report)
+            #expect(final.summary?.totalInputTokens == 650)
+        }
+    }
 }
 #endif

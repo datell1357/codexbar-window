@@ -1,5 +1,7 @@
 # Windows 전용 제품 작업 현황
 
+- IMPL-582: Codex 일일 보고의 세 게시 경계 대조를 leased verifier·checkSlice 분할로 교체하고 재개 토큰/커서를 프로세스 로컬 키 저장소에 작성. Codex 전용 verification 예산 추가. fixture 미실행. 저장 경계 대조·metadata/저장 예산·durable membership·provider adapter·전체 Windows 제품/검증은 남음. CODE_WRITTEN_UNVERIFIED.
+
 - IMPL-581: collection 완료 경로의 lease-less 최종 대조를 checkSlice로 분할하고 durable 커서를 checkpoint JSON에 작성. 재시작 후에도 canonical 순서로 재개. fixture 미실행. metadata/저장 예산·다른 비용 source·durable membership·provider adapter·전체 Windows 제품/검증은 남음. CODE_WRITTEN_UNVERIFIED.
 
 - IMPL-580: lease 불가 memo-hit fallback의 파일별 내용 대조를 refresh당 entry 수로 분할하고 진행 커서를 memo 프로세스 로컬 맵에 작성. 모든 파일의 proof 관측은 매 refresh 유지. fixture 미실행. collection fallback·metadata/저장 예산·durable 전진·다른 provider adapter·전체 Windows 제품/검증은 남음. CODE_WRITTEN_UNVERIFIED.
