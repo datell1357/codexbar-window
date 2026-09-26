@@ -26,6 +26,22 @@
                 <StackPanel><TextBlock Text="Period tokens" /><TextBlock x:Name="TokensText" Text="Unknown" FontSize="28" /></StackPanel>
             </StackPanel>
             <TextBlock x:Name="ContextText" TextWrapping="Wrap" IsTextSelectionEnabled="True" />
+            <StackPanel Spacing="8">
+                <TextBlock Text="Share or export this period and currency" FontWeight="SemiBold" />
+                <TextBlock Text="Share cards use public provider and model names. Cost JSON includes source IDs and labels when Hide personal info is off. Exports cover the selected period, even when the token chart shows 365 days."
+                    TextWrapping="Wrap" />
+                <StackPanel x:Name="ShareActions" Orientation="Horizontal" Spacing="8" IsEnabled="False">
+                    <Button Content="Preview card" Tag="preview" Click="ExportClicked" />
+                    <Button Content="Copy text" Tag="copyText" Click="ExportClicked" />
+                    <Button Content="Copy image" Tag="copyImage" Click="ExportClicked" />
+                    <Button Content="Save PNG" Tag="saveImage" Click="ExportClicked" />
+                </StackPanel>
+                <StackPanel x:Name="JSONActions" Orientation="Horizontal" Spacing="8" IsEnabled="False">
+                    <Button Content="Copy cost JSON" Tag="copyJSON" Click="ExportClicked" />
+                    <Button Content="Save cost JSON" Tag="saveJSON" Click="ExportClicked" />
+                </StackPanel>
+                <TextBlock x:Name="ExportStatusText" TextWrapping="Wrap" AutomationProperties.LiveSetting="Polite" />
+            </StackPanel>
             <ToggleSwitch x:Name="CompareToggle" Header="Compare rolling periods" Toggled="ComparisonChanged" />
             <StackPanel x:Name="ComparisonPanel" Visibility="Collapsed" Spacing="8">
                 <TextBlock Text="These periods overlap and share the collection date. Totals use the currently selected currency group and included sources."

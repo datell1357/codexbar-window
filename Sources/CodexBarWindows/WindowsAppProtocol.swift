@@ -23,6 +23,7 @@ enum WindowsAppProtocol {
         var spendQuery: WindowsAppSpendProjection.Query? = nil
         var spendPreferencesQuery: WindowsAppSpendPreferences.Query? = nil
         var spendPreferencesMutation: WindowsAppSpendPreferences.Mutation? = nil
+        var spendAction: WindowsAppSpendExport.Action? = nil
     }
     struct Mutation: Codable, Sendable {
         let key: String

@@ -36,8 +36,9 @@ struct WindowsSpendDashboardExportPayload: Encodable, Sendable {
         let totalCost: Double?
     }
 
-    static func make(model: WindowsSpendDashboardModel, hiddenSourceIDs: [String]) -> Self {
-        Self(
+    static func make(model: WindowsSpendDashboardModel, hiddenSourceIDs: [String], hidePersonalInfo: Bool = false) -> Self {
+        var sourceIndex = 0
+        return Self(
             requestedDays: model.requestedDays,
             selectedDay: model.selectedDay,
             groups: model.groups.map { group in
@@ -50,32 +51,40 @@ struct WindowsSpendDashboardExportPayload: Encodable, Sendable {
                     coverage: group.coverage,
                     tokenMix: group.tokenMix,
                     providers: group.providers.map {
-                        Provider(
-                            id: $0.id,
-                            displayName: $0.displayName,
+                        sourceIndex += 1
+                        return Provider(
+                            id: hidePersonalInfo ? "source-\(sourceIndex)" : $0.id,
+                            displayName: hidePersonalInfo
+                                ? ProviderDescriptorRegistry.descriptor(for: $0.provider).metadata.displayName
+                                : LogRedactor.redact($0.displayName),
                             sourceKind: $0.sourceKind.rawValue,
                             totalTokens: $0.totalTokens,
                             totalCost: $0.totalCost)
                     },
-                    models: group.models.map {
+                    models: group.models.enumerated().map { index, row in
                         Model(
-                            provider: $0.provider.rawValue,
-                            modelName: $0.modelName,
-                            totalTokens: $0.totalTokens,
-                            totalCost: $0.totalCost)
+                            provider: row.provider.rawValue,
+                            modelName: hidePersonalInfo
+                                ? WindowsShareStatsSanitizer.modelName(row.modelName) ?? "Model \(index + 1)"
+                                : LogRedactor.redact(row.modelName),
+                            totalTokens: row.totalTokens,
+                            totalCost: row.totalCost)
                     })
             },
-            hiddenSourceIDs: hiddenSourceIDs)
+            hiddenSourceIDs: hidePersonalInfo
+                ? hiddenSourceIDs.indices.map { "hidden-source-\($0 + 1)" } : hiddenSourceIDs)
     }
 }
 
 enum WindowsSpendDashboardJSONExporter {
-    static func encodedData(model: WindowsSpendDashboardModel, hiddenSourceIDs: [String]) throws -> Data {
+    static func encodedData(model: WindowsSpendDashboardModel, hiddenSourceIDs: [String],
+                            hidePersonalInfo: Bool = false) throws -> Data {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         encoder.dateEncodingStrategy = .iso8601
         return try encoder.encode(
-            WindowsSpendDashboardExportPayload.make(model: model, hiddenSourceIDs: hiddenSourceIDs))
+            WindowsSpendDashboardExportPayload.make(model: model, hiddenSourceIDs: hiddenSourceIDs,
+                                                     hidePersonalInfo: hidePersonalInfo))
     }
 
     static func defaultFilename(days: Int) -> String {

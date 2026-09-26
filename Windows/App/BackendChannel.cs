@@ -27,7 +27,8 @@ internal sealed record AppResponse([property: JsonRequired] int ProtocolVersion,
     SpendPage? Spend, SpendPreferencesPage? SpendPreferences);
 internal sealed record AppRequest(int ProtocolVersion, Guid RequestID, Guid? Generation, string Method,
     SettingMutation? Mutation, SpendQuery? SpendQuery,
-    SpendPreferencesQuery? SpendPreferencesQuery, SpendPreferenceMutation? SpendPreferencesMutation);
+    SpendPreferencesQuery? SpendPreferencesQuery, SpendPreferenceMutation? SpendPreferencesMutation,
+    SpendExportAction? SpendAction);
 
 /// This process listens; the existing Swift runtime connects. The direction does not confer authority:
 /// both sides check the native peer PID, and this server admits only the current Windows user.
@@ -86,7 +87,7 @@ internal sealed class BackendChannel : IDisposable
 
     public async Task<AppResponse> SendAsync(string method, SettingMutation? mutation, CancellationToken cancellation,
         SpendQuery? spendQuery = null, SpendPreferencesQuery? spendPreferencesQuery = null,
-        SpendPreferenceMutation? spendPreferencesMutation = null)
+        SpendPreferenceMutation? spendPreferencesMutation = null, SpendExportAction? spendAction = null)
     {
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellation, lifetime.Token);
         timeout.CancelAfter(TimeSpan.FromSeconds(15));
@@ -107,12 +108,12 @@ internal sealed class BackendChannel : IDisposable
                 generation = hello.Generation;
                 if (method == "snapshot") return hello;
             }
-            return await ExchangeAsync(method, mutation, token, spendQuery, spendPreferencesQuery, spendPreferencesMutation);
+            return await ExchangeAsync(method, mutation, token, spendQuery, spendPreferencesQuery, spendPreferencesMutation, spendAction);
         }
         catch
         {
             generation = null;
-            // Never automatically replay a setting mutation after an uncertain write/response.
+            // Never automatically replay settings or share/export actions after an uncertain write/response.
             try { if (pipe.IsConnected) pipe.Disconnect(); }
             catch (ObjectDisposedException) { }
             throw;
@@ -122,11 +123,11 @@ internal sealed class BackendChannel : IDisposable
 
     private async Task<AppResponse> ExchangeAsync(string method, SettingMutation? mutation, CancellationToken token,
         SpendQuery? spendQuery, SpendPreferencesQuery? spendPreferencesQuery = null,
-        SpendPreferenceMutation? spendPreferencesMutation = null)
+        SpendPreferenceMutation? spendPreferencesMutation = null, SpendExportAction? spendAction = null)
     {
         var id = Guid.NewGuid();
         var payload = JsonSerializer.SerializeToUtf8Bytes(new AppRequest(1, id, generation, method, mutation,
-            spendQuery, spendPreferencesQuery, spendPreferencesMutation), json);
+            spendQuery, spendPreferencesQuery, spendPreferencesMutation, spendAction), json);
         if (payload.Length is 0 or > MaximumRequestBytes) throw new IOException("Request too large.");
         var header = new byte[4];
         BinaryPrimitives.WriteInt32LittleEndian(header, payload.Length);

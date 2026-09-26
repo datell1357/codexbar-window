@@ -9,7 +9,8 @@ import Crypto
 /// Process-keyed view binding. Raw ownership IDs stay inside the MAC input, never in native UI JSON.
 enum WindowsAppSpendSelection {
     static func revision(snapshot: WindowsSpendDashboardController.Snapshot, query: WindowsAppSpendProjection.Query,
-                         context: String, hidePersonalInfo: Bool, key: SymmetricKey) -> String {
+                         context: String, hidePersonalInfo: Bool, key: SymmetricKey,
+                         conversionRates: [String: Double]? = nil) -> String {
         let group = query.currency.flatMap { code in snapshot.model.groups.first { $0.currencyCode == code } }
             ?? (query.currency == nil ? snapshot.model.groups.first : nil)
         let values = [context, String(query.days), group?.currencyCode ?? "", String(hidePersonalInfo),
@@ -21,6 +22,15 @@ enum WindowsAppSpendSelection {
         // Length prefixes keep adjacent IDs unambiguous without constructing another serialized copy.
         var mac = HMAC<SHA256>(key: key)
         for value in values {
+            let bytes = Data(value.utf8)
+            mac.update(data: Data("\(bytes.count):".utf8))
+            mac.update(data: bytes)
+        }
+        // A share/export action must match the rates used to display the selected totals.
+        let rates = conversionRates ?? [:]
+        for code in rates.keys.sorted() {
+            guard let rate = rates[code] else { continue }
+            let value = code + ":" + String(rate)
             let bytes = Data(value.utf8)
             mac.update(data: Data("\(bytes.count):".utf8))
             mac.update(data: bytes)

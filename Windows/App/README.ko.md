@@ -23,6 +23,13 @@
   부족한 값에는 ~와 설명을 붙인다. 이는 인접한 이전 기간 대비 증감률이 아니다.
   한 actor turn에서 동일 scan/환율표를 사용하며 추가 기간은 합계 중심으로 투영한다.
   기간 비교 자체가 과거 데이터를 추가 수집하거나 트레이 설정을 변경하지 않는다.
+- IMPL-604는 선택 기간·통화의 Share Stats 미리보기, 텍스트/이미지 복사, PNG 저장,
+  비용 JSON 복사/저장을 기존 Windows 네이티브 경로에 연결했다. 365일 토큰 차트를 보고
+  있더라도 출력 범위는 선택 기간이다. 공유 카드는 공개 공급자·모델 이름과 허용된 요금제
+  이름만 사용한다. JSON은 PII 숨김 시 source ID·별칭·비공개 모델명·숨김 source ID도
+  익명화한다. 끈 경우에는 원래 source ID/라벨을 포함하며 프로젝트/세션 원문은 제외한다.
+  실패/수집 중인 데이터의 공유 카드는 거절한다. 부분 JSON에는 별도 수집 상태 안내를
+  표시한다. 앱 응답은 요청 접수이며 실제 복사/저장 성공 증거가 아니다.
 - Display settings는 PII 숨김, credits/extra 표시, 사용량 표시 방향, reset 시각 표시의
   네 키만 저장한다. 트레이와 같은 설정 저장소·렌더링 경로를 사용한다.
 - IMPL-602의 Cost settings는 비용 수집·Codex ledger·OpenCodeX logs·OpenCodeX가 있을 때
@@ -53,7 +60,7 @@ WinUI 프로세스는 공급자에 직접 접속하거나 두 번째 백엔드�
 5. 연결 첫 요청은 `hello`다. protocolVersion 1, requestID, backend generation을
    확인한다. 연결당 중복 requestID는 거절하고 4096개 뒤 재연결한다.
 6. 허용 메서드는 `hello`, `snapshot`, `refresh`, `setSetting`, `spend`,
-   `spendPreferences`, `setSpendPreference`이다.
+   `spendPreferences`, `setSpendPreference`, `spendAction`이다.
    snapshot은 2초 간격으로 요청한다. 설정 쓰기는 네 키의 고정 순서 boolean SHA-256
    revision을 대조한다. 이는 오래된 화면의 저장을 감지하는 낙관적 대조이며, 트레이와
    별도 스레드에서 발생하는 모든 설정 쓰기의 원자적 직렬화를 보장하지 않는다.
@@ -76,6 +83,13 @@ WinUI 프로세스는 공급자에 직접 접속하거나 두 번째 백엔드�
    결과만 사용한다. 별도 FX fetch 없이 rate table을 한 번 캡처하며 시간별 상세에도 같은
    table을 전달한다. 누락/비정상 환율은 기존 원본 통화 그룹으로 유지한다.
    비교의 최대4행도 spend의 공유128 KiB 문자열/1 MiB 응답 예산 안에 포함한다.
+   `spendAction`은 허용된 6개 동작과 현재 view revision만 추가로 받는다. revision은
+   환율표에도 묶인다. 생성된 PNG/DIB/JSON bytes·저장 경로·HWND는 pipe로 전송하지 않는다.
+   backend 내부 단일 UI mailbox가 트레이 UI 스레드의 미리보기/클립보드/저장 대화상자에
+   전달하고, 실행 직전과 대화상자 동안 수집 무효화·설정·PII·환율 변화를 대조한다.
+   진행 중인 native action이나 pending action이 있으면 중복 접수를 거절하며 modal loop
+   재진입도 막는다. 응답 유실 시 자동 재전송하지 않는다. JSON/이미지 산출물은16 MiB,
+   clipboard text는65,536 UTF-16 code units로 제한한다. 저장 취소를 성공으로 보고하지 않는다.
 7. UI는 15초, Swift I/O는 30초의 대기를 제한한다. Swift는 취소한 overlapped 작업의
    완료를 기다린 뒤 buffer/event를 해제한다. 백엔드 종료를 감지하면 UI도 닫힌다.
 
@@ -138,7 +152,7 @@ PE import 검사는 .NET assembly reference, P/Invoke, 동적 LoadLibrary, XAML/
 ## 남은 앱 구현
 
 전체 설정 pane, 계정·인증·provider 편집, Codex 모델/effort/service-tier 분석과 이전 기간 비교 UI,
-share/export, 창별 기간/비교/선택 상태 지속 저장,
+창별 기간/비교/선택 상태 지속 저장,
 작업별 action/copy/open/login,
 레이아웃 편집, 전역 단축키·창 위치/스크롤 보존,
 전체 현지화, 키보드/Narrator/고대비·다중 모니터 QA가 남아 있다.
@@ -164,6 +178,10 @@ IMPL-603의 `WindowsAppSpendComparisonTests.swift`에는 DST 날짜 경계, 누�
 partial/stale/0, 다른 수집·source·기간 거절, 주입 환율/원본 통화 fallback, 요약 집계,
 추가 수집/공유 설정 변경 없음, wire/PII의 fixture 9개를 작성했다. 실행하지 않았다.
 기존 controller fixture의 필수 publisher 인수도 보완했다. 컴파일·성능·UI 검증은 보류했다.
+IMPL-604의 `WindowsAppSpendExportTests.swift`에는 action/wire, 기간/통화 범위,
+PII와 로컬 JSON, 공유 alias 제거, 주입 renderer의 출력 전달, partial/stale 안내,
+잘못된 선택/렌더 실패, clipboard 상한, 환율 revision, delivery 철회의 fixture10개를
+작성했다. 모두 미실행이며 실제 클립보드·PNG·대화상자·저장 파일 품질은 검증하지 않았다.
 
 ## API 참고
 

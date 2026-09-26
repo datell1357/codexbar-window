@@ -9,6 +9,7 @@ namespace CodexBar.App;
 public sealed partial class SpendPane : UserControl
 {
     private Func<SpendQuery, CancellationToken, Task<AppResponse>>? request;
+    private Func<SpendQuery, SpendExportAction, CancellationToken, Task<AppResponse>>? export;
     private CancellationToken lifetime;
     private SpendPage? current;
     private int epoch;
@@ -20,6 +21,7 @@ public sealed partial class SpendPane : UserControl
     private bool loading;
     private bool pending;
     private bool active;
+    private bool exporting;
     private string? currency;
 
     public SpendPane()
@@ -28,9 +30,11 @@ public sealed partial class SpendPane : UserControl
         ActualThemeChanged += (_, _) => { DrawChart(); DrawDetailChart(); };
     }
 
-    internal void Configure(Func<SpendQuery, CancellationToken, Task<AppResponse>> request, CancellationToken lifetime)
+    internal void Configure(Func<SpendQuery, CancellationToken, Task<AppResponse>> request,
+        Func<SpendQuery, SpendExportAction, CancellationToken, Task<AppResponse>> export, CancellationToken lifetime)
     {
         this.request = request;
+        this.export = export;
         this.lifetime = lifetime;
     }
 
@@ -63,12 +67,14 @@ public sealed partial class SpendPane : UserControl
         DetailRows.ItemsSource = null;
         DetailCanvas.Children.Clear();
         DetailTitle.Text = DetailContext.Text = DetailPointText.Text = DetailPointPosition.Text = DetailPagePosition.Text = "";
+        ShareActions.IsEnabled = JSONActions.IsEnabled = false;
+        ExportStatusText.Text = "";
     }
 
     internal async Task RefreshAsync()
     {
         if (request is null || lifetime.IsCancellationRequested || !active) return;
-        if (loading) { pending = true; return; }
+        if (loading || exporting) { pending = true; return; }
         loading = true;
         pending = false;
         var capturedEpoch = epoch;
@@ -124,6 +130,7 @@ public sealed partial class SpendPane : UserControl
         var detailChartChanged = current?.Detail is not { } previousChart || value.Detail is not { } nextChart
             || !previousChart.Points.SequenceEqual(nextChart.Points);
         current = value;
+        UpdateExportActions();
         page = value.Page;
         applying = true;
         try
@@ -175,6 +182,51 @@ public sealed partial class SpendPane : UserControl
     private void DrawChart()
     {
         Draw(ChartCanvas, current?.Points ?? [], current?.Chart == "tokens", index => { selectedDay = index; ShowDay(); });
+    }
+
+    private void UpdateExportActions()
+    {
+        JSONActions.IsEnabled = !exporting && active && current?.Currency is not null;
+        ShareActions.IsEnabled = JSONActions.IsEnabled && current is { Stale: false };
+    }
+
+    private async void ExportClicked(object sender, RoutedEventArgs args)
+    {
+        if (exporting || export is null || current is not { Currency: not null } captured
+            || sender is not Button { Tag: string kind } || lifetime.IsCancellationRequested) return;
+        if (kind is not ("preview" or "copyText" or "copyImage" or "saveImage" or "copyJSON" or "saveJSON")) return;
+        var capturedEpoch = epoch;
+        var query = Query() with { Days = captured.Days, Currency = captured.Currency, Detail = null, ComparePeriods = false };
+        var action = new SpendExportAction(kind, captured.SelectionRevision);
+        exporting = true;
+        UpdateExportActions();
+        ExportStatusText.Text = "Sending to the Windows share/export controls…";
+        try
+        {
+            var response = await export(query, action, lifetime);
+            if (lifetime.IsCancellationRequested || capturedEpoch != epoch) return;
+            ExportStatusText.Text = response.Status switch
+            {
+                "queued" => "Request queued. Follow any Windows preview or save dialog, then check the clipboard or chosen file.",
+                "actionBusy" => "Another share/export action is pending or open. Finish it before trying again.",
+                "spendChanged" => "Costs or settings changed. Reload costs before sharing or exporting.",
+                "spendUnavailable" => "No current cost collection is available for this action.",
+                _ => "The share/export request was not accepted. Reload costs before trying again."
+            };
+            if (response.Status is "spendChanged" or "spendUnavailable") pending = true;
+        }
+        catch (Exception error) when (error is IOException or OperationCanceledException or InvalidOperationException
+            or System.Text.Json.JsonException or System.ComponentModel.Win32Exception or UnauthorizedAccessException)
+        {
+            if (lifetime.IsCancellationRequested || capturedEpoch != epoch) return;
+            ExportStatusText.Text = "The connection was interrupted. The action may already have started. Check the clipboard or Windows dialog before retrying; it was not sent again.";
+        }
+        finally
+        {
+            exporting = false;
+            UpdateExportActions();
+            if (pending && !lifetime.IsCancellationRequested) { pending = false; _ = RefreshAsync(); }
+        }
     }
 
     private void DrawDetailChart() =>

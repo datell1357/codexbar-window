@@ -647,6 +647,9 @@ private final class WindowsTrayApplication: @unchecked Sendable {
     func run() {
         let host = self.host
         Task { [runtime, sessions, remoteSessions] in
+            await runtime.setNativeAppSpendActionPublisher { [weak host] delivery in
+                host?.postNativeAppSpendAction(delivery) ?? false
+            }
             await runtime.prepareWidgetActivation()
             await remoteSessions.setPublisher { [weak host] snapshot in
                 host?.postRemoteSessions(snapshot)

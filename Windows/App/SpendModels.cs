@@ -5,6 +5,7 @@ namespace CodexBar.App;
 internal sealed record SpendDetailQuery(string Kind, int? Index, string? Day, string Revision, int Page = 0);
 internal sealed record SpendQuery(int Days, string? Currency, string Section, string Chart, int Page,
     SpendDetailQuery? Detail = null, bool ComparePeriods = false);
+internal sealed record SpendExportAction(string Kind, string ExpectedRevision);
 public sealed record SpendComparisonRow([property: JsonRequired] int Days, [property: JsonRequired] string Title,
     [property: JsonRequired] string Range, [property: JsonRequired] string Cost, [property: JsonRequired] string Tokens,
     [property: JsonRequired] string Coverage, [property: JsonRequired] string Details);

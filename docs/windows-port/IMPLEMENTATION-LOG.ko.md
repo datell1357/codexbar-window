@@ -5794,3 +5794,15 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - **남은 범위:** Codex 모델/effort/service-tier 분석과 이전 기간 증감 UI, 창별 선택 저장·share/export·전체 설정/계정/인증, managed payload/lockfile·W10·W15·StartupTask 및 전체 W01~W16/G0~G6.
 - 상태: CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·성능·앱·실계정·원격 Windows·CI 미실행.
 - IMPL-602는 71bb99d5f로 origin/main 푸시 확인. 이번 단위도 별도 커밋·푸시한다. 자동화 변경 없음.
+
+## IMPL-604: WinUI 선택 범위 공유와 JSON 내보내기
+
+- 비용 화면의 Share Stats 미리보기·텍스트/이미지 복사·PNG 저장·JSON 복사/저장을 기존 Win32 경로에 연결했다. 선택한 기간·통화만 출력하며 토큰 차트의365일 범위나 다른 통화가 섞이지 않도록 범위를 고정한다. 복사는 로컬 clipboard, 저장은 Windows 저장 대화상자의 사용자 선택을 따른다.
+- 허용된6개 동작과 현재 view revision을 받는 spendAction RPC를 작성했다. HMAC에 환율표도 묶고 기존 collection/publication/설정/PII 대조를 유지한다. 아티팩트 bytes·파일 경로·HWND는 pipe를 통과하지 않고 backend 내부 UI mailbox로 전달한다.
+- 단일 pending/in-flight queue와 modal loop 재진입 방지를 작성했다. 수집 무효화·설정·PII·환율 변경 predicate를 실제 clipboard/preview/save 경로까지 전달한다. 요청 접수 응답은 복사/저장 완료를 뜻하지 않으며 연결 유실 시 자동 재전송하지 않는다.
+- 공유 카드의 공급자 이름을 canonical 이름으로 바꿔 계정 별칭을 제외했다. JSON은 PII 숨김 시 source ID·별칭·비공개 모델명·hidden source ID를 익명화한다. PII off local JSON의 원래 source ID/라벨 계약을 유지하고 프로젝트 경로/세션 원문은 출력하지 않는다. 트레이 JSON에도 같은 privacy 입력을 전달한다.
+- 수집 실패/진행 중 공유 카드는 거절하고, 부분 JSON은 별도 수집 상태 안내를 전달한다. 실제 선택 기간을 파일명에 넣고 PNG/DIB/JSON16 MiB, clipboard text65,536 UTF-16 code units 상한을 적용한다. PNG 미리보기와 복사/저장은 생성한 동일 bytes를 사용한다.
+- 합성 fixture10개 작성: action/wire·기간/통화 JSON·PII/로컬 export·공유 alias 제거·주입 renderer/scoped raster·partial/stale 안내·잘못된 선택/렌더 실패·clipboard 상한·FX revision·delivery 철회. native UI/clipboard/defaults/files/GDI를 실행하지 않는 fixture이며 모두 미실행이다.
+- **남은 범위:** 창별 선택 저장, Codex 모델/effort/service-tier·이전 기간 증감 UI, 전체 설정/계정/인증, managed payload/lockfile·W10·W15·StartupTask 및 전체 W01~W16/G0~G6. Windows 창/clipboard/dialog/queue/PII 경쟁 조건·파일 출력·화면 결과는 검증하지 않았다.
+- 상태: CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·성능·앱·실계정·원격 Windows·CI 미실행.
+- IMPL-603은 f7de5fb1d로 origin/main 푸시 확인. 이번 단위도 별도 커밋·푸시한다. 자동화 변경 없음.

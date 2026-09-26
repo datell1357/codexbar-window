@@ -261,7 +261,7 @@ enum WindowsShareStatsBuilder {
             group.providers.map { row in
                 WindowsShareStatsProviderPayload(
                     provider: row.provider,
-                    providerName: row.displayName,
+                    providerName: ProviderDescriptorRegistry.descriptor(for: row.provider).metadata.displayName,
                     subscriptionName: subscriptionNames[row.id]?.displayName,
                     currencyCode: group.currencyCode,
                     totalTokens: row.totalTokens,
@@ -279,7 +279,7 @@ enum WindowsShareStatsBuilder {
                 else { return nil }
                 return WindowsShareStatsModelPayload(
                     provider: row.provider,
-                    providerName: row.providerName,
+                    providerName: ProviderDescriptorRegistry.descriptor(for: row.provider).metadata.displayName,
                     modelName: modelName,
                     currencyCode: group.currencyCode,
                     totalTokens: row.totalTokens,

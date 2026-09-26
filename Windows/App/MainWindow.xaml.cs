@@ -27,7 +27,9 @@ public sealed partial class MainWindow : Window
         }
         else
         {
-            SpendView.Configure((query, token) => channel.SendAsync("spend", null, token, query), lifetime.Token);
+            SpendView.Configure((query, token) => channel.SendAsync("spend", null, token, query),
+                (query, action, token) => channel.SendAsync("spendAction", null, token,
+                    spendQuery: query, spendAction: action), lifetime.Token);
             CostSettingsView.Configure(
                 (query, token) => channel.SendAsync("spendPreferences", null, token, spendPreferencesQuery: query),
                 (query, mutation, token) => channel.SendAsync("setSpendPreference", null, token,

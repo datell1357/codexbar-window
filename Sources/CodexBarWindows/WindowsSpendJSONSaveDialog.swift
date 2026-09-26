@@ -12,7 +12,7 @@ enum WindowsSpendJSONSaveDialog {
         }
         var path = [WCHAR](repeating: 0, count: 32768)
         for (index, unit) in filename.utf16.prefix(200).enumerated() { path[index] = unit }
-        let filter = Array("JSON image (*.json)\0*.json\0\0".utf16)
+        let filter = Array("JSON file (*.json)\0*.json\0\0".utf16)
         let ext = Array("json".utf16) + [WCHAR(0)]
         var options = OPENFILENAMEW()
         options.lStructSize = DWORD(MemoryLayout<OPENFILENAMEW>.size)

@@ -180,8 +180,14 @@ public final class WindowsTrayHost: @unchecked Sendable {
     private var spendSourcesMailbox: WindowsSpendSourceResult? // Protected by mailboxLock.
     private static let shareStatsCopyCommand = UINT_PTR(0x7033)
     private let onShareStatsCopyRequested: @Sendable (UUID) -> Void
-    private var shareStatsCopyRequest: (id: UUID, privacy: Bool)? // Protected by mailboxLock.
+    private struct ShareStatsRequest {
+        let id: UUID
+        let privacy: Bool
+        var isCurrent: (@Sendable () -> Bool)? = nil
+    }
+    private var shareStatsCopyRequest: ShareStatsRequest? // Protected by mailboxLock.
     private var shareStatsCopyMailbox: WindowsUsageRuntime.ShareStatsCopyResult? // Protected by mailboxLock.
+    private var shareStatsCopyInFlight = false // Protected by mailboxLock; also prevents modal-loop reentry.
     private static let spendSummaryCommand = UINT_PTR(0x7032)
     private let onSpendSummaryRequested: @Sendable (UUID) -> Void
     private var spendSummaryRequest: UUID? // Protected by mailboxLock.
@@ -1126,6 +1132,24 @@ public final class WindowsTrayHost: @unchecked Sendable {
         if let window { PostMessageW(window, Self.wakeMessage, 0, 0) }
     }
 
+    /// Admit one native-app action without moving artifact bytes across the JSON pipe.
+    /// Effects and dialogs are performed later by drainShareStatsCopy on the tray UI thread.
+    func postNativeAppSpendAction(_ delivery: WindowsAppSpendExport.Delivery) -> Bool {
+        self.mailboxLock.lock()
+        defer { self.mailboxLock.unlock() }
+        guard !self.quitInvoked, let window = self.window, self.shareStatsCopyRequest == nil,
+              !self.shareStatsCopyInFlight else { return false }
+        self.shareStatsCopyRequest = .init(id: delivery.requestID, privacy: delivery.hidePersonalInfo,
+                                          isCurrent: delivery.isCurrent)
+        self.shareStatsCopyMailbox = delivery.result
+        guard PostMessageW(window, Self.wakeMessage, 0, 0) != 0 else {
+            self.shareStatsCopyRequest = nil
+            self.shareStatsCopyMailbox = nil
+            return false
+        }
+        return true
+    }
+
     func postPlanHistory(requestID: UUID, result: WindowsPlanUtilizationHistoryResult) {
         self.mailboxLock.lock()
         guard !self.quitInvoked, self.planHistoryRequest?.id == requestID,
@@ -1237,24 +1261,41 @@ public final class WindowsTrayHost: @unchecked Sendable {
         guard !self.remoteEditorOpen, !self.quitInvoked, let window = self.window,
               case .idle = self.providerEditorPhase, case .idle = self.codexWebSettingsEditorPhase else { return }
         self.mailboxLock.lock()
+        guard !self.shareStatsCopyInFlight else { self.mailboxLock.unlock(); return }
         let request = self.shareStatsCopyRequest
         let result = self.shareStatsCopyMailbox
-        if result != nil {
+        if result != nil, request != nil {
             self.shareStatsCopyRequest = nil
             self.shareStatsCopyMailbox = nil
+            self.shareStatsCopyInFlight = true
         }
         self.mailboxLock.unlock()
         guard let result, let request else { return }
+        defer {
+            self.mailboxLock.lock()
+            self.shareStatsCopyInFlight = false
+            self.mailboxLock.unlock()
+        }
         guard request.privacy == WindowsUsagePresentationSettings.load().hidePersonalInfo else {
-            self.showMessage("Privacy settings changed. Choose Copy Share Stats again.", caption: "Share Stats")
+            self.showMessage("Privacy settings changed. Reload costs before sharing or exporting.", caption: "Share Stats")
             return
         }
-        let isCurrent = self.snapshotValidity.capture()
+        let trayCurrent = self.snapshotValidity.capture()
+        let deliveryCurrent = request.isCurrent
+        let privacy = request.privacy
+        let isCurrent: @Sendable () -> Bool = {
+            trayCurrent() && (deliveryCurrent?() ?? true)
+                && WindowsUsagePresentationSettings.load().hidePersonalInfo == privacy
+        }
+        guard isCurrent() else {
+            self.showMessage("Cost data or settings changed. Reload costs before sharing or exporting.", caption: "Share Stats")
+            return
+        }
         switch result {
         case let .unavailable(message): self.showMessage(message, caption: "Share Stats")
         case let .costHistory(snapshot):
             self.remoteEditorOpen = true
-            let result = WindowsSpendHistoryDialog.show(owner: window, snapshot: snapshot, hidePersonalInfo: request.privacy, isCurrent: self.snapshotValidity.capture())
+            let result = WindowsSpendHistoryDialog.show(owner: window, snapshot: snapshot, hidePersonalInfo: request.privacy, isCurrent: isCurrent)
             self.remoteEditorOpen = false
             if !self.quitInvoked {
                 PostMessageW(window, Self.wakeMessage, 0, 0)
@@ -1262,7 +1303,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
                 case let .inspectHours(day, currency, generation)?:
                     let requestID = UUID()
                     self.mailboxLock.lock()
-                    self.shareStatsCopyRequest = (requestID, request.privacy)
+                    self.shareStatsCopyRequest = .init(id: requestID, privacy: request.privacy)
                     self.shareStatsCopyMailbox = nil
                     self.mailboxLock.unlock()
                     self.onSpendHoursRequested(requestID, generation, day, currency)
@@ -1274,7 +1315,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
         case let .preview(png, dib, filename, text):
             self.remoteEditorOpen = true
             let succeeded = WindowsShareStatsPreview.show(owner: window,
-                image: .init(png: png, dib: dib, filename: filename, text: text), hidePersonalInfo: request.privacy, isCurrent: self.snapshotValidity.capture())
+                image: .init(png: png, dib: dib, filename: filename, text: text), hidePersonalInfo: request.privacy, isCurrent: isCurrent)
             self.remoteEditorOpen = false
             if !self.quitInvoked {
                 PostMessageW(window, Self.wakeMessage, 0, 0)
@@ -1309,7 +1350,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
         case let .image(data, filename):
             self.remoteEditorOpen = true
             let error = WindowsShareStatsExporter.savePNG(data, filename: filename, owner: window,
-                                                        hidePersonalInfo: request.privacy, isCurrent: self.snapshotValidity.capture())
+                                                        hidePersonalInfo: request.privacy, isCurrent: isCurrent)
             self.remoteEditorOpen = false
             if !self.quitInvoked {
                 PostMessageW(window, Self.wakeMessage, 0, 0)
@@ -4092,7 +4133,11 @@ public final class WindowsTrayHost: @unchecked Sendable {
             let requestID = UUID()
             let privacy = WindowsUsagePresentationSettings.load().hidePersonalInfo
             self.mailboxLock.lock()
-            self.shareStatsCopyRequest = (requestID, privacy)
+            guard !self.shareStatsCopyInFlight, self.shareStatsCopyRequest == nil else {
+                self.mailboxLock.unlock()
+                return
+            }
+            self.shareStatsCopyRequest = .init(id: requestID, privacy: privacy)
             self.shareStatsCopyMailbox = nil
             self.mailboxLock.unlock()
             if command == Self.spendJSONCopyCommand || command == Self.spendJSONSaveCommand {

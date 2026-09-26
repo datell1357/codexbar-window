@@ -29,6 +29,12 @@ public struct WindowsUsagePresentationSettings: Sendable, Equatable {
 public actor WindowsUsageRuntime {
     private var widgetQuotaContext = UUID()
     private var widgetInvalidationSubscribers: [UUID: AsyncStream<UUID>.Continuation] = [:]
+    private let nativeSpendExportValidity = WindowsSnapshotValidity()
+    private var nativeSpendActionPublisher: (@Sendable (WindowsAppSpendExport.Delivery) -> Bool)?
+
+    func setNativeAppSpendActionPublisher(_ publisher: @escaping @Sendable (WindowsAppSpendExport.Delivery) -> Bool) {
+        self.nativeSpendActionPublisher = publisher
+    }
 
     public struct WidgetInvalidationSubscription: Sendable {
         public let id: UUID
@@ -57,11 +63,14 @@ public actor WindowsUsageRuntime {
     }
 
     private func emitWidgetInvalidation() {
+        self.nativeSpendExportValidity.invalidate()
         let revision = UUID()
         for continuation in self.widgetInvalidationSubscribers.values { continuation.yield(revision) }
     }
 
     private func finishWidgetInvalidations() {
+        self.nativeSpendExportValidity.invalidate()
+        self.nativeSpendActionPublisher = nil
         let subscribers = self.widgetInvalidationSubscribers
         self.widgetInvalidationSubscribers.removeAll()
         for continuation in subscribers.values { continuation.finish() }
@@ -792,7 +801,8 @@ public actor WindowsUsageRuntime {
         }
         do {
             let data = try WindowsSpendDashboardJSONExporter.encodedData(
-                model: snapshot.model, hiddenSourceIDs: settings.hiddenSourceIDs.sorted())
+                model: snapshot.model, hiddenSourceIDs: settings.hiddenSourceIDs.sorted(),
+                hidePersonalInfo: WindowsUsagePresentationSettings.load().hidePersonalInfo)
             guard data.count <= 16 * 1024 * 1024 else { return .unavailable("The cost JSON exceeds the 16 MiB export limit.") }
             var notices: [String] = []
             if !snapshot.sourceFailures.isEmpty {
@@ -2714,6 +2724,7 @@ public actor WindowsUsageRuntime {
         guard !self.shuttingDown else { return reply("stopped") }
         guard request.protocolVersion == WindowsAppProtocol.version else { return reply("unsupportedVersion") }
         guard request.method == "hello" || request.generation == generation else { return reply("staleGeneration") }
+        guard request.method == "spendAction" || request.spendAction == nil else { return reply("invalidRequest") }
         if request.method == "spendPreferences" || request.method == "setSpendPreference" {
             guard request.mutation == nil, request.spendQuery == nil,
                   let query = request.spendPreferencesQuery, query.isValid else { return reply("invalidRequest") }
@@ -2752,8 +2763,12 @@ public actor WindowsUsageRuntime {
         guard request.spendPreferencesQuery == nil, request.spendPreferencesMutation == nil else {
             return reply("invalidRequest")
         }
-        if request.method == "spend" {
+        if request.method == "spend" || request.method == "spendAction" {
             guard request.mutation == nil, let query = request.spendQuery, query.isValid else { return reply("invalidRequest") }
+            if request.method == "spendAction" {
+                guard let action = request.spendAction, action.isValid, query.currency != nil,
+                      query.detail == nil, query.comparePeriods != true else { return reply("invalidRequest") }
+            }
             guard self.canPresentSpendSnapshot, let captured = self.spendSnapshot,
                   let controller = self.spendController, let settings = self.collectedSpendSettings,
                   WindowsSpendSettings.load() == settings else { return reply("spendUnavailable") }
@@ -2774,7 +2789,27 @@ public actor WindowsUsageRuntime {
             let context = "\(collection?.uuidString ?? ""):\(spendGeneration):\(sequence)"
             let display = captured.stale ? projected.refreshing() : projected
             let revision = WindowsAppSpendSelection.revision(snapshot: display, query: query,
-                context: context, hidePersonalInfo: privacy, key: self.nativeAppSpendSelectionKey)
+                context: context, hidePersonalInfo: privacy, key: self.nativeAppSpendSelectionKey,
+                conversionRates: view.conversionRates)
+            if let action = request.spendAction, let currency = query.currency {
+                guard action.expectedRevision == revision else { return reply("spendChanged") }
+                guard let publisher = self.nativeSpendActionPublisher else { return reply("actionUnavailable") }
+                let valid = self.nativeSpendExportValidity.capture()
+                let rates = view.conversionRates
+                let isCurrent: @Sendable () -> Bool = {
+                    valid() && WindowsSpendSettings.load() == settings
+                        && WindowsUsagePresentationSettings.load().hidePersonalInfo == privacy
+                        && CurrencyExchange.shared.conversionRatesSnapshot() == rates
+                }
+                let artifact = WindowsAppSpendExport.make(snapshot: display, currency: currency, action: action.kind,
+                    hidePersonalInfo: privacy, hiddenSourceIDs: settings.hiddenSourceIDs.sorted(),
+                    calendar: settings.bucketCalendar)
+                guard isCurrent() else { return reply("spendChanged") }
+                let delivery = WindowsAppSpendExport.Delivery(requestID: request.requestID,
+                    hidePersonalInfo: privacy, result: artifact, isCurrent: isCurrent)
+                // Acknowledges admission to the native UI queue, never a completed copy or save.
+                return reply(publisher(delivery) ? "queued" : "actionBusy")
+            }
             guard WindowsAppSpendProjection.acceptsDetail(query, snapshot: display,
                 calendar: settings.bucketCalendar, revision: revision) else {
                 return reply("spendChanged")
