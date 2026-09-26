@@ -13,6 +13,9 @@ extension WindowsAppSpendProjection {
         let costChange: String
         let details: String
         var selectionIndex: Int = 0
+        var pricing: String = ""
+        var shares: String = ""
+        var aliases: String = ""
     }
     struct CodexModelChoice: Codable, Sendable {
         let title: String
@@ -54,6 +57,8 @@ extension WindowsAppSpendProjection {
         let previousTokensComplete = collected && value.previous.tokensComplete
         let currentCostComplete = collected && value.current.costComplete
         let previousCostComplete = collected && value.previous.costComplete
+        let currentReferences = WindowsCodexModelMetrics.referenceTotal(period: value.current, collected: collected)
+        let previousReferences = WindowsCodexModelMetrics.referenceTotal(period: value.previous, collected: collected)
         let allKeys = value.modelKeys
         let selectionValid = Self.acceptsCodexModel(selection, analysis: value, revision: selectionRevision)
         let indices = selectionValid ? selection?.resolvedIndices(count: allKeys.count) ?? Array(allKeys.indices) : []
@@ -106,6 +111,31 @@ extension WindowsAppSpendProjection {
         }
         func activityComplete(_ period: WindowsCodexModelAnalysis.Period) -> Bool {
             collected && period.tokensComplete && period.activity.complete
+        }
+        func percent(_ ratio: WindowsCodexModelMetrics.Ratio) -> String {
+            guard let value = ratio.value else { return "Unknown" }
+            return (ratio.complete ? "" : "~") + (value * 100).formatted(.number.precision(.fractionLength(1))) + "%"
+        }
+        func pricing(_ name: String, _ key: String, _ period: WindowsCodexModelAnalysis.Period) -> String {
+            let metric = WindowsCodexModelMetrics.pricing(key, period: period, collected: collected)
+            return "\(name) pricing — \(metric.status.replacingOccurrences(of: "_", with: " "))"
+                + " · priced \(tokens(metric.priced.value, complete: metric.countsComplete))"
+                + " / unpriced \(tokens(metric.unpriced.value, complete: metric.countsComplete)) tokens"
+                + " · coverage \(percent(metric.coverage))"
+        }
+        func shares(_ name: String, _ key: String, _ period: WindowsCodexModelAnalysis.Period,
+                    references: WindowsCodexModelAnalysis.Count) -> String {
+            let value = WindowsCodexModelMetrics.shares(key, period: period, collected: collected, referenceTotal: references)
+            return "\(name) scope share — Tokens: \(percent(value.tokens))"
+                + " · Known cost: \(percent(value.knownCost)) · Session refs: \(percent(value.sessionReferences))"
+        }
+        func aliases(_ name: String, _ key: String, _ period: WindowsCodexModelAnalysis.Period) -> String {
+            if hidePersonalInfo { return "\(name) raw aliases: Hidden" }
+            let value = WindowsCodexModelMetrics.aliases(key, period: period, collected: collected)
+            if value.values.isEmpty { return "\(name) raw aliases: " + (value.complete ? "No usage" : "Unknown") }
+            let labels = value.values.prefix(6).map { text($0, 128) }.joined(separator: ", ")
+            let more = value.values.count > 6 ? " · \(value.values.count - 6) additional recorded aliases; see model CSV" : ""
+            return "\(name) raw aliases" + (value.complete ? ": " : " (incomplete): ") + labels + more
         }
         func sessions(_ model: String, _ period: WindowsCodexModelAnalysis.Period) -> (Int?, Bool) {
             guard let value = period.activity.models[model] else {
@@ -178,7 +208,11 @@ extension WindowsAppSpendProjection {
                 currentCost: text(cost(cc, complete: currentCostComplete), 128),
                 previousCost: text(cost(pc, complete: previousCostComplete), 128),
                 costChange: text(change(cc, pc, complete: currentCostComplete && previousCostComplete), 128),
-                details: text(details, 3072), selectionIndex: originalIndex))
+                details: text(details, 3072), selectionIndex: originalIndex,
+                pricing: text(pricing("Current", key, value.current) + "\n" + pricing("Previous", key, value.previous), 1024),
+                shares: text(shares("Current", key, value.current, references: currentReferences) + "\n"
+                    + shares("Previous", key, value.previous, references: previousReferences), 768),
+                aliases: text(aliases("Current", key, value.current) + "\n" + aliases("Previous", key, value.previous), 2048)))
         }
         var context = [
             "Native Codex models only, within the selected currency and included sources. Other providers and OpenCodeX are excluded.",
@@ -190,6 +224,8 @@ extension WindowsAppSpendProjection {
                 + "\nPrevious: \(tokens(value.previous.tokens.value, complete: previousTokensComplete)) tokens"
                 + " · \(cost(value.previous.cost.value, complete: previousCostComplete))",
             "Costs are local estimates, not a bill. Conversion may use cached or approximate exchange rates.",
+            "Scope shares use all included native Codex models in this currency and period, even when a model filter is active. Known-cost share excludes unknown cost; session-reference share uses the sum across models, so one session can contribute to several models.",
+            "Pricing coverage requires priced plus unpriced tokens to match the model total; missing pricing is not unpriced zero. Confirmed no usage has 100% empty coverage and 0% scope share. Raw aliases come from recorded events, not canonical-name guesses; lists may be incomplete or hidden.",
             "~ marks incomplete known data. Unknown is not zero; changes require complete model totals in both periods.",
             "Service tiers require recorded standard/priority totals. Effort shows tokens attributed to a recorded rollout context, not verified server settings; Unrecorded differs from none.",
             "Session refs count distinct local sessions per model and source across the period. One session can occur under several models; these are not request counts.",

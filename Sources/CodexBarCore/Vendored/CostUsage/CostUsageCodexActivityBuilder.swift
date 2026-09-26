@@ -7,6 +7,8 @@ struct CostUsageCodexActivityBuilder {
         var files = 4096
         var events = 100_000
         var groups = 8192
+        var aliasesPerGroup = 32
+        var aliases = 8192
     }
     private struct Key: Hashable {
         let day: String
@@ -21,11 +23,14 @@ struct CostUsageCodexActivityBuilder {
         var pricedTokens = 0
         var unpricedTokens = 0
         var pricingEvidenceComplete = true
+        var rawAliases: Set<String> = []
+        var aliasesComplete = true
     }
     private let range: CostUsageScanner.CostUsageDayRange
     private let limits: Limits
     private var fileCount = 0
     private var eventCount = 0
+    private var aliasCount = 0
     private var complete = true
     private var exhausted = false
     private var sessions: [String: Int] = [:]
@@ -74,6 +79,15 @@ struct CostUsageCodexActivityBuilder {
             let sum = group.tokens.addingReportingOverflow(total.partialValue)
             guard !sum.overflow else { self.stop(); return }
             group.tokens = sum.partialValue
+            if let alias = CodexModelActivityEvidence.rawAlias(row.rawModel, model: row.model) {
+                if !group.rawAliases.contains(alias) {
+                    if group.rawAliases.count < min(32, max(0, self.limits.aliasesPerGroup)),
+                       self.aliasCount < min(8192, max(0, self.limits.aliases)) {
+                        group.rawAliases.insert(alias)
+                        self.aliasCount += 1
+                    } else { group.aliasesComplete = false }
+                }
+            } else { group.aliasesComplete = false }
             let unpriced = row.unpricedTokens ?? 0
             if row.eventIndex.map({ $0 >= 0 }) == true, row.cached >= 0, row.cached <= row.input,
                unpriced >= 0, unpriced <= total.partialValue {
@@ -99,7 +113,8 @@ struct CostUsageCodexActivityBuilder {
                 sessionReference: key.session, tokens: group.tokens,
                 knownCostUSD: group.pricingEvidenceComplete && group.sawCost ? group.cost : nil,
                 pricedTokens: group.pricingEvidenceComplete ? group.pricedTokens : nil,
-                unpricedTokens: group.pricingEvidenceComplete ? group.unpricedTokens : nil)
+                unpricedTokens: group.pricingEvidenceComplete ? group.unpricedTokens : nil,
+                rawAliases: group.rawAliases.sorted(), aliasesComplete: group.aliasesComplete)
         }.sorted {
             if $0.day != $1.day { return $0.day < $1.day }
             if $0.model != $1.model { return $0.model < $1.model }

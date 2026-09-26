@@ -160,6 +160,9 @@
                                         <TextBlock Grid.Row="2" Grid.Column="2" Text="{x:Bind PreviousCost}" TextWrapping="Wrap" />
                                         <TextBlock Grid.Row="2" Grid.Column="3" Text="{x:Bind CostChange}" TextWrapping="Wrap" />
                                     </Grid>
+                                    <TextBlock Text="{x:Bind Pricing}" TextWrapping="Wrap" IsTextSelectionEnabled="True" />
+                                    <TextBlock Text="{x:Bind Shares}" TextWrapping="Wrap" IsTextSelectionEnabled="True" />
+                                    <TextBlock Text="{x:Bind Aliases}" TextWrapping="Wrap" IsTextSelectionEnabled="True" />
                                     <TextBlock Text="{x:Bind Details}" TextWrapping="Wrap" IsTextSelectionEnabled="True" />
                                 </StackPanel>
                             </Border>

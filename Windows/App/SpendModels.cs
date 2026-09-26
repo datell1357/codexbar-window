@@ -28,7 +28,8 @@ public sealed record CodexModelRow([property: JsonRequired] string Title,
     [property: JsonRequired] string CurrentTokens, [property: JsonRequired] string PreviousTokens,
     [property: JsonRequired] string TokenChange, [property: JsonRequired] string CurrentCost,
     [property: JsonRequired] string PreviousCost, [property: JsonRequired] string CostChange,
-    [property: JsonRequired] string Details, [property: JsonRequired] int SelectionIndex);
+    [property: JsonRequired] string Details, [property: JsonRequired] int SelectionIndex,
+    string Pricing = "", string Shares = "", string Aliases = "");
 public sealed record CodexModelChoice([property: JsonRequired] string Title, [property: JsonRequired] int Index,
     [property: JsonRequired] bool Selected)
 {
@@ -54,6 +55,7 @@ internal sealed record CodexModelsPage([property: JsonRequired] string Context,
         && Rows.All(row => row is not null && row.Title is not null && row.CurrentTokens is not null
             && row.PreviousTokens is not null && row.TokenChange is not null && row.CurrentCost is not null
             && row.PreviousCost is not null && row.CostChange is not null && row.Details is not null
+            && row.Pricing is not null && row.Shares is not null && row.Aliases is not null
             && row.SelectionIndex is >= 0 and <= 1000000)
         && SelectionRevision is { Length: 64 }
         && SelectionRevision.All(value => value is >= '0' and <= '9' or >= 'a' and <= 'f')

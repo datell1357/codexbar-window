@@ -20,9 +20,13 @@ public struct CodexModelActivityEvidence: Codable, Equatable, Sendable {
         public let knownCostUSD: Double?
         public let pricedTokens: Int?
         public let unpricedTokens: Int?
+        /// Raw event labels, not reconstructed from canonical model IDs. Optional for legacy reports.
+        public let rawAliases: [String]?
+        public let aliasesComplete: Bool?
 
         public init(day: String, model: String, effort: String?, sessionReference: Int?, tokens: Int,
-                    knownCostUSD: Double? = nil, pricedTokens: Int? = nil, unpricedTokens: Int? = nil) {
+                    knownCostUSD: Double? = nil, pricedTokens: Int? = nil, unpricedTokens: Int? = nil,
+                    rawAliases: [String]? = nil, aliasesComplete: Bool? = nil) {
             self.day = day
             self.model = model
             self.effort = CostUsageCodexEffortContext.normalizedEffort(effort)
@@ -31,6 +35,17 @@ public struct CodexModelActivityEvidence: Codable, Equatable, Sendable {
             self.knownCostUSD = knownCostUSD
             self.pricedTokens = pricedTokens
             self.unpricedTokens = unpricedTokens
+            self.rawAliases = rawAliases
+            self.aliasesComplete = aliasesComplete
+        }
+        public var validatedAliases: (values: [String], complete: Bool) {
+            guard let rawAliases, rawAliases.count <= 32 else { return ([], false) }
+            var result: Set<String> = []
+            for alias in rawAliases {
+                guard let valid = CodexModelActivityEvidence.rawAlias(alias, model: self.model),
+                      result.insert(valid).inserted else { return ([], false) }
+            }
+            return (result.sorted(), self.aliasesComplete == true && !result.isEmpty)
         }
     }
     public let version: Int
@@ -60,6 +75,14 @@ public struct CodexModelActivityEvidence: Codable, Equatable, Sendable {
             CharacterSet.controlCharacters.contains($0) || CharacterSet.illegalCharacters.contains($0)
         }) else { return nil }
         return UUID(uuidString: value)?.uuidString.lowercased() ?? value
+    }
+
+    public static func rawAlias(_ raw: String?, model: String) -> String? {
+        guard let raw, !raw.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              raw.utf8.count <= 256, !raw.unicodeScalars.contains(where: CharacterSet.controlCharacters.contains),
+              CodexModelsAnalyticsBuilder().canonicalID(raw) == CodexModelsAnalyticsBuilder().canonicalID(model)
+        else { return nil }
+        return raw
     }
 
     /// Ambiguous or malformed identity metadata must not affect valid token/cost evidence.

@@ -5932,3 +5932,17 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - **남은 범위:** 모델 단위 priced/unpriced coverage·share·raw aliases, 전체 설정/계정/인증, 최초 생성 세션·정확한 terminal/editor 탭·직접 실행, 창 위치/스크롤, managed payload/lockfile·W10·W15·StartupTask 및 전체 W01~W16/G0~G6. 큰 이력 cap/추가 페이지와 실제 Windows 컴파일·클립보드·창 활성화·성능 검증도 남는다. WIN-041/057 전체 완료가 아니다.
 - 상태: CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·앱·실계정·원격 Windows·CI 미실행. hash는 쓰기 생성만 하고 check 모드는 실행하지 않았다.
 - IMPL-613은0425f28ea로 origin/main 푸시 확인. 이번 단위도 별도 커밋·푸시한다. guidelines/COMMITS.md가 없어 기존 커밋 규칙을 적용했다. 자동화 변경 없음.
+
+## IMPL-615: 모델별 가격 적용 범위·사용 비중·원본 별칭
+
+- 현재/이전 기간의 모델별 가격 적용·미가격 토큰과 coverage, known/partial/unavailable/no_usage 상태를 모델 표·CSV에 연결했다. 기존 이벤트 가격 대조 결과를 재사용하며 가격 분할 합계가 해당 모델 전체 토큰과 일치할 때만 적용률을 계산한다. 누락을 미가격0으로 채우지 않고 무료0과 가격 불명을 구분한다. 확정된 사용량0의 빈 coverage=1/share=0은 원본 규칙을 따르며 불완전한 빈 자료는 unknown이다.
+- 토큰·알려진 비용·세션 참조 비중을 모두 제공한다. 분모는 동일 기간/통화의 포함된 native Codex 모델 전체이며 선택 모델/페이지에 따라 재정규화하지 않는다. 세션 참조는 모델별 합계이므로 같은 세션이 여러 모델에서 세어질 수 있다. 불완전한 알려진 합계의 비율은 ~ / partial로 표시한다. CSV의 비율 값은0~1이며 백분율 숫자가 아니다.
+- 기존 rawModel 이벤트 값을 optional rawAliases/aliasesComplete로 보존한다. canonical ID에서 원래 철자를 역추정하지 않는다. 같은 모델로 정규화되는 원본 값만 연결하며 누락·중복·잘못된 문자열·다른 모델 별칭은 연결 근거를 철회한다. 구형 보고서는 필드 없이 계속 읽고 원래 토큰·비용은 유지한다.
+- 별칭 한도는 그룹32개/보고서8192개/라벨256 bytes, Windows 기간·모델별256개다. 한도 초과 시 알려진 별칭을 유지하고 불완전 표시하며 사용량과 가격 집계는 계속한다. UI는 기간별6개와 추가 개수를 표시하고 기존 문자열/응답 예산을 따른다. CSV는 보존된 전체 별칭을 연결 행으로 내보내고 PII 숨김에서는 별칭 행을 제외한다. 공용 daily-report JSON에는 metadata를 추가하지 않는다.
+- CSV에 모델 단위 priced_tokens/unpriced_tokens/pricing_coverage/cost_status, token_share/known_cost_share/session_reference_share, raw_alias_association을 추가했다. cost_status는 dimension의 기호 값이며 numeric value는 사용하지 않는다. 별칭의 value1은 연결 표시이며 사용량에 합산하지 않는다. 기존 비용/effort/모델 행의 중복 범위·escape/용량 한도는 유지한다.
+- 세션 참조 분모는 기간별로 한 번 집계해 모델 페이지/전체 CSV 행마다 모든 모델을 재순회하지 않도록 했다. 새 수집·파일 읽기·가격 catalog fetch·설정 저장은 없다.
+- 합성 fixture13개 작성: raw spelling/legacy, 별칭 한도와 비용·토큰 보존, 잘못된 별칭 격리, 무료/미가격/부분/구형 가격, legacy 소스 혼합, 모델 필터와 전체 분모·중복 세션 의미, 사용량0, 비용/세션 누락, stale 완전성, 비정상 비율, CSV 기호 상태/비율/PII, optional codec/public JSON, 모델별256개 한도. 전부 미실행이다.
+- 파서 hash는 쓰기 모드로3f31d490206e9076 생성. 직전619f13f23d9a5b31를 compatible predecessor에 추가해 기존 이벤트/체크포인트/retained report를 보존한다. hash check는 실행하지 않았다.
+- **다음 구현:** 전체 WinUI 설정·계정·인증·provider action의 기존 runtime 연결. 원본 모델 CSV 계약 전체 대응, 큰 이력·메타데이터 cap, 최초 생성 세션/정확한 terminal/editor 탭/직접 실행, 창 위치/스크롤, managed payload/lockfile·W10·W15·StartupTask 및 전체 W01~W16/G0~G6는 남는다. WIN-057 전체 완료나 Windows 동작 완료로 계산하지 않는다.
+- 상태: CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·앱·실계정·원격 Windows·CI·성능 검증 미실행.
+- IMPL-614는1755cc9d4로 origin/main 푸시 확인. 이번 단위도 별도 커밋·푸시한다. guidelines/COMMITS.md가 없어 기존 커밋 규칙을 적용했다. 자동화 변경 없음.

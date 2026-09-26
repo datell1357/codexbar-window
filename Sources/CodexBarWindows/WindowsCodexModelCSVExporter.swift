@@ -52,11 +52,11 @@ enum WindowsCodexModelCSVExporter {
 
         func record(_ kind: String, period name: String, value: WindowsCodexModelAnalysis.Period,
                     interval: DateInterval? = nil, index: Int? = nil, dimension: String = "",
-                    metric: String = "", number: String? = nil, complete: Bool = false,
+                    metric: String = "", number: String? = nil, complete: Bool = false, symbolic: Bool = false,
                     comparison: String = "", notes: String = "") throws {
             let range = interval ?? value.interval
             let label = index.map { WindowsAppSpendProjection.modelTitle(keys[$0], index: $0, hidePersonalInfo: hidePersonalInfo) } ?? ""
-            let status = number == nil ? "unknown" : complete ? "complete" : "partial"
+            let status = number == nil && !symbolic ? "unknown" : complete ? "complete" : "partial"
             try writer.append(["1", "native_codex_selected_models", kind, name,
                 dates.string(from: range.start), dates.string(from: range.end), calendar.timeZone.identifier,
                 currency, index.map(String.init) ?? "", label, dimension, metric, number ?? "", status, comparison,
@@ -66,14 +66,17 @@ enum WindowsCodexModelCSVExporter {
         }
         let scopeNotes = "Only the selected native Codex models and included sources in this currency are exported. "
             + "Coverage counts describe all included native Codex sources, not just selected models. "
-            + "Intervals are start-inclusive/end-exclusive. Numeric values are invariant decimal strings; blank means unknown. "
+            + "Intervals are start-inclusive/end-exclusive. Numeric measurements are invariant decimal strings; blank measurements mean unknown. Symbolic metrics use dimension instead. "
             + "Model, component, tier, effort and timeline records overlap and must not be added together. "
             + "Costs are local estimates, not bills; currency conversion may use cached or approximate rates. "
             + "Session references deduplicate per model/source/interval, not across models or intervals. "
             + "Effort is recorded context, not proof of server-applied effort. Effort costs require event/day/model reconciliation. "
             + "Session ID associations use identity in dimension and value 1 as a presence marker, never additive usage. Hidden personal information omits these rows. Legacy/missing identities are not reconstructed. "
+            + "Shares are fractions of all included native Codex models, independent of selected models/pages. Known-cost share excludes unknown cost; session-reference share uses per-model reference totals. "
+            + "Pricing coverage requires a complete token partition of the recorded model total. Cost status is symbolic in dimension with a blank numeric value. Raw alias associations use dimension and presence marker 1, not additive usage; hidden personal information omits alias rows. "
             + "Text is redacted and spreadsheet formula prefixes are escaped. This Windows schema differs from the original Mac CSV."
         for (name, period) in [("current", analysis.current), ("previous", analysis.previous)] {
+            let referenceTotal = WindowsCodexModelMetrics.referenceTotal(period: period, collected: collected)
             try record("scope", period: name, value: period, notes: scopeNotes)
             let tokensComplete = collected && period.tokensComplete
             let costComplete = collected && period.costComplete
@@ -90,7 +93,34 @@ enum WindowsCodexModelCSVExporter {
                     number: cost.map { String($0) }, complete: costComplete)
                 try record("model", period: name, value: period, index: index, metric: "session_references",
                     number: sessions.0.map(String.init), complete: sessions.1)
+                let pricing = WindowsCodexModelMetrics.pricing(key, period: period, collected: collected)
+                try record("pricing", period: name, value: period, index: index, metric: "priced_tokens",
+                    number: pricing.priced.value.map(String.init), complete: pricing.countsComplete)
+                try record("pricing", period: name, value: period, index: index, metric: "unpriced_tokens",
+                    number: pricing.unpriced.value.map(String.init), complete: pricing.countsComplete)
+                try record("pricing", period: name, value: period, index: index, metric: "pricing_coverage",
+                    number: pricing.coverage.value.map { String($0) }, complete: pricing.coverage.complete)
+                try record("pricing", period: name, value: period, index: index, dimension: pricing.status,
+                    metric: "cost_status", complete: pricing.statusComplete, symbolic: true,
+                    notes: "Symbolic cost status in dimension: known/partial/unavailable/no_usage. Numeric value is unused.")
+                let shares = WindowsCodexModelMetrics.shares(key, period: period, collected: collected, referenceTotal: referenceTotal)
+                for (label, share) in [("token_share", shares.tokens), ("known_cost_share", shares.knownCost),
+                                       ("session_reference_share", shares.sessionReferences)] {
+                    try record("share", period: name, value: period, index: index, metric: label,
+                        number: share.value.map { String($0) }, complete: share.complete,
+                        notes: "Fraction of all included native Codex models in this period, not only the selected models.")
+                }
                 if !hidePersonalInfo {
+                    let aliases = WindowsCodexModelMetrics.aliases(key, period: period, collected: collected)
+                    if aliases.values.isEmpty {
+                        try record("alias", period: name, value: period, index: index, metric: "raw_alias_association",
+                            notes: aliases.complete ? "No usage in this interval." : "Recorded raw aliases are unavailable.")
+                    }
+                    for alias in aliases.values {
+                        try record("alias", period: name, value: period, index: index, dimension: alias,
+                            metric: "raw_alias_association", number: "1", complete: aliases.complete,
+                            notes: "Recorded raw event model label. Value 1 marks association, not usage.")
+                    }
                     let references = period.activity.models[key]?.sessions ?? []
                     let ids = Set(references.compactMap { period.activity.sessions[$0]?.sessionID }).sorted()
                     let completeIDs = activityComplete && period.activity.models[key]?.sessionsComplete == true

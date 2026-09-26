@@ -13,6 +13,16 @@ enum WindowsCodexActivityAnalysis {
         var effortPricing: [String: WindowsCodexEffortPricing.Value] = [:]
         var sessions: Set<Reference> = []
         var sessionsComplete = true
+        var rawAliases: Set<String> = []
+        var aliasesComplete = true
+        mutating func addAliases(_ values: [String], complete: Bool) {
+            self.aliasesComplete = self.aliasesComplete && complete
+            for value in values {
+                if self.rawAliases.contains(value) { continue }
+                if self.rawAliases.count < 256 { self.rawAliases.insert(value) }
+                else { self.aliasesComplete = false }
+            }
+        }
     }
     struct Period: Sendable {
         var models: [String: Model] = [:]
@@ -52,6 +62,7 @@ enum WindowsCodexActivityAnalysis {
             var seenDays: Set<String> = []
             var valid = true
             var modelVisits = 0
+            var aliasVisits = 0
             for entry in input.snapshot.daily {
                 guard Self.day(entry.date, calendar: calendar) != nil else { valid = false; break }
                 guard entry.date >= start, entry.date <= end else { continue }
@@ -81,6 +92,13 @@ enum WindowsCodexActivityAnalysis {
                 let key = Key(day: row.day, model: model)
                 guard Self.add(row.tokens, key: key, to: &actual) else { valid = false; break }
                 var value = sourceModels[model] ?? Model()
+                let aliasCount = row.rawAliases?.count ?? 0
+                let aliases: (values: [String], complete: Bool)
+                if aliasCount <= 8192 - aliasVisits {
+                    aliasVisits += aliasCount
+                    aliases = row.validatedAliases
+                } else { aliases = ([], false) }
+                value.addAliases(aliases.values, complete: aliases.complete)
                 let effort = Self.effort(row.effort)
                 guard Self.add(row.tokens, key: effort, to: &value.effortTokens) else { valid = false; break }
                 if let reference = row.sessionReference { value.sessions.insert(.init(source: source, number: reference)) }
@@ -116,6 +134,7 @@ enum WindowsCodexActivityAnalysis {
                 }
                 value.sessions.formUnion(sourceValue.sessions)
                 value.sessionsComplete = value.sessionsComplete && sourceValue.sessionsComplete
+                value.addAliases(sourceValue.rawAliases.sorted(), complete: sourceValue.aliasesComplete)
                 result.models[model] = value
             }
             if !valid { return Period() } // Cross-source overflow invalidates the whole aggregation.

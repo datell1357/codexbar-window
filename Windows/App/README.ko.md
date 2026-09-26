@@ -98,8 +98,8 @@
   UTF-8/CRLF CSV이며 외부 텍스트의 따옴표/개행/수식 접두어를 escape한다.
   16 MiB/100000행/셀16 KiB 한도를 초과하면 전체 출력을 거절하며 조용히 자르지 않는다.
   clipboard는65,536 UTF-16 code units를 넘으면 저장을 안내한다.
-  원본 Mac CSV와 동일한 schema는 아니며, 세부 priced/unpriced coverage·raw aliases와
-  share 비율 등의 풍부한 분석 필드는 추가 집계와 계약이 남아 있다. WIN-057 전체 완료가 아니다.
+  원본 Mac CSV와 동일한 schema는 아니다. 모델 단위 priced/unpriced coverage·raw aliases와
+  share 비율은 IMPL-615에서 추가했으며 원본 CSV 계약 전체 대응·검증은 남아 있다. WIN-057 전체 완료가 아니다.
 - IMPL-612는 현재/이전 기간의 기록된 effort별 비용과 가격 적용/미가격 토큰 수를 연결했다.
   보고서의 기존 이벤트 가격 resolver를 같은 catalog/priority/custom-pricing 값으로 호출한다.
   현재 effort 설정이나 모델 총비용을 토큰 비율로 나누지 않는다. 해당 날짜·모델의 이벤트 가격
@@ -135,6 +135,22 @@
   PII 표시가 허용된 모델 CSV에는 session_id_association 행의 dimension에 ID, value에 연결 표시1을
   넣는다. 사용량에 더할 숫자가 아니며 같은 모델/기간의 ID를 공급원 전체에서 중복 제거한다.
   PII 숨김 시 이 행을 제외하고, 구형 ID를 복원하거나 만들어 내지 않는다. 문자열 escape와 출력 상한은 유지한다.
+- IMPL-615는 현재/이전 모델별 priced/unpriced 토큰·가격 적용률·비용 상태와 토큰/알려진 비용/세션 참조
+  비중을 모델 표와 CSV에 연결했다. 적용률은 가격 적용·미가격 토큰 합계가 같은 모델의 전체 토큰과
+  일치할 때만 계산한다. 가격이 없는 자료를 미가격0으로 바꾸지 않으며 무료0과 가격 미확정을 구분한다.
+  비용 상태는 known/partial/unavailable/no_usage다. 완전히 확인된 사용량0은 빈 적용률100%, 비중0이며,
+  사용량이 불명확하면0으로 채우지 않는다. 구형·부분·stale 자료의 알려진 수치는 ~ 또는 partial로 표시한다.
+  비중의 분모는 선택 통화·기간의 포함된 native Codex 모델 전체다. 모델 필터/페이지로 다시100%를
+  만들지 않는다. 비용 비중은 알려진 비용만, 세션 참조 비중은 모델별 참조 수 합계를 사용한다.
+  같은 세션이 여러 모델에 포함될 수 있으므로 고유 세션 전체의 점유율로 해석하지 않는다.
+  rawAliases는 이벤트의 rawModel만 보존하고 canonical 이름으로 역추정하지 않는다. 그룹32개·
+  보고서8192개·라벨256 bytes, Windows 기간/모델별256개 한도에서 알려진 목록을 유지한다.
+  한도·누락·잘못된 별칭은 목록의 불완전 상태로 표시하며 토큰·가격 집계는 줄이지 않는다.
+  표는 기간마다 최대6개와 추가 개수를 표시하고 문자열 예산을 적용한다. CSV는 보존된 전체 별칭을
+  raw_alias_association의 dimension에 넣고 value1은 연결 표시로만 사용한다. PII 숨김은 별칭을
+  화면과 CSV에서 제외한다. 별칭은 원래 모델과 canonical ID가 일치하는 기록만 연결한다.
+  CSV pricing_coverage와 세 종류의 share는0~1 비율이며 cost_status는 dimension의 기호 값이다.
+  cost_status의 numeric value는 비워 두고 value_status는 그 상태 판단의 완전성을 표시한다.
 
 ## 프로세스와 통신 규약
 
@@ -264,7 +280,7 @@ PE import 검사는 .NET assembly reference, P/Invoke, 동적 LoadLibrary, XAML/
 ## 남은 앱 구현
 
 전체 설정 pane, 계정·인증·provider 편집, 최초 생성 세션·정확한 terminal/editor 탭·직접 재실행 연결과
-모델 단위의 세부 가격 coverage/share/alias export,
+원본 모델 CSV 계약 전체 대응 및 큰 이력/메타데이터 한도 처리,
 작업별 action/copy/open/login,
 레이아웃 편집, 전역 단축키·창 위치/스크롤 보존,
 전체 현지화, 키보드/Narrator/고대비·다중 모니터 QA가 남아 있다.
@@ -335,6 +351,10 @@ IMPL-614의 WindowsCodexSessionActionsTests.swift에는 내부 ID 표/구형 호
 명시 resume 프로세스 매칭, prompt의 resume 단어가 ID를 바꾸지 않는 경우, CSV privacy/escape,
 동작 요청 경계 합성 fixture11개를 작성했다. 기존 activity fixture도 행/내부 표/공용 JSON의 경계에
 맞춰 갱신했다. 전부 미실행이다. 실제 프로세스·창 이동·클립보드·resume 실행·컴파일은 검증하지 않았다.
+IMPL-615의 WindowsCodexModelMetricsTests.swift에는 원본 별칭/구형 누락, 별칭 한도와 사용량 보존,
+잘못된 별칭 격리, 무료/미가격/부분/구형 가격, 혼합 소스 coverage, 전체 범위·모델별 세션 비중,
+확정된 사용량0, 누락 비용·세션, stale/부분 완전성, 비정상 비율, CSV 기호 상태·비율·PII,
+optional codec/공용 JSON, 모델별256개 한도 합성 fixture13개를 작성했다. 전부 미실행이다.
 
 ## API 참고
 
