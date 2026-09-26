@@ -2731,6 +2731,35 @@ public actor WindowsUsageRuntime {
         guard request.protocolVersion == WindowsAppProtocol.version else { return reply("unsupportedVersion") }
         guard request.method == "hello" || request.generation == generation else { return reply("staleGeneration") }
         guard request.method == "spendAction" || request.spendAction == nil else { return reply("invalidRequest") }
+        if request.method == "generalPreferences" || request.method == "setGeneralPreference" {
+            guard WindowsAppGeneralPreferences.accepts(request),
+                  let defaults = UserDefaults(suiteName: WindowsRefreshSettings.suiteName)
+            else { return reply("invalidRequest") }
+            if request.method == "generalPreferences" {
+                guard request.generalPreferencesMutation == nil else { return reply("invalidRequest") }
+                var result = reply("ok")
+                result.generalPreferences = .init(WindowsAppGeneralPreferences.load(defaults))
+                return result
+            }
+            guard let mutation = request.generalPreferencesMutation, mutation.isValid else { return reply("invalidRequest") }
+            let saved = WindowsAppGeneralPreferences.save(mutation, defaults: defaults)
+            if saved.changed {
+                // Persistence is acknowledged separately from existing asynchronous runtime work.
+                // Do not keep the pipe open for status probes or a scheduler task to drain.
+                if mutation.key == "frequency" || mutation.key == "lowPowerMode" {
+                    Task {
+                        await self.refreshSettingsDidChange()
+                        self.notePowerChanged()
+                    }
+                } else if mutation.key == "statusChecksEnabled" {
+                    Task { await self.statusChecksDidChange() }
+                }
+            }
+            var result = reply(saved.status)
+            result.generalPreferences = saved.page
+            return result
+        }
+        guard request.generalPreferencesMutation == nil else { return reply("invalidRequest") }
         if request.method == "viewPreferences" || request.method == "setViewPreferences" {
             guard request.mutation == nil, request.spendQuery == nil, request.spendPreferencesQuery == nil,
                   request.spendPreferencesMutation == nil else { return reply("invalidRequest") }

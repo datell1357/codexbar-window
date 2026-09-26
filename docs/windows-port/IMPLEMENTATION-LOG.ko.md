@@ -5946,3 +5946,16 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - **다음 구현:** 전체 WinUI 설정·계정·인증·provider action의 기존 runtime 연결. 원본 모델 CSV 계약 전체 대응, 큰 이력·메타데이터 cap, 최초 생성 세션/정확한 terminal/editor 탭/직접 실행, 창 위치/스크롤, managed payload/lockfile·W10·W15·StartupTask 및 전체 W01~W16/G0~G6는 남는다. WIN-057 전체 완료나 Windows 동작 완료로 계산하지 않는다.
 - 상태: CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·앱·실계정·원격 Windows·CI·성능 검증 미실행.
 - IMPL-614는1755cc9d4로 origin/main 푸시 확인. 이번 단위도 별도 커밋·푸시한다. guidelines/COMMITS.md가 없어 기존 커밋 규칙을 적용했다. 자동화 변경 없음.
+
+## IMPL-616: WinUI 일반 설정과 트레이 저장 경로 통합
+
+- Settings 화면에 일곱 갱신 주기(manual/1/2/5/15/30분/adaptive), Off/On/Automatic 절전 모드, 서비스 상태 확인, 트레이 메뉴 열 때 refresh를 연결했다. 기존 표시 옵션 네 개와 저장된 settings navigation ID는 유지한다.
+- generalPreferences/setGeneralPreference 요청·응답에 비밀정보 없는 네 값과 revision만 전달한다. Boolean과 enum 선택을 구분하고 알 수 없는 키·미지원 값·다른 메서드 필드 혼합을 거절한다. 기존 pipe peer/generation/request 크기 검사는 유지한다.
+- 트레이와 앱의 해당 네 설정 읽기/비교/변경/flush를 동일 backend 재귀 잠금 아래 두고 refresh 기본값 migration도 같은 잠금에 포함했다. 오래된 화면은 현재 설정과 충돌 응답을 받으며 변경 필드만 저장한다. 외부 프로세스 편집까지 원자적으로 직렬화하는 것은 아니다.
+- no-op은 저장이나 runtime 재설정을 요청하지 않는다. flush 실패는 성공으로 표시하지 않고 다시 읽은 현재 값을 반환하며 메모리 변경은 runtime과 맞춘다. 저장 완료와 스케줄러/조회 작업 완료는 구분한다. 응답 유실은 자동 재전송하지 않는다.
+- 갱신/절전은 기존 scheduler 재설정 및 reset-boundary 전력 재계산에 연결하고, status는 기존 조회 취소/재렌더/필요한 refresh에 연결했다. 메뉴 열 때 refresh는 기존 트레이 읽기 경로를 사용한다. UI는 2초 주기로 현재 값을 읽으며 화면 전환/다른 설정 저장 후 오래된 응답은 철회한다.
+- adaptiveAgentAware는 Windows runtime과 트레이에서 여전히 미지원인 것을 확인했다. 저장된 값은 표시하고 지원되는 주기로 변경할 수 있지만 새 선택은 금지한다. activityConsent 값을 바꾸거나 사용하지 않는 동의 UI를 추가하지 않았다. 활동 scanner 동의·agent-aware scheduler의 본 구현은 WIN-031 잔여 항목이다.
+- 합성 fixture11개 작성: 선택지·다른 값 보존, legacy 미지원 모드, 잘못된 shape/키/revision, 네 값 revision, 트레이 변경 충돌, no-op/invalid 무쓰기, 저장·runtime 반영 신호, flush 실패 무재시도, 외부 변경 재읽기, 다른 요청 혼합 거절, bounded typed wire. 전부 미실행이다.
+- **다음 구현:** 전체 WinUI 계정·인증·provider action과 나머지 설정 연결. 활동 감지 scheduler/동의 흐름, 원본 모델 CSV 계약·큰 이력/메타데이터 cap, 최초 생성 세션·정확한 terminal/editor 탭·직접 실행, 창 위치/스크롤, managed payload/lockfile·W10·W15·StartupTask 및 W01~W16/G0~G6는 남는다. WIN-012/013/031 전체 완료가 아니다.
+- 상태: CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·앱·실계정·원격 Windows·CI·성능 검증 미실행.
+- IMPL-615는092938e8a로 origin/main 푸시 확인. 이번 단위도 별도 커밋·푸시한다. guidelines/COMMITS.md가 없어 기존 커밋 규칙을 적용했다. 자동화 변경 없음.

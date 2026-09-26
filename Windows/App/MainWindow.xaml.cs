@@ -49,6 +49,10 @@ public sealed partial class MainWindow : Window
                 (query, mutation, token) => channel.SendAsync("setSpendPreference", null, token,
                     spendPreferencesQuery: query, spendPreferencesMutation: mutation),
                 CostPreferenceSaving, lifetime.Token);
+            GeneralSettingsView.Configure(
+                (mutation, token) => channel.SendAsync(mutation is null ? "generalPreferences" : "setGeneralPreference",
+                    null, token, generalPreferencesMutation: mutation),
+                GeneralPreferenceSaving, lifetime.Token);
             Navigation.IsEnabled = false;
             _ = StartAsync();
         }
@@ -130,6 +134,8 @@ public sealed partial class MainWindow : Window
                     await SpendView.RefreshAsync();
                 if (!saving && snapshot is not null && CostSettingsPage.Visibility == Visibility.Visible)
                     await CostSettingsView.RefreshAsync();
+                if (!saving && snapshot is not null && SettingsPage.Visibility == Visibility.Visible)
+                    await GeneralSettingsView.RefreshAsync();
                 await Task.Delay(TimeSpan.FromSeconds(2), lifetime.Token);
             }
             catch (OperationCanceledException) when (lifetime.IsCancellationRequested) { return; }
@@ -191,6 +197,7 @@ public sealed partial class MainWindow : Window
         ProviderList.ItemsSource = null;
         SpendView.Invalidate();
         CostSettingsView.Invalidate();
+        GeneralSettingsView.Invalidate();
     }
 
     private void Apply(AppSnapshot value)
@@ -232,6 +239,7 @@ public sealed partial class MainWindow : Window
         if (applying || saving || snapshot is null || sender is not ToggleSwitch toggle || toggle.Tag is not string key) return;
         saving = true;
         CostSettingsView.SetExternalBusy(true);
+        GeneralSettingsView.SetExternalBusy(true);
         SpendView.Invalidate();
         CostSettingsView.Invalidate();
         SettingsControls.IsEnabled = false;
@@ -245,6 +253,7 @@ public sealed partial class MainWindow : Window
         {
             saving = false;
             CostSettingsView.SetExternalBusy(false);
+            GeneralSettingsView.SetExternalBusy(false);
             if (snapshot is not null)
             {
                 SettingsControls.IsEnabled = true;
@@ -256,7 +265,16 @@ public sealed partial class MainWindow : Window
     private void CostPreferenceSaving(bool value)
     {
         saving = value;
+        GeneralSettingsView.SetExternalBusy(value);
         SpendView.Invalidate();
+        SettingsControls.IsEnabled = !value && snapshot is not null;
+        RefreshButton.IsEnabled = !value && snapshot is { Refreshing: false };
+    }
+
+    private void GeneralPreferenceSaving(bool value)
+    {
+        saving = value;
+        CostSettingsView.SetExternalBusy(value);
         SettingsControls.IsEnabled = !value && snapshot is not null;
         RefreshButton.IsEnabled = !value && snapshot is { Refreshing: false };
     }
@@ -280,6 +298,7 @@ public sealed partial class MainWindow : Window
         CostSettingsPage.Visibility = tag == "costSettings" ? Visibility.Visible : Visibility.Collapsed;
         CostSettingsView.SetActive(tag == "costSettings");
         SettingsPage.Visibility = tag == "settings" ? Visibility.Visible : Visibility.Collapsed;
+        GeneralSettingsView.SetActive(tag == "settings");
         if (!restoringView && !closing && viewPreferences is not null)
             viewPreferences.Change(viewPreferences.Values with { Navigation = tag });
     }

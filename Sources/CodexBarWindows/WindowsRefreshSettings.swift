@@ -52,6 +52,12 @@ public struct WindowsRefreshSettings: Sendable, Equatable {
     }
 
     public static func load(userDefaults: UserDefaults? = nil) -> WindowsRefreshSettings {
+        WindowsAppGeneralPreferences.withPersistenceLock {
+            Self.loadUnlocked(userDefaults: userDefaults)
+        }
+    }
+
+    private static func loadUnlocked(userDefaults: UserDefaults?) -> WindowsRefreshSettings {
         let defaults = userDefaults ?? UserDefaults(suiteName: Self.suiteName) ?? .standard
         let hadPreviousInstallationState = defaults.object(forKey: "providerDetectionCompleted") != nil
             || defaults.object(forKey: "appGroupMigrationVersion") != nil

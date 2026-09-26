@@ -173,8 +173,8 @@ WinUI 프로세스는 공급자에 직접 접속하거나 두 번째 백엔드�
    확인한다. 연결당 중복 requestID는 거절하고 4096개 뒤 재연결한다.
 6. 허용 메서드는 `hello`, `snapshot`, `refresh`, `setSetting`, `spend`,
    `spendPreferences`, `setSpendPreference`, `spendAction`,
-   `viewPreferences`, `setViewPreferences`이다.
-   snapshot은 2초 간격으로 요청한다. 설정 쓰기는 네 키의 고정 순서 boolean SHA-256
+   `viewPreferences`, `setViewPreferences`, `generalPreferences`, `setGeneralPreference`이다.
+   snapshot은 2초 간격으로 요청한다. 표시 설정 쓰기는 네 키의 고정 순서 boolean SHA-256
    revision을 대조한다. 이는 오래된 화면의 저장을 감지하는 낙관적 대조이며, 트레이와
    별도 스레드에서 발생하는 모든 설정 쓰기의 원자적 직렬화를 보장하지 않는다.
    `spend`는 bounded query(days/currency/section/chart/page/detail/comparePeriods/codexModelsPage 및
@@ -192,7 +192,14 @@ WinUI 프로세스는 공급자에 직접 접속하거나 두 번째 백엔드�
    저장도 이 경로를 사용한다. 외부 프로세스의 설정 편집까지 원자적으로 직렬화하지는 않는다.
    저장 응답은 설정 저장 여부이며 수집 완료를 의미하지 않는다. 기존 runtime이 이후
    재집계/환율 fetch/필요한 재수집을 처리한다. 실패·응답 유실은 현재 값을 다시 읽고 자동
-   재전송하지 않는다. 앱의 표시 설정과 비용 설정 저장도 동시에 시작하지 않는다.
+   재전송하지 않는다. 앱의 표시·비용·일반 설정 저장도 동시에 시작하지 않는다.
+   일반 설정은 갱신 주기·절전 모드·service status·메뉴 열 때 refresh의 네 값 전체를
+   SHA-256 revision으로 묶는다. 트레이의 동일 설정 저장과 cadence 기본값 migration도
+   backend 프로세스의 동일 재귀 잠금 아래 수행한다. 외부 프로세스 편집은 이 잠금으로
+   직렬화되지 않는다. 변경한 필드만 쓰고 synchronize 실패 시 현재 값을 다시 돌려주며,
+   메모리에서 변경된 값은 runtime에 반영하되 영구 저장 성공으로 표시하지 않는다.
+   응답 성공은 설정 저장 여부다. 스케줄러 재설정/전력 경계 재계산과 status 조회 완료를
+   의미하지 않는다. 타 메서드 필드와 섞인 요청·비허용 enum·잘못된 revision은 거절한다.
    기간 비교는 같은 publication/generation·수집일·source catalog·통화·시간대·날짜 경계의
    결과만 사용한다. 별도 FX fetch 없이 rate table을 한 번 캡처하며 시간별 상세에도 같은
    table을 전달한다. 누락/비정상 환율은 기존 원본 통화 그룹으로 유지한다.
@@ -355,6 +362,18 @@ IMPL-615의 WindowsCodexModelMetricsTests.swift에는 원본 별칭/구형 누�
 잘못된 별칭 격리, 무료/미가격/부분/구형 가격, 혼합 소스 coverage, 전체 범위·모델별 세션 비중,
 확정된 사용량0, 누락 비용·세션, stale/부분 완전성, 비정상 비율, CSV 기호 상태·비율·PII,
 optional codec/공용 JSON, 모델별256개 한도 합성 fixture13개를 작성했다. 전부 미실행이다.
+
+IMPL-616은 Settings 화면에 일곱 갱신 주기, Off/On/Automatic 절전 모드, 서비스 상태 확인,
+트레이 메뉴 열 때 refresh를 기존 표시 설정과 함께 연결했다. 저장된 settings navigation ID는 유지한다.
+기존 adaptiveAgentAware 값은 읽어 표시하지만 선택은 금지하며, 다른 주기로 바꾸도록 안내한다.
+활동 감지 scheduler/동의 흐름 자체는 아직 구현되지 않았고 이번 변경도 이를 완료로 계산하지 않는다.
+원래 activityConsent 저장값은 변경하지 않는다. 화면 이탈/다른 저장으로 오래된 응답을 철회하고,
+응답 유실의 쓰기는 자동 재전송하지 않는다. 전체 설정·계정·인증·provider 편집은 계속 남아 있다.
+
+WindowsAppGeneralPreferencesTests.swift에 선택지/다른 값 보존, 미지원 legacy 모드, 요청 shape/allowlist,
+revision 범위, 트레이 변경과의 충돌, no-op/invalid 쓰기, 저장 결과, flush 실패, 외부 변경,
+요청 혼합 거절, bounded wire의 합성 fixture11개를 작성했다. 모두 미실행이며 실제 defaults/전력
+상태/타이머/계정/네트워크/WinUI를 열지 않는 fixture다. 빌드·lint·Windows UI 검증도 미실행이다.
 
 ## API 참고
 

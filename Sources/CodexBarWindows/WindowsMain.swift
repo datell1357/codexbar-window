@@ -337,7 +337,10 @@ private final class WindowsTrayApplication: @unchecked Sendable {
         },
         onRefreshSettingsChanged: { [weak self] in
             guard let self else { return }
-            Task { await self.runtime.refreshSettingsDidChange() }
+            Task {
+                await self.runtime.refreshSettingsDidChange()
+                await self.runtime.notePowerChanged()
+            }
         },
         onSessionQuotaNotificationSettingsChanged: { [weak self] in
             guard let self else { return }

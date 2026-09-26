@@ -3623,10 +3623,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
 
     private func selectRefreshFrequency(_ frequency: WindowsRefreshSettings.Frequency) {
         guard frequency != .adaptiveAgentAware else { return }
-        let current = WindowsRefreshSettings.load(userDefaults: self.presentationDefaults).frequency
-        guard current != frequency else { return }
-        self.presentationDefaults.set(frequency.rawValue, forKey: "refreshFrequency")
-        self.onRefreshSettingsChanged()
+        self.changeGeneralPreference("frequency", choice: frequency.rawValue)
     }
 
     private static func lowPowerModeCommand(for preference: WindowsRefreshSettings.LowPowerModePreference) -> UINT_PTR {
@@ -3667,10 +3664,19 @@ public final class WindowsTrayHost: @unchecked Sendable {
     }
 
     private func selectLowPowerModePreference(_ preference: WindowsRefreshSettings.LowPowerModePreference) {
-        let current = WindowsRefreshSettings.load(userDefaults: self.presentationDefaults).lowPowerModePreference
-        guard current != preference else { return }
-        self.presentationDefaults.set(preference.rawValue, forKey: "backgroundWorkLowPowerModePreference")
-        self.onRefreshSettingsChanged()
+        self.changeGeneralPreference("lowPowerMode", choice: preference.rawValue)
+    }
+
+    private func changeGeneralPreference(_ key: String, choice: String? = nil) {
+        let result = WindowsAppGeneralPreferences.change(key, choice: choice, defaults: self.presentationDefaults)
+        if result.changed {
+            if key == "frequency" || key == "lowPowerMode" { self.onRefreshSettingsChanged() }
+            else if key == "statusChecksEnabled" { self.onStatusChecksChanged() }
+        }
+        if result.status != "ok" {
+            self.showMessage("The setting could not be confirmed. Reopen settings to review the current value.",
+                caption: "General settings")
+        }
     }
 
     private func dispatchCommand(_ command: UINT_PTR) {
@@ -4199,13 +4205,10 @@ public final class WindowsTrayHost: @unchecked Sendable {
         case let command where command >= Self.languageCommandBase && command < Self.languageCommandBase + 64:
             self.selectLanguage(command: command)
         case Self.refreshOnOpenCommand:
-            let enabled = self.presentationDefaults.object(forKey: "refreshAllProvidersOnMenuOpen") as? Bool ?? false
-            self.presentationDefaults.set(!enabled, forKey: "refreshAllProvidersOnMenuOpen")
+            self.changeGeneralPreference("refreshOnMenuOpen")
         case Self.hookSettingsCommand: self.beginHookSettings()
         case Self.statusChecksCommand:
-            let enabled = self.presentationDefaults.object(forKey: "statusChecksEnabled") as? Bool ?? true
-            self.presentationDefaults.set(!enabled, forKey: "statusChecksEnabled")
-            self.onStatusChecksChanged()
+            self.changeGeneralPreference("statusChecksEnabled")
         case Self.quotaWarningSettingsCommand: self.editQuotaWarningSettings()
         case Self.codexWebSettingsCommand: self.beginCodexWebSettingsLoad()
         case Self.changelogCommandBase - 1: self.toggleChangelogSetting()

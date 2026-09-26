@@ -1,0 +1,38 @@
+<UserControl x:Class="CodexBar.App.GeneralPreferencesPane"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <StackPanel Spacing="16">
+        <TextBlock Text="Refresh &amp; background work" Style="{ThemeResource SubtitleTextBlockStyle}" />
+        <TextBlock x:Name="StatusText" Text="Waiting for current settings…" TextWrapping="Wrap"
+            AutomationProperties.LiveSetting="Polite" />
+        <InfoBar x:Name="Notice" IsOpen="False" IsClosable="False" Severity="Warning" />
+        <StackPanel x:Name="SettingsControls" Spacing="16" IsEnabled="False">
+            <ComboBox x:Name="FrequencyPicker" Header="Refresh interval" Tag="frequency"
+                SelectionChanged="ChoiceChanged" HorizontalAlignment="Stretch">
+                <ComboBoxItem Content="Manual" Tag="manual" />
+                <ComboBoxItem Content="Every minute" Tag="oneMinute" />
+                <ComboBoxItem Content="Every 2 minutes" Tag="twoMinutes" />
+                <ComboBoxItem Content="Every 5 minutes" Tag="fiveMinutes" />
+                <ComboBoxItem Content="Every 15 minutes" Tag="fifteenMinutes" />
+                <ComboBoxItem Content="Every 30 minutes" Tag="thirtyMinutes" />
+                <ComboBoxItem Content="Adaptive" Tag="adaptive" />
+                <ComboBoxItem Content="Adaptive with agent activity — unavailable" Tag="adaptiveAgentAware" IsEnabled="False" />
+            </ComboBox>
+            <TextBlock x:Name="FrequencyHint" TextWrapping="Wrap" />
+            <ComboBox x:Name="PowerPicker" Header="Background low power mode" Tag="lowPowerMode"
+                SelectionChanged="ChoiceChanged" HorizontalAlignment="Stretch">
+                <ComboBoxItem Content="Off" Tag="off" />
+                <ComboBoxItem Content="On" Tag="on" />
+                <ComboBoxItem Content="Automatic" Tag="automatic" />
+            </ComboBox>
+            <TextBlock Text="Automatic follows Windows power state. Low power mode reduces background work."
+                TextWrapping="Wrap" />
+            <ToggleSwitch Header="Check provider service status" Tag="statusChecksEnabled"
+                x:Name="StatusChecksToggle" Toggled="SettingChanged" />
+            <TextBlock Text="Turning this on may refresh provider usage and service status."
+                TextWrapping="Wrap" />
+            <ToggleSwitch Header="Refresh when opening the tray menu" Tag="refreshOnMenuOpen"
+                x:Name="MenuRefreshToggle" Toggled="SettingChanged" />
+        </StackPanel>
+    </StackPanel>
+</UserControl>

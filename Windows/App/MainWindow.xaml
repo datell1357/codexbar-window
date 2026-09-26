@@ -10,7 +10,7 @@
                 <NavigationViewItem Content="Overview" Tag="overview" Icon="Home" IsSelected="True" />
                 <NavigationViewItem Content="Usage &amp; Spend" Tag="spend" Icon="Document" />
                 <NavigationViewItem Content="Cost settings" Tag="costSettings" Icon="Setting" />
-                <NavigationViewItem Content="Display settings" Tag="settings" Icon="Setting" />
+                <NavigationViewItem Content="Settings" Tag="settings" Icon="Setting" />
             </NavigationView.MenuItems>
             <Grid Padding="24" RowSpacing="16">
                 <Grid.RowDefinitions>
@@ -54,18 +54,21 @@
                         <local:SpendPreferencesPane x:Name="CostSettingsView" />
                     </Grid>
                     <ScrollViewer x:Name="SettingsPage" Visibility="Collapsed">
-                        <StackPanel x:Name="SettingsControls" Spacing="20" IsEnabled="False">
-                            <TextBlock Text="Display settings" Style="{ThemeResource SubtitleTextBlockStyle}" />
-                            <ToggleSwitch x:Name="PrivacyToggle" Header="Hide personal information"
-                                Tag="hidePersonalInfo" Toggled="SettingChanged" />
-                            <ToggleSwitch x:Name="OptionalToggle" Header="Show credits and extra usage"
-                                Tag="showOptionalCreditsAndExtraUsage" Toggled="SettingChanged" />
-                            <ToggleSwitch x:Name="UsedToggle" Header="Show usage as used"
-                                Tag="usageBarsShowUsed" Toggled="SettingChanged" />
-                            <ToggleSwitch x:Name="ResetToggle" Header="Show reset time as clock"
-                                Tag="resetTimesShowAbsolute" Toggled="SettingChanged" />
-                            <TextBlock Text="Changes also apply to the tray. Closing this window keeps CodexBar running."
-                                TextWrapping="Wrap" />
+                        <StackPanel Spacing="24">
+                            <local:GeneralPreferencesPane x:Name="GeneralSettingsView" />
+                            <StackPanel x:Name="SettingsControls" Spacing="20" IsEnabled="False">
+                                <TextBlock Text="Display settings" Style="{ThemeResource SubtitleTextBlockStyle}" />
+                                <ToggleSwitch x:Name="PrivacyToggle" Header="Hide personal information"
+                                    Tag="hidePersonalInfo" Toggled="SettingChanged" />
+                                <ToggleSwitch x:Name="OptionalToggle" Header="Show credits and extra usage"
+                                    Tag="showOptionalCreditsAndExtraUsage" Toggled="SettingChanged" />
+                                <ToggleSwitch x:Name="UsedToggle" Header="Show usage as used"
+                                    Tag="usageBarsShowUsed" Toggled="SettingChanged" />
+                                <ToggleSwitch x:Name="ResetToggle" Header="Show reset time as clock"
+                                    Tag="resetTimesShowAbsolute" Toggled="SettingChanged" />
+                                <TextBlock Text="Changes also apply to the tray. Closing this window keeps CodexBar running."
+                                    TextWrapping="Wrap" />
+                            </StackPanel>
                         </StackPanel>
                     </ScrollViewer>
                 </Grid>
