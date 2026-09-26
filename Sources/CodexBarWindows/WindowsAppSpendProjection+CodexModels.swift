@@ -65,6 +65,38 @@ extension WindowsAppSpendProjection {
             return "\(name) standard: \(standardTokens) tokens · \(standardCost)"
                 + "\n\(name) priority: \(priorityTokens) tokens · \(priorityCost)"
         }
+        func activityComplete(_ period: WindowsCodexModelAnalysis.Period) -> Bool {
+            collected && period.tokensComplete && period.activity.complete
+        }
+        func sessions(_ model: String, _ period: WindowsCodexModelAnalysis.Period) -> (Int?, Bool) {
+            guard let value = period.activity.models[model] else {
+                return activityComplete(period) ? (0, true) : (nil, false)
+            }
+            let known = value.sessions.isEmpty && !value.sessionsComplete ? nil : value.sessions.count
+            return (known, activityComplete(period) && value.sessionsComplete)
+        }
+        func efforts(_ name: String, _ model: String, _ period: WindowsCodexModelAnalysis.Period) -> String {
+            guard let value = period.activity.models[model] else {
+                return "\(name) recorded effort: " + (activityComplete(period) ? "No usage" : "Unknown")
+            }
+            let publicLabels: Set<String> = ["none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra", "persistent"]
+            var displayed: [String: Int] = [:]
+            for (label, count) in value.effortTokens {
+                let title = label.isEmpty ? "Unrecorded" : hidePersonalInfo && !publicLabels.contains(label) ? "Custom" : label
+                let sum = (displayed[title] ?? 0).addingReportingOverflow(count)
+                guard !sum.overflow else { return "\(name) recorded effort: Unknown" }
+                displayed[title] = sum.partialValue
+            }
+            let sorted = displayed.sorted {
+                if $0.value != $1.value { return $0.value > $1.value }
+                return $0.key < $1.key
+            }
+            let rows = sorted.prefix(12).map { label, count in
+                "\(label): \(tokens(count, complete: activityComplete(period)))"
+            }
+            let more = sorted.count > 12 ? " · \(sorted.count - 12) additional effort labels" : ""
+            return "\(name) recorded effort tokens — " + rows.joined(separator: " · ") + more
+        }
         var rows: [CodexModelRow] = []
         for index in (page * 40)..<min(keys.count, page * 40 + 40) {
             let key = keys[index]
@@ -79,11 +111,17 @@ extension WindowsAppSpendProjection {
             func component(_ count: WindowsCodexModelAnalysis.Count?) -> String {
                 tokens(count?.value, complete: currentTokensComplete && count?.complete == true)
             }
+            let cs = sessions(key, value.current), ps = sessions(key, value.previous)
             let details = tier("Current", current, tokensComplete: currentTokensComplete, costComplete: currentCostComplete)
                 + "\n" + tier("Previous", previous, tokensComplete: previousTokensComplete, costComplete: previousCostComplete)
                 + "\nCurrent token mix — Input: \(component(current?.input)) · Output: \(component(current?.output))"
                 + " · Cache read: \(component(current?.cached)) · Cache write: \(component(current?.cacheCreation))"
                 + " · Reasoning: \(component(current?.reasoning))"
+                + "\nSession refs — Current: \(tokens(cs.0, complete: cs.1))"
+                + " · Previous: \(tokens(ps.0, complete: ps.1))"
+                + " · Change: \(change(cs.0.map { Double($0) }, ps.0.map { Double($0) }, complete: cs.1 && ps.1))"
+                + "\n" + efforts("Current", key, value.current)
+                + "\n" + efforts("Previous", key, value.previous)
             rows.append(.init(title: text(label, 512),
                 currentTokens: text(tokens(ct, complete: currentTokensComplete), 128),
                 previousTokens: text(tokens(pt, complete: previousTokensComplete), 128),
@@ -92,7 +130,7 @@ extension WindowsAppSpendProjection {
                 currentCost: text(cost(cc, complete: currentCostComplete), 128),
                 previousCost: text(cost(pc, complete: previousCostComplete), 128),
                 costChange: text(change(cc, pc, complete: currentCostComplete && previousCostComplete), 128),
-                details: text(details, 1536)))
+                details: text(details, 3072)))
         }
         var context = [
             "Native Codex models only, within the selected currency and included sources. Other providers and OpenCodeX are excluded.",
@@ -105,7 +143,9 @@ extension WindowsAppSpendProjection {
                 + " · \(cost(value.previous.cost.value, complete: previousCostComplete))",
             "Costs are local estimates, not a bill. Conversion may use cached or approximate exchange rates.",
             "~ marks incomplete known data. Unknown is not zero; changes require complete model totals in both periods.",
-            "Service tiers require recorded standard/priority totals. Historical effort and session-reference analytics are not yet available."
+            "Service tiers require recorded standard/priority totals. Effort shows tokens attributed to a recorded rollout context, not verified server settings; Unrecorded differs from none.",
+            "Session refs count distinct local sessions per model and source across the period. One session can occur under several models; these are not request counts.",
+            "Legacy or bounded event evidence may be unavailable. Effort and session refs require agreement with the same daily model totals. Detailed session navigation and effort cost allocation are not included."
         ]
         if value.sourceCount == 0 { context.append("No included native Codex source is available for this currency.") }
         if !collected { context.append("Collection is stale or incomplete; period changes are unavailable.") }

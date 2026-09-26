@@ -56,8 +56,16 @@
   일부 알려진 값에는 ~를 표시한다. DST로 이전 기간이 하루 중간에서 시작하면 일별 자료로
   경계를 추정하지 않고 온전한 날짜의 값만 표시하며 증감률은 보류한다. 별도 과거 수집은 없다.
   PII 숨김은 분석·기본 모델 표·프로젝트/세션 모델 상세에 공개 모델 계열 또는 Model N을
-  사용한다. 분석 토글/페이지는 이번 창에서만 유지한다. effort 이력·세션 참조 수·모델 필터와
-  일/주/월 타임라인은 추가 구현 대상이며, WIN-057 전체 완료를 의미하지 않는다.
+  사용한다. 분석 토글/페이지는 이번 창에서만 유지한다.
+- IMPL-608은 같은 모델 패널에 현재/이전 기간의 기록된 effort별 토큰과 고유 세션 참조 수·
+  증감을 연결했다. 모델마다 같은 세션은 기간 내 한 번 세며 여러 모델을 사용한 세션은
+  각 모델에 나타날 수 있다. 요청 수를 세션 수로 대신하지 않는다. effort가 없는 사용량은
+  Unrecorded로 표시하며 명시적 none과 구분한다. 서버 적용 effort를 증명하는 수치는 아니다.
+  이벤트 집계와 일별 모델 합계가 맞는 경우만 사용하며, 구형 자료·한도 초과·누락·stale은
+  Unknown/~ 및 증감 보류로 표시한다. 세션 ID/경로는 보고서별 번호로 치환해 내부에서만 쓰고
+  화면/pipe에는 집계 숫자만 전달한다. PII 숨김은 사용자 정의 effort를 Custom으로 묶는다.
+  최대12개 effort 라벨을 표시하며 그보다 많으면 추가 라벨 수를 알린다.
+  effort별 비용·세션 탐색·모델 필터·일/주/월 타임라인은 남아 있으며 WIN-057 전체 완료가 아니다.
 
 ## 프로세스와 통신 규약
 
@@ -180,7 +188,7 @@ PE import 검사는 .NET assembly reference, P/Invoke, 동적 LoadLibrary, XAML/
 
 ## 남은 앱 구현
 
-전체 설정 pane, 계정·인증·provider 편집, Codex effort 이력·세션 참조 분석·모델 필터/일·주·월 타임라인,
+전체 설정 pane, 계정·인증·provider 편집, Codex effort 비용·세션 참조 탐색·모델 필터/일·주·월 타임라인,
 작업별 action/copy/open/login,
 레이아웃 편집, 전역 단축키·창 위치/스크롤 보존,
 전체 현지화, 키보드/Narrator/고대비·다중 모니터 QA가 남아 있다.
@@ -221,9 +229,12 @@ IMPL-606의 `WindowsCodexModelAnalysisTests.swift`에는 인접 기간/증감, �
 모두 미실행이다. 실제 수집 자료의 완전성, 컴파일, WinUI 배치·키보드·성능은 검증하지 않았다.
 IMPL-607은 rollout의 기록된 effort를 이벤트/증분 캐시/sidecar/내부 fragment에 보관하고
 기존 캐시를 수집 예산 안에서 이관하는 코드를 추가했다. 현재 thread 설정으로 과거 값을 채우지 않는다.
-아직 이 값의 Windows 집계·WinUI 표시를 연결하지 않았으며 기존 모델 패널의 effort 미지원 안내는 유효하다.
+이 값의 Windows 집계·WinUI 표시는 다음 IMPL-608에서 연결했다.
 `WindowsCodexEffortTests.swift`에 파서·context 경계·resume·legacy decode·재가격·캐시 교체·
 sidecar migration/rollback 합성 fixture12개를 작성했다. 컴파일·테스트·실제 마이그레이션은 미실행이다.
+IMPL-608의 WindowsCodexActivityTests.swift에는 세션 중복/익명 번호·legacy/none·집계 상한/overflow·
+공개 JSON 제외/내부 보고서 보존·다른 자료 병합·기간별 집계·합계/날짜/누락 경계·privacy/stale
+합성 fixture8개를 작성했다. 모두 미실행이며 실제 Windows 화면·성능·정확도를 검증하지 않았다.
 
 ## API 참고
 

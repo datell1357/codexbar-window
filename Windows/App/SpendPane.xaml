@@ -65,7 +65,7 @@
                     </ItemsControl.ItemTemplate>
                 </ItemsControl>
             </StackPanel>
-            <ToggleSwitch x:Name="CodexModelsToggle" Header="Codex model changes and service tiers" Toggled="CodexModelsChanged" />
+            <ToggleSwitch x:Name="CodexModelsToggle" Header="Codex models, effort and session references" Toggled="CodexModelsChanged" />
             <StackPanel x:Name="CodexModelsPanel" Visibility="Collapsed" Spacing="8">
                 <TextBlock x:Name="CodexModelsContext" TextWrapping="Wrap" IsTextSelectionEnabled="True" />
                 <TextBlock Text="Current period" FontWeight="SemiBold" />

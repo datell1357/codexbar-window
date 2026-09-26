@@ -255,6 +255,7 @@ struct CostUsageCodexPreviousReport: Codable, Equatable {
     var timeZoneIdentifier: String?
     var roots: [String: Int64]?
 
+    var codexActivity: CodexModelActivityEvidence? = nil
     init?(
         report: CostUsageDailyReport,
         cache: CostUsageCache,
@@ -269,10 +270,12 @@ struct CostUsageCodexPreviousReport: Codable, Equatable {
         self.scanUntilKey = reportUntilKey
         self.timeZoneIdentifier = cache.timeZoneIdentifier
         self.roots = cache.roots
+        self.codexActivity = report.codexActivity
     }
 
     var report: CostUsageDailyReport {
-        CostUsageDailyReport(data: self.data.map(\.dailyReportValue), summary: self.summary?.dailyReportValue)
+        CostUsageDailyReport(data: self.data.map(\.dailyReportValue), summary: self.summary?.dailyReportValue,
+            codexActivity: self.codexActivity)
     }
 
     var updatedAt: Date? {

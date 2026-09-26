@@ -1691,8 +1691,10 @@ extension CostUsageScanner {
             modelsDevCacheRoot: modelsDevCacheRoot,
             customPricing: CostUsagePricing.customPricingOverlay(),
             pricingResolver: pricingResolver ?? CostUsagePricing.CodexResolver(catalog: catalog))
+        var activity = CostUsageCodexActivityBuilder(range: range)
         for usage in reportCache.files.values {
             let reconciled = self.codexCanonicalPricingRows(usage)
+            activity.add(usage, reconciled: reconciled)
             pricing.unresolvedRowGroups.formUnion(reconciled.unresolvedGroups)
             let modeEvidence = self.codexPricingModeEvidence(
                 usage: usage,
@@ -1759,7 +1761,7 @@ extension CostUsageScanner {
                 totalTokens: totalTokens,
                 totalCostUSD: costSeen ? totalCost : nil)
 
-        return CostUsageDailyReport(data: entries, summary: summary)
+        return CostUsageDailyReport(data: entries, summary: summary, codexActivity: activity.finish())
     }
 
     static func sortedModelBreakdowns(_ breakdowns: [CostUsageDailyReport.ModelBreakdown])

@@ -131,6 +131,8 @@ public struct CostUsageTokenSnapshot: Sendable, Equatable {
     public let sessions: [CostUsageSessionBreakdown]
     /// Per-request hour buckets. Empty for native Codex/Claude day logs; OpenCodex fills this.
     public let hourly: [CostUsageHourlyEntry]
+    /// Optional local Codex evidence captured together with the daily totals.
+    public let codexActivity: CodexModelActivityEvidence?
     public let updatedAt: Date
 
     public init(
@@ -151,6 +153,7 @@ public struct CostUsageTokenSnapshot: Sendable, Equatable {
         projects: [CostUsageProjectBreakdown] = [],
         sessions: [CostUsageSessionBreakdown] = [],
         hourly: [CostUsageHourlyEntry] = [],
+        codexActivity: CodexModelActivityEvidence? = nil,
         updatedAt: Date)
     {
         self.sessionTokens = sessionTokens
@@ -171,6 +174,7 @@ public struct CostUsageTokenSnapshot: Sendable, Equatable {
         self.projects = projects
         self.sessions = sessions
         self.hourly = hourly
+        self.codexActivity = codexActivity
         self.updatedAt = updatedAt
     }
 
@@ -724,6 +728,7 @@ public struct CostUsageDailyReport: Sendable, Codable {
 
     public let data: [Entry]
     public let summary: Summary?
+    public let codexActivity: CodexModelActivityEvidence?
 
     private enum CodingKeys: String, CodingKey {
         case type
@@ -736,6 +741,7 @@ public struct CostUsageDailyReport: Sendable, Codable {
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
 
+        self.codexActivity = nil
         if container.contains(.type) {
             _ = try container.decode(String.self, forKey: .type)
             self.data = try container.decode([Entry].self, forKey: .data)
@@ -758,9 +764,10 @@ public struct CostUsageDailyReport: Sendable, Codable {
         }
     }
 
-    public init(data: [Entry], summary: Summary?) {
+    public init(data: [Entry], summary: Summary?, codexActivity: CodexModelActivityEvidence? = nil) {
         self.data = data
         self.summary = summary
+        self.codexActivity = codexActivity
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -951,13 +958,18 @@ extension CostUsageDailyReport {
     }
 
     public static func merged(_ reports: [CostUsageDailyReport]) -> CostUsageDailyReport {
+        // A single report retains its own reference namespace. A merge with another non-empty
+        // source cannot claim that the native event evidence covers that source's daily totals.
+        let nonEmpty = reports.filter { !$0.data.isEmpty }
+        let activity = reports.count == 1 ? reports.first?.codexActivity
+            : nonEmpty.count == 1 ? nonEmpty.first?.codexActivity : nil
         var days: [String: EntryAccumulator] = [:]
         for report in reports {
             for entry in report.data {
                 days[entry.date, default: EntryAccumulator()].add(entry)
             }
         }
-        guard !days.isEmpty else { return CostUsageDailyReport(data: [], summary: nil) }
+        guard !days.isEmpty else { return CostUsageDailyReport(data: [], summary: nil, codexActivity: activity) }
         let dates = days.keys.sorted()
         let entries = dates.map { days[$0, default: EntryAccumulator()].build(date: $0) }
         var mix = CostUsageTokenMix()
@@ -980,7 +992,7 @@ extension CostUsageDailyReport {
             cacheCreationTokens: mix.cacheCreationTokens,
             reasoningTokens: mix.reasoningTokens,
             totalTokens: tokens.value,
-            totalCostUSD: sawCost ? totalCostUSD : nil))
+            totalCostUSD: sawCost ? totalCostUSD : nil), codexActivity: activity)
     }
 
     private static func sortedModelBreakdowns(_ breakdowns: [ModelBreakdown]) -> [ModelBreakdown] {

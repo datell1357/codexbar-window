@@ -1388,6 +1388,7 @@ public struct CostUsageFetcher: Sendable {
             daily: daily.data,
             projects: projects,
             sessions: sessions,
+            codexActivity: daily.codexActivity,
             updatedAt: updatedAt ?? now)
     }
 

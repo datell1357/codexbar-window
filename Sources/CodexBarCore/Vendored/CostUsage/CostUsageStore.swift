@@ -80,6 +80,7 @@ actor CostUsageStore {
         parserHash: CodexParserHash.value)
     static let cacheGeneration = "sqlite:\(CostUsageStore.schemaVersion)"
     static let compatiblePredecessorParserHashes: Set<String> = [
+        "ab8df053cd25eb7b", // Bounded report activity metadata keeps existing effort rows and checkpoints compatible.
         "c4fa7db2cf54bc41", // Recorded effort adds optional fields; bounded context-version migration reparses rows.
         "ca4bc3875600536f", // Reserve pricing stores retain compatible rows and checkpoints.
         "7f00691fa96c78d1", // Current-main row and checkpoint formats remain compatible.

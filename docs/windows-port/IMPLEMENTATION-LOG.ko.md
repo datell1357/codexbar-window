@@ -5844,3 +5844,15 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - **남은 범위:** 저장된 effort와 세션 참조의 Windows 집계·WinUI 표시, 모델 필터·일/주/월 타임라인 및 export 계약, 전체 설정/계정/인증, 창 위치/스크롤, managed payload/lockfile·W10·W15·StartupTask 및 전체 W01~W16/G0~G6. 기존 모델 패널의 effort 미지원 안내는 아직 유효하다. Windows 컴파일·마이그레이션·실제 데이터·UI 검증이 필요하다.
 - 상태: CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·성능·앱·실계정·원격 Windows·CI 미실행.
 - IMPL-606은 73047c0c6으로 origin/main 푸시 확인. 이번 단위도 별도 커밋·푸시한다. guidelines/COMMITS.md가 없어 기존 커밋 규칙을 적용했다. 자동화 변경 없음.
+
+## IMPL-608: 기록된 effort 토큰과 고유 세션 참조의 Windows 표시
+
+- 기존 Codex 보고서가 canonical 사용량 행을 순회하는 지점에서 activity metadata를 같이 작성한다. 추가 소스 읽기 없이 최대4096파일/100000이벤트/8192그룹을 처리하고 초과·미해결 fork·잘못된 행·overflow를 불완전 상태로 남긴다. 세션 ID/경로는 metadata에 넣지 않고 보고서 안에서만 의미가 있는 번호로 치환한다.
+- 일별 모델 합계와 같은 보고서에 metadata를 묶어 token snapshot과 내부 previous-report 저장/복원에 전달한다. 일반 CostUsageDailyReport JSON은 metadata를 내보내지 않는다. 다른 비어 있지 않은 자료를 병합하면 native-only metadata를 철회하여 Pi 등의 사용량에 native effort를 덧씌우지 않는다. 구형 저장 자료는 unknown으로 남긴다.
+- Windows 분석은 timezone·기간·입력 상한·음수/overflow를 확인하고 같은 날짜/모델의 이벤트 토큰과 보고서 토큰이 맞을 때만 집계를 쓴다. 일별 자료로 자를 수 없는 DST 경계는 기존대로 증감을 보류한다. 누락/불일치 자료를0으로 채우지 않는다.
+- 기존 WinUI 모델 패널에 현재/이전 기간의 effort별 토큰, distinct session refs 및 증감을 연결했다. 같은 세션은 모델·공급원별로 기간 내 한 번 세며, 여러 모델에서 나타난 세션 참조 수는 전체 고유 세션 수와 다를 수 있다. 요청 수를 세션 수로 사용하지 않는다.
+- effort는 rollout context에 기록된 값이며 서버 적용값으로 주장하지 않는다. Unrecorded와 none을 구분한다. PII 숨김 시 사용자 정의 라벨은 Custom으로 합치며, 세션 번호도 pipe에 전달하지 않는다. 최대12라벨과 초과 라벨 수를 보여 주고 기존128 KiB 문자열/1 MiB 응답 상한을 유지한다.
+- 합성 fixture8개 작성: 보고서별 참조/중복/PII, legacy/none/missing ID, 파일·이벤트·그룹 cap/overflow/unresolved, public JSON 제외/internal previous 유지, merge 철회, 기간별 effort/refs/공급원 분리, 누락·중복·불일치·timezone, custom privacy/stale. 전부 미실행이다.
+- **남은 범위:** 모델 필터·일/주/월 타임라인, effort 비용 배분·세션 참조 탐색·관련 export 계약, 전체 설정/계정/인증, 창 위치/스크롤, managed payload/lockfile·W10·W15·StartupTask 및 전체 W01~W16/G0~G6. 큰 이력의 cap 해제/추가 페이지 및 실제 Windows 성능·UI·집계 검증도 남는다.
+- 상태: CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·성능·앱·실계정·원격 Windows·CI 미실행. parser hash는 write 생성만 수행한다.
+- IMPL-607은 adbd5fc0e로 origin/main 푸시 확인. 이번 단위도 별도 커밋·푸시한다. guidelines/COMMITS.md가 없어 기존 커밋 규칙을 적용했다. 자동화 변경 없음.

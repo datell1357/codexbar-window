@@ -76,6 +76,7 @@ enum WindowsCodexModelAnalysis {
         let tokens: Count
         let cost: Amount
         let boundaryAligned: Bool
+        let activity: WindowsCodexActivityAnalysis.Period
     }
     struct Snapshot: Sendable {
         let currency: String?
@@ -120,7 +121,7 @@ enum WindowsCodexModelAnalysis {
             : calendar.date(byAdding: .day, value: 1, to: calendar.startOfDay(for: interval.start)) ?? interval.end
         guard firstDay <= lastDay else {
             return Period(interval: interval, fullSources: 0, tokensComplete: false, costComplete: false,
-                models: [:], tokens: Count(), cost: Amount(), boundaryAligned: aligned)
+                models: [:], tokens: Count(), cost: Amount(), boundaryAligned: aligned, activity: .init())
         }
         var fullSources = 0
         var tokensComplete = aligned && !sources.isEmpty
@@ -185,7 +186,8 @@ enum WindowsCodexModelAnalysis {
         }
         return Period(interval: interval, fullSources: fullSources,
             tokensComplete: tokensComplete && totalTokens.complete, costComplete: costComplete && totalCost.complete,
-            models: models, tokens: totalTokens, cost: totalCost, boundaryAligned: aligned)
+            models: models, tokens: totalTokens, cost: totalCost, boundaryAligned: aligned,
+            activity: WindowsCodexActivityAnalysis.build(inputs: sources.map { $0.0 }, interval: interval, calendar: calendar))
     }
 
     private static func match(_ lhs: Double?, _ rhs: Double?) -> Bool {

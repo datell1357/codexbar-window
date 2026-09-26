@@ -1,0 +1,134 @@
+#if os(Windows)
+import Foundation
+import CodexBarCore
+
+/// Report-local evidence is reconciled with the same captured daily model totals before display.
+enum WindowsCodexActivityAnalysis {
+    struct Reference: Hashable, Sendable {
+        let source: Int
+        let number: Int
+    }
+    struct Model: Sendable {
+        var effortTokens: [String: Int] = [:] // Empty key means unrecorded/invalid effort, never "none".
+        var sessions: Set<Reference> = []
+        var sessionsComplete = true
+    }
+    struct Period: Sendable {
+        var models: [String: Model] = [:]
+        var complete = false
+    }
+    private struct Key: Hashable {
+        let day: String
+        let model: String
+    }
+    static func build(inputs: [WindowsSpendDashboardModel.ProviderInput],
+                      interval: DateInterval, calendar: Calendar) -> Period {
+        var result = Period(complete: !inputs.isEmpty)
+        guard calendar.startOfDay(for: interval.start) == interval.start,
+              calendar.startOfDay(for: interval.end) == interval.end else { return Period() }
+        let start = Self.dayKey(interval.start, calendar: calendar)
+        let end = Self.dayKey(interval.end.addingTimeInterval(-1), calendar: calendar)
+        for (source, input) in inputs.enumerated() {
+            guard input.provider == .codex, input.sourceKind == .native,
+                  let evidence = input.snapshot.codexActivity, evidence.version == 1,
+                  evidence.rows.count <= 8192, evidence.timeZoneIdentifier == calendar.timeZone.identifier,
+                  Self.day(evidence.sinceDay, calendar: calendar) != nil,
+                  Self.day(evidence.untilDay, calendar: calendar) != nil,
+                  evidence.sinceDay <= start, evidence.untilDay >= end,
+                  input.snapshot.daily.count <= 400
+            else { result.complete = false; continue }
+            var expected: [Key: Int] = [:]
+            var actual: [Key: Int] = [:]
+            var sourceModels: [String: Model] = [:]
+            var seenDays: Set<String> = []
+            var valid = true
+            var modelVisits = 0
+            for entry in input.snapshot.daily {
+                guard Self.day(entry.date, calendar: calendar) != nil else { valid = false; break }
+                guard entry.date >= start, entry.date <= end else { continue }
+                guard seenDays.insert(entry.date).inserted else { valid = false; break }
+                var total = 0
+                for row in entry.modelBreakdowns ?? [] {
+                    modelVisits += 1
+                    guard modelVisits <= 8192, row.modelName.utf8.count <= 256,
+                          let tokens = row.totalTokens, tokens >= 0 else { valid = false; break }
+                    let model = CodexModelsAnalyticsBuilder().canonicalID(row.modelName)
+                    guard !model.isEmpty else { valid = false; break }
+                    let key = Key(day: entry.date, model: model)
+                    guard Self.add(tokens, to: &total), Self.add(tokens, key: key, to: &expected)
+                    else { valid = false; break }
+                }
+                if !valid || entry.totalTokens != total { valid = false; break }
+            }
+            if !valid { result.complete = false; continue }
+            for row in evidence.rows {
+                guard Self.day(row.day, calendar: calendar) != nil,
+                      row.day >= evidence.sinceDay, row.day <= evidence.untilDay,
+                      row.model.utf8.count <= 256, row.tokens >= 0,
+                      row.sessionReference.map({ (0..<4096).contains($0) }) ?? true else { valid = false; break }
+                guard row.day >= start, row.day <= end, row.tokens > 0 else { continue }
+                let model = CodexModelsAnalyticsBuilder().canonicalID(row.model)
+                guard !model.isEmpty else { valid = false; break }
+                let key = Key(day: row.day, model: model)
+                guard Self.add(row.tokens, key: key, to: &actual) else { valid = false; break }
+                var value = sourceModels[model] ?? Model()
+                let effort = Self.effort(row.effort)
+                guard Self.add(row.tokens, key: effort, to: &value.effortTokens) else { valid = false; break }
+                if let reference = row.sessionReference { value.sessions.insert(.init(source: source, number: reference)) }
+                else { value.sessionsComplete = false }
+                sourceModels[model] = value
+            }
+            // No partial allocation to effort or sessions when event totals contradict the day/model report.
+            guard valid, actual == expected else { result.complete = false; continue }
+            result.complete = result.complete && evidence.rowsComplete
+            for (model, sourceValue) in sourceModels {
+                var value = result.models[model] ?? Model()
+                for (effort, tokens) in sourceValue.effortTokens {
+                    if !Self.add(tokens, key: effort, to: &value.effortTokens) { valid = false; break }
+                }
+                guard valid else { break }
+                value.sessions.formUnion(sourceValue.sessions)
+                value.sessionsComplete = value.sessionsComplete && sourceValue.sessionsComplete
+                result.models[model] = value
+            }
+            if !valid { return Period() } // Cross-source overflow invalidates the whole aggregation.
+        }
+        return result
+    }
+
+    static func effort(_ raw: String?) -> String {
+        guard let raw, raw.utf8.count <= 128 else { return "" }
+        let value = raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard (1...64).contains(value.utf8.count),
+              value.utf8.allSatisfy({ (97...122).contains($0) || (48...57).contains($0) || $0 == 45 || $0 == 95 })
+        else { return "" }
+        return value
+    }
+
+    private static func add(_ value: Int, to total: inout Int) -> Bool {
+        let sum = total.addingReportingOverflow(value)
+        guard !sum.overflow else { return false }
+        total = sum.partialValue
+        return true
+    }
+    private static func add<Key: Hashable>(_ value: Int, key: Key, to values: inout [Key: Int]) -> Bool {
+        guard value > 0 else { return true }
+        var total = values[key] ?? 0
+        guard Self.add(value, to: &total) else { return false }
+        values[key] = total
+        return true
+    }
+    private static func dayKey(_ value: Date, calendar: Calendar) -> String {
+        let parts = calendar.dateComponents([.year, .month, .day], from: value)
+        return String(format: "%04d-%02d-%02d", parts.year ?? 0, parts.month ?? 0, parts.day ?? 0)
+    }
+    private static func day(_ key: String, calendar: Calendar) -> Date? {
+        guard key.utf8.count == 10 else { return nil }
+        let parts = key.split(separator: "-", omittingEmptySubsequences: false)
+        guard parts.count == 3, let year = Int(parts[0]), let month = Int(parts[1]), let day = Int(parts[2]),
+              let value = calendar.date(from: DateComponents(year: year, month: month, day: day)),
+              Self.dayKey(value, calendar: calendar) == key else { return nil }
+        return value
+    }
+}
+#endif
