@@ -5691,3 +5691,13 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - 상태: CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·정적 QA 스크립트·UI·provider·원격 Windows·CI는 수행하지 않았다.
 
 - 직전 IMPL-593은 847e3d79f로 origin/main 푸시 확인. 이번 단위도 별도 커밋·푸시하며 자동화 설정은 변경하지 않았다.
+
+## IMPL-595: Mistral/OpenCode Go 사용량 응답의 Windows 비용 연결
+
+- WindowsSpendProviderProjection을 추가해 이번 refresh에서 성공한 Mistral billing/OpenCode Go local daily 응답을 캡처하고, 비용 로더가 공통 JSONL 스캐너 대신 기존 provider converter를 사용하도록 연결했다. 신규 응답마다 별도 revision을 만들며 오래된 tray presentation을 fallback으로 읽지 않는다.
+- Mistral의 통화·vendorMetered·coverage/unknown 의미와 OpenCode Go의 listPriceEstimate를 보존한다. OpenCode Go 잔액/웹 quota만 있고 daily가 없거나 응답이 누락/다른 provider이면 성공한 0으로 게시하지 않고 source 실패를 전달한다.
+- OpenCode Go provider fetch에 비용 대시보드의 365일 조회 요청을 전달했다. 이는 전체 기간 데이터 존재를 보증하지 않는다. projection source는 collection retention을 허용하지 않으며 runtime context 무효화와 함께 폐기하고 최종 게시 때 캡처 revision을 다시 비교한다.
+- 합성 fixture 5개를 작성했다: Mistral 통화/원본 converter 보존, OpenCode 추정치와 잔액 분리, 응답 누락/provider 불일치, web-only 이력 부재, 동일 값 새 응답의 재사용 차단. 실행하지 않았다.
+- **남은 범위:** Mistral의 확인된 quota owner와 비용 위젯 연결, OpenCode Go 로컬 이력의 account/device scope 구분 및 위젯 연결, 다른 snapshot 기반 비용 provider, WinUI 앱·위젯 OS 통합·Sync/Fleet·packaged startup와 W01~W16/G0~G6.
+- 상태: CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·앱·실계정·원격 Windows·CI 미실행.
+- 직전 IMPL-594는 533501e5a이며 이번 단위는 별도 커밋·푸시한다. 기존 30분 자동화 카드를 조회했으나 도구 응답에 실행 상태/일정의 상세값이 없어 활성 상태를 새로 확정하지 않았다.

@@ -70,6 +70,7 @@ public actor WindowsUsageRuntime {
     private var widgetQuotaObservations: [UsageProvider: (owner: String, codexAuthFingerprint: String?, observation: WindowsWidgetSnapshotBuilder.Observation)] = [:]
     private var widgetAmbiguousQuotaProviders = Set<UsageProvider>()
     private var widgetCostOwners: [String: (source: WindowsSpendSnapshotLoader.Source, revision: UUID)] = [:]
+    private var spendProviderProjections: [UsageProvider: WindowsSpendProviderProjection] = [:]
     private let widgetService: WindowsWidgetService
     private var widgetBackendConnection: WindowsWidgetBackendConnection?
     private var widgetBackendLifecycleTask: Task<Void, Never>?
@@ -569,6 +570,7 @@ public actor WindowsUsageRuntime {
         self.emitWidgetInvalidation()
         self.widgetQuotaConfigRevision = nil
         self.widgetQuotaObservations = [:]
+        self.spendProviderProjections = [:]
         self.widgetAmbiguousQuotaProviders = []
     }
 
@@ -618,11 +620,9 @@ public actor WindowsUsageRuntime {
                 else { return source }
                 source.expectedWidgetScopeFingerprint = expected
             default:
-                // Remaining selectable providers cannot publish widget costs on Windows today:
-                // opencodego and mistral have no local cost collection in loadTokenSnapshot
-                // (remote returns nil, the scanner emits an empty report), and other providers
-                // lack re-verifiable ownership material. An environment or provider ID alone
-                // is not proof; an adapter requires fetch-time re-verification.
+                // Snapshot-projected Mistral/OpenCode Go costs still require an explicit
+                // widget ownership adapter. Local OpenCode rows do not prove server-account
+                // ownership merely because a quota overlay shares their usage response.
                 return source
             }
             let previous = self.widgetCostOwners[source.id]
@@ -3563,7 +3563,12 @@ public actor WindowsUsageRuntime {
                 cacheRoot: self.configStore.fileURL.deletingLastPathComponent()
                     .appendingPathComponent("spend-cache", isDirectory: true),
                 codexContext: codexContext)
-            let sources = self.attachWidgetCostOwnership(resolvedSources)
+            let projectedSources = resolvedSources.map { original in
+                var source = original
+                source.providerProjection = self.spendProviderProjections[source.provider]
+                return source
+            }
+            let sources = self.attachWidgetCostOwnership(projectedSources)
             let configurationRevision = try self.widgetConfigurationRevision(config)
             let collectionID = UUID()
             self.spendCollectionID = collectionID
@@ -3649,6 +3654,11 @@ public actor WindowsUsageRuntime {
                 let currentRevision = try self.widgetConfigurationRevision(config)
                 var ownersMatch = true
                 for source in sources {
+                    if WindowsSpendProviderProjection.supports(source.provider),
+                       source.providerProjection != self.spendProviderProjections[source.provider] {
+                        ownersMatch = false
+                        break
+                    }
                     if source.provider == .codex, source.verifyCodexOwner {
                         guard let home = source.codexHomePath else { ownersMatch = false; break }
                         if try CodexAuthFingerprint.fingerprintIfPresent(homePath: home) != source.expectedCodexAuthFingerprint {
@@ -5193,6 +5203,7 @@ public actor WindowsUsageRuntime {
                 selectedTokenAccountExternalIdentifier: account?.externalIdentifier,
                 tokenAccountTokenUpdater: context.tokenUpdater(for: account),
                 providerManualTokenUpdater: context.manualTokenUpdater(),
+                costUsageHistoryDays: provider == .opencodego ? WindowsSpendHistoryPolicy.scanDays : 30,
                 persistsCLISessions: true,
                 persistentCLISessionIdleWindow: self.persistentCLISessionIdleWindow(
                     now: Date(),
@@ -5215,6 +5226,11 @@ public actor WindowsUsageRuntime {
                 let title = accountLabel.map { "\(metadata.displayName) [\($0)]" } ?? metadata.displayName
                 let presentation = WindowsUsagePresentation(instanceID: provider.instanceID, provider: provider, title: title, privacyTitle: metadata.displayName, result: result, snapshot: labeledUsage, hidePersonalInfo: presentationSettings.hidePersonalInfo, showOptionalUsage: presentationSettings.showOptionalCreditsAndExtraUsage, usageBarsShowUsed: presentationSettings.usageBarsShowUsed, resetTimesShowAbsolute: presentationSettings.resetTimesShowAbsolute)
                 self.presentations[provider.instanceID] = presentation
+                if !self.shuttingDown, !Task.isCancelled, widgetContext == self.widgetQuotaContext,
+                   WindowsSpendProviderProjection.supports(provider) {
+                    self.spendProviderProjections[provider] = WindowsSpendProviderProjection(
+                        provider: provider, usage: result.usage)
+                }
                 if !self.shuttingDown, !Task.isCancelled, widgetContext == self.widgetQuotaContext,
                    WindowsWidgetConfiguration.selectableProviders.contains(provider) {
                     let owner = self.quotaAccountDiscriminator(provider: provider, snapshot: result.usage,

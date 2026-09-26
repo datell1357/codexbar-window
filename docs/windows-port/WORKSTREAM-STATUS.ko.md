@@ -1,5 +1,7 @@
 # Windows 전용 제품 작업 현황
 
+- IMPL-595: Mistral/OpenCode Go의 성공한 현재 사용량 응답을 Windows 비용 로더에 연결. 원본 통화·coverage·추정치 보존, 누락/빈 local history 실패, refresh revision으로 stale 응답 차단 및 365일 요청 작성. fixture 5개 미실행. 위젯 owner 연결·기타 비용 provider·전체 제품/Windows 검증은 남음. CODE_WRITTEN_UNVERIFIED.
+
 - IMPL-594: Claude/Vertex 지속 cache·memo JSON에 64 MiB 저장 상한 작성. load는 bounded reader로 fail closed, save/persist는 초과 인코딩 미게시. fixture 미실행. 대형 표면·전체 Windows 제품/검증은 남음. CODE_WRITTEN_UNVERIFIED.
 
 - IMPL-593: opencodego/mistral의 Windows 비용 수집 부재를 확인하고 ownership adapter 완비(비용 생산 provider 전원)를 문서화. 두 provider는 비용 수집 지원이 선행되어야 하는 별도 gap. 주석만 변경. 대형 표면·전체 Windows 제품/검증은 남음. CODE_WRITTEN_UNVERIFIED.
