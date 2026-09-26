@@ -3414,7 +3414,8 @@ public final class WindowsTrayHost: @unchecked Sendable {
 
     private func changeSpendSetting(command: UINT_PTR) {
         self.cancelPendingShareStatsCopy()
-        var settings = WindowsSpendSettings.load()
+        let previous = WindowsSpendSettings.load()
+        var settings = previous
         if command == Self.openCodexLogsCommand {
             settings.openCodexUsageLogsEnabled.toggle()
         } else if command == Self.hideNativeCodexCostsCommand {
@@ -3432,7 +3433,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
             settings.historyDays = Self.spendPeriods[Int(command - Self.spendPeriodCommandBase)]
         }
         do {
-            try settings.save()
+            try settings.saveChanges(from: previous)
             self.onSpendSettingsChanged()
         } catch {
             self.showMessage("Cost collection settings could not be saved.", caption: "Cost collection")

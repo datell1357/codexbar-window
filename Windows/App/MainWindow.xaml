@@ -9,6 +9,7 @@
             <NavigationView.MenuItems>
                 <NavigationViewItem Content="Overview" Tag="overview" Icon="Home" IsSelected="True" />
                 <NavigationViewItem Content="Usage &amp; Spend" Tag="spend" Icon="Document" />
+                <NavigationViewItem Content="Cost settings" Tag="costSettings" Icon="Setting" />
                 <NavigationViewItem Content="Display settings" Tag="settings" Icon="Setting" />
             </NavigationView.MenuItems>
             <Grid Padding="24" RowSpacing="16">
@@ -47,6 +48,9 @@
                     </Grid>
                     <Grid x:Name="SpendPage" Visibility="Collapsed">
                         <local:SpendPane x:Name="SpendView" />
+                    </Grid>
+                    <Grid x:Name="CostSettingsPage" Visibility="Collapsed">
+                        <local:SpendPreferencesPane x:Name="CostSettingsView" />
                     </Grid>
                     <ScrollViewer x:Name="SettingsPage" Visibility="Collapsed">
                         <StackPanel x:Name="SettingsControls" Spacing="20" IsEnabled="False">

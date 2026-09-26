@@ -1,0 +1,53 @@
+<UserControl x:Class="CodexBar.App.SpendPreferencesPane"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:local="using:CodexBar.App">
+    <ScrollViewer>
+        <StackPanel Spacing="16">
+            <TextBlock Text="Cost settings" Style="{ThemeResource SubtitleTextBlockStyle}" />
+            <TextBlock x:Name="StatusText" Text="Waiting for current settings…" TextWrapping="Wrap"
+                AutomationProperties.LiveSetting="Polite" />
+            <InfoBar x:Name="Notice" IsOpen="False" IsClosable="False" Severity="Warning" />
+            <StackPanel x:Name="SettingsControls" Spacing="16" IsEnabled="False">
+                <ToggleSwitch x:Name="CollectionToggle" Header="Collect supported provider costs"
+                    Tag="collectionEnabled" Toggled="SettingChanged" />
+                <ToggleSwitch x:Name="LedgerToggle" Header="Keep Codex local cost ledger"
+                    Tag="codexLocalLedgerEnabled" Toggled="SettingChanged" />
+                <ToggleSwitch x:Name="OpenCodexToggle" Header="Include OpenCodeX usage logs"
+                    Tag="openCodexUsageLogsEnabled" Toggled="SettingChanged" />
+                <ToggleSwitch x:Name="HideNativeToggle" Header="Hide native Codex costs when OpenCodeX is present"
+                    Tag="hideNativeCodexWhenOpenCodexPresent" Toggled="SettingChanged" />
+                <ComboBox x:Name="CurrencyPicker" Header="Display currency" HorizontalAlignment="Stretch"
+                    DisplayMemberPath="Title" SelectionChanged="CurrencyChanged" />
+                <TextBlock Text="Original currencies keeps each currency separate. Conversion uses available rates, which may be cached or approximate. Choosing another currency may refresh rates online. Unsupported conversions remain separate."
+                    TextWrapping="Wrap" />
+                <TextBlock Text="Changes also apply to the tray. Collection changes can start a new scan; totals update when the current data is ready."
+                    TextWrapping="Wrap" />
+                <TextBlock Text="Included cost sources" Style="{ThemeResource SubtitleTextBlockStyle}" />
+                <TextBlock x:Name="SourceStatus" TextWrapping="Wrap" />
+                <StackPanel Orientation="Horizontal" Spacing="12">
+                    <Button x:Name="IncludeAllButton" Content="Include all available sources" Click="IncludeAll" />
+                    <Button x:Name="ExcludeAllButton" Content="Exclude all available sources" Click="ExcludeAll" />
+                </StackPanel>
+                <ItemsControl x:Name="SourceList">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate x:DataType="local:SpendSourcePreference">
+                            <Border BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="0,0,0,1" Padding="8,12">
+                                <StackPanel Spacing="6">
+                                    <TextBlock Text="{x:Bind Title}" TextWrapping="Wrap" />
+                                    <TextBlock Text="{x:Bind State}" />
+                                    <Button Content="{x:Bind ActionTitle}" Tag="{x:Bind Index}" Click="SourceChanged" />
+                                </StackPanel>
+                            </Border>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+                <StackPanel Orientation="Horizontal" Spacing="12">
+                    <Button x:Name="PreviousPageButton" Content="Previous page" Click="PreviousPage" />
+                    <TextBlock x:Name="PagePosition" VerticalAlignment="Center" />
+                    <Button x:Name="NextPageButton" Content="Next page" Click="NextPage" />
+                </StackPanel>
+            </StackPanel>
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>

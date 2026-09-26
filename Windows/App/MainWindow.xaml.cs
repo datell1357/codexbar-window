@@ -28,6 +28,11 @@ public sealed partial class MainWindow : Window
         else
         {
             SpendView.Configure((query, token) => channel.SendAsync("spend", null, token, query), lifetime.Token);
+            CostSettingsView.Configure(
+                (query, token) => channel.SendAsync("spendPreferences", null, token, spendPreferencesQuery: query),
+                (query, mutation, token) => channel.SendAsync("setSpendPreference", null, token,
+                    spendPreferencesQuery: query, spendPreferencesMutation: mutation),
+                CostPreferenceSaving, lifetime.Token);
             _ = PollAsync();
         }
     }
@@ -42,6 +47,8 @@ public sealed partial class MainWindow : Window
                 if (!saving) await SendAsync("snapshot");
                 if (!saving && snapshot is not null && SpendPage.Visibility == Visibility.Visible)
                     await SpendView.RefreshAsync();
+                if (!saving && snapshot is not null && CostSettingsPage.Visibility == Visibility.Visible)
+                    await CostSettingsView.RefreshAsync();
                 await Task.Delay(TimeSpan.FromSeconds(2), lifetime.Token);
             }
             catch (OperationCanceledException) when (lifetime.IsCancellationRequested) { return; }
@@ -102,11 +109,16 @@ public sealed partial class MainWindow : Window
         snapshot = null;
         ProviderList.ItemsSource = null;
         SpendView.Invalidate();
+        CostSettingsView.Invalidate();
     }
 
     private void Apply(AppSnapshot value)
     {
-        if (snapshot?.Settings.HidePersonalInfo != value.Settings.HidePersonalInfo) SpendView.Invalidate();
+        if (snapshot?.Settings.HidePersonalInfo != value.Settings.HidePersonalInfo)
+        {
+            SpendView.Invalidate();
+            CostSettingsView.Invalidate();
+        }
         snapshot = value;
         applying = true;
         try
@@ -138,7 +150,9 @@ public sealed partial class MainWindow : Window
     {
         if (applying || saving || snapshot is null || sender is not ToggleSwitch toggle || toggle.Tag is not string key) return;
         saving = true;
+        CostSettingsView.SetExternalBusy(true);
         SpendView.Invalidate();
+        CostSettingsView.Invalidate();
         SettingsControls.IsEnabled = false;
         RefreshButton.IsEnabled = false;
         if (key == "hidePersonalInfo" && toggle.IsOn)
@@ -149,12 +163,21 @@ public sealed partial class MainWindow : Window
         finally
         {
             saving = false;
+            CostSettingsView.SetExternalBusy(false);
             if (snapshot is not null)
             {
                 SettingsControls.IsEnabled = true;
                 RefreshButton.IsEnabled = !snapshot.Refreshing;
             }
         }
+    }
+
+    private void CostPreferenceSaving(bool value)
+    {
+        saving = value;
+        SpendView.Invalidate();
+        SettingsControls.IsEnabled = !value && snapshot is not null;
+        RefreshButton.IsEnabled = !value && snapshot is { Refreshing: false };
     }
 
     private void Search(object sender, TextChangedEventArgs args) => Filter();
@@ -168,11 +191,13 @@ public sealed partial class MainWindow : Window
 
     private void Navigate(NavigationView sender, NavigationViewSelectionChangedEventArgs args)
     {
-        if (OverviewPage is null || SpendPage is null || SettingsPage is null) return;
+        if (OverviewPage is null || SpendPage is null || SettingsPage is null || CostSettingsPage is null) return;
         var tag = (args.SelectedItem as NavigationViewItem)?.Tag as string ?? "overview";
         OverviewPage.Visibility = tag == "overview" ? Visibility.Visible : Visibility.Collapsed;
         SpendPage.Visibility = tag == "spend" ? Visibility.Visible : Visibility.Collapsed;
         SpendView.SetActive(tag == "spend");
+        CostSettingsPage.Visibility = tag == "costSettings" ? Visibility.Visible : Visibility.Collapsed;
+        CostSettingsView.SetActive(tag == "costSettings");
         SettingsPage.Visibility = tag == "settings" ? Visibility.Visible : Visibility.Collapsed;
     }
 }

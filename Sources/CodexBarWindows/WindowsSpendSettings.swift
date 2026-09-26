@@ -4,6 +4,10 @@ import CodexBarCore
 
 /// Windows-owned spend preferences. Merely loading settings never starts collection.
 struct WindowsSpendSettings: Sendable, Equatable {
+    enum PersistenceFailure: Error { case settingsChanged }
+    // Tray and app requests share the backend process. Keep their preference read/compare/write
+    // operations serialized; this is not a cross-process transaction against external editors.
+    private static let persistenceLock = NSRecursiveLock()
     var openCodexUsageLogsEnabled = false
     var collectionEnabled = false
     var codexLocalLedgerEnabled = false
@@ -14,6 +18,8 @@ struct WindowsSpendSettings: Sendable, Equatable {
     var hideNativeCodexWhenOpenCodexPresent = false
 
     static func load(userDefaults: UserDefaults? = nil) -> Self {
+        Self.persistenceLock.lock()
+        defer { Self.persistenceLock.unlock() }
         guard let defaults = userDefaults ?? UserDefaults(suiteName: WindowsRefreshSettings.suiteName) else { return Self() }
         var value = Self()
         value.openCodexUsageLogsEnabled = defaults.object(forKey: "openCodexUsageLogsEnabled") as? Bool ?? false
@@ -31,6 +37,8 @@ struct WindowsSpendSettings: Sendable, Equatable {
     }
 
     func save(userDefaults: UserDefaults? = nil) throws {
+        Self.persistenceLock.lock()
+        defer { Self.persistenceLock.unlock() }
         guard let defaults = userDefaults ?? UserDefaults(suiteName: WindowsRefreshSettings.suiteName) else {
             throw CocoaError(.fileWriteUnknown)
         }
@@ -48,6 +56,47 @@ struct WindowsSpendSettings: Sendable, Equatable {
                    key: "spendDashboardHiddenSourceIDs", legacyKey: "spendHiddenSourceIDs")
         Self.store(self.hideNativeCodexWhenOpenCodexPresent, in: defaults,
                    key: "hideNativeCodexCostWhenOpenCodexPresent", legacyKey: "spendHideNativeCodexWithOpenCodex")
+    }
+
+    /// Native app writes only changed fields, avoiding unrelated settings being overwritten by a stale copy.
+    func saveChanges(from previous: Self, userDefaults: UserDefaults? = nil) throws {
+        Self.persistenceLock.lock()
+        defer { Self.persistenceLock.unlock() }
+        guard let defaults = userDefaults ?? UserDefaults(suiteName: WindowsRefreshSettings.suiteName) else {
+            throw CocoaError(.fileWriteUnknown)
+        }
+        guard Self.load(userDefaults: defaults) == previous else { throw PersistenceFailure.settingsChanged }
+        if self.bucketTimeZoneIdentifier != previous.bucketTimeZoneIdentifier ||
+            !CostUsageBucketTimeZone.isValidIdentifier(defaults.string(forKey: "tokenCostUsageBucketTimeZone") ?? "") {
+            let zone = CostUsageBucketTimeZone.isValidIdentifier(self.bucketTimeZoneIdentifier)
+                ? self.bucketTimeZoneIdentifier : CostUsageBucketTimeZone.pinIdentifier()
+            defaults.set(zone, forKey: "tokenCostUsageBucketTimeZone")
+        }
+        if self.collectionEnabled != previous.collectionEnabled {
+            defaults.set(self.collectionEnabled, forKey: "tokenCostUsageEnabled")
+        }
+        if self.codexLocalLedgerEnabled != previous.codexLocalLedgerEnabled {
+            defaults.set(self.codexLocalLedgerEnabled, forKey: "codexLocalSessionCostLedgerEnabled")
+        }
+        if self.openCodexUsageLogsEnabled != previous.openCodexUsageLogsEnabled {
+            defaults.set(self.openCodexUsageLogsEnabled, forKey: "openCodexUsageLogsEnabled")
+        }
+        if self.hideNativeCodexWhenOpenCodexPresent != previous.hideNativeCodexWhenOpenCodexPresent {
+            Self.store(self.hideNativeCodexWhenOpenCodexPresent, in: defaults,
+                key: "hideNativeCodexCostWhenOpenCodexPresent", legacyKey: "spendHideNativeCodexWithOpenCodex")
+        }
+        if self.preferredCurrencyCode != previous.preferredCurrencyCode {
+            defaults.set(Self.currency(self.preferredCurrencyCode), forKey: "preferredCurrencyCode")
+        }
+        if self.hiddenSourceIDs != previous.hiddenSourceIDs {
+            Self.store(self.hiddenSourceIDs.filter(Self.validSourceID).sorted(), in: defaults,
+                key: "spendDashboardHiddenSourceIDs", legacyKey: "spendHiddenSourceIDs")
+        }
+        if self.historyDays != previous.historyDays {
+            Self.store(max(1, min(WindowsSpendHistoryPolicy.scanDays, self.historyDays)), in: defaults,
+                key: "tokenCostUsageHistoryDays", legacyKey: "costUsageHistoryDays")
+        }
+        guard defaults.synchronize() else { throw CocoaError(.fileWriteUnknown) }
     }
 
     /// Prefer the original key, including explicit false/empty values. Loading never writes defaults.

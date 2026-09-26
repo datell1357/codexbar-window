@@ -19,6 +19,11 @@
   모델·시간대 합계가 전체 청구액을 설명한다고 가정하지 않는다.
 - Display settings는 PII 숨김, credits/extra 표시, 사용량 표시 방향, reset 시각 표시의
   네 키만 저장한다. 트레이와 같은 설정 저장소·렌더링 경로를 사용한다.
+- IMPL-602의 Cost settings는 비용 수집·Codex ledger·OpenCodeX logs·OpenCodeX가 있을 때
+  native Codex 숨김 토글, 원본 통화 유지/지원 통화 환산, 공급원별 및 전체 포함/제외를 제공한다.
+  일반 설정은 수집 결과가 없어도 읽고 저장하며, 공급원 선택은 현재 수집이 준비됐을 때 제공한다.
+  공급원은 40행씩 표시하고 전체 포함/제외는 모든 페이지에 적용한다. 현재 목록에 없는
+  공급원의 기존 숨김 설정은 보존한다. PII 모드에서는 계정 별칭 대신 Source N으로 표시한다.
 - 연결 실패 시 이전 데이터를 내리고 컨트롤을 잠근다. 저장 응답이 유실된 변경은 자동
   재전송하지 않고, 재연결 후 현재 설정을 다시 받는다.
 
@@ -41,7 +46,8 @@ WinUI 프로세스는 공급자에 직접 접속하거나 두 번째 백엔드�
    각각 최대 40행, 차트 각각 최대 365개 지점이다.
 5. 연결 첫 요청은 `hello`다. protocolVersion 1, requestID, backend generation을
    확인한다. 연결당 중복 requestID는 거절하고 4096개 뒤 재연결한다.
-6. 허용 메서드는 `hello`, `snapshot`, `refresh`, `setSetting`, `spend`이다.
+6. 허용 메서드는 `hello`, `snapshot`, `refresh`, `setSetting`, `spend`,
+   `spendPreferences`, `setSpendPreference`이다.
    snapshot은 2초 간격으로 요청한다. 설정 쓰기는 네 키의 고정 순서 boolean SHA-256
    revision을 대조한다. 이는 오래된 화면의 저장을 감지하는 낙관적 대조이며, 트레이와
    별도 스레드에서 발생하는 모든 설정 쓰기의 원자적 직렬화를 보장하지 않는다.
@@ -53,10 +59,17 @@ WinUI 프로세스는 공급자에 직접 접속하거나 두 번째 백엔드�
    HMAC revision과 행 번호/날짜를 보낸다. 원문 소유자 ID·프로젝트 경로는 전송하지 않는다.
    수집이나 행 순서가 바뀌면 이전 상세 요청을 거절한다. 시간별 projection은 controller
    옵션을 저장하거나 source를 다시 수집하지 않고, await 후 publication/설정을 다시 대조한다.
+   비용 설정은 별도 응답이며 전체 설정·현재 공급원 순서·PII·수집 세대를 HMAC revision으로
+   묶는다. 공급원 쓰기는 raw ID가 아닌 그 revision의 행 번호만 받는다. 저장 직전 값 비교와
+   변경 필드 쓰기를 backend 프로세스의 동일 잠금 아래 수행하고 트레이의 비용 설정/공급원
+   저장도 이 경로를 사용한다. 외부 프로세스의 설정 편집까지 원자적으로 직렬화하지는 않는다.
+   저장 응답은 설정 저장 여부이며 수집 완료를 의미하지 않는다. 기존 runtime이 이후
+   재집계/환율 fetch/필요한 재수집을 처리한다. 실패·응답 유실은 현재 값을 다시 읽고 자동
+   재전송하지 않는다. 앱의 표시 설정과 비용 설정 저장도 동시에 시작하지 않는다.
 7. UI는 15초, Swift I/O는 30초의 대기를 제한한다. Swift는 취소한 overlapped 작업의
    완료를 기다린 뒤 buffer/event를 해제한다. 백엔드 종료를 감지하면 UI도 닫힌다.
 
-전달 데이터는 표시 문자열·상태·네 설정뿐이다. API 키, cookie, OAuth token, raw config,
+전달 데이터는 표시 문자열·상태·표시/비용 설정과 불투명한 revision/행 번호다. API 키, cookie, OAuth token, raw config,
 파일 경로를 위한 필드는 없다. 실제 Win32 PID/ACL/취소·보안 동작은 Windows 검증이 필요하다.
 
 ## 배포 위치와 의존성
@@ -114,7 +127,7 @@ PE import 검사는 .NET assembly reference, P/Invoke, 동적 LoadLibrary, XAML/
 
 ## 남은 앱 구현
 
-전체 설정 pane, 계정·인증·provider 편집, 기간 비교·source 숨김·통화 환산 설정·share/export,
+전체 설정 pane, 계정·인증·provider 편집, 기간 비교·share/export,
 작업별 action/copy/open/login,
 레이아웃 편집, 전역 단축키·창 위치/스크롤 보존,
 전체 현지화, 키보드/Narrator/고대비·다중 모니터 QA가 남아 있다.
@@ -126,12 +139,16 @@ PE import 검사는 .NET assembly reference, P/Invoke, 동적 LoadLibrary, XAML/
 실행하지 않았으며, native pipe·WinUI·실계정 기능의 동작 증거가 아니다.
 IMPL-600의 `TestsWindows/WindowsAppSpendProjectionTests.swift`에는 query 경계·통화 분리,
 0/누락·PII·paging·heatmap·stale/partial·응답 바이트 예산의 fixture 9개를 추가했다.
-이 테스트와 UI 실행도 미실행이다. 비용 collection 활성화는 현재 트레이에서 설정한다.
+이 테스트와 UI 실행도 미실행이다. 비용 collection 활성화는 트레이와 Cost settings에서 설정한다.
 IMPL-601은 `TestsWindows/WindowsAppSpendDetailTests.swift`에 상세 요청/날짜 경계,
 수집·행 순서·privacy HMAC 결합, 모델 paging/PII, 프로젝트 누락/중복/0,
 DST 23/25시간, 시간별 publication/페이지, 합산 바이트 예산의 합성 fixture 8개를
 작성했다. 기존 controller fixture에도 선택 날짜가 공유 옵션을 바꾸지 않는 경우를 추가했다.
 모든 fixture와 WinUI 상호작용은 미실행이다.
+IMPL-602의 `WindowsAppSpendPreferencesTests.swift`에는 공급원 paging/PII,
+수집 미완료 상태의 일반 설정, 잘못된 catalog 거절, revision 변경, 미수집 공급원 설정 보존,
+허용된 설정 shape/통화, 큰 이름의 응답 상한, 요청 wire fixture 8개를 작성했다.
+모두 미실행이며 UserDefaults 저장·동시성·UI·환율 fetch의 실제 동작 증거가 아니다.
 
 ## API 참고
 

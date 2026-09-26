@@ -5770,3 +5770,15 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - **남은 범위:** 기간 비교·source 숨김·환산 설정·share/export와 전체 설정/계정 UI. managed deps/runtimeconfig·실제 lockfile·위젯/Sync/Fleet/packaged startup·전체 W01~W16/G0~G6도 남는다. Windows 실제 화면·상호작용·보안·성능은 입증하지 않았다.
 - 상태: CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·앱·실계정·원격 Windows·CI 미실행.
 - IMPL-600은 26b73bf22로 origin/main 푸시 확인. 이번 단위도 별도 커밋·푸시한다. 자동화 변경 없음.
+
+## IMPL-602: WinUI 비용 설정과 공급원·통화 편집
+
+- 별도 Cost settings 화면에 supported cost collection·Codex local ledger·OpenCodeX logs·OpenCodeX가 있을 때 native Codex 숨김 토글, 원본 통화 유지/지원 환산 통화, 공급원별·전체 포함/제외를 작성했다. 공급원 목록은 40행 페이지이며 전체 선택은 모든 페이지를 대상으로 한다.
+- 수집이 꺼져 있거나 비용 결과가 없어도 일반 설정은 제공한다. 공급원 선택은 기존 runtime의 현재 collection 선택 catalog가 준비된 경우에만 제공하고, 목록에 없는 source의 과거 숨김 설정은 보존한다. PII 모드의 Source N 표시와 원문 ID 비전송을 적용한다.
+- preferences 전용 bounded query/mutation/response와 C# 소비자를 연결했다. process HMAC은 전체 설정·catalog 순서/상태·수집 context·privacy를 묶으며 stale/범위 밖 index·중복/잘못된 catalog·허용되지 않은 통화/필드를 거절한다. 공급원 이름은 행당512 UTF-8 bytes로 제한한다.
+- WindowsSpendSettings의 변경 필드 저장과 저장 직전 값 비교를 backend 프로세스의 공통 잠금으로 묶었다. 트레이 토글·공급원 선택·최초 scan의 calendar pin도 이 경로로 연결해 오래된 settings copy의 덮어쓰기를 거절한다. 외부 프로세스의 직접 설정 편집은 잠금 범위 밖이다.
+- 저장 응답 뒤 기존 spendSettingsDidChange가 재집계/환율 fetch/필요한 재수집을 이어간다. UI는 저장 응답을 수집 완료로 표현하지 않고, 표시/비용 설정 쓰기의 중첩과 불확실 저장의 자동 재전송을 막는다. privacy·연결·탐색 변경 뒤 늦은 응답은 폐기한다.
+- 합성 fixture 8개 작성: paging/PII·수집 미완료·catalog/index 경계·HMAC 무효화·미수집 source 설정 보존·allowlist/통화·문자열 상한·wire. 실행하지 않았다. UserDefaults·잠금·WinUI·환율/공급자 실제 동작 검증도 하지 않았다.
+- **남은 범위:** 기간 비교·창별 선택 지속 저장·share/export, 전체 설정/계정/인증/작업 UI, managed payload/lockfile, W10 위젯·W15 Sync/Fleet·StartupTask와 전체 W01~W16/G0~G6.
+- 상태: CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·앱·실계정·원격 Windows·CI 미실행.
+- IMPL-601은 8eff87709로 origin/main 푸시 확인. 이번 단위도 별도 커밋·푸시한다. 자동화 변경 없음.

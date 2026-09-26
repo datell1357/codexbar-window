@@ -456,6 +456,7 @@ public actor WindowsUsageRuntime {
               var settings = self.collectedSpendSettings else {
             return .unavailable("Cost sources or settings changed. Reopen the source menu.")
         }
+        let previous = settings
         let ids = Set(selection.entries.map(\.id))
         switch mutation {
         case let .setIncluded(id, included):
@@ -464,7 +465,7 @@ public actor WindowsUsageRuntime {
         case .showAll: settings.hiddenSourceIDs.subtract(ids)
         case .hideAll: settings.hiddenSourceIDs.formUnion(ids)
         }
-        do { try settings.save() }
+        do { try settings.saveChanges(from: previous) }
         catch { return .unavailable("Cost source preferences could not be saved.") }
         await self.spendSettingsDidChange()
         return .saved
@@ -2693,6 +2694,17 @@ public actor WindowsUsageRuntime {
         self.publishRenderEntries(settings: WindowsUsagePresentationSettings.load())
     }
 
+    private func nativeAppSpendPreferencesCapture() -> WindowsAppSpendPreferences.Capture {
+        let settings = WindowsSpendSettings.load()
+        let sources: [WindowsSpendSourceSelection.Entry]?
+        if case let .selection(selection) = self.loadSpendSourceSelection() { sources = selection.entries }
+        else { sources = nil }
+        return .init(settings: settings, sources: sources,
+            hidePersonalInfo: WindowsUsagePresentationSettings.load().hidePersonalInfo,
+            context: "\(self.spendCollectionID?.uuidString ?? ""):\(self.spendGeneration):\(self.spendPublicationSequence)",
+            key: self.nativeAppSpendSelectionKey)
+    }
+
     /// Called only after the native UI transport authenticates the launched peer.
     func nativeAppRequest(_ request: WindowsAppProtocol.Request, generation: UUID) async -> WindowsAppProtocol.Response {
         func reply(_ status: String, snapshot: WindowsAppProtocol.Snapshot? = nil) -> WindowsAppProtocol.Response {
@@ -2702,6 +2714,44 @@ public actor WindowsUsageRuntime {
         guard !self.shuttingDown else { return reply("stopped") }
         guard request.protocolVersion == WindowsAppProtocol.version else { return reply("unsupportedVersion") }
         guard request.method == "hello" || request.generation == generation else { return reply("staleGeneration") }
+        if request.method == "spendPreferences" || request.method == "setSpendPreference" {
+            guard request.mutation == nil, request.spendQuery == nil,
+                  let query = request.spendPreferencesQuery, query.isValid else { return reply("invalidRequest") }
+            let capture = self.nativeAppSpendPreferencesCapture()
+            func preferenceReply(_ status: String, _ value: WindowsAppSpendPreferences.Capture) -> WindowsAppProtocol.Response {
+                var result = reply(status)
+                result.spendPreferences = value.page(query)
+                return result
+            }
+            if request.method == "spendPreferences" {
+                guard request.spendPreferencesMutation == nil else { return reply("invalidRequest") }
+                return preferenceReply("ok", capture)
+            }
+            guard let mutation = request.spendPreferencesMutation, mutation.isValid else { return reply("invalidRequest") }
+            guard let updated = capture.applying(mutation),
+                  let defaults = UserDefaults(suiteName: WindowsRefreshSettings.suiteName),
+                  WindowsSpendSettings.load(userDefaults: defaults) == capture.settings else {
+                return preferenceReply("settingsChanged", self.nativeAppSpendPreferencesCapture())
+            }
+            if updated == capture.settings { return preferenceReply("ok", capture) }
+            do { try updated.saveChanges(from: capture.settings, userDefaults: defaults) }
+            catch WindowsSpendSettings.PersistenceFailure.settingsChanged {
+                return preferenceReply("settingsChanged", self.nativeAppSpendPreferencesCapture())
+            }
+            catch {
+                // A flush failure may follow an in-memory change. Reconcile, then reread; never replay.
+                Task { await self.spendSettingsDidChange() }
+                return preferenceReply("settingsSaveFailed", self.nativeAppSpendPreferencesCapture())
+            }
+            // The acknowledged operation is preference persistence. Existing runtime machinery may
+            // fetch exchange rates or recollect after a source/collection change, so do not hold the pipe open.
+            Task { await self.spendSettingsDidChange() }
+            let persisted = self.nativeAppSpendPreferencesCapture()
+            return preferenceReply(persisted.settings == updated ? "ok" : "settingsChanged", persisted)
+        }
+        guard request.spendPreferencesQuery == nil, request.spendPreferencesMutation == nil else {
+            return reply("invalidRequest")
+        }
         if request.method == "spend" {
             guard request.mutation == nil, let query = request.spendQuery, query.isValid else { return reply("invalidRequest") }
             guard self.canPresentSpendSnapshot, let captured = self.spendSnapshot,
@@ -3706,7 +3756,7 @@ public actor WindowsUsageRuntime {
         }
         do {
             // Pin the calendar before a first enabled scan. Loading preferences alone never writes.
-            try settings.save()
+            try settings.saveChanges(from: settings)
             let resolvedSources = try WindowsSpendSourceResolver.resolve(config: config, settings: settings,
                 environment: ProcessInfo.processInfo.environment,
                 cacheRoot: self.configStore.fileURL.deletingLastPathComponent()
