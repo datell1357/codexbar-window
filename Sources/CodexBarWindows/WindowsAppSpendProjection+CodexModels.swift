@@ -118,10 +118,9 @@ extension WindowsAppSpendProjection {
             guard let value = period.activity.models[model] else {
                 return "\(name) recorded effort: " + (activityComplete(period) ? "No usage" : "Unknown")
             }
-            let publicLabels: Set<String> = ["none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra", "persistent"]
             var displayed: [String: Int] = [:]
             for (label, count) in value.effortTokens {
-                let title = label.isEmpty ? "Unrecorded" : hidePersonalInfo && !publicLabels.contains(label) ? "Custom" : label
+                let title = WindowsCodexEffortPricing.displayLabel(label, hidePersonalInfo: hidePersonalInfo)
                 let sum = (displayed[title] ?? 0).addingReportingOverflow(count)
                 guard !sum.overflow else { return "\(name) recorded effort: Unknown" }
                 displayed[title] = sum.partialValue
@@ -130,11 +129,20 @@ extension WindowsAppSpendProjection {
                 if $0.value != $1.value { return $0.value > $1.value }
                 return $0.key < $1.key
             }
+            let prices = WindowsCodexEffortPricing.displayed(value.effortPricing, hidePersonalInfo: hidePersonalInfo)
             let rows = sorted.prefix(12).map { label, count in
-                "\(label): \(tokens(count, complete: activityComplete(period)))"
+                let pricing = prices[label]
+                let amount = cost(pricing?.cost.value,
+                    complete: activityComplete(period) && period.costComplete && pricing?.costComplete == true)
+                let priced = tokens(pricing?.pricedTokens.value,
+                    complete: activityComplete(period) && pricing?.pricedTokens.complete == true)
+                let unpriced = tokens(pricing?.unpricedTokens.value,
+                    complete: activityComplete(period) && pricing?.unpricedTokens.complete == true)
+                return "\(label): \(tokens(count, complete: activityComplete(period))) tokens · \(amount)"
+                    + " · priced \(priced) / unpriced \(unpriced) tokens"
             }
             let more = sorted.count > 12 ? " · \(sorted.count - 12) additional effort labels" : ""
-            return "\(name) recorded effort tokens — " + rows.joined(separator: " · ") + more
+            return "\(name) recorded effort — " + rows.joined(separator: "\n") + more
         }
         var rows: [CodexModelRow] = []
         for index in (page * 40)..<min(keys.count, page * 40 + 40) {
@@ -185,7 +193,7 @@ extension WindowsAppSpendProjection {
             "~ marks incomplete known data. Unknown is not zero; changes require complete model totals in both periods.",
             "Service tiers require recorded standard/priority totals. Effort shows tokens attributed to a recorded rollout context, not verified server settings; Unrecorded differs from none.",
             "Session refs count distinct local sessions per model and source across the period. One session can occur under several models; these are not request counts.",
-            "Legacy or bounded event evidence may be unavailable. Effort and session refs require agreement with the same daily model totals. Detailed session navigation and effort cost allocation are not included."
+            "Legacy or bounded event evidence may be unavailable. Effort costs require event pricing to agree with the same daily model cost; no allocation by token share. Missing or mismatching prices remain unknown. Detailed session navigation is not included."
         ]
         if value.sourceCount == 0 { context.append("No included native Codex source is available for this currency.") }
         if !selectionValid { context.append("The model selection changed. Select a model from the current collection.") }

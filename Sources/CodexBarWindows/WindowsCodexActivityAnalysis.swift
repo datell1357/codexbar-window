@@ -10,6 +10,7 @@ enum WindowsCodexActivityAnalysis {
     }
     struct Model: Sendable {
         var effortTokens: [String: Int] = [:] // Empty key means unrecorded/invalid effort, never "none".
+        var effortPricing: [String: WindowsCodexEffortPricing.Value] = [:]
         var sessions: Set<Reference> = []
         var sessionsComplete = true
     }
@@ -23,7 +24,7 @@ enum WindowsCodexActivityAnalysis {
         let model: String
     }
     static func build(inputs: [WindowsSpendDashboardModel.ProviderInput],
-                      interval: DateInterval, calendar: Calendar) -> Period {
+                      interval: DateInterval, calendar: Calendar, costMultipliers: [Double]? = nil) -> Period {
         var result = Period(complete: !inputs.isEmpty)
         guard calendar.startOfDay(for: interval.start) == interval.start,
               calendar.startOfDay(for: interval.end) == interval.end else { return Period() }
@@ -88,12 +89,25 @@ enum WindowsCodexActivityAnalysis {
             // No partial allocation to effort or sessions when event totals contradict the day/model report.
             guard valid, actual == expected else { result.complete = false; continue }
             result.complete = result.complete && evidence.rowsComplete
+            let prices = WindowsCodexEffortPricing.build(daily: input.snapshot.daily, evidence: evidence,
+                since: start, until: end, multiplier: costMultipliers.map { $0.indices.contains(source) ? $0[source] : .nan } ?? 1)
+            for (day, models) in prices {
+                for (model, efforts) in models {
+                    for (effort, price) in efforts {
+                        sourceModels[model, default: .init()].effortPricing[effort, default: .init()].merge(price)
+                        sourceDays[day, default: [:]][model, default: .init()].effortPricing[effort, default: .init()].merge(price)
+                    }
+                }
+            }
             for (model, sourceValue) in sourceModels {
                 var value = result.models[model] ?? Model()
                 for (effort, tokens) in sourceValue.effortTokens {
                     if !Self.add(tokens, key: effort, to: &value.effortTokens) { valid = false; break }
                 }
                 guard valid else { break }
+                for (effort, price) in sourceValue.effortPricing {
+                    value.effortPricing[effort, default: .init()].merge(price)
+                }
                 value.sessions.formUnion(sourceValue.sessions)
                 value.sessionsComplete = value.sessionsComplete && sourceValue.sessionsComplete
                 result.models[model] = value
@@ -104,6 +118,9 @@ enum WindowsCodexActivityAnalysis {
                     var value = result.byDay[day]?[model] ?? Model()
                     for (effort, tokens) in incoming.effortTokens {
                         if !Self.add(tokens, key: effort, to: &value.effortTokens) { return Period() }
+                    }
+                    for (effort, price) in incoming.effortPricing {
+                        value.effortPricing[effort, default: .init()].merge(price)
                     }
                     value.sessions.formUnion(incoming.sessions)
                     value.sessionsComplete = value.sessionsComplete && incoming.sessionsComplete

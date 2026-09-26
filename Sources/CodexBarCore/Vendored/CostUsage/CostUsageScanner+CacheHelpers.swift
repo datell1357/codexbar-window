@@ -1694,13 +1694,20 @@ extension CostUsageScanner {
         var activity = CostUsageCodexActivityBuilder(range: range)
         for usage in reportCache.files.values {
             let reconciled = self.codexCanonicalPricingRows(usage)
-            activity.add(usage, reconciled: reconciled)
             pricing.unresolvedRowGroups.formUnion(reconciled.unresolvedGroups)
             let modeEvidence = self.codexPricingModeEvidence(
                 usage: usage,
                 reconciledRows: reconciled.rows,
                 range: range,
                 priorityTurns: priorityTurns)
+            activity.add(usage, reconciled: reconciled) { row in
+                let key = CodexDayModelKey(day: row.day, model: row.model)
+                guard !reconciled.unresolvedGroups.contains(key), !modeEvidence.mismatchGroups.contains(key)
+                else { return nil }
+                return Self.codexResolvedCostUSD(for: row, priorityTurns: priorityTurns,
+                    modelsDevCatalog: catalog, modelsDevCacheRoot: modelsDevCacheRoot,
+                    customPricing: pricing.customPricing, pricingResolver: pricing.pricingResolver)
+            }
             pricing.modeOwnershipMismatchGroups.formUnion(modeEvidence.mismatchGroups)
             pricing.priorityEvidenceGroups.formUnion(modeEvidence.priorityGroups)
             pricing.incompletePricingEvidenceGroups.formUnion(self.codexIncompletePricingEvidenceGroups(

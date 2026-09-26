@@ -5893,3 +5893,16 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - **남은 범위:** effort 비용·세션 참조 탐색, 원본 분석/CSV의 priced/unpriced coverage·share·raw aliases·세션 ID 등 풍부한 필드, 전체 설정/계정/인증, 창 위치/스크롤, managed payload/lockfile·W10·W15·StartupTask 및 전체 W01~W16/G0~G6. Windows 컴파일·CSV 파일/표 계산 앱·UI/클립보드/대화상자·성능·정확도는 검증하지 않았다. WIN-057 전체 완료가 아니다.
 - 상태: CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·성능·앱·실계정·원격 Windows·CI 미실행.
 - IMPL-610은f8e691d57로 origin/main 푸시 확인. 이번 단위도 별도 커밋·푸시한다. guidelines/COMMITS.md가 없어 기존 커밋 규칙을 적용했다. 자동화 변경 없음.
+
+## IMPL-612: 기록된 effort별 이벤트 비용과 가격 적용 토큰
+
+- bounded activity metadata에 optional knownCostUSD/pricedTokens/unpricedTokens를 추가했다. 기존 canonical 이벤트 순회에서 같은 report catalog/priority/custom pricing/resolver를 사용한다. 현재 effort 설정이나 기간 총비용을 토큰 비율로 분배하지 않는다. 안정된 이벤트 번호가 없거나 잘못된 입력·가격·overflow가 있으면 가격 근거를 비운다.
+- 원래4096파일/100000이벤트/8192그룹 한도를 유지한다. 토큰·세션 집계는 가격 누락만으로 삭제하지 않는다. 0원 가격과 가격을 모르는 사용량을 구분하며 명시적인 일부 미가격 토큰도 보존한다. 새 소스 파일·credential·catalog fetch는 추가하지 않는다.
+- Windows에서 기존 token reconciliation을 통과한 같은 source/day/model만 가격 대조한다. 이벤트 비용 합계와 보고서 모델 비용이 다르거나 가격 분할 합계가 맞지 않으면 해당 날짜·모델의 비용 배분을 철회한다. 같은 native source의 환산 배율을 사용하며 누락/비정상 배율을 무환산 금액으로 바꾸지 않는다.
+- 모델 패널의 현재/이전 기간 effort 행에 알려진 비용과 가격 적용/미가격 토큰을 표시한다. 부분 수치는 ~, 없는 값은 Unknown이다. 구형 자료나 불완전한 다른 소스가 섞이면 알려진 subtotal만 유지하고 완전 표시를 보류한다. PII 숨김 시 Custom의 토큰과 비용을 같은 라벨로 합친다.
+- CSV의 effort 행에 estimated_cost/priced_tokens/unpriced_tokens와 기존 value_status를 연결했다. 구형 metadata는 optional 필드가 없는 상태로 계속 읽고 일반 공개 보고서 JSON에는 activity metadata를 넣지 않는다. 기존 가격/기간/선택/출력 한도 계약을 유지한다.
+- 파서 hash는 쓰기 생성 모드로 d1e8a14e0226cccd로 갱신했다. 직전01c995aae18025bc는 호환 predecessor로 추가해 기존 이벤트/체크포인트/retained report를 보존한다. 이전 보고서는 새 pricing 필드가 없으면 unknown으로 표시하고 정상 보고서 재생성 시 채워진다. 원래 이벤트 파싱이나 sidecar schema는 바꾸지 않았다.
+- 합성 fixture10개 작성: 이벤트별 가격/동일 토큰의 다른 비용·무료/미가격/unstable·잘못된 분할/비정상/overflow·legacy codec·day/model/FX·불일치 시 토큰 보존·부분 가격·구형 소스/Custom·stale/bounded·누락 환율. 전부 미실행이다.
+- **남은 범위:** 세션 참조 탐색, 모델 단위 priced/unpriced coverage·share·raw aliases·세션 ID 등 원본 분석/CSV의 풍부한 필드, 전체 설정/계정/인증, 창 위치/스크롤, managed payload/lockfile·W10·W15·StartupTask 및 전체 W01~W16/G0~G6. 큰 이력의 cap/추가 페이지와 Windows 컴파일·실자료·UI/CSV·성능 검증도 남는다. WIN-057 전체 완료가 아니다.
+- 상태: CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·성능·앱·실계정·원격 Windows·CI 미실행. hash는 생성만 하고 check 모드는 실행하지 않았다.
+- IMPL-611은ac9d316a7로 origin/main 푸시 확인. 이번 단위도 별도 커밋·푸시한다. guidelines/COMMITS.md가 없어 기존 커밋 규칙을 적용했다. 자동화 변경 없음.

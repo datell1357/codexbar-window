@@ -9,13 +9,21 @@ public struct CodexModelActivityEvidence: Codable, Equatable, Sendable {
         public let effort: String?
         public let sessionReference: Int?
         public let tokens: Int
+        /// Optional for old reports. Counts partition tokens; known cost can cover only the priced portion.
+        public let knownCostUSD: Double?
+        public let pricedTokens: Int?
+        public let unpricedTokens: Int?
 
-        public init(day: String, model: String, effort: String?, sessionReference: Int?, tokens: Int) {
+        public init(day: String, model: String, effort: String?, sessionReference: Int?, tokens: Int,
+                    knownCostUSD: Double? = nil, pricedTokens: Int? = nil, unpricedTokens: Int? = nil) {
             self.day = day
             self.model = model
             self.effort = CostUsageCodexEffortContext.normalizedEffort(effort)
             self.sessionReference = sessionReference
             self.tokens = tokens
+            self.knownCostUSD = knownCostUSD
+            self.pricedTokens = pricedTokens
+            self.unpricedTokens = unpricedTokens
         }
     }
     public let version: Int

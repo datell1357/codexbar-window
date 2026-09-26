@@ -193,7 +193,8 @@ enum WindowsCodexModelAnalysis {
         return Period(interval: interval, fullSources: fullSources,
             tokensComplete: tokensComplete && totalTokens.complete, costComplete: costComplete && totalCost.complete,
             models: models, tokens: totalTokens, cost: totalCost, boundaryAligned: aligned,
-            activity: WindowsCodexActivityAnalysis.build(inputs: sources.map { $0.0 }, interval: interval, calendar: calendar),
+            activity: WindowsCodexActivityAnalysis.build(inputs: sources.map { $0.0 }, interval: interval,
+                calendar: calendar, costMultipliers: sources.map { $0.1 }),
             dailyModels: dailyModels)
     }
 

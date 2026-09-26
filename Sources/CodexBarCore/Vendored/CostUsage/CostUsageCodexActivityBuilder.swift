@@ -14,6 +14,14 @@ struct CostUsageCodexActivityBuilder {
         let effort: String?
         let session: Int?
     }
+    private struct Group {
+        var tokens = 0
+        var cost = 0.0
+        var sawCost = false
+        var pricedTokens = 0
+        var unpricedTokens = 0
+        var pricingEvidenceComplete = true
+    }
     private let range: CostUsageScanner.CostUsageDayRange
     private let limits: Limits
     private var fileCount = 0
@@ -21,14 +29,15 @@ struct CostUsageCodexActivityBuilder {
     private var complete = true
     private var exhausted = false
     private var sessions: [String: Int] = [:]
-    private var groups: [Key: Int] = [:]
+    private var groups: [Key: Group] = [:]
 
     init(range: CostUsageScanner.CostUsageDayRange, limits: Limits = .init()) {
         self.range = range
         self.limits = limits
     }
 
-    mutating func add(_ usage: CostUsageFileUsage, reconciled: CostUsageScanner.CodexCanonicalPricingRows) {
+    mutating func add(_ usage: CostUsageFileUsage, reconciled: CostUsageScanner.CodexCanonicalPricingRows,
+                      resolvedCost: (CostUsageScanner.CodexUsageRow) -> Double? = { _ in nil }) {
         guard !self.exhausted else { return }
         guard self.fileCount < max(0, self.limits.files) else { self.stop(); return }
         self.fileCount += 1
@@ -62,16 +71,36 @@ struct CostUsageCodexActivityBuilder {
                 session: reference)
             guard self.groups[key] != nil || self.groups.count < max(0, self.limits.groups)
             else { self.stop(); return }
-            let sum = (self.groups[key] ?? 0).addingReportingOverflow(total.partialValue)
+            var group = self.groups[key] ?? Group()
+            let sum = group.tokens.addingReportingOverflow(total.partialValue)
             guard !sum.overflow else { self.stop(); return }
-            self.groups[key] = sum.partialValue
+            group.tokens = sum.partialValue
+            let unpriced = row.unpricedTokens ?? 0
+            if row.eventIndex.map({ $0 >= 0 }) == true, row.cached >= 0, row.cached <= row.input,
+               unpriced >= 0, unpriced <= total.partialValue {
+                if let cost = resolvedCost(row) {
+                    let costSum = group.cost + cost
+                    if cost.isFinite, cost >= 0, costSum.isFinite, (unpriced < total.partialValue || cost == 0) {
+                        group.cost = costSum
+                        group.sawCost = true
+                        group.pricedTokens += total.partialValue - unpriced
+                        group.unpricedTokens += unpriced
+                    } else { group.pricingEvidenceComplete = false }
+                } else {
+                    group.unpricedTokens += total.partialValue
+                }
+            } else { group.pricingEvidenceComplete = false }
+            self.groups[key] = group
         }
     }
 
     func finish() -> CodexModelActivityEvidence {
-        let rows = self.groups.map { key, tokens in
+        let rows = self.groups.map { key, group in
             CodexModelActivityEvidence.Row(day: key.day, model: key.model, effort: key.effort,
-                sessionReference: key.session, tokens: tokens)
+                sessionReference: key.session, tokens: group.tokens,
+                knownCostUSD: group.pricingEvidenceComplete && group.sawCost ? group.cost : nil,
+                pricedTokens: group.pricingEvidenceComplete ? group.pricedTokens : nil,
+                unpricedTokens: group.pricingEvidenceComplete ? group.unpricedTokens : nil)
         }.sorted {
             if $0.day != $1.day { return $0.day < $1.day }
             if $0.model != $1.model { return $0.model < $1.model }

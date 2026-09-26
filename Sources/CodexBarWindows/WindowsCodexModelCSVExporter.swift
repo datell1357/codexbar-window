@@ -70,7 +70,7 @@ enum WindowsCodexModelCSVExporter {
             + "Model, component, tier, effort and timeline records overlap and must not be added together. "
             + "Costs are local estimates, not bills; currency conversion may use cached or approximate rates. "
             + "Session references deduplicate per model/source/interval, not across models or intervals. "
-            + "Effort is recorded context, not proof of server-applied effort; effort costs and raw session navigation are unavailable. "
+            + "Effort is recorded context, not proof of server-applied effort. Effort costs require event/day/model reconciliation; raw session navigation is unavailable. "
             + "Text is redacted and spreadsheet formula prefixes are escaped. This Windows schema differs from the original Mac CSV."
         for (name, period) in [("current", analysis.current), ("previous", analysis.previous)] {
             try record("scope", period: name, value: period, notes: scopeNotes)
@@ -109,6 +109,8 @@ enum WindowsCodexModelCSVExporter {
                         number: (amount?.value).map { String($0) }, complete: costComplete && amount?.complete == true)
                 }
                 let efforts = try Self.efforts(period.activity.models[key]?.effortTokens ?? [:], hidePersonalInfo: hidePersonalInfo)
+                let effortPrices = WindowsCodexEffortPricing.displayed(period.activity.models[key]?.effortPricing ?? [:],
+                    hidePersonalInfo: hidePersonalInfo)
                 if efforts.isEmpty {
                     try record("effort", period: name, value: period, index: index, metric: "recorded_effort_tokens",
                         number: activityComplete ? "0" : nil, complete: activityComplete,
@@ -117,6 +119,16 @@ enum WindowsCodexModelCSVExporter {
                     for label in efforts.keys.sorted() {
                         try record("effort", period: name, value: period, index: index, dimension: label,
                             metric: "recorded_effort_tokens", number: efforts[label].map(String.init), complete: activityComplete)
+                        let price = effortPrices[label]
+                        try record("effort", period: name, value: period, index: index, dimension: label,
+                            metric: "estimated_cost", number: (price?.cost.value).map { String($0) },
+                            complete: activityComplete && costComplete && price?.costComplete == true)
+                        try record("effort", period: name, value: period, index: index, dimension: label,
+                            metric: "priced_tokens", number: (price?.pricedTokens.value).map(String.init),
+                            complete: activityComplete && price?.pricedTokens.complete == true)
+                        try record("effort", period: name, value: period, index: index, dimension: label,
+                            metric: "unpriced_tokens", number: (price?.unpricedTokens.value).map(String.init),
+                            complete: activityComplete && price?.unpricedTokens.complete == true)
                     }
                 }
             }
@@ -166,10 +178,9 @@ enum WindowsCodexModelCSVExporter {
         return (value.sessions.isEmpty && !value.sessionsComplete ? nil : value.sessions.count, complete && value.sessionsComplete)
     }
     private static func efforts(_ values: [String: Int], hidePersonalInfo: Bool) throws -> [String: Int] {
-        let publicLabels: Set<String> = ["none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra", "persistent"]
         var result: [String: Int] = [:]
         for (label, count) in values {
-            let title = label.isEmpty ? "Unrecorded" : hidePersonalInfo && !publicLabels.contains(label) ? "Custom" : label
+            let title = WindowsCodexEffortPricing.displayLabel(label, hidePersonalInfo: hidePersonalInfo)
             let sum = (result[title] ?? 0).addingReportingOverflow(count)
             guard count >= 0, !sum.overflow else { throw Failure.unavailable }
             result[title] = sum.partialValue

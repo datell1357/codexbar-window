@@ -65,7 +65,7 @@
   Unknown/~ 및 증감 보류로 표시한다. 세션 ID/경로는 보고서별 번호로 치환해 내부에서만 쓰고
   화면/pipe에는 집계 숫자만 전달한다. PII 숨김은 사용자 정의 effort를 Custom으로 묶는다.
   최대12개 effort 라벨을 표시하며 그보다 많으면 추가 라벨 수를 알린다.
-  effort별 비용·세션 탐색 등은 남아 있으며 WIN-057 전체 완료가 아니다.
+  effort별 비용은 IMPL-612에서 연결했다. 세션 탐색 등은 남아 있으며 WIN-057 전체 완료가 아니다.
 - IMPL-609는 Focus this model / All models로 모델 하나 또는 전체를 선택하고 현재 기간의
   일/주/월 토큰·비용·세션 참조 타임라인을 보는 기능을 연결했다. 주간은 수집 시간대의
   월요일 시작이며 조회 기간 가장자리의 주/월은 실제 포함 날짜로 잘라 표시한다.
@@ -98,6 +98,14 @@
   clipboard는65,536 UTF-16 code units를 넘으면 저장을 안내한다.
   원본 Mac CSV와 동일한 schema는 아니며, 세부 priced/unpriced coverage·raw aliases·세션 ID와
   share 비율 등의 풍부한 분석 필드는 추가 집계와 계약이 남아 있다. WIN-057 전체 완료가 아니다.
+- IMPL-612는 현재/이전 기간의 기록된 effort별 비용과 가격 적용/미가격 토큰 수를 연결했다.
+  보고서의 기존 이벤트 가격 resolver를 같은 catalog/priority/custom-pricing 값으로 호출한다.
+  현재 effort 설정이나 모델 총비용을 토큰 비율로 나누지 않는다. 해당 날짜·모델의 이벤트 가격
+  합계가 같은 보고서의 비용과 맞는 경우만 사용하고, Windows 집계에도 같은 통화 환산을 적용한다.
+  구형 보고서의 누락 필드, 잘못된 가격/토큰 분할, 합계 불일치는 비용 unknown으로 남긴다.
+  무료0과 가격 미확정은 구분하며 알려진 일부 비용에는 ~를 표시한다. 알려진 토큰/세션 정보는
+  비용 근거 부족만으로 삭제하지 않는다. PII 숨김 시 사용자 정의 effort의 토큰과 비용을 Custom으로 합친다.
+  CSV effort 행에 estimated_cost/priced_tokens/unpriced_tokens를 추가하며 기존 출력 한도를 유지한다.
 
 ## 프로세스와 통신 규약
 
@@ -223,7 +231,7 @@ PE import 검사는 .NET assembly reference, P/Invoke, 동적 LoadLibrary, XAML/
 
 ## 남은 앱 구현
 
-전체 설정 pane, 계정·인증·provider 편집, Codex effort 비용·세션 참조 탐색·다중 모델 선택/모델 분석 export,
+전체 설정 pane, 계정·인증·provider 편집, Codex 세션 참조 탐색·모델 단위의 세부 가격 coverage/share/alias export,
 작업별 action/copy/open/login,
 레이아웃 편집, 전역 단축키·창 위치/스크롤 보존,
 전체 현지화, 키보드/Narrator/고대비·다중 모니터 QA가 남아 있다.
@@ -281,6 +289,10 @@ IMPL-611의 WindowsCodexModelCSVTests.swift에는 페이지 밖 선택 전체, a
 미가격/누락/partial, stale/증감, 달력/metric, CSV escape, 출력/clipboard 상한, export revision,
 action/query/전송 경계 합성 fixture10개를 작성했다. 모두 미실행이며 실제 CSV 파일/표 계산 앱,
 WinUI 버튼/클립보드/저장 대화상자·경쟁 조건·컴파일·성능은 검증하지 않았다.
+IMPL-612의 WindowsCodexEffortPricingTests.swift에는 이벤트별 가격, 무료/미가격/불안정 행,
+잘못된 분할/overflow, legacy decode, 비용 합계/환산, 불일치 시 토큰 보존, 부분 가격,
+구형 소스/Custom privacy, stale/bounded evidence, 환율 누락 합성 fixture10개를 작성했다.
+모두 미실행이다. parser hash는 쓰기 모드로 생성했으며 check 모드·빌드·UI 검증은 실행하지 않았다.
 
 ## API 참고
 
