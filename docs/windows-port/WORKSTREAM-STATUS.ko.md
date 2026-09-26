@@ -1,5 +1,7 @@
 # Windows 전용 제품 작업 현황
 
+- IMPL-601: WinUI 날짜별 시간대 비용·프로젝트 일별 비용과 내부 모델·세션 내부 모델 40행 페이지 연결 작성. 수집/기간/통화/PII/행 순서를 HMAC으로 묶고 상세 요청·await 게시 순서 재대조, DST 오프셋·누락/0·combined byte budget 보존. 새 fixture 8개 및 기존 controller fixture 확장 모두 미실행. 기간 비교/source/환산/share·전체 설정/계정·Windows 검증은 남음. CODE_WRITTEN_UNVERIFIED.
+
 - IMPL-600: WinUI 비용 화면에 기간/통화·일별 차트·토큰 히트맵·공급자/모델/프로젝트/세션 페이지 연결 작성. 재수집 없는 현재 scan projection, collection/설정 대조·PII·0/누락·stale/partial·바이트 예산 보존. fixture 9개 미실행. 비교/시간별/detail/share·전체 설정/계정·Windows 검증은 남음. CODE_WRITTEN_UNVERIFIED.
 
 - IMPL-599: WinUI locked publish 스크립트·App payload/receipt와 기존 manifest/조립/서명 연결 작성. App/root DLL 경로 분리, App DLL의 CLR portable IL 수용, EXE/assembly first-party 서명 및 최종 hash 재기록, 합성 PowerShell fixture 작성. 전부 미실행. 실제 lockfile·managed deps/runtimeconfig 대조·전체 앱 UI·Windows 실행/배포 gate는 남음. CODE_WRITTEN_UNVERIFIED.

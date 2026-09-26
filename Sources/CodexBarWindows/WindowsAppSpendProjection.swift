@@ -10,11 +10,30 @@ enum WindowsAppSpendProjection {
         var section = "providers"
         var chart = "cost"
         var page = 0
+        var detail: DetailQuery?
         var isValid: Bool {
             (1...WindowsSpendHistoryPolicy.scanDays).contains(self.days) && self.page >= 0 && self.page <= 100000 &&
                 ["providers", "models", "projects", "sessions"].contains(self.section) &&
                 ["cost", "tokens"].contains(self.chart) &&
-                (self.currency == nil || (self.currency!.utf8.count == 3 && self.currency!.utf8.allSatisfy { (65...90).contains($0) }))
+                (self.currency == nil || (self.currency!.utf8.count == 3 && self.currency!.utf8.allSatisfy { (65...90).contains($0) })) &&
+                (self.detail?.isValid ?? true)
+        }
+    }
+    struct DetailQuery: Codable, Sendable {
+        let kind: String
+        let index: Int?
+        let day: String?
+        let revision: String
+        var page = 0
+        var isValid: Bool {
+            guard (0...100000).contains(self.page), self.revision.utf8.count == 64,
+                  self.revision.utf8.allSatisfy({ (48...57).contains($0) || (97...102).contains($0) }) else { return false }
+            if self.kind == "hourly" {
+                return self.index == nil && self.day?.utf8.count == 10
+                    && self.day?.range(of: #"^[0-9]{4}-[0-9]{2}-[0-9]{2}$"#, options: .regularExpression) != nil
+            }
+            return ["project", "session"].contains(self.kind) && self.day == nil &&
+                self.index.map { (0...1000000).contains($0) } == true
         }
     }
     struct Row: Codable, Sendable {
@@ -23,6 +42,7 @@ enum WindowsAppSpendProjection {
         let cost: String
         let tokens: String
         let details: String
+        var selectionIndex: Int? = nil
     }
     struct Point: Codable, Sendable {
         let label: String
@@ -31,6 +51,17 @@ enum WindowsAppSpendProjection {
         let level: Int
         let row: Int
         let column: Int
+        var dayKey: String? = nil
+    }
+    struct DetailPage: Codable, Sendable {
+        let kind: String
+        let title: String
+        let context: String
+        let page: Int
+        let pageCount: Int
+        let totalRows: Int
+        let rows: [Row]
+        let points: [Point]
     }
     struct Page: Codable, Sendable {
         let days: Int
@@ -49,13 +80,16 @@ enum WindowsAppSpendProjection {
         let truncated: Bool
         let rows: [Row]
         let points: [Point]
+        let selectionRevision: String
+        var detail: DetailPage? = nil
     }
 
     static func make(snapshot: WindowsSpendDashboardController.Snapshot, query: Query,
-                     hidePersonalInfo: Bool, calendar: Calendar) -> Page {
+                     hidePersonalInfo: Bool, calendar: Calendar, selectionRevision: String,
+                     hourlySnapshot: WindowsSpendDashboardController.Snapshot? = nil) -> Page {
         let model = snapshot.model
         // At most six JSON bytes per ASCII control byte; leave room for numeric/structural overhead.
-        var remaining = 96 * 1024
+        var remaining = 128 * 1024
         var truncated = false
         func text(_ raw: String, limit: Int = 512) -> String {
             let result = WindowsAppProtocol.boundedText(LogRedactor.redact(raw).replacingOccurrences(of: "\0", with: ""),
@@ -150,7 +184,8 @@ enum WindowsAppSpendProjection {
                     details = "Covered days: \(row.coveredDayCount) / \(model.requestedDays)"
                 }
                 rows.append(Row(title: text(title), subtitle: text(subtitle),
-                    cost: text(cost(amount, group.currencyCode)), tokens: text(tokens(count)), details: text(details, limit: 1024)))
+                    cost: text(cost(amount, group.currencyCode)), tokens: text(tokens(count)), details: text(details, limit: 1024),
+                    selectionIndex: ["projects", "sessions"].contains(query.section) ? index : nil))
             }
         }
         if query.chart == "tokens" {
@@ -174,9 +209,11 @@ enum WindowsAppSpendProjection {
                     ?? "No known samples. This is not a confirmed zero."
                 points.append(.init(label: text(label, limit: 96),
                     detail: text(label + "\n" + detail + "\nDaily bars can be incomplete.", limit: 256),
-                    value: known, level: 0, row: 0, column: offset))
+                    value: known, level: 0, row: 0, column: offset, dayKey: Self.dayKey(day, calendar: bucketCalendar)))
             }
         }
+        let detail = Self.detail(snapshot: snapshot, query: query, hourlySnapshot: hourlySnapshot,
+            hidePersonalInfo: hidePersonalInfo, calendar: calendar, revision: selectionRevision, text: { text($0, limit: $1) })
         let totalCost = group.map { ($0.hasPartialCost ? "~" : "") + cost($0.totalCost, $0.currencyCode) } ?? "Unknown"
         let totalTokens = group.map { ($0.hasPartialTokens ? "~" : "") + tokens($0.totalTokens) } ?? "Unknown"
         let costText = text(totalCost)
@@ -186,7 +223,23 @@ enum WindowsAppSpendProjection {
             totalCost: costText, totalTokens: tokenText, context: contextText, stale: snapshot.stale,
             partial: !snapshot.sourceFailures.isEmpty || snapshot.openCodexObservation == .unavailable
                 || group?.hasPartialCost == true || group?.hasPartialTokens == true,
-            truncated: truncated, rows: rows, points: points)
+            truncated: truncated, rows: rows, points: points, selectionRevision: selectionRevision, detail: detail)
+    }
+
+    static func dayKey(_ day: Date, calendar: Calendar) -> String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.calendar = calendar; formatter.timeZone = calendar.timeZone; formatter.dateFormat = "yyyy-MM-dd"
+        return formatter.string(from: day)
+    }
+
+    static func selectedDay(_ raw: String, calendar: Calendar) -> Date? {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.calendar = calendar; formatter.timeZone = calendar.timeZone; formatter.dateFormat = "yyyy-MM-dd"
+        formatter.isLenient = false
+        guard let day = formatter.date(from: raw), Self.dayKey(day, calendar: calendar) == raw else { return nil }
+        return calendar.startOfDay(for: day)
     }
 }
 #endif

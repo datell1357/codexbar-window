@@ -32,6 +32,7 @@
             <StackPanel Orientation="Horizontal" Spacing="12">
                 <Button Content="Previous day" Click="PreviousDay" />
                 <Button Content="Next day" Click="NextDay" />
+                <Button x:Name="HourlyButton" Content="Hourly details" Click="ShowHourly" IsEnabled="False" />
                 <TextBlock x:Name="DayPosition" VerticalAlignment="Center" />
             </StackPanel>
             <TextBlock x:Name="DayDetail" TextWrapping="Wrap" IsTextSelectionEnabled="True"
@@ -51,6 +52,8 @@
                                     <TextBlock Text="{x:Bind Cost}" /><TextBlock Text="{x:Bind Tokens}" /><TextBlock Text="tokens" />
                                 </StackPanel>
                                 <TextBlock Text="{x:Bind Details}" TextWrapping="Wrap" IsTextSelectionEnabled="True" />
+                                <Button Content="Models and details" Tag="{x:Bind SelectionIndex}" Click="OpenDetail"
+                                    Visibility="{x:Bind DetailVisibility}" />
                             </StackPanel>
                         </Border>
                     </DataTemplate>
@@ -60,6 +63,43 @@
                 <Button x:Name="PreviousPageButton" Content="Previous page" Click="PreviousPage" IsEnabled="False" />
                 <TextBlock x:Name="PagePosition" VerticalAlignment="Center" />
                 <Button x:Name="NextPageButton" Content="Next page" Click="NextPage" IsEnabled="False" />
+            </StackPanel>
+            <StackPanel x:Name="DetailPanel" Visibility="Collapsed" Spacing="12">
+                <StackPanel Orientation="Horizontal" Spacing="12">
+                    <TextBlock x:Name="DetailTitle" Style="{ThemeResource SubtitleTextBlockStyle}" TextWrapping="Wrap" />
+                    <Button Content="Close details" Click="CloseDetail" />
+                </StackPanel>
+                <TextBlock x:Name="DetailContext" TextWrapping="Wrap" IsTextSelectionEnabled="True" />
+                <ScrollViewer HorizontalScrollBarVisibility="Auto" HorizontalScrollMode="Enabled" VerticalScrollMode="Disabled">
+                    <Canvas x:Name="DetailCanvas" Height="200" MinWidth="650" AutomationProperties.Name="Selected cost detail chart" />
+                </ScrollViewer>
+                <StackPanel Orientation="Horizontal" Spacing="12">
+                    <Button Content="Previous point" Click="PreviousDetailPoint" />
+                    <Button Content="Next point" Click="NextDetailPoint" />
+                    <TextBlock x:Name="DetailPointPosition" VerticalAlignment="Center" />
+                </StackPanel>
+                <TextBlock x:Name="DetailPointText" TextWrapping="Wrap" AutomationProperties.LiveSetting="Polite" />
+                <ItemsControl x:Name="DetailRows">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate x:DataType="local:SpendRow">
+                            <Border BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="0,0,0,1" Padding="8,12">
+                                <StackPanel Spacing="4">
+                                    <TextBlock Text="{x:Bind Title}" FontWeight="SemiBold" TextWrapping="Wrap" />
+                                    <TextBlock Text="{x:Bind Subtitle}" TextWrapping="Wrap" />
+                                    <StackPanel Orientation="Horizontal" Spacing="16">
+                                        <TextBlock Text="{x:Bind Cost}" /><TextBlock Text="{x:Bind Tokens}" /><TextBlock Text="tokens" />
+                                    </StackPanel>
+                                    <TextBlock Text="{x:Bind Details}" TextWrapping="Wrap" IsTextSelectionEnabled="True" />
+                                </StackPanel>
+                            </Border>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+                <StackPanel Orientation="Horizontal" Spacing="12">
+                    <Button x:Name="PreviousDetailButton" Content="Previous detail page" Click="PreviousDetailPage" />
+                    <TextBlock x:Name="DetailPagePosition" VerticalAlignment="Center" />
+                    <Button x:Name="NextDetailButton" Content="Next detail page" Click="NextDetailPage" />
+                </StackPanel>
             </StackPanel>
         </StackPanel>
     </ScrollViewer>

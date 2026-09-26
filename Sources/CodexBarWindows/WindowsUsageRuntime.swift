@@ -417,6 +417,7 @@ public actor WindowsUsageRuntime {
     private var spendSnapshot: WindowsSpendDashboardController.Snapshot?
     private var spendState: SpendCollectionState = .idle
     private var spendGeneration: UInt64 = 0
+    private let nativeAppSpendSelectionKey = SymmetricKey(size: .bits256)
 
     /// The native dashboard reads this actor-owned value, never a previous controller's data.
     func currentSpendSnapshot() -> (SpendCollectionState, WindowsSpendDashboardController.Snapshot?) {
@@ -2713,13 +2714,34 @@ public actor WindowsUsageRuntime {
             guard !self.shuttingDown, self.canPresentSpendSnapshot,
                   collection == self.spendCollectionID, spendGeneration == self.spendGeneration,
                   sequence == self.spendPublicationSequence, self.spendController === controller,
+                  projected.publicationSequence == captured.publicationSequence,
                   self.collectedSpendSettings == settings, WindowsSpendSettings.load() == settings else {
                 return reply("spendChanged")
             }
+            let privacy = WindowsUsagePresentationSettings.load().hidePersonalInfo
+            let context = "\(collection?.uuidString ?? ""):\(spendGeneration):\(sequence)"
+            let display = captured.stale ? projected.refreshing() : projected
+            let revision = WindowsAppSpendSelection.revision(snapshot: display, query: query,
+                context: context, hidePersonalInfo: privacy, key: self.nativeAppSpendSelectionKey)
+            guard WindowsAppSpendProjection.acceptsDetail(query, snapshot: display,
+                calendar: settings.bucketCalendar, revision: revision) else {
+                return reply("spendChanged")
+            }
+            var hourly: WindowsSpendDashboardController.Snapshot?
+            if let detail = query.detail, detail.kind == "hourly", let raw = detail.day,
+               let day = WindowsAppSpendProjection.selectedDay(raw, calendar: settings.bucketCalendar) {
+                hourly = await controller.snapshot(days: query.days, selectedDay: day, now: captured.loadedAt ?? Date())
+                guard !self.shuttingDown, self.canPresentSpendSnapshot,
+                      collection == self.spendCollectionID, spendGeneration == self.spendGeneration,
+                      sequence == self.spendPublicationSequence, self.spendController === controller,
+                      hourly?.publicationSequence == projected.publicationSequence,
+                      self.collectedSpendSettings == settings, WindowsSpendSettings.load() == settings,
+                      WindowsUsagePresentationSettings.load().hidePersonalInfo == privacy else { return reply("spendChanged") }
+            }
             var result = reply("ok")
-            result.spend = WindowsAppSpendProjection.make(snapshot: captured.stale ? projected.refreshing() : projected,
-                query: query, hidePersonalInfo: WindowsUsagePresentationSettings.load().hidePersonalInfo,
-                calendar: settings.bucketCalendar)
+            result.spend = WindowsAppSpendProjection.make(snapshot: display,
+                query: query, hidePersonalInfo: privacy, calendar: settings.bucketCalendar,
+                selectionRevision: revision, hourlySnapshot: hourly)
             return result
         }
         guard request.spendQuery == nil else { return reply("invalidRequest") }

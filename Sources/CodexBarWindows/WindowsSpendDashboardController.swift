@@ -140,9 +140,10 @@ actor WindowsSpendDashboardController {
     }
 
     /// A window's period selector projects the captured scan without changing collection or tray preferences.
-    func snapshot(days: Int, now: Date) -> Snapshot {
+    func snapshot(days: Int, selectedDay: Date? = nil, now: Date) -> Snapshot {
         var options = self.options
         options.days = max(1, min(WindowsSpendHistoryPolicy.scanDays, days))
+        options.selectedDay = selectedDay
         return self.makeSnapshot(options: options, now: now)
     }
 

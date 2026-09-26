@@ -5758,3 +5758,15 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - **남은 범위:** 기간 비교·시간별 상세·프로젝트/세션 내 모델 drilldown·source 숨김·환산 설정·share/export와 전체 설정/계정 UI. managed deps/runtimeconfig·실제 lockfile·위젯/Sync/Fleet/packaged startup·전체 W01~W16/G0~G6도 남는다. 사용자 화면 동작을 확인한 것은 아니다.
 - 상태: CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·앱·실계정·원격 Windows·CI 미실행.
 - IMPL-599는 9dfd72309로 origin/main 푸시 확인. 이번 단위도 별도 커밋·푸시한다. 자동화 변경 없음.
+
+## IMPL-601: WinUI 시간대·프로젝트·세션 상세 분석
+
+- 일별 비용에서 선택 날짜의 시간대 차트를 여는 동작, 프로젝트의 일별 비용/내부 모델, 세션의 내부 모델/요청 수/token class 표시를 작성했다. 모델과 시간별 source 목록은 40행씩 이동하며 40행 이후도 조회한다.
+- 상세 요청에 현재 통화·기간·PII·수집 세대·프로젝트/세션 순서를 묶은 프로세스 키 HMAC revision과 행 번호/날짜를 사용한다. 수집 갱신이나 행 교체 때 이전 상세를 다른 항목에 적용하지 않으며 source/account ID·프로젝트 경로는 UI JSON에 보내지 않는다.
+- 날짜 문자열은 엄격히 파싱하고 기간의 끝 날짜는 제외한다. 시간별 projection은 공유 controller 옵션을 변경하거나 source를 다시 fetch하지 않는다. 두 controller await 사이의 publication/context/PII 변경과 시간별 snapshot의 날짜·통화·시간대 불일치를 거절한다.
+- 프로젝트 일별 중복은 임의 합산하지 않고 unknown으로 남긴다. 시간별 차트는 기존 calendar bucket을 사용해 DST의 23/25시간과 반복 시각의 UTC 오프셋을 표시한다. 누락된 비용/토큰은0으로 만들지 않으며, 세션 누적액과 시간대/모델 부분 합계의 범위를 화면에 명시한다.
+- 상위/상세의 공유 UTF-8 text 예산을 128 KiB로 제한하고 각각 최대40행·365개 지점을 보내며 기존1 MiB response 상한을 유지한다. 개인정보/연결/선택 변경 시 상세도 철회하고 동일 차트/목록의 재생성을 줄인다.
+- `WindowsAppSpendDetailTests.swift`에 요청/날짜 경계·HMAC binding·paging/PII·프로젝트 duplicate/zero·DST·시간별 publication/페이지·합산 바이트 예산 fixture 8개를 작성했다. 기존 controller fixture에 선택 날짜가 공유 옵션에 남지 않는 경우를 추가했다. 실행하지 않았다.
+- **남은 범위:** 기간 비교·source 숨김·환산 설정·share/export와 전체 설정/계정 UI. managed deps/runtimeconfig·실제 lockfile·위젯/Sync/Fleet/packaged startup·전체 W01~W16/G0~G6도 남는다. Windows 실제 화면·상호작용·보안·성능은 입증하지 않았다.
+- 상태: CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·앱·실계정·원격 Windows·CI 미실행.
+- IMPL-600은 26b73bf22로 origin/main 푸시 확인. 이번 단위도 별도 커밋·푸시한다. 자동화 변경 없음.

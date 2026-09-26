@@ -14,6 +14,8 @@ public sealed partial class SpendPane : UserControl
     private int epoch;
     private int page;
     private int selectedDay;
+    private int selectedDetailPoint;
+    private SpendDetailQuery? detail;
     private bool applying;
     private bool loading;
     private bool pending;
@@ -23,7 +25,7 @@ public sealed partial class SpendPane : UserControl
     public SpendPane()
     {
         InitializeComponent();
-        ActualThemeChanged += (_, _) => DrawChart();
+        ActualThemeChanged += (_, _) => { DrawChart(); DrawDetailChart(); };
     }
 
     internal void Configure(Func<SpendQuery, CancellationToken, Task<AppResponse>> request, CancellationToken lifetime)
@@ -39,9 +41,10 @@ public sealed partial class SpendPane : UserControl
         else { Invalidate(); }
     }
 
-    internal void Invalidate()
+    internal void Invalidate(bool clearDetail = true)
     {
         epoch++;
+        if (clearDetail) { detail = null; selectedDetailPoint = 0; }
         current = null;
         BreakdownList.ItemsSource = null;
         ChartCanvas.Children.Clear();
@@ -53,6 +56,11 @@ public sealed partial class SpendPane : UserControl
         PreviousPageButton.IsEnabled = NextPageButton.IsEnabled = false;
         PagePosition.Text = "";
         StatusText.Text = "Waiting for current cost data…";
+        HourlyButton.IsEnabled = false;
+        DetailPanel.Visibility = Visibility.Collapsed;
+        DetailRows.ItemsSource = null;
+        DetailCanvas.Children.Clear();
+        DetailTitle.Text = DetailContext.Text = DetailPointText.Text = DetailPointPosition.Text = DetailPagePosition.Text = "";
     }
 
     internal async Task RefreshAsync()
@@ -77,7 +85,9 @@ public sealed partial class SpendPane : UserControl
             }
             if (value.Days != query.Days || value.Chart != query.Chart || value.Section != query.Section)
                 throw new IOException("Spend response differs from the requested view.");
-            Apply(value, query);
+            if (query.Detail is { } selection && (value.SelectionRevision != selection.Revision
+                || value.Detail?.Kind != selection.Kind)) throw new IOException("Spend detail selection changed.");
+            Apply(value);
         }
         catch (Exception error) when (error is IOException or OperationCanceledException or InvalidOperationException
             or System.Text.Json.JsonException or System.ComponentModel.Win32Exception or UnauthorizedAccessException)
@@ -96,13 +106,17 @@ public sealed partial class SpendPane : UserControl
     private SpendQuery Query() => new(
         int.Parse((PeriodPicker.SelectedItem as ComboBoxItem)?.Tag as string ?? "30"), currency,
         (SectionPicker.SelectedItem as ComboBoxItem)?.Tag as string ?? "providers",
-        (ChartPicker.SelectedItem as ComboBoxItem)?.Tag as string ?? "cost", page);
+        (ChartPicker.SelectedItem as ComboBoxItem)?.Tag as string ?? "cost", page, detail);
 
-    private void Apply(SpendPage value, SpendQuery query)
+    private void Apply(SpendPage value)
     {
         var selectedLabel = current?.Points.ElementAtOrDefault(selectedDay)?.Label;
         var chartChanged = current is null || current.Chart != value.Chart || !current.Points.SequenceEqual(value.Points);
         var rowsChanged = current is null || !current.Rows.SequenceEqual(value.Rows);
+        var detailRowsChanged = current?.Detail is not { } previousDetail || value.Detail is not { } nextDetail
+            || !previousDetail.Rows.SequenceEqual(nextDetail.Rows);
+        var detailChartChanged = current?.Detail is not { } previousChart || value.Detail is not { } nextChart
+            || !previousChart.Points.SequenceEqual(nextChart.Points);
         current = value;
         page = value.Page;
         applying = true;
@@ -127,24 +141,52 @@ public sealed partial class SpendPane : UserControl
         var retained = selectedLabel is null ? -1 : Array.FindIndex(value.Points, point => point.Label == selectedLabel);
         selectedDay = retained >= 0 ? retained : Math.Clamp(selectedDay, 0, Math.Max(0, value.Points.Length - 1));
         ShowDay();
+        DetailPanel.Visibility = value.Detail is null ? Visibility.Collapsed : Visibility.Visible;
+        if (value.Detail is { } child)
+        {
+            if (detail is not null) detail = detail with { Page = child.Page };
+            DetailTitle.Text = child.Title;
+            DetailContext.Text = child.Context;
+            if (detailRowsChanged) DetailRows.ItemsSource = child.Rows;
+            if (detailChartChanged) DrawDetailChart();
+            DetailPagePosition.Text = child.TotalRows == 0 ? "No model or source rows available"
+                : $"Page {child.Page + 1} / {child.PageCount} · {child.TotalRows} rows";
+            PreviousDetailButton.IsEnabled = child.Page > 0;
+            NextDetailButton.IsEnabled = child.Page + 1 < child.PageCount;
+            selectedDetailPoint = Math.Clamp(selectedDetailPoint, 0, Math.Max(0, child.Points.Length - 1));
+            ShowDetailPoint();
+        }
+        else
+        {
+            DetailRows.ItemsSource = null;
+            DetailCanvas.Children.Clear();
+            DetailTitle.Text = DetailContext.Text = DetailPointText.Text = DetailPointPosition.Text = "";
+        }
     }
 
     private void DrawChart()
     {
-        ChartCanvas.Children.Clear();
-        if (current is null || current.Points.Length == 0) return;
+        Draw(ChartCanvas, current?.Points ?? [], current?.Chart == "tokens", index => { selectedDay = index; ShowDay(); });
+    }
+
+    private void DrawDetailChart() =>
+        Draw(DetailCanvas, current?.Detail?.Points ?? [], false, index => { selectedDetailPoint = index; ShowDetailPoint(); });
+
+    private void Draw(Canvas canvas, SpendPoint[] points, bool tokens, Action<int> select)
+    {
+        canvas.Children.Clear();
+        if (points.Length == 0) return;
         var accentColor = Application.Current.Resources.TryGetValue("SystemAccentColor", out var resource)
             && resource is Windows.UI.Color color ? color : Microsoft.UI.Colors.SteelBlue;
         var accent = new SolidColorBrush(accentColor);
         var foreground = Foreground;
-        var maximum = Math.Max(1, current.Points.Max(point => point.Value ?? 0));
-        var tokens = current.Chart == "tokens";
-        ChartCanvas.Width = tokens ? Math.Max(650, (current.Points.Max(point => point.Column) + 1) * 14)
-            : Math.Max(650, current.Points.Length * 9);
-        ChartCanvas.Height = tokens ? 112 : 200;
-        for (var index = 0; index < current.Points.Length; index++)
+        var maximum = Math.Max(1, points.Max(point => point.Value ?? 0));
+        canvas.Width = tokens ? Math.Max(650, (points.Max(point => point.Column) + 1) * 14)
+            : Math.Max(650, points.Length * 9);
+        canvas.Height = tokens ? 112 : 200;
+        for (var index = 0; index < points.Length; index++)
         {
-            var point = current.Points[index];
+            var point = points[index];
             var height = tokens ? 12 : point.Value is null ? 3 : Math.Max(2, point.Value.Value / maximum * 180);
             var rectangle = new Rectangle { Width = tokens ? 12 : 7, Height = height,
                 Fill = (tokens ? point.Level <= 1 : point.Value is null) ? foreground : accent,
@@ -155,10 +197,10 @@ public sealed partial class SpendPane : UserControl
             AutomationProperties.SetName(button, point.Detail);
             ToolTipService.SetToolTip(button, point.Detail);
             var captured = index;
-            button.Click += (_, _) => { selectedDay = captured; ShowDay(); };
+            button.Click += (_, _) => select(captured);
             Canvas.SetLeft(button, tokens ? point.Column * 14 : index * 9);
             Canvas.SetTop(button, tokens ? point.Row * 14 : 0);
-            ChartCanvas.Children.Add(button);
+            canvas.Children.Add(button);
         }
     }
 
@@ -167,6 +209,49 @@ public sealed partial class SpendPane : UserControl
         var point = current?.Points.ElementAtOrDefault(selectedDay);
         DayDetail.Text = point?.Detail ?? "No chart data is available.";
         DayPosition.Text = point is null ? "" : $"{selectedDay + 1} / {current!.Points.Length}";
+        HourlyButton.IsEnabled = current?.Chart == "cost" && point?.DayKey is not null && current.Currency is not null;
+    }
+    private void ShowDetailPoint()
+    {
+        var points = current?.Detail?.Points;
+        var point = points?.ElementAtOrDefault(selectedDetailPoint);
+        DetailPointText.Text = point?.Detail ?? "No daily or hourly samples are available for this detail.";
+        DetailPointPosition.Text = point is null ? "" : $"{selectedDetailPoint + 1} / {points!.Length}";
+    }
+    private void OpenDetail(object sender, RoutedEventArgs args)
+    {
+        if (current is null || current.Currency is null || sender is not Button button || button.Tag is not int index
+            || current.Section is not ("projects" or "sessions")) return;
+        detail = new SpendDetailQuery(current.Section == "projects" ? "project" : "session", index, null, current.SelectionRevision);
+        selectedDetailPoint = 0;
+        Reload(false);
+    }
+    private void ShowHourly(object sender, RoutedEventArgs args)
+    {
+        if (current?.Chart != "cost" || current.Currency is null
+            || current.Points.ElementAtOrDefault(selectedDay)?.DayKey is not { } day) return;
+        detail = new SpendDetailQuery("hourly", null, day, current.SelectionRevision);
+        selectedDetailPoint = 0;
+        Reload(false);
+    }
+    private void CloseDetail(object sender, RoutedEventArgs args) => Reload();
+    private void PreviousDetailPoint(object sender, RoutedEventArgs args) { selectedDetailPoint = Math.Max(0, selectedDetailPoint - 1); ShowDetailPoint(); }
+    private void NextDetailPoint(object sender, RoutedEventArgs args)
+    {
+        selectedDetailPoint = Math.Min(Math.Max(0, (current?.Detail?.Points.Length ?? 0) - 1), selectedDetailPoint + 1);
+        ShowDetailPoint();
+    }
+    private void PreviousDetailPage(object sender, RoutedEventArgs args)
+    {
+        if (detail is null || detail.Page == 0) return;
+        detail = detail with { Page = detail.Page - 1 };
+        Reload(false);
+    }
+    private void NextDetailPage(object sender, RoutedEventArgs args)
+    {
+        if (detail is null || current?.Detail is not { } child || child.Page + 1 >= child.PageCount) return;
+        detail = detail with { Page = child.Page + 1 };
+        Reload(false);
     }
     private void PreviousDay(object sender, RoutedEventArgs args) { selectedDay = Math.Max(0, selectedDay - 1); ShowDay(); }
     private void NextDay(object sender, RoutedEventArgs args) { selectedDay = Math.Min(Math.Max(0, (current?.Points.Length ?? 0) - 1), selectedDay + 1); ShowDay(); }
@@ -185,5 +270,5 @@ public sealed partial class SpendPane : UserControl
         page = 0;
         Reload();
     }
-    private void Reload() { Invalidate(); pending = true; _ = RefreshAsync(); }
+    private void Reload(bool clearDetail = true) { Invalidate(clearDetail); pending = true; _ = RefreshAsync(); }
 }

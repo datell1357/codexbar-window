@@ -44,7 +44,7 @@ struct WindowsAppSpendProjectionTests {
                              query: WindowsAppSpendProjection.Query = .init(days: 2), privacy: Bool = true)
         -> WindowsAppSpendProjection.Page {
         WindowsAppSpendProjection.make(snapshot: snapshot, query: query,
-            hidePersonalInfo: privacy, calendar: Self.calendar)
+            hidePersonalInfo: privacy, calendar: Self.calendar, selectionRevision: String(repeating: "0", count: 64))
     }
 
     private actor LoadCounter {
@@ -62,10 +62,14 @@ struct WindowsAppSpendProjectionTests {
         await controller.refresh()
         let week = await controller.snapshot(days: 7, now: Self.day)
         let year = await controller.snapshot(days: 365, now: Self.day)
+        let hourly = await controller.snapshot(days: 7, selectedDay: Self.day, now: Self.day)
         let shared = await controller.snapshot(now: Self.day)
         #expect(week.model.requestedDays == 7)
         #expect(year.model.requestedDays == 365)
+        #expect(hourly.model.requestedDays == 7)
+        #expect(hourly.model.selectedDay != nil)
         #expect(shared.model.requestedDays == 30)
+        #expect(shared.model.selectedDay == nil)
         #expect(await counter.count == 1)
         await controller.stop()
     }
