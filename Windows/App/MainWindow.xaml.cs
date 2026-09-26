@@ -12,6 +12,10 @@ public sealed partial class MainWindow : Window
     private bool applying;
     private bool saving;
     private string? actionNotice;
+    private readonly ViewPreferencesSession? viewPreferences;
+    private bool restoringView;
+    private bool closing;
+    private bool allowClose;
 
     internal MainWindow(BackendChannel? channel)
     {
@@ -19,25 +23,99 @@ public sealed partial class MainWindow : Window
         InitializeComponent();
         AppWindow.Resize(new Windows.Graphics.SizeInt32(1040, 760));
         Closed += (_, _) => { lifetime.Cancel(); channel?.Dispose(); };
+        AppWindow.Closing += Closing;
         if (channel is null)
         {
             StatusText.Text = "Open CodexBar from its tray menu.";
             Notice.Message = "The running CodexBar tray connects this window to your usage and settings.";
             Notice.IsOpen = true;
+            ViewPreferencesStatus.Text = "View choices are available when connected to the tray.";
         }
         else
         {
+            viewPreferences = new ViewPreferencesSession(
+                (mutation, token) => channel.SendAsync(mutation is null ? "viewPreferences" : "setViewPreferences",
+                    null, token, viewPreferencesMutation: mutation),
+                RestoreViewPreferences, (message, available) =>
+                {
+                    ViewPreferencesStatus.Text = message;
+                    ViewPreferencesActions.IsEnabled = available && !closing;
+                }, lifetime.Token);
             SpendView.Configure((query, token) => channel.SendAsync("spend", null, token, query),
                 (query, action, token) => channel.SendAsync("spendAction", null, token,
-                    spendQuery: query, spendAction: action), lifetime.Token);
+                    spendQuery: query, spendAction: action), SpendViewChanged, lifetime.Token);
             CostSettingsView.Configure(
                 (query, token) => channel.SendAsync("spendPreferences", null, token, spendPreferencesQuery: query),
                 (query, mutation, token) => channel.SendAsync("setSpendPreference", null, token,
                     spendPreferencesQuery: query, spendPreferencesMutation: mutation),
                 CostPreferenceSaving, lifetime.Token);
-            _ = PollAsync();
+            Navigation.IsEnabled = false;
+            _ = StartAsync();
         }
     }
+
+    private async Task StartAsync()
+    {
+        await viewPreferences!.LoadAsync();
+        if (lifetime.IsCancellationRequested || closing) return;
+        Navigation.IsEnabled = true;
+        await PollAsync();
+    }
+
+    private void RestoreViewPreferences(AppViewPreferences values)
+    {
+        if (lifetime.IsCancellationRequested || closing) return;
+        restoringView = true;
+        try
+        {
+            SpendView.RestoreView(values);
+            Navigation.SelectedItem = Navigation.MenuItems.OfType<NavigationViewItem>()
+                .FirstOrDefault(item => item.Tag as string == values.Navigation);
+        }
+        finally { restoringView = false; }
+    }
+
+    private void SpendViewChanged(SpendQuery query, string? day)
+    {
+        if (restoringView || closing || viewPreferences is null) return;
+        viewPreferences.Change(viewPreferences.Values with
+        {
+            Days = query.Days, Currency = query.Currency, Section = query.Section,
+            Chart = query.Chart, ComparePeriods = query.ComparePeriods, SelectedDay = day
+        });
+    }
+
+    private async void RetryViewPreferences(object sender, RoutedEventArgs args)
+    {
+        if (viewPreferences is not null && !closing) await viewPreferences.LoadAsync(retrySave: true);
+    }
+    private async void RestoreViewPreferencesClicked(object sender, RoutedEventArgs args)
+    {
+        if (viewPreferences is not null && !closing) await viewPreferences.LoadAsync();
+    }
+
+    private async void Closing(Microsoft.UI.Windowing.AppWindow sender, Microsoft.UI.Windowing.AppWindowClosingEventArgs args)
+    {
+        if (allowClose || viewPreferences is null || channel?.BackendExited == true) return;
+        args.Cancel = true; // Set synchronously; the native event has no async deferral.
+        if (closing) return;
+        closing = true;
+        Navigation.IsEnabled = false;
+        ViewPreferencesActions.IsEnabled = false;
+        using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(2));
+        try
+        {
+            await Task.Yield(); // Exit the Closing callback before a synchronous no-op flush can call Close again.
+            await viewPreferences.FlushAsync(deadline.Token);
+        }
+        finally
+        {
+            allowClose = true;
+            if (!lifetime.IsCancellationRequested) Close();
+        }
+    }
+
+    private void CloseForBackend() { allowClose = true; Close(); }
 
     private async Task PollAsync()
     {
@@ -45,7 +123,8 @@ public sealed partial class MainWindow : Window
         {
             try
             {
-                if (channel!.BackendExited) { Close(); return; }
+                if (channel!.BackendExited) { CloseForBackend(); return; }
+                if (closing) return;
                 if (!saving) await SendAsync("snapshot");
                 if (!saving && snapshot is not null && SpendPage.Visibility == Visibility.Visible)
                     await SpendView.RefreshAsync();
@@ -64,7 +143,7 @@ public sealed partial class MainWindow : Window
         {
             var result = await channel.SendAsync(method, mutation, lifetime.Token);
             if (lifetime.IsCancellationRequested) return;
-            if (result.Status == "stopped") { Close(); return; }
+            if (result.Status == "stopped") { CloseForBackend(); return; }
             if (result.Status == "ok" && method != "snapshot") actionNotice = null;
             if (result.Status != "ok")
             {
@@ -201,5 +280,7 @@ public sealed partial class MainWindow : Window
         CostSettingsPage.Visibility = tag == "costSettings" ? Visibility.Visible : Visibility.Collapsed;
         CostSettingsView.SetActive(tag == "costSettings");
         SettingsPage.Visibility = tag == "settings" ? Visibility.Visible : Visibility.Collapsed;
+        if (!restoringView && !closing && viewPreferences is not null)
+            viewPreferences.Change(viewPreferences.Values with { Navigation = tag });
     }
 }

@@ -5806,3 +5806,16 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - **남은 범위:** 창별 선택 저장, Codex 모델/effort/service-tier·이전 기간 증감 UI, 전체 설정/계정/인증, managed payload/lockfile·W10·W15·StartupTask 및 전체 W01~W16/G0~G6. Windows 창/clipboard/dialog/queue/PII 경쟁 조건·파일 출력·화면 결과는 검증하지 않았다.
 - 상태: CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·성능·앱·실계정·원격 Windows·CI 미실행.
 - IMPL-603은 f7de5fb1d로 origin/main 푸시 확인. 이번 단위도 별도 커밋·푸시한다. 자동화 변경 없음.
+
+## IMPL-605: WinUI 탐색·비용 선택 저장과 복원
+
+- 앱의 마지막 탭, 비용 기간·통화·차트·분류·비교 여부·선택 날짜를 backend의 versioned view key에 저장하고 창 재개 시 복원하는 경로를 작성했다. 수집/환산 설정, source/account raw ID, 프로젝트/세션 행 번호·일시적 상세 revision은 저장하지 않는다.
+- viewPreferences/setViewPreferences 전용 RPC와 최대4 KiB payload를 작성했다. read/compare/write를 process lock 아래 수행하고 raw data SHA-256 revision이 바뀌면 덮어쓰기를 거절한다. 잘못된 값·손상·다른 schema·읽기 실패 데이터는 보존하며 defaults에 직접 쓰는 UI 경로는 없다.
+- 저장 후 readback 불일치와 synchronize 실패를 성공으로 바꾸지 않는다. 실패 후 in-memory 값이 이미 바뀌었어도 명시적 Retry save는 현재 revision을 읽고 다시 flush한다. 외부 프로세스 직접 편집까지 원자적으로 직렬화한 것은 아니다.
+- UI의400ms debounce는 연속 선택을 합치고 성공 응답 뒤 더 최근 선택을 저장한다. 불확실한 쓰기는 자동 재전송하지 않고 Retry save/Restore saved view를 제공한다. 앱 초기 복원보다 늦게 발생한 사용자 선택은 과거 값으로 덮어쓰지 않는다.
+- AppWindow.Closing의 동기 Cancel 계약에 맞춰 닫기를 보류하고 최대2초 동안 미전송 선택을 처리한 뒤 닫는 경로를 작성했다. backend 종료는 바로 닫고, 이미 불확실한 저장을 닫기 과정에서 재시도하지 않는다. 강제 종료나 시간초과의 마지막 선택 보존은 보장하지 않는다.
+- 통화 자동 선택을 명시적인 Automatic 항목으로 분리했다. 지정 통화가 수집 목록에서 사라져도 다음 poll이 다른 통화로 자동 전환하지 않는다. 비용·히트맵 날짜에 yyyy-MM-dd 키를 사용하고 복원한 날짜가 차트에 없으면 재선택 안내를 표시한다. Automatic의 상세 요청은 표시 당시의 실제 통화로 묶는다.
+- 합성 fixture9개 작성: 기본값/무쓰기·값/날짜 경계·round trip·손상/과대/newer schema 보존·revision 충돌·flush 실패/재시도·readback 오류·wire 경계·heatmap 날짜. 실제 defaults/files/UI를 쓰지 않는 fixture이며 모두 미실행이다.
+- **남은 범위:** Codex 모델/effort/service-tier·이전 기간 비교 UI, 창 위치/스크롤 보존, 전체 설정/계정/인증, managed payload/lockfile·W10·W15·StartupTask 및 전체 W01~W16/G0~G6. WinUI 복원/닫기·debounce·동시 선택·persistence 실제 동작은 검증하지 않았다.
+- 상태: CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·성능·앱·실계정·원격 Windows·CI 미실행.
+- IMPL-604는 a072d39d5로 origin/main 푸시 확인. 이번 단위도 별도 커밋·푸시한다. 자동화 변경 없음.

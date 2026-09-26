@@ -197,7 +197,8 @@ enum WindowsAppSpendProjection {
             for day in (history.series.first?.days ?? []).suffix(WindowsSpendHistoryPolicy.activityDays) {
                 guard let cell = day.activity else { continue }
                 points.append(.init(label: text(day.label, limit: 96), detail: text(day.details, limit: 256),
-                    value: nil, level: cell.level, row: cell.row, column: cell.column))
+                    value: nil, level: cell.level, row: cell.row, column: cell.column,
+                    dayKey: day.date.map { Self.dayKey($0, calendar: calendar) }))
             }
         } else if let group {
             var bucketCalendar = Calendar(identifier: .gregorian)

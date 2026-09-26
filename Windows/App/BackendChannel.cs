@@ -24,11 +24,11 @@ internal sealed record SettingMutation(string Key, bool Value, string ExpectedSe
 internal sealed record AppResponse([property: JsonRequired] int ProtocolVersion,
     [property: JsonRequired] Guid RequestID, [property: JsonRequired] Guid Generation,
     [property: JsonRequired] string Status, AppSnapshot? Snapshot, [property: JsonRequired] ulong Activation,
-    SpendPage? Spend, SpendPreferencesPage? SpendPreferences);
+    SpendPage? Spend, SpendPreferencesPage? SpendPreferences, ViewPreferencesPage? ViewPreferences);
 internal sealed record AppRequest(int ProtocolVersion, Guid RequestID, Guid? Generation, string Method,
     SettingMutation? Mutation, SpendQuery? SpendQuery,
     SpendPreferencesQuery? SpendPreferencesQuery, SpendPreferenceMutation? SpendPreferencesMutation,
-    SpendExportAction? SpendAction);
+    SpendExportAction? SpendAction, ViewPreferenceMutation? ViewPreferencesMutation);
 
 /// This process listens; the existing Swift runtime connects. The direction does not confer authority:
 /// both sides check the native peer PID, and this server admits only the current Windows user.
@@ -87,7 +87,8 @@ internal sealed class BackendChannel : IDisposable
 
     public async Task<AppResponse> SendAsync(string method, SettingMutation? mutation, CancellationToken cancellation,
         SpendQuery? spendQuery = null, SpendPreferencesQuery? spendPreferencesQuery = null,
-        SpendPreferenceMutation? spendPreferencesMutation = null, SpendExportAction? spendAction = null)
+        SpendPreferenceMutation? spendPreferencesMutation = null, SpendExportAction? spendAction = null,
+        ViewPreferenceMutation? viewPreferencesMutation = null)
     {
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellation, lifetime.Token);
         timeout.CancelAfter(TimeSpan.FromSeconds(15));
@@ -108,7 +109,8 @@ internal sealed class BackendChannel : IDisposable
                 generation = hello.Generation;
                 if (method == "snapshot") return hello;
             }
-            return await ExchangeAsync(method, mutation, token, spendQuery, spendPreferencesQuery, spendPreferencesMutation, spendAction);
+            return await ExchangeAsync(method, mutation, token, spendQuery, spendPreferencesQuery, spendPreferencesMutation,
+                spendAction, viewPreferencesMutation);
         }
         catch
         {
@@ -123,11 +125,12 @@ internal sealed class BackendChannel : IDisposable
 
     private async Task<AppResponse> ExchangeAsync(string method, SettingMutation? mutation, CancellationToken token,
         SpendQuery? spendQuery, SpendPreferencesQuery? spendPreferencesQuery = null,
-        SpendPreferenceMutation? spendPreferencesMutation = null, SpendExportAction? spendAction = null)
+        SpendPreferenceMutation? spendPreferencesMutation = null, SpendExportAction? spendAction = null,
+        ViewPreferenceMutation? viewPreferencesMutation = null)
     {
         var id = Guid.NewGuid();
         var payload = JsonSerializer.SerializeToUtf8Bytes(new AppRequest(1, id, generation, method, mutation,
-            spendQuery, spendPreferencesQuery, spendPreferencesMutation, spendAction), json);
+            spendQuery, spendPreferencesQuery, spendPreferencesMutation, spendAction, viewPreferencesMutation), json);
         if (payload.Length is 0 or > MaximumRequestBytes) throw new IOException("Request too large.");
         var header = new byte[4];
         BinaryPrimitives.WriteInt32LittleEndian(header, payload.Length);
@@ -149,12 +152,15 @@ internal sealed class BackendChannel : IDisposable
             {
                 "spend" => response.Spend is null,
                 "spendPreferences" or "setSpendPreference" => response.SpendPreferences is null,
+                "viewPreferences" or "setViewPreferences" => response.ViewPreferences is null,
                 _ => response.Snapshot is null
             }))
             throw new IOException("Missing snapshot.");
         if (response.Spend is { } spend && !spend.IsValid) throw new IOException("Invalid spend page.");
         if (response.SpendPreferences is { } preferences && !preferences.IsValid)
             throw new IOException("Invalid spend preferences.");
+        if (response.ViewPreferences is { } view && !view.IsValid)
+            throw new IOException("Invalid view preferences.");
         if (response.Snapshot is { } snapshot && (snapshot.Providers is null || snapshot.Providers.Length > 256
             || snapshot.Notices is null || snapshot.Notices.Length > 1024 || snapshot.Notices.Any(row => row is null)
             || snapshot.SpendSummary is null || snapshot.Settings is null

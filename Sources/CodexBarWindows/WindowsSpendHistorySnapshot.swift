@@ -107,7 +107,7 @@ public struct WindowsSpendHistorySnapshot: Sendable {
             }
             let label = WindowsShareStatsFormatting.dataThrough(point.day, calendar: calendar)
             return Day(activity: .init(row: (offset + weekday) % 7, column: (offset + weekday) / 7, level: level),
-                       label: label, segments: [], details: label + "\r\n" + status)
+                       date: point.day, label: label, segments: [], details: label + "\r\n" + status)
         }
         var summary = "Token activity · last \(points.count) days · " + calendar.timeZone.identifier
         if snapshot.stale { summary += "\r\nStale data: this view uses the previous collection while a refresh is pending or failed." }

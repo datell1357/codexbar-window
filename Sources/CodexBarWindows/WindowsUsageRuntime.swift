@@ -31,6 +31,7 @@ public actor WindowsUsageRuntime {
     private var widgetInvalidationSubscribers: [UUID: AsyncStream<UUID>.Continuation] = [:]
     private let nativeSpendExportValidity = WindowsSnapshotValidity()
     private var nativeSpendActionPublisher: (@Sendable (WindowsAppSpendExport.Delivery) -> Bool)?
+    private let nativeAppViewPreferences = WindowsAppViewPreferences.Store()
 
     func setNativeAppSpendActionPublisher(_ publisher: @escaping @Sendable (WindowsAppSpendExport.Delivery) -> Bool) {
         self.nativeSpendActionPublisher = publisher
@@ -2725,6 +2726,22 @@ public actor WindowsUsageRuntime {
         guard request.protocolVersion == WindowsAppProtocol.version else { return reply("unsupportedVersion") }
         guard request.method == "hello" || request.generation == generation else { return reply("staleGeneration") }
         guard request.method == "spendAction" || request.spendAction == nil else { return reply("invalidRequest") }
+        if request.method == "viewPreferences" || request.method == "setViewPreferences" {
+            guard request.mutation == nil, request.spendQuery == nil, request.spendPreferencesQuery == nil,
+                  request.spendPreferencesMutation == nil else { return reply("invalidRequest") }
+            if request.method == "viewPreferences" {
+                guard request.viewPreferencesMutation == nil else { return reply("invalidRequest") }
+                var result = reply("ok")
+                result.viewPreferences = self.nativeAppViewPreferences.page()
+                return result
+            }
+            guard let mutation = request.viewPreferencesMutation, mutation.isValid else { return reply("invalidRequest") }
+            let saved = self.nativeAppViewPreferences.save(mutation)
+            var result = reply(saved.status)
+            result.viewPreferences = saved.page
+            return result
+        }
+        guard request.viewPreferencesMutation == nil else { return reply("invalidRequest") }
         if request.method == "spendPreferences" || request.method == "setSpendPreference" {
             guard request.mutation == nil, request.spendQuery == nil,
                   let query = request.spendPreferencesQuery, query.isValid else { return reply("invalidRequest") }

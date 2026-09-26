@@ -24,6 +24,7 @@ enum WindowsAppProtocol {
         var spendPreferencesQuery: WindowsAppSpendPreferences.Query? = nil
         var spendPreferencesMutation: WindowsAppSpendPreferences.Mutation? = nil
         var spendAction: WindowsAppSpendExport.Action? = nil
+        var viewPreferencesMutation: WindowsAppViewPreferences.Mutation? = nil
     }
     struct Mutation: Codable, Sendable {
         let key: String
@@ -39,6 +40,7 @@ enum WindowsAppProtocol {
         var activation: UInt64 = 0
         var spend: WindowsAppSpendProjection.Page? = nil
         var spendPreferences: WindowsAppSpendPreferences.Page? = nil
+        var viewPreferences: WindowsAppViewPreferences.Page? = nil
     }
     struct Settings: Codable, Sendable, Equatable {
         var hidePersonalInfo: Bool

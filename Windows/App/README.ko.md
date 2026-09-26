@@ -12,7 +12,7 @@
 - Usage & Spend는 IMPL-600에서 기간(7/30/90/수집된 전체, 최대 365일)·통화 그룹 선택,
   일별 비용 차트, 365일 토큰 활동 히트맵, 공급자/모델/프로젝트/세션별 40행 페이지를
   연결했다. 차트 click/hover와 이전·다음 날 버튼으로 날짜별 수치·누락 상태를 읽는다.
-  새 데이터 수집 없이 기존 scan을 재집계한다. 이 창의 기간 선택은 현재 저장하지 않는다.
+  새 데이터 수집 없이 기존 scan을 재집계한다. 창의 선택 저장은 IMPL-605에서 추가했다.
 - IMPL-601은 일별 차트의 선택 날짜에 시간별 비용을, 프로젝트·세션 행에 모델 상세
   40행 페이지를 연결했다. 프로젝트 상세는 기간 내 일별 비용도 표시한다. 시간대 표시는
   UTC 오프셋으로 서머타임의 반복 시각을 구분하며, 누락된 시간과 확인된 0을 분리한다.
@@ -39,6 +39,14 @@
   공급원의 기존 숨김 설정은 보존한다. PII 모드에서는 계정 별칭 대신 Source N으로 표시한다.
 - 연결 실패 시 이전 데이터를 내리고 컨트롤을 잠근다. 저장 응답이 유실된 변경은 자동
   재전송하지 않고, 재연결 후 현재 설정을 다시 받는다.
+- IMPL-605는 마지막 탭, 비용 기간/통화/차트/분류/비교 여부, 선택 날짜를 앱 재개 시
+  복원한다. backend의 별도 versioned view key에 저장하며 수집/환산 설정이나 계정 선택을
+  바꾸지 않는다. 프로젝트·세션 raw ID/행 번호·일시적인 상세 revision은 저장하지 않는다.
+  지정 통화가 사라지면 빈 상태와 재선택 안내를 유지한다. Automatic을 직접 선택한 경우에만
+  현재 첫 통화 그룹을 사용한다. 날짜는 현지화된 문자열이나 차트 index 대신 yyyy-MM-dd로
+  저장하며, 현재 차트에 없는 날짜를 다른 날로 조용히 바꾸지 않는다.
+  UI에는 저장 상태와 Retry save/Restore saved view를 제공한다. 불확실한 저장은 자동
+  재전송하지 않으며, 명시적 재시도는 현재 revision을 읽고 다시 flush한다.
 
 ## 프로세스와 통신 규약
 
@@ -60,7 +68,8 @@ WinUI 프로세스는 공급자에 직접 접속하거나 두 번째 백엔드�
 5. 연결 첫 요청은 `hello`다. protocolVersion 1, requestID, backend generation을
    확인한다. 연결당 중복 requestID는 거절하고 4096개 뒤 재연결한다.
 6. 허용 메서드는 `hello`, `snapshot`, `refresh`, `setSetting`, `spend`,
-   `spendPreferences`, `setSpendPreference`, `spendAction`이다.
+   `spendPreferences`, `setSpendPreference`, `spendAction`,
+   `viewPreferences`, `setViewPreferences`이다.
    snapshot은 2초 간격으로 요청한다. 설정 쓰기는 네 키의 고정 순서 boolean SHA-256
    revision을 대조한다. 이는 오래된 화면의 저장을 감지하는 낙관적 대조이며, 트레이와
    별도 스레드에서 발생하는 모든 설정 쓰기의 원자적 직렬화를 보장하지 않는다.
@@ -90,6 +99,15 @@ WinUI 프로세스는 공급자에 직접 접속하거나 두 번째 백엔드�
    진행 중인 native action이나 pending action이 있으면 중복 접수를 거절하며 modal loop
    재진입도 막는다. 응답 유실 시 자동 재전송하지 않는다. JSON/이미지 산출물은16 MiB,
    clipboard text는65,536 UTF-16 code units로 제한한다. 저장 취소를 성공으로 보고하지 않는다.
+   view 설정은 `windowsNativeAppViewV1` Data key의 최대4 KiB JSON이다. 저장 직전
+   raw data SHA-256 revision을 대조하고 read/compare/write를 같은 프로세스 잠금으로
+   직렬화한다. 계정/source ID나 credential은 포함하지 않는다. 누락은 기본값, 손상/다른
+   schema/읽기 실패는 보존·쓰기 거절로 처리한다. flush 후 읽은 값이 다르면 실패로 응답한다.
+   in-memory 쓰기 이후 synchronize 실패도 성공으로 바꾸지 않는다.
+   UI는400ms 동안 선택 변경을 합쳐 저장하며 저장 중 후속 선택은 성공 응답 뒤 이어 쓴다.
+   `AppWindow.Closing`에서 close를 즉시 취소한 뒤 최대2초 동안 미전송 선택을 처리하고
+   닫는다. backend 종료는 기다리지 않는다. 비정상 종료·시간초과의 마지막 선택 보존을
+   보장하지 않으며 기존의 불확실한 저장을 닫기 과정에서 자동 재시도하지 않는다.
 7. UI는 15초, Swift I/O는 30초의 대기를 제한한다. Swift는 취소한 overlapped 작업의
    완료를 기다린 뒤 buffer/event를 해제한다. 백엔드 종료를 감지하면 UI도 닫힌다.
 
@@ -152,7 +170,6 @@ PE import 검사는 .NET assembly reference, P/Invoke, 동적 LoadLibrary, XAML/
 ## 남은 앱 구현
 
 전체 설정 pane, 계정·인증·provider 편집, Codex 모델/effort/service-tier 분석과 이전 기간 비교 UI,
-창별 기간/비교/선택 상태 지속 저장,
 작업별 action/copy/open/login,
 레이아웃 편집, 전역 단축키·창 위치/스크롤 보존,
 전체 현지화, 키보드/Narrator/고대비·다중 모니터 QA가 남아 있다.
@@ -182,6 +199,10 @@ IMPL-604의 `WindowsAppSpendExportTests.swift`에는 action/wire, 기간/통화 
 PII와 로컬 JSON, 공유 alias 제거, 주입 renderer의 출력 전달, partial/stale 안내,
 잘못된 선택/렌더 실패, clipboard 상한, 환율 revision, delivery 철회의 fixture10개를
 작성했다. 모두 미실행이며 실제 클립보드·PNG·대화상자·저장 파일 품질은 검증하지 않았다.
+IMPL-605의 `WindowsAppViewPreferencesTests.swift`에는 기본값/무쓰기, 값·날짜 allowlist,
+저장 round trip, 손상/과대/newer schema 보존, revision 충돌, flush 전후 실패와 재시도,
+readback 불일치, wire 경계, heatmap 날짜 키의 합성 fixture9개를 작성했다.
+실제 defaults·WinUI 재개/닫기·debounce/동시 선택·다중 인스턴스·강제 종료는 검증하지 않았다.
 
 ## API 참고
 
@@ -190,3 +211,4 @@ PII와 로컬 JSON, 공유 alias 제거, 주입 renderer의 출력 전달, parti
 - [Windows App SDK self-contained 배포 문서](https://github.com/MicrosoftDocs/windows-dev-docs/blob/docs/hub/apps/package-and-deploy/self-contained-deploy/deploy-self-contained-apps.md)
 - [Windows App SDK 공식 릴리스](https://github.com/microsoft/WindowsAppSDK/releases)
 - [Windows 앱 색상과 테마](https://learn.microsoft.com/en-us/windows/apps/design/signature-experiences/color)
+- [AppWindowClosingEventArgs.Cancel](https://learn.microsoft.com/en-us/windows/windows-app-sdk/api/winrt/microsoft.ui.windowing.appwindowclosingeventargs.cancel?view=windows-app-sdk-2.0)

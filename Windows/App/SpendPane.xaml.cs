@@ -10,6 +10,8 @@ public sealed partial class SpendPane : UserControl
 {
     private Func<SpendQuery, CancellationToken, Task<AppResponse>>? request;
     private Func<SpendQuery, SpendExportAction, CancellationToken, Task<AppResponse>>? export;
+    private Action<SpendQuery, string?>? viewChanged;
+    private const string AutomaticCurrency = "Automatic";
     private CancellationToken lifetime;
     private SpendPage? current;
     private int epoch;
@@ -17,12 +19,14 @@ public sealed partial class SpendPane : UserControl
     private int selectedDay;
     private int selectedDetailPoint;
     private SpendDetailQuery? detail;
+    private string? detailCurrency;
     private bool applying;
     private bool loading;
     private bool pending;
     private bool active;
     private bool exporting;
     private string? currency;
+    private string? selectedDayKey;
 
     public SpendPane()
     {
@@ -31,11 +35,36 @@ public sealed partial class SpendPane : UserControl
     }
 
     internal void Configure(Func<SpendQuery, CancellationToken, Task<AppResponse>> request,
-        Func<SpendQuery, SpendExportAction, CancellationToken, Task<AppResponse>> export, CancellationToken lifetime)
+        Func<SpendQuery, SpendExportAction, CancellationToken, Task<AppResponse>> export,
+        Action<SpendQuery, string?> viewChanged, CancellationToken lifetime)
     {
         this.request = request;
         this.export = export;
+        this.viewChanged = viewChanged;
         this.lifetime = lifetime;
+    }
+
+    internal void RestoreView(AppViewPreferences values)
+    {
+        applying = true;
+        try
+        {
+            PeriodPicker.SelectedItem = PeriodPicker.Items.OfType<ComboBoxItem>()
+                .FirstOrDefault(item => item.Tag as string == values.Days.ToString());
+            SectionPicker.SelectedItem = SectionPicker.Items.OfType<ComboBoxItem>()
+                .FirstOrDefault(item => item.Tag as string == values.Section);
+            ChartPicker.SelectedItem = ChartPicker.Items.OfType<ComboBoxItem>()
+                .FirstOrDefault(item => item.Tag as string == values.Chart);
+            CompareToggle.IsOn = values.ComparePeriods;
+            currency = values.Currency;
+            CurrencyPicker.ItemsSource = currency is null ? new[] { AutomaticCurrency } : new[] { AutomaticCurrency, currency };
+            CurrencyPicker.SelectedItem = currency ?? AutomaticCurrency;
+            selectedDayKey = values.SelectedDay;
+            selectedDay = 0;
+            page = 0;
+        }
+        finally { applying = false; }
+        Reload();
     }
 
     internal void SetActive(bool value)
@@ -48,7 +77,7 @@ public sealed partial class SpendPane : UserControl
     internal void Invalidate(bool clearDetail = true)
     {
         epoch++;
-        if (clearDetail) { detail = null; selectedDetailPoint = 0; }
+        if (clearDetail) { detail = null; detailCurrency = null; selectedDetailPoint = 0; }
         current = null;
         BreakdownList.ItemsSource = null;
         ChartCanvas.Children.Clear();
@@ -79,6 +108,7 @@ public sealed partial class SpendPane : UserControl
         pending = false;
         var capturedEpoch = epoch;
         var query = Query();
+        if (detail is not null) query = query with { Currency = detailCurrency };
         try
         {
             var result = await request(query, lifetime);
@@ -93,6 +123,8 @@ public sealed partial class SpendPane : UserControl
             }
             if (value.Days != query.Days || value.Chart != query.Chart || value.Section != query.Section)
                 throw new IOException("Spend response differs from the requested view.");
+            if (query.Currency is not null && value.Currency is not null && value.Currency != query.Currency)
+                throw new IOException("Spend currency differs from the requested view.");
             if ((value.Comparisons is not null) != query.ComparePeriods)
                 throw new IOException("Spend comparison response differs from the requested view.");
             if (query.Detail is { } selection && (value.SelectionRevision != selection.Revision
@@ -120,7 +152,7 @@ public sealed partial class SpendPane : UserControl
 
     private void Apply(SpendPage value)
     {
-        var selectedLabel = current?.Points.ElementAtOrDefault(selectedDay)?.Label;
+        var retainedDay = selectedDayKey ?? current?.Points.ElementAtOrDefault(selectedDay)?.DayKey;
         var chartChanged = current is null || current.Chart != value.Chart || !current.Points.SequenceEqual(value.Points);
         var rowsChanged = current is null || !current.Rows.SequenceEqual(value.Rows);
         var comparisonsChanged = current?.Comparisons is not { } oldComparisons || value.Comparisons is not { } newComparisons
@@ -135,15 +167,21 @@ public sealed partial class SpendPane : UserControl
         applying = true;
         try
         {
-            if (CurrencyPicker.ItemsSource is not string[] existing || !existing.SequenceEqual(value.Currencies))
-                CurrencyPicker.ItemsSource = value.Currencies;
-            CurrencyPicker.SelectedItem = value.Currency;
-            currency = value.Currency;
+            // Keep an explicitly selected but absent currency; a refresh must not choose another group.
+            var choices = new[] { AutomaticCurrency }.Concat(value.Currencies)
+                .Concat(currency is null ? Array.Empty<string>() : new[] { currency }).Distinct().ToArray();
+            if (CurrencyPicker.ItemsSource is not string[] existing || !existing.SequenceEqual(choices))
+                CurrencyPicker.ItemsSource = choices;
+            CurrencyPicker.SelectedItem = currency ?? AutomaticCurrency;
         }
         finally { applying = false; }
         CostText.Text = value.TotalCost;
         TokensText.Text = value.TotalTokens;
         ContextText.Text = value.Context;
+        if (currency is not null && value.Currency is null)
+            ContextText.Text = $"The selected {currency} group is not in this collection. Select another currency or Automatic.\n" + ContextText.Text;
+        else if (currency is null && value.Currency is not null)
+            ContextText.Text = $"Automatic currency group: {value.Currency}.\n" + ContextText.Text;
         StatusText.Text = value.Stale ? "Stale collection" : value.Partial ? "Partial collection" : "Captured cost data";
         if (value.Truncated) StatusText.Text += " · Some display details were truncated";
         if (rowsChanged) BreakdownList.ItemsSource = value.Rows;
@@ -153,8 +191,9 @@ public sealed partial class SpendPane : UserControl
         PreviousPageButton.IsEnabled = value.Page > 0;
         NextPageButton.IsEnabled = value.Page + 1 < value.PageCount;
         if (chartChanged) DrawChart();
-        var retained = selectedLabel is null ? -1 : Array.FindIndex(value.Points, point => point.Label == selectedLabel);
-        selectedDay = retained >= 0 ? retained : Math.Clamp(selectedDay, 0, Math.Max(0, value.Points.Length - 1));
+        var retained = retainedDay is null ? -1 : Array.FindIndex(value.Points, point => point.DayKey == retainedDay);
+        selectedDay = retained >= 0 ? retained : selectedDayKey is not null ? -1
+            : Math.Clamp(selectedDay, 0, Math.Max(0, value.Points.Length - 1));
         ShowDay();
         DetailPanel.Visibility = value.Detail is null ? Visibility.Collapsed : Visibility.Visible;
         if (value.Detail is { } child)
@@ -181,7 +220,7 @@ public sealed partial class SpendPane : UserControl
 
     private void DrawChart()
     {
-        Draw(ChartCanvas, current?.Points ?? [], current?.Chart == "tokens", index => { selectedDay = index; ShowDay(); });
+        Draw(ChartCanvas, current?.Points ?? [], current?.Chart == "tokens", SelectDay);
     }
 
     private void UpdateExportActions()
@@ -267,7 +306,9 @@ public sealed partial class SpendPane : UserControl
     private void ShowDay()
     {
         var point = current?.Points.ElementAtOrDefault(selectedDay);
-        DayDetail.Text = point?.Detail ?? "No chart data is available.";
+        DayDetail.Text = point?.Detail ?? (selectedDayKey is not null
+            ? $"The saved day {selectedDayKey} is not in this view. Select a day to inspect it."
+            : "No chart data is available.");
         DayPosition.Text = point is null ? "" : $"{selectedDay + 1} / {current!.Points.Length}";
         HourlyButton.IsEnabled = current?.Chart == "cost" && point?.DayKey is not null && current.Currency is not null;
     }
@@ -283,6 +324,7 @@ public sealed partial class SpendPane : UserControl
         if (current is null || current.Currency is null || sender is not Button button || button.Tag is not int index
             || current.Section is not ("projects" or "sessions")) return;
         detail = new SpendDetailQuery(current.Section == "projects" ? "project" : "session", index, null, current.SelectionRevision);
+        detailCurrency = current.Currency;
         selectedDetailPoint = 0;
         Reload(false);
     }
@@ -291,6 +333,7 @@ public sealed partial class SpendPane : UserControl
         if (current?.Chart != "cost" || current.Currency is null
             || current.Points.ElementAtOrDefault(selectedDay)?.DayKey is not { } day) return;
         detail = new SpendDetailQuery("hourly", null, day, current.SelectionRevision);
+        detailCurrency = current.Currency;
         selectedDetailPoint = 0;
         Reload(false);
     }
@@ -313,19 +356,31 @@ public sealed partial class SpendPane : UserControl
         detail = detail with { Page = child.Page + 1 };
         Reload(false);
     }
-    private void PreviousDay(object sender, RoutedEventArgs args) { selectedDay = Math.Max(0, selectedDay - 1); ShowDay(); }
-    private void NextDay(object sender, RoutedEventArgs args) { selectedDay = Math.Min(Math.Max(0, (current?.Points.Length ?? 0) - 1), selectedDay + 1); ShowDay(); }
+    private void SelectDay(int index)
+    {
+        if (current?.Points.ElementAtOrDefault(index) is not { } point) return;
+        selectedDay = index;
+        selectedDayKey = point.DayKey;
+        ShowDay();
+        SaveView();
+    }
+    private void PreviousDay(object sender, RoutedEventArgs args) => SelectDay(Math.Max(0, selectedDay - 1));
+    private void NextDay(object sender, RoutedEventArgs args) =>
+        SelectDay(Math.Min(Math.Max(0, (current?.Points.Length ?? 0) - 1), selectedDay + 1));
     private void PreviousPage(object sender, RoutedEventArgs args) { if (page > 0) { page--; Reload(); } }
     private void NextPage(object sender, RoutedEventArgs args) { if (current is not null && page + 1 < current.PageCount) { page++; Reload(); } }
     private void QueryChanged(object sender, SelectionChangedEventArgs args)
     {
         if (applying || request is null) return;
         page = 0;
+        if (ReferenceEquals(sender, PeriodPicker) || ReferenceEquals(sender, ChartPicker)) selectedDayKey = null;
+        SaveView();
         Reload();
     }
     private void ComparisonChanged(object sender, RoutedEventArgs args)
     {
         if (applying || request is null) return;
+        SaveView();
         Reload();
     }
     private void ShowComparisonPeriod(object sender, RoutedEventArgs args)
@@ -337,9 +392,12 @@ public sealed partial class SpendPane : UserControl
     private void CurrencyChanged(object sender, SelectionChangedEventArgs args)
     {
         if (applying || request is null) return;
-        currency = CurrencyPicker.SelectedItem as string;
+        var choice = CurrencyPicker.SelectedItem as string;
+        currency = choice == AutomaticCurrency ? null : choice;
         page = 0;
+        SaveView();
         Reload();
     }
+    private void SaveView() { if (!applying) viewChanged?.Invoke(Query(), selectedDayKey); }
     private void Reload(bool clearDetail = true) { Invalidate(clearDetail); pending = true; _ = RefreshAsync(); }
 }
