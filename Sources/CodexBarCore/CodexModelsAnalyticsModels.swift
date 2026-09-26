@@ -114,6 +114,8 @@ public struct CodexModelsUsageFragment: Equatable, Sendable {
     public let reasoningTokens: Int64?
     public let costNanos: Int64?
     public let unpricedTokens: Int64
+    /// Recorded rollout context, not a present-day thread default or a verified server effort.
+    public let reasoningEffort: String?
 
     public init(
         workspaceID: String,
@@ -126,7 +128,8 @@ public struct CodexModelsUsageFragment: Equatable, Sendable {
         outputTokens: Int64,
         reasoningTokens: Int64? = nil,
         costNanos: Int64?,
-        unpricedTokens: Int64? = nil)
+        unpricedTokens: Int64? = nil,
+        reasoningEffort: String? = nil)
     {
         self.workspaceID = workspaceID
         self.sessionID = sessionID
@@ -141,6 +144,7 @@ public struct CodexModelsUsageFragment: Equatable, Sendable {
         let totalTokens = self.inputTokens + self.outputTokens
         let defaultUnpricedTokens = costNanos == nil ? totalTokens : 0
         self.unpricedTokens = min(max(0, unpricedTokens ?? defaultUnpricedTokens), totalTokens)
+        self.reasoningEffort = CostUsageCodexEffortContext.normalizedEffort(reasoningEffort)
     }
 
     public var totalTokens: Int64 {

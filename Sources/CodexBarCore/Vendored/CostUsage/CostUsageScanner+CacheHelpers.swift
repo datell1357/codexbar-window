@@ -229,7 +229,9 @@ extension CostUsageScanner {
         codexWindowsSource: CostUsageFileReadSnapshot? = nil,
         codexWindowsContentGeneration: String? = nil,
         codexWindowsReadProofVersion: Int? = nil,
-        codexWindowsAuxiliaryAnchors: [CostUsageCodexTokenIndexAnchor]? = nil) -> CostUsageFileUsage
+        codexWindowsAuxiliaryAnchors: [CostUsageCodexTokenIndexAnchor]? = nil,
+        codexContextMetadataVersion: Int? = CostUsageScanner.codexContextMetadataVersion,
+        lastCodexEffortContext: CostUsageCodexEffortContext? = nil) -> CostUsageFileUsage
     {
         CostUsageFileUsage(
             mtimeUnixMs: mtimeUnixMs,
@@ -274,7 +276,9 @@ extension CostUsageScanner {
             codexWindowsSource: codexWindowsSource,
             codexWindowsContentGeneration: codexWindowsContentGeneration,
             codexWindowsReadProofVersion: codexWindowsReadProofVersion,
-            codexWindowsAuxiliaryAnchors: codexWindowsAuxiliaryAnchors)
+            codexWindowsAuxiliaryAnchors: codexWindowsAuxiliaryAnchors,
+            codexContextMetadataVersion: codexContextMetadataVersion,
+            lastCodexEffortContext: lastCodexEffortContext)
     }
 
     static func needsCodexPricingMetadata(_ usage: CostUsageFileUsage) -> Bool {
@@ -378,7 +382,8 @@ extension CostUsageScanner {
                 knownCostNanos: row.knownCostNanos,
                 unpricedTokens: row.unpricedTokens,
                 pricingModel: pricedModel,
-                pricingMode: isPriority ? "priority" : "standard")
+                pricingMode: isPriority ? "priority" : "standard",
+                reasoningEffort: row.reasoningEffort)
         }
     }
 
@@ -629,7 +634,9 @@ extension CostUsageScanner {
             codexWindowsSource: usage.codexWindowsSource,
             codexWindowsContentGeneration: usage.codexWindowsContentGeneration,
             codexWindowsReadProofVersion: usage.codexWindowsReadProofVersion,
-            codexWindowsAuxiliaryAnchors: usage.codexWindowsAuxiliaryAnchors)
+            codexWindowsAuxiliaryAnchors: usage.codexWindowsAuxiliaryAnchors,
+            codexContextMetadataVersion: usage.codexContextMetadataVersion,
+            lastCodexEffortContext: usage.lastCodexEffortContext)
             .refreshingCodexWorkspaceUsageFingerprint()
     }
 
@@ -924,7 +931,7 @@ extension CostUsageScanner {
         cache: inout CostUsageCache,
         state: inout CodexScanState) throws -> Bool
     {
-        guard let cached = input.cached, cached.codexEventWhitespaceParsed == true else { return false }
+        guard let cached = input.cached, cached.hasCurrentCodexParserMetadata else { return false }
         #if os(Windows)
         guard Self.windowsCodexSourceMatches(cached, metadata: input.metadata),
               Self.windowsCodexPrefixMatches(
@@ -1083,7 +1090,7 @@ extension CostUsageScanner {
         maxBytesToRead: Int64? = nil) throws -> Bool
     {
         try context.checkCancellation?()
-        guard let cached = input.cached, cached.codexEventWhitespaceParsed == true,
+        guard let cached = input.cached, cached.hasCurrentCodexParserMetadata,
               cached.sessionId != nil, !context.forceFullScan else { return false }
         #if os(Windows)
         guard Self.windowsCodexSourceMatches(cached, metadata: input.metadata, allowAppend: true)
@@ -1177,6 +1184,7 @@ extension CostUsageScanner {
             initialHasDivergentTotals: initialHasDivergentTotals,
             initialHasInterleavedTotals: cached.hasInterleavedTotals ?? false,
             initialCodexTurnID: cached.lastCodexTurnID,
+            initialCodexEffortContext: cached.lastCodexEffortContext,
             initialCodexUsageRowIndex: Self.nextCodexUsageRowIndex(cached.codexRows),
             initialBufferedSubagentLines: cached.codexBufferedSubagentLines,
             initialBufferedUnresolvedForkLines: cached.codexBufferedUnresolvedForkLines,
@@ -1340,7 +1348,8 @@ extension CostUsageScanner {
             codexWindowsSource: input.metadata.readSnapshot,
             codexWindowsContentGeneration: cached.codexWindowsContentGeneration,
             codexWindowsReadProofVersion: input.metadata.readSnapshot == nil ? nil : Self.windowsCodexReadProofVersion,
-            codexWindowsAuxiliaryAnchors: auxiliaryAnchors)
+            codexWindowsAuxiliaryAnchors: auxiliaryAnchors,
+            lastCodexEffortContext: delta.lastCodexEffortContext)
             .refreshingCodexWorkspaceUsageFingerprint()
         Self.rememberScannedCodexFile(
             input: input,
@@ -1377,7 +1386,7 @@ extension CostUsageScanner {
                 auxiliaryAnchors: reusableCached.codexWindowsAuxiliaryAnchors ?? [],
                 observations: context.resources.publicationObservations)
         }
-        let replaceCachedRows = context.dropDeferredCodexRows || reusableCached?.codexEventWhitespaceParsed != true
+        let replaceCachedRows = context.dropDeferredCodexRows || reusableCached?.hasCurrentCodexParserMetadata != true
         let migratedCached = replaceCachedRows
             ? nil : reusableCached.map { Self.codexFileUsageWithPricingMetadata($0, context: context) }
         var usageDays = replaceCachedRows
@@ -1507,7 +1516,8 @@ extension CostUsageScanner {
             codexWindowsSource: input.metadata.readSnapshot,
             codexWindowsContentGeneration: Self.newWindowsCodexContentGeneration(),
             codexWindowsReadProofVersion: input.metadata.readSnapshot == nil ? nil : Self.windowsCodexReadProofVersion,
-            codexWindowsAuxiliaryAnchors: auxiliaryAnchors)
+            codexWindowsAuxiliaryAnchors: auxiliaryAnchors,
+            lastCodexEffortContext: parsed.lastCodexEffortContext)
             .refreshingCodexWorkspaceUsageFingerprint()
         if duplicateWithoutUniqueUsage,
            !parsed.rows.isEmpty || !Self.isCompleteEmptyCodexFragment(fileUsage)

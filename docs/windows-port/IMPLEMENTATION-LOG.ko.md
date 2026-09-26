@@ -5832,3 +5832,15 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - **남은 범위:** 역사적 effort 수집과 세션 참조 분석, 모델 필터·일/주/월 타임라인 및 해당 export 계약, 전체 설정/계정/인증, 창 위치/스크롤, managed payload/lockfile·W10·W15·StartupTask 및 전체 W01~W16/G0~G6. WIN-057 전체 완료가 아니다. 실제 Windows 컴파일·UI·수집 정확도·성능 검증이 필요하다.
 - 상태: CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·성능·앱·실계정·원격 Windows·CI 미실행.
 - IMPL-605는 3fefd1f3b로 origin/main 푸시 확인. 이번 단위도 별도 커밋·푸시한다. guidelines/COMMITS.md가 없어 기존 커밋 규칙을 적용했다. 자동화 변경 없음.
+
+## IMPL-607: Codex rollout의 기록된 effort와 캐시 이관
+
+- Codex의 turn_context payload에 기록된 effort를 이벤트별 사용량 행에 보관하는 경로를 작성했다. 근거는 [공식 TurnContextItem 프로토콜](https://github.com/openai/codex/blob/main/codex-rs/protocol/src/protocol.rs)이며, 현재 thread 설정으로 과거 사용량을 추정하지 않는다. 저장된 context의 값이며 서버의 모든 요청에 실제 적용된 effort를 증명하지 않는다.
+- 빠른 파서와 Foundation fallback에서 payload 바로 아래의 effort만 읽는다. 모델·턴·시간이 맞을 때만 사용량 행에 붙이며, 새 task, 누락/null/잘못된/잘린 context 및 잘못된 context/task timestamp는 이전 effort를 해제한다. 명시적 none과 정보 없음은 구분한다. 제한된 식별자 형식 이외의 문자열이나 중첩 설정은 effort로 저장하지 않는다.
+- resume 상태, pending fork buffer, 재가격 계산, CostUsageStore, workspace sidecar 및 내부 analytics fragment에 값을 전달한다. 현재 catalog의 effort를 사용하지 않고 기존 토큰 차분/가격 계산 계약을 유지한다. 세션 ID는 기존 fragment 경로로 유지한다.
+- 파일별 context metadata version을 추가해 과거 캐시를 기존의 제한된 파일 수/바이트/시간 예산 안에서 다시 읽도록 연결했다. 같은 파일 크기·행 개수에서도 구형 행을 교체하고 workspace fingerprint가 새 메타데이터를 반영하도록 했다. 구형 parser hash는 호환 predecessor로 받아 전체 저장소 폐기 대신 파일 단위 이관을 진행한다.
+- workspace sidecar v5에서 v6으로 nullable reasoning_effort 열을 transaction 안에서 추가한다. 기존 사용량을 삭제하지 않으며 실패 시 version 변경도 rollback한다. 생성 parser hash 소스도 write 모드로 갱신한다. check 모드나 compiler/검증 도구는 실행하지 않는다.
+- 합성 fixture12개 작성: label/model/turn/time 경계, fast/fallback 변화, absent/null/nested, 새 턴, invalid/truncated, 증분 resume, bare usage, legacy decode, 재가격/fingerprint, same-size store 교체, sidecar round trip, v5 migration/rollback. 모든 fixture는 미실행이다.
+- **남은 범위:** 저장된 effort와 세션 참조의 Windows 집계·WinUI 표시, 모델 필터·일/주/월 타임라인 및 export 계약, 전체 설정/계정/인증, 창 위치/스크롤, managed payload/lockfile·W10·W15·StartupTask 및 전체 W01~W16/G0~G6. 기존 모델 패널의 effort 미지원 안내는 아직 유효하다. Windows 컴파일·마이그레이션·실제 데이터·UI 검증이 필요하다.
+- 상태: CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·성능·앱·실계정·원격 Windows·CI 미실행.
+- IMPL-606은 73047c0c6으로 origin/main 푸시 확인. 이번 단위도 별도 커밋·푸시한다. guidelines/COMMITS.md가 없어 기존 커밋 규칙을 적용했다. 자동화 변경 없음.

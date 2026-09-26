@@ -177,6 +177,7 @@ extension CostUsageStore {
                     tokenSnapshotsLoaded: !unloadedTokenSnapshotPaths.contains(path),
                     canReuseRows: canReuseStoredRows,
                     eventWhitespaceParsed: baseline.decoded.files[path]?.codexEventWhitespaceParsed,
+                    contextMetadataVersion: baseline.decoded.files[path]?.codexContextMetadataVersion,
                     windowsContentGeneration: baseline.decoded.files[path]?.codexWindowsContentGeneration),
                 calendar: calendar)
             persistedFiles += 1
@@ -324,6 +325,8 @@ extension CostUsageStore {
         var divergentTotals: Bool?
         var interleavedTotals: Bool?
         var eventWhitespaceParsed: Bool?
+        var contextMetadataVersion: Int? = nil
+        var lastEffortContext: CostUsageCodexEffortContext? = nil
         var windowsSource: CostUsageFileReadSnapshot? = nil
         var windowsContentGeneration: String? = nil
         var windowsReadProofVersion: Int? = nil
@@ -383,6 +386,7 @@ extension CostUsageStore {
         var tokenSnapshotsLoaded: Bool
         var canReuseRows: Bool
         var eventWhitespaceParsed: Bool?
+        var contextMetadataVersion: Int?
         var windowsContentGeneration: String?
     }
 
@@ -526,7 +530,9 @@ extension CostUsageStore {
                 codexWindowsSource: details.windowsSource,
                 codexWindowsContentGeneration: details.windowsContentGeneration,
                 codexWindowsReadProofVersion: details.windowsReadProofVersion,
-                codexWindowsAuxiliaryAnchors: details.windowsAuxiliaryAnchors)
+                codexWindowsAuxiliaryAnchors: details.windowsAuxiliaryAnchors,
+                codexContextMetadataVersion: details.contextMetadataVersion,
+                lastCodexEffortContext: details.lastEffortContext)
             cache.files[file.path] = usage
         }
         cache.days = Self.days(from: snapshot.dayAggregates)
@@ -907,6 +913,7 @@ extension CostUsageStore {
     {
         // Persistence strips detailed payloads; the decoded baseline retains the trusted parser marker.
         let parserStateChanged = baseline.eventWhitespaceParsed != usage.codexEventWhitespaceParsed
+            || baseline.contextMetadataVersion != usage.codexContextMetadataVersion
         #if os(Windows)
         let sourceGenerationChanged = baseline.windowsContentGeneration != usage.codexWindowsContentGeneration
         #else
@@ -932,6 +939,8 @@ extension CostUsageStore {
             divergentTotals: usage.hasDivergentTotals,
             interleavedTotals: usage.hasInterleavedTotals,
             eventWhitespaceParsed: usage.codexEventWhitespaceParsed,
+            contextMetadataVersion: usage.codexContextMetadataVersion,
+            lastEffortContext: usage.lastCodexEffortContext,
             windowsSource: usage.codexWindowsSource,
             windowsContentGeneration: usage.codexWindowsContentGeneration,
             windowsReadProofVersion: usage.codexWindowsReadProofVersion,

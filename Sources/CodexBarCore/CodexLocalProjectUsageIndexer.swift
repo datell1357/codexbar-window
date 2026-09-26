@@ -938,7 +938,8 @@ extension CodexLocalProjectUsageIndexer {
                         outputTokens: Int64(outputTokens),
                         reasoningTokens: row.reasoning.map(Int64.init),
                         costNanos: costNanos,
-                        unpricedTokens: costNanos == nil ? totalTokens : 0)
+                        unpricedTokens: costNanos == nil ? totalTokens : 0,
+                        reasoningEffort: row.reasoningEffort)
                 }
             }
             return bucket.modelDailyTotals.flatMap { day, models -> [CodexModelsUsageFragment] in

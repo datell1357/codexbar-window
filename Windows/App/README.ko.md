@@ -219,6 +219,11 @@ IMPL-606의 `WindowsCodexModelAnalysisTests.swift`에는 인접 기간/증감, �
 주입 FX/통화 범위, stale, 공급원 숨김/재수집 없음, paging/PII/응답 예산의 합성 fixture12개를
 작성했다. 기존 상세 fixture는 비공개 모델 이름의 익명화와 PII off 동작을 추가했다.
 모두 미실행이다. 실제 수집 자료의 완전성, 컴파일, WinUI 배치·키보드·성능은 검증하지 않았다.
+IMPL-607은 rollout의 기록된 effort를 이벤트/증분 캐시/sidecar/내부 fragment에 보관하고
+기존 캐시를 수집 예산 안에서 이관하는 코드를 추가했다. 현재 thread 설정으로 과거 값을 채우지 않는다.
+아직 이 값의 Windows 집계·WinUI 표시를 연결하지 않았으며 기존 모델 패널의 effort 미지원 안내는 유효하다.
+`WindowsCodexEffortTests.swift`에 파서·context 경계·resume·legacy decode·재가격·캐시 교체·
+sidecar migration/rollback 합성 fixture12개를 작성했다. 컴파일·테스트·실제 마이그레이션은 미실행이다.
 
 ## API 참고
 

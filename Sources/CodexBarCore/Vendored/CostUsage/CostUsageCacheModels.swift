@@ -350,6 +350,13 @@ struct CostUsageFileUsage: Codable, Equatable {
     /// Version 1 anchors originate from the bytes delivered to the parser.
     var codexWindowsReadProofVersion: Int? = nil
     var codexWindowsAuxiliaryAnchors: [CostUsageCodexTokenIndexAnchor]? = nil
+    var codexContextMetadataVersion: Int? = nil
+    var lastCodexEffortContext: CostUsageCodexEffortContext? = nil
+
+    var hasCurrentCodexParserMetadata: Bool {
+        self.codexEventWhitespaceParsed == true
+            && self.codexContextMetadataVersion == CostUsageScanner.codexContextMetadataVersion
+    }
 
     var hasBufferedCodexSubagentLines: Bool {
         self.codexReadRetryBufferPresence?.subagent ?? (self.codexBufferedSubagentLines?.isEmpty == false)

@@ -22,6 +22,7 @@ struct CodexWorkspaceUsageFingerprintPayload: Encodable {
     let rowCount: Int?
     let lastRowIndex: Int?
     let tokenIndexAnchor: CostUsageCodexTokenIndexAnchor?
+    let contextMetadataVersion: Int?
 
     init(usage: CostUsageFileUsage) {
         self.days = usage.days
@@ -37,6 +38,7 @@ struct CodexWorkspaceUsageFingerprintPayload: Encodable {
         self.rowCount = usage.codexRows?.count
         self.lastRowIndex = usage.codexRows?.compactMap(\.eventIndex).max()
         self.tokenIndexAnchor = usage.codexTokenIndexAnchor
+        self.contextMetadataVersion = usage.codexContextMetadataVersion
     }
 }
 

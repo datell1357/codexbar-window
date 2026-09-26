@@ -11,7 +11,7 @@ import CSQLite3
 /// never attaches to or writes Codex's state database; it only imports typed
 /// catalog/cache values after those sources have been read successfully.
 struct CodexWorkspaceUsageSidecar: Sendable {
-    private static let schemaVersion = 5
+    private static let schemaVersion = 6
     private static let snapshotPayloadFormatVersion = 3
     private let cacheRoot: URL?
 
@@ -277,7 +277,7 @@ struct CodexWorkspaceUsageSidecar: Sendable {
         SELECT e.rollout_path, e.day, e.canonical_model, e.raw_model, e.turn_id, e.event_index,
                e.timestamp_ms, e.input_tokens, e.cached_input_tokens, e.output_tokens,
                e.known_cost_nanos, e.unpriced_tokens, e.pricing_model, e.pricing_mode,
-               e.reasoning_tokens
+               e.reasoning_tokens, e.reasoning_effort
         FROM usage_events e
         JOIN usage_rollouts r ON r.rollout_path = e.rollout_path
         WHERE r.is_present = 1 AND r.event_detail_complete = 1
@@ -306,7 +306,8 @@ struct CodexWorkspaceUsageSidecar: Sendable {
                 knownCostNanos: Self.columnInt64(eventStatement, at: 10),
                 unpricedTokens: Self.columnInt64(eventStatement, at: 11).map(Int.init),
                 pricingModel: Self.columnString(eventStatement, at: 12),
-                pricingMode: Self.columnString(eventStatement, at: 13)))
+                pricingMode: Self.columnString(eventStatement, at: 13),
+                reasoningEffort: Self.columnString(eventStatement, at: 15)))
             usage.codexRows = rows
             cache.files[path] = usage
         }
@@ -356,10 +357,26 @@ struct CodexWorkspaceUsageSidecar: Sendable {
         return db
     }
 
-    private static func ensureSchema(_ db: OpaquePointer?) throws {
+    static func ensureSchema(_ db: OpaquePointer?) throws {
         let current = Self.userVersion(db)
-        guard current == 0 || current == Self.schemaVersion else {
+        guard current == 0 || current == 5 || current == Self.schemaVersion else {
             throw SidecarError.incompatibleSchema
+        }
+        if current == 5 {
+            // Add nullable event evidence without deleting or relabelling existing rows.
+            try Self.begin(db)
+            do {
+                let lockedVersion = Self.userVersion(db)
+                if lockedVersion == 5 {
+                    try Self.execute(db, "ALTER TABLE usage_events ADD COLUMN reasoning_effort TEXT")
+                    try Self.execute(db, "PRAGMA user_version = \(Self.schemaVersion)")
+                } else if lockedVersion != Self.schemaVersion { throw SidecarError.incompatibleSchema }
+                try Self.commit(db)
+            } catch {
+                Self.rollback(db)
+                throw error
+            }
+            return
         }
         guard current == 0 else { return }
         // The nullable Standard/Priority cost columns remain only to preserve the v5 schema.
@@ -438,6 +455,7 @@ struct CodexWorkspaceUsageSidecar: Sendable {
             pricing_model TEXT,
             pricing_mode TEXT,
             reasoning_tokens INTEGER,
+            reasoning_effort TEXT,
             PRIMARY KEY (rollout_path, event_index)
         );
         CREATE TABLE IF NOT EXISTS snapshot_payloads (
@@ -727,8 +745,8 @@ struct CodexWorkspaceUsageSidecar: Sendable {
         INSERT INTO usage_events (
             rollout_path, event_index, timestamp_ms, day, canonical_model, raw_model, turn_id,
             input_tokens, cached_input_tokens, output_tokens, known_cost_nanos, unpriced_tokens,
-            pricing_model, pricing_mode, reasoning_tokens
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            pricing_model, pricing_mode, reasoning_tokens, reasoning_effort
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(rollout_path, event_index) DO UPDATE SET
             timestamp_ms = excluded.timestamp_ms,
             day = excluded.day,
@@ -742,7 +760,8 @@ struct CodexWorkspaceUsageSidecar: Sendable {
             unpriced_tokens = excluded.unpriced_tokens,
             pricing_model = excluded.pricing_model,
             pricing_mode = excluded.pricing_mode,
-            reasoning_tokens = excluded.reasoning_tokens
+            reasoning_tokens = excluded.reasoning_tokens,
+            reasoning_effort = excluded.reasoning_effort
         """
         guard let statement = Self.prepare(db, sql) else { throw SidecarError.statementFailed }
         defer { sqlite3_finalize(statement) }
@@ -765,6 +784,7 @@ struct CodexWorkspaceUsageSidecar: Sendable {
             Self.bind(row.pricingModel, to: statement, at: 13)
             Self.bind(row.pricingMode, to: statement, at: 14)
             Self.bind(row.reasoning.map(Int64.init), to: statement, at: 15)
+            Self.bind(CostUsageCodexEffortContext.normalizedEffort(row.reasoningEffort), to: statement, at: 16)
             guard sqlite3_step(statement) == SQLITE_DONE else { throw Self.sqliteFailure(db) }
         }
     }

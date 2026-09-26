@@ -14,6 +14,7 @@ import Glibc
 // swiftlint:disable type_body_length file_length
 enum CostUsageScanner {
     static let codexProjectMetadataVersion = 1
+    static let codexContextMetadataVersion = 1
     typealias CancellationCheck = () throws -> Void
 
     static let log = CodexBarLog.logger(LogCategories.tokenCost)
@@ -346,6 +347,7 @@ enum CostUsageScanner {
         let bufferedUnresolvedForkLines: [CodexBufferedFastLine]?
         var windowsReadAnchor: CostUsageCodexTokenIndexAnchor? = nil
         var windowsAuxiliaryAnchors: [CostUsageCodexTokenIndexAnchor] = []
+        var lastCodexEffortContext: CostUsageCodexEffortContext? = nil
     }
 
     struct CodexUsageRow: Codable, Equatable {
@@ -365,6 +367,7 @@ enum CostUsageScanner {
         let unpricedTokens: Int?
         let pricingModel: String?
         let pricingMode: String?
+        let reasoningEffort: String?
 
         init(
             day: String,
@@ -380,7 +383,8 @@ enum CostUsageScanner {
             knownCostNanos: Int64? = nil,
             unpricedTokens: Int? = nil,
             pricingModel: String? = nil,
-            pricingMode: String? = nil)
+            pricingMode: String? = nil,
+            reasoningEffort: String? = nil)
         {
             self.day = day
             self.model = model
@@ -396,6 +400,7 @@ enum CostUsageScanner {
             self.unpricedTokens = unpricedTokens
             self.pricingModel = pricingModel
             self.pricingMode = pricingMode
+            self.reasoningEffort = CostUsageCodexEffortContext.normalizedEffort(reasoningEffort)
         }
     }
 
@@ -4056,6 +4061,8 @@ enum CostUsageScanner {
         let model: String?
         let cwd: String?
         let title: String?
+        var reasoningEffort: String? = nil
+        var turnID: String? = nil
     }
 
     struct CodexTokenCountRecord: Codable, Equatable {
@@ -4103,6 +4110,7 @@ enum CostUsageScanner {
     private static let codexJSONFieldForkedFromIdCamel = Array("forkedFromId".utf8)
     private static let codexJSONFieldId = Array("id".utf8)
     private static let codexJSONFieldInfo = Array("info".utf8)
+    private static let codexJSONFieldEffort = Array("effort".utf8)
     private static let codexJSONFieldInputTokens = Array("input_tokens".utf8)
     private static let codexJSONFieldLastTokenUsage = Array("last_token_usage".utf8)
     private static let codexJSONFieldModel = Array("model".utf8)
@@ -4460,7 +4468,11 @@ enum CostUsageScanner {
                     timestamp: timestamp,
                     model: model,
                     cwd: cwd,
-                    title: title))
+                    title: title,
+                    reasoningEffort: Self.extractJSONByteStringField(Self.codexJSONFieldEffort,
+                        from: rawBuffer, in: payloadRange, atDepth: 1),
+                    turnID: Self.extractJSONByteStringField(Self.codexJSONFieldTurnId,
+                        from: rawBuffer, in: payloadRange, atDepth: 1)))
 
             case "inter_agent_communication_metadata":
                 // Compact Codex JSONL uses this exact spelling. Whitespace/escaped variants fall
@@ -4912,6 +4924,7 @@ enum CostUsageScanner {
         initialRawTotalsBaseline: CostUsageCodexTotals? = nil,
         initialHasDivergentTotals: Bool = false,
         initialCodexTurnID: String? = nil,
+        initialCodexEffortContext: CostUsageCodexEffortContext? = nil,
         initialCodexUsageRowIndex: Int = 0,
         inheritedTotalsResolver: ((String, String) -> CodexForkBaseline)? = nil) -> CodexParseResult
     {
@@ -4929,6 +4942,7 @@ enum CostUsageScanner {
                 initialRawTotalsBaseline: initialRawTotalsBaseline,
                 initialHasDivergentTotals: initialHasDivergentTotals,
                 initialCodexTurnID: initialCodexTurnID,
+                initialCodexEffortContext: initialCodexEffortContext,
                 initialCodexUsageRowIndex: initialCodexUsageRowIndex,
                 inheritedTotalsResolver: throwingResolver,
                 checkCancellation: nil)) ?? CodexParseResult(
@@ -4959,7 +4973,8 @@ enum CostUsageScanner {
             tokenSnapshots: [],
             jsonlResumeState: nil,
             bufferedSubagentLines: nil,
-            bufferedUnresolvedForkLines: nil)
+            bufferedUnresolvedForkLines: nil,
+            lastCodexEffortContext: initialCodexEffortContext)
     }
 
     // swiftlint:disable:next cyclomatic_complexity function_body_length
@@ -4975,6 +4990,7 @@ enum CostUsageScanner {
         initialHasDivergentTotals: Bool = false,
         initialHasInterleavedTotals: Bool = false,
         initialCodexTurnID: String? = nil,
+        initialCodexEffortContext: CostUsageCodexEffortContext? = nil,
         initialCodexUsageRowIndex: Int = 0,
         initialBufferedSubagentLines: [CodexBufferedFastLine]? = nil,
         initialBufferedUnresolvedForkLines: [CodexBufferedFastLine]? = nil,
@@ -4990,6 +5006,7 @@ enum CostUsageScanner {
         let readSnapshot = try expectedFile ?? CostUsageFileReadSnapshot.capture(at: fileURL)
         var windowsAuxiliaryAnchors: [CostUsageCodexTokenIndexAnchor] = []
         var currentModel = initialModel
+        var currentEffortContext = initialCodexEffortContext
         var previousTotals = initialTotals
         var sessionId: String?
         var forkedFromId: String?
@@ -5086,7 +5103,9 @@ enum CostUsageScanner {
                     input: totals.input,
                     cached: totals.cached,
                     output: totals.output,
-                    reasoning: totals.reasoning))
+                    reasoning: totals.reasoning,
+                    reasoningEffort: currentEffortContext?.value(model: model, turnID: currentTurnID,
+                        timestampUnixMs: unixMilliseconds(from: resolvedTimestamp))))
             }
             if let resolvedTimestamp {
                 lastAcceptedTokenTimestamp = resolvedTimestamp
@@ -5399,7 +5418,9 @@ enum CostUsageScanner {
                     input: deltaInput,
                     cached: deltaCached,
                     output: deltaOutput,
-                    reasoning: deltaReasoning))
+                    reasoning: deltaReasoning,
+                    reasoningEffort: currentEffortContext?.value(model: model, turnID: record.turnID ?? currentTurnID,
+                        timestampUnixMs: unixMilliseconds(from: record.timestamp), reportedModel: record.model)))
             }
         }
 
@@ -5415,9 +5436,15 @@ enum CostUsageScanner {
                     // An explicitly blank context clears stale model evidence; an omitted field preserves it.
                     currentModel = sanitizedString(model)
                 }
+                // Each context replaces the effort evidence, including absent/null/invalid values.
+                // Never inherit an earlier effort through an unspecified or truncated context.
+                currentEffortContext = CostUsageCodexEffortContext(effort: metadata.reasoningEffort,
+                    model: metadata.model, turnID: metadata.turnID ?? currentTurnID,
+                    timestampUnixMs: unixMilliseconds(from: metadata.timestamp))
             case .interAgentCommunication:
                 break
             case let .taskStarted(turnID):
+                if turnID == nil || currentEffortContext?.turnID != turnID { currentEffortContext = nil }
                 currentTurnID = turnID
             case let .tokenCount(record):
                 try handleTokenCount(record)
@@ -5615,6 +5642,10 @@ enum CostUsageScanner {
                             return
                         }
                         if timestampValidity == false {
+                            switch fastLine {
+                            case .turnContext, .taskStarted: currentEffortContext = nil
+                            default: break
+                            }
                             return
                         }
                     }
@@ -5640,6 +5671,13 @@ enum CostUsageScanner {
                             return
                         }
 
+                        // An invalid timestamp cannot establish a context or carry an old effort forward.
+                        let startsTask = type == "event_msg"
+                            && ((obj["payload"] as? [String: Any])?["type"] as? String) == "task_started"
+                        if type == "turn_context" || startsTask,
+                           (obj["timestamp"] as? String).flatMap(Self.dateFromTimestamp) == nil {
+                            currentEffortContext = nil
+                        }
                         guard let tsText = obj["timestamp"] as? String else { return }
                         guard Self.dayKeyFromTimestamp(tsText) ?? Self.dayKeyFromParsedISO(tsText) != nil
                         else { return }
@@ -5676,7 +5714,9 @@ enum CostUsageScanner {
                                     cwd: payload["cwd"] as? String
                                         ?? payload["current_working_directory"] as? String
                                         ?? payload["currentWorkingDirectory"] as? String,
-                                    title: payload["title"] as? String ?? payload["name"] as? String)
+                                    title: payload["title"] as? String ?? payload["name"] as? String,
+                                    reasoningEffort: payload["effort"] as? String,
+                                    turnID: payload["turn_id"] as? String)
                             }
                             do {
                                 try routeFastLine(
@@ -5904,6 +5944,7 @@ enum CostUsageScanner {
                         sawInterleavedTotals: false)
                     currentModel = nil
                     currentTurnID = nil
+                    currentEffortContext = nil
                 }
                 self.log.debug(
                     "Codex cost usage classified subagent rollout counter semantics",
@@ -5979,7 +6020,8 @@ enum CostUsageScanner {
                 ? bufferedUnresolvedForkLines
                 : nil,
             windowsReadAnchor: windowsReadAnchor,
-            windowsAuxiliaryAnchors: windowsAuxiliaryAnchors)
+            windowsAuxiliaryAnchors: windowsAuxiliaryAnchors,
+            lastCodexEffortContext: currentEffortContext)
     }
 
     private static func codexTurnID(from payload: [String: Any]) -> String? {
@@ -6148,7 +6190,7 @@ enum CostUsageScanner {
         // Called only after keepCachedCodexFileIfFresh failed. Forced rescans, priority invalidation,
         // and other paths that reread JSONL must still charge the file; the sole zero-work exception
         // is a validated same-size buffered replay.
-        guard let cached, cached.codexEventWhitespaceParsed == true else { return max(0, metadata.size) }
+        guard let cached, cached.hasCurrentCodexParserMetadata else { return max(0, metadata.size) }
         if Self.isValidatedSameSizeBufferedCodexForkRetry(metadata: metadata, cached: cached) {
             return 0
         }
@@ -6205,8 +6247,8 @@ enum CostUsageScanner {
                 : nil
         })
         let needsPricingMetadataMigration = !pricingMetadataMigrationPathKeys.isEmpty
-        let eventWhitespaceMigrationPathKeys = Set(cache.files.compactMap { path, usage in
-            usage.codexEventWhitespaceParsed == true ? nil : Self.codexPathKey(URL(fileURLWithPath: path))
+        let parserMetadataMigrationPathKeys = Set(cache.files.compactMap { path, usage in
+            usage.hasCurrentCodexParserMetadata ? nil : Self.codexPathKey(URL(fileURLWithPath: path))
         })
         let needsProjectMetadataMigration = cache.codexProjectMetadataVersion != Self.codexProjectMetadataVersion
         let modelsDevLoad = ModelsDevCache.load(now: now, cacheRoot: options.cacheRoot)
@@ -6286,12 +6328,12 @@ enum CostUsageScanner {
                 || priorityTurnsChanged)
         let cacheWideMigrationPendingPathKeys = pricingMetadataMigrationPathKeys
             .union(turnIDCacheMigrationPathKeys)
-            .union(eventWhitespaceMigrationPathKeys)
+            .union(parserMetadataMigrationPathKeys)
         let requiresCacheWideFileReprocessing = requiresAllFilesForCacheWideMigration
             || !cacheWideMigrationPendingPathKeys.isEmpty
         let shouldRefresh = options.forceRescan
             || sourceRefreshRequired
-            || !eventWhitespaceMigrationPathKeys.isEmpty
+            || !parserMetadataMigrationPathKeys.isEmpty
             || windowExpanded
             || rootsChanged
             || needsPricingMetadataMigration
@@ -6698,7 +6740,7 @@ enum CostUsageScanner {
             ?? ((options.maxCodexScanDurationPerRefresh ?? 0) > 0)
         // Keep the full window until legacy and partially parsed files finish, even after their marker changes.
         let unfinishedScanStart = cache.roots == Self.codexRootsFingerprint(roots)
-            && cache.files.values.contains { $0.codexEventWhitespaceParsed != true || $0.codexScanComplete == false }
+            && cache.files.values.contains { !$0.hasCurrentCodexParserMetadata || $0.codexScanComplete == false }
             ? cache.scanSinceKey : nil
         var retainedScanStart: String? = if let pending = cache.codexActiveLookbackState,
                                             pending.rootPaths == roots.map(Self.codexResolvedPath).sorted()
