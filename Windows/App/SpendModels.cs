@@ -3,10 +3,22 @@ using System.Text.Json.Serialization;
 namespace CodexBar.App;
 
 internal sealed record SpendDetailQuery(string Kind, int? Index, string? Day, string Revision, int Page = 0);
-internal sealed record CodexModelSelection(int Index, string Revision);
+internal sealed record CodexModelSelection(int[] Indices, string Revision, string Mode = "include")
+{
+    [JsonIgnore] public bool IsValid => Indices is { Length: <= 256 } && Indices.All(index => index is >= 0 and <= 1000000)
+        && Indices.Distinct().Count() == Indices.Length && Indices.SequenceEqual(Indices.Order())
+        && (Mode is "include" or "exclude") && Revision is { Length: 64 }
+        && Revision.All(value => value is >= '0' and <= '9' or >= 'a' and <= 'f');
+    public bool Includes(int index) => Mode == "include" ? Indices.Contains(index) : !Indices.Contains(index);
+    public int Rank(int index) => Mode == "include" ? Array.BinarySearch(Indices, index) : index - Indices.Count(value => value < index);
+    public static bool Matches(CodexModelSelection? first, CodexModelSelection? second) =>
+        first is null ? second is null : second is not null && first.Revision == second.Revision
+            && first.Mode == second.Mode && first.Indices.SequenceEqual(second.Indices);
+}
 internal sealed record SpendQuery(int Days, string? Currency, string Section, string Chart, int Page,
     SpendDetailQuery? Detail = null, bool ComparePeriods = false, int? CodexModelsPage = null,
-    CodexModelSelection? CodexModel = null, string? CodexGranularity = null, string? CodexMetric = null);
+    CodexModelSelection? CodexModel = null, string? CodexGranularity = null, string? CodexMetric = null,
+    int? CodexCatalogPage = null);
 internal sealed record SpendExportAction(string Kind, string ExpectedRevision);
 public sealed record SpendComparisonRow([property: JsonRequired] int Days, [property: JsonRequired] string Title,
     [property: JsonRequired] string Range, [property: JsonRequired] string Cost, [property: JsonRequired] string Tokens,
@@ -16,6 +28,12 @@ public sealed record CodexModelRow([property: JsonRequired] string Title,
     [property: JsonRequired] string TokenChange, [property: JsonRequired] string CurrentCost,
     [property: JsonRequired] string PreviousCost, [property: JsonRequired] string CostChange,
     [property: JsonRequired] string Details, [property: JsonRequired] int SelectionIndex);
+public sealed record CodexModelChoice([property: JsonRequired] string Title, [property: JsonRequired] int Index,
+    [property: JsonRequired] bool Selected)
+{
+    [JsonIgnore] public string ActionTitle => Selected ? "Exclude" : "Include";
+    [JsonIgnore] public string SelectionLabel => Selected ? "Included" : "Excluded";
+}
 internal sealed record CodexModelsPage([property: JsonRequired] string Context,
     [property: JsonRequired] string CurrentRange, [property: JsonRequired] string PreviousRange,
     [property: JsonRequired] int Page, [property: JsonRequired] int PageCount,
@@ -23,7 +41,9 @@ internal sealed record CodexModelsPage([property: JsonRequired] string Context,
     [property: JsonRequired] string SelectionRevision, int? SelectedIndex,
     [property: JsonRequired] string SelectedLabel, [property: JsonRequired] string Granularity,
     [property: JsonRequired] string Metric, [property: JsonRequired] string TimelineContext,
-    [property: JsonRequired] SpendPoint[] Timeline)
+    [property: JsonRequired] SpendPoint[] Timeline, CodexModelSelection? ModelSelection,
+    [property: JsonRequired] int CatalogPage, [property: JsonRequired] int CatalogPageCount,
+    [property: JsonRequired] int CatalogTotal, [property: JsonRequired] CodexModelChoice[] Choices)
 {
     public bool IsValid => Context is not null && CurrentRange is not null && PreviousRange is not null
         && Page >= 0 && Page < PageCount && TotalRows >= 0
@@ -35,8 +55,19 @@ internal sealed record CodexModelsPage([property: JsonRequired] string Context,
             && row.SelectionIndex is >= 0 and <= 1000000)
         && SelectionRevision is { Length: 64 }
         && SelectionRevision.All(value => value is >= '0' and <= '9' or >= 'a' and <= 'f')
-        && (SelectedIndex is null || (SelectedIndex is >= 0 and <= 1000000 && TotalRows == 1))
-        && Rows.Select((row, index) => row.SelectionIndex == (SelectedIndex ?? Page * 40 + index)).All(value => value)
+        && CatalogTotal is >= 0 and <= 1000001 && CatalogPage >= 0 && CatalogPage < CatalogPageCount
+        && CatalogPageCount == Math.Max(1L, (CatalogTotal + 39L) / 40)
+        && (ModelSelection is null || ModelSelection.IsValid && ModelSelection.Revision == SelectionRevision
+            && ModelSelection.Indices.All(index => index < CatalogTotal))
+        && TotalRows == (ModelSelection is null ? CatalogTotal : ModelSelection.Mode == "include"
+            ? ModelSelection.Indices.Length : CatalogTotal - ModelSelection.Indices.Length)
+        && SelectedIndex == (ModelSelection is not null && TotalRows == 1 ? Rows.FirstOrDefault()?.SelectionIndex : null)
+        && Rows.Select((row, index) => row.SelectionIndex < CatalogTotal
+            && (ModelSelection?.Includes(row.SelectionIndex) ?? true)
+            && (ModelSelection?.Rank(row.SelectionIndex) ?? row.SelectionIndex) == Page * 40 + index).All(value => value)
+        && Choices is { Length: <= 40 } && Choices.Length == Math.Min(40L, CatalogTotal - CatalogPage * 40L)
+        && Choices.Select((choice, index) => choice is not null && choice.Title is not null
+            && choice.Index == CatalogPage * 40 + index && choice.Selected == (ModelSelection?.Includes(choice.Index) ?? true)).All(value => value)
         && SelectedLabel is not null && TimelineContext is not null
         && (Granularity is "daily" or "weekly" or "monthly")
         && (Metric is "tokens" or "cost" or "sessionReferences") && SpendPage.ValidPoints(Timeline);

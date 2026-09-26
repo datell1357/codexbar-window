@@ -74,8 +74,33 @@
                 <TextBlock x:Name="CodexModelsPreviousRange" TextWrapping="Wrap" />
                 <StackPanel Orientation="Horizontal" Spacing="12">
                     <Button x:Name="AllCodexModelsButton" Content="All models" Click="ClearCodexModel" />
+                    <Button Content="No models" Click="ClearAllCodexModels" />
                     <TextBlock x:Name="CodexModelScope" TextWrapping="Wrap" VerticalAlignment="Center" />
                 </StackPanel>
+                <Expander Header="Choose models" HorizontalAlignment="Stretch">
+                    <StackPanel Spacing="8">
+                        <TextBlock Text="Include specific models, or exclude models from the full set. The model table and timeline use the same selection." TextWrapping="Wrap" />
+                        <ScrollViewer MaxHeight="360" VerticalScrollBarVisibility="Auto">
+                            <ItemsControl x:Name="CodexModelChoices">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate x:DataType="local:CodexModelChoice">
+                                        <Grid ColumnSpacing="12" Padding="4">
+                                            <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                                            <TextBlock Text="{x:Bind Title}" TextWrapping="Wrap" VerticalAlignment="Center" />
+                                            <TextBlock Grid.Column="1" Text="{x:Bind SelectionLabel}" VerticalAlignment="Center" />
+                                            <Button Grid.Column="2" Content="{x:Bind ActionTitle}" Tag="{x:Bind Index}" Click="ToggleCodexModel" />
+                                        </Grid>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </ScrollViewer>
+                        <StackPanel Orientation="Horizontal" Spacing="12">
+                            <Button x:Name="PreviousCodexCatalogButton" Content="Previous choices" Click="PreviousCodexCatalogPage" />
+                            <TextBlock x:Name="CodexCatalogPosition" VerticalAlignment="Center" />
+                            <Button x:Name="NextCodexCatalogButton" Content="Next choices" Click="NextCodexCatalogPage" />
+                        </StackPanel>
+                    </StackPanel>
+                </Expander>
                 <TextBlock Text="Current-period model timeline" FontWeight="SemiBold" />
                 <StackPanel Orientation="Horizontal" Spacing="12">
                     <ComboBox x:Name="CodexGranularityPicker" Header="Interval" SelectedIndex="0" SelectionChanged="CodexTimelineChanged">

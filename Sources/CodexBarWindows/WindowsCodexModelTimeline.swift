@@ -28,7 +28,12 @@ enum WindowsCodexModelTimeline {
     /// The first/last groups are clipped to the requested interval, never padded with inferred data.
     static func build(_ value: WindowsCodexModelAnalysis.Snapshot, model: String?,
                       granularity: String, calendar: Calendar) -> [Sample] {
+        Self.build(value, models: model.map { Set([$0]) }, granularity: granularity, calendar: calendar)
+    }
+    static func build(_ value: WindowsCodexModelAnalysis.Snapshot, models: Set<String>?,
+                      granularity: String, calendar: Calendar) -> [Sample] {
         guard ["daily", "weekly", "monthly"].contains(granularity) else { return [] }
+        if models?.isEmpty == true { return [] }
         let period = value.current
         guard period.boundaryAligned else { return [] }
         var groupingCalendar = calendar
@@ -45,14 +50,14 @@ enum WindowsCodexModelTimeline {
             visited += 1
             var bucket = buckets[full.start] ?? Bucket(start: day, end: next, full: full)
             bucket.end = min(next, period.interval.end)
-            for (name, totals) in period.dailyModels[day] ?? [:] where model == nil || name == model {
+            for (name, totals) in period.dailyModels[day] ?? [:] where models?.contains(name) ?? true {
                 bucket.tokens.add(totals.tokens.value)
                 if !totals.tokens.complete { bucket.tokens.add(nil) }
                 bucket.cost.add(totals.cost.value)
                 if !totals.cost.complete { bucket.cost.add(nil) }
             }
             let key = WindowsAppSpendProjection.dayKey(day, calendar: calendar)
-            for (name, activity) in period.activity.byDay[key] ?? [:] where model == nil || name == model {
+            for (name, activity) in period.activity.byDay[key] ?? [:] where models?.contains(name) ?? true {
                 bucket.sawSessions = true
                 bucket.sessions[name, default: []].formUnion(activity.sessions)
                 bucket.sessionsComplete = bucket.sessionsComplete && activity.sessionsComplete

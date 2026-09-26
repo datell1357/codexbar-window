@@ -14,6 +14,11 @@ extension WindowsAppSpendProjection {
         let details: String
         var selectionIndex: Int = 0
     }
+    struct CodexModelChoice: Codable, Sendable {
+        let title: String
+        let index: Int
+        let selected: Bool
+    }
     struct CodexModelsPage: Codable, Sendable {
         let context: String
         let currentRange: String
@@ -29,6 +34,11 @@ extension WindowsAppSpendProjection {
         var metric: String = "tokens"
         var timelineContext: String = ""
         var timeline: [Point] = []
+        var modelSelection: CodexModelSelection? = nil
+        var catalogPage: Int = 0
+        var catalogPageCount: Int = 1
+        var catalogTotal: Int = 0
+        var choices: [CodexModelChoice] = []
     }
 
     /// Shares the enclosing response's text budget; IDs, account labels and raw sessions stay local.
@@ -36,7 +46,8 @@ extension WindowsAppSpendProjection {
                             hidePersonalInfo: Bool, stale: Bool, calendar: Calendar,
                             text: (String, Int) -> String,
                             selectionRevision: String = "", selection: CodexModelSelection? = nil,
-                            granularity: String = "daily", metric: String = "tokens") -> CodexModelsPage {
+                            granularity: String = "daily", metric: String = "tokens",
+                            catalogPage requestedCatalogPage: Int = 0) -> CodexModelsPage {
         let collected = value.collectionComplete && !stale
         let currentTokensComplete = collected && value.current.tokensComplete
         let previousTokensComplete = collected && value.previous.tokensComplete
@@ -44,14 +55,23 @@ extension WindowsAppSpendProjection {
         let previousCostComplete = collected && value.previous.costComplete
         let allKeys = value.modelKeys
         let selectionValid = Self.acceptsCodexModel(selection, analysis: value, revision: selectionRevision)
-        let selectedKey = selection.flatMap { allKeys.indices.contains($0.index) ? allKeys[$0.index] : nil }
-        let keys = !selectionValid ? [] : selectedKey.map { [$0] } ?? allKeys
+        let indices = selectionValid ? selection?.resolvedIndices(count: allKeys.count) ?? Array(allKeys.indices) : []
+        let keys = indices.map { allKeys[$0] }
+        let selectedIndices = Set(indices)
+        let catalogPages = max(1, (allKeys.count + 39) / 40)
+        let catalogPage = min(max(0, requestedCatalogPage), catalogPages - 1)
+        let choices = ((catalogPage * 40)..<min(allKeys.count, catalogPage * 40 + 40)).map { index in
+            CodexModelChoice(title: text(Self.modelTitle(allKeys[index], index: index, hidePersonalInfo: hidePersonalInfo), 512),
+                index: index, selected: selectedIndices.contains(index))
+        }
         let pages = max(1, (keys.count + 39) / 40)
         let page = min(max(0, requestedPage), pages - 1)
-        let selectedLabel = selection.flatMap { selected in
-            selectedKey.map { Self.modelTitle($0, index: selected.index, hidePersonalInfo: hidePersonalInfo) }
-        } ?? "All models"
-        let timeline = selectionValid ? Self.codexTimeline(value, model: selectedKey, granularity: granularity,
+        let selectedLabel: String
+        if selection == nil { selectedLabel = "All models" }
+        else if let index = indices.first, indices.count == 1 {
+            selectedLabel = Self.modelTitle(allKeys[index], index: index, hidePersonalInfo: hidePersonalInfo)
+        } else { selectedLabel = indices.isEmpty ? "No models selected" : "\(indices.count) models selected" }
+        let timeline = selectionValid ? Self.codexTimeline(value, models: selection == nil ? nil : Set(keys), granularity: granularity,
             metric: metric, stale: stale, calendar: calendar, text: text) : []
         func tokens(_ count: Int?, complete: Bool) -> String {
             guard let count, count >= 0 else { return "Unknown" }
@@ -118,7 +138,7 @@ extension WindowsAppSpendProjection {
         var rows: [CodexModelRow] = []
         for index in (page * 40)..<min(keys.count, page * 40 + 40) {
             let key = keys[index]
-            let originalIndex = selection?.index ?? index
+            let originalIndex = indices[index]
             let current = value.current.models[key]
             let previous = value.previous.models[key]
             // Absence is a zero only when every included source has complete model coverage.
@@ -183,11 +203,13 @@ extension WindowsAppSpendProjection {
         return .init(context: text(context.joined(separator: "\n"), 4096),
             currentRange: text(range(value.current.interval), 256), previousRange: text(range(value.previous.interval), 256),
             page: page, pageCount: pages, totalRows: keys.count, rows: rows,
-            selectionRevision: selectionRevision, selectedIndex: selectionValid ? selection?.index : nil,
+            selectionRevision: selectionRevision,
+            selectedIndex: selection != nil && indices.count == 1 ? indices.first : nil,
             selectedLabel: text(selectionValid ? selectedLabel : "Selection changed", 512),
             granularity: granularity, metric: metric,
             timelineContext: text("Current-period timeline for \(selectionValid ? selectedLabel : "an unavailable selection"). Weeks start Monday in \(calendar.timeZone.identifier). Edge weeks/months are clipped to the selected period. Session refs deduplicate within each model and interval; adding intervals can count the same session again. ~ marks incomplete known data; Unknown is not zero. Cost bars use the selected currency. The coverage and total summary above describes all included native Codex models.", 1536),
-            timeline: timeline)
+            timeline: timeline, modelSelection: selectionValid ? selection : nil,
+            catalogPage: catalogPage, catalogPageCount: catalogPages, catalogTotal: allKeys.count, choices: choices)
     }
 }
 #endif

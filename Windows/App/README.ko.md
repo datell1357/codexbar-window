@@ -75,8 +75,14 @@
   상태가 바뀌면 이전 모델 선택을 해제하고 재선택 안내를 제공한다. 원본 모델 ID는 선택 요청에
   넣지 않으며 익명 Model N은 전체 모델 목록의 번호를 유지한다.
   모델 필터는 모델 표/타임라인에 적용한다. 상위 비용 및 coverage 요약은 전체 범위를 유지한다.
-  선택과 timeline 옵션은 현재 창에서만 유지한다. 다중 모델 조합·모델 분석 CSV 등은 남아 있다.
+  선택과 timeline 옵션은 현재 창에서만 유지한다. 모델 분석 CSV 등의 출력은 남아 있다.
   기존 Share Stats/비용 JSON은 기간·통화 전체를 내보내며 이 모델 필터를 적용하지 않는다.
+- IMPL-610은 Choose models 목록에서 여러 모델을 포함하거나 전체에서 일부를 제외하는 선택을
+  연결했다. All models와 No models를 구분하며 선택 없음은 빈 표/타임라인으로 표시한다.
+  선택 목록과 결과 표는 각각40개씩 독립적으로 페이지를 넘긴다. 필터로 숨겨진 모델도 다시
+  추가할 수 있고 익명 Model N의 번호는 전체 목록 기준이다. include/exclude 예외는 최대256개다.
+  정렬된 행 번호와 revision만 요청에 넣으며 오래된/중복/범위 밖 선택은 거절한다.
+  모델 표와 일/주/월 타임라인에 같은 선택을 적용하고 기존 Share Stats/비용 JSON 범위는 유지한다.
 
 ## 프로세스와 통신 규약
 
@@ -250,6 +256,9 @@ IMPL-609는 WindowsCodexTimelineTests.swift에 모델 범위/환산·구간별 s
 누락/부분/미가격·선택 revision·익명화/오래된 선택 거절·wire 경계·365일/stale 합성 fixture8개를 작성했다.
 기존 모델 분석 wire fixture도 timeline과 별도 selection revision을 포함하도록 확장했다.
 전부 미실행이며 WinUI 그래프·클릭·키보드/Narrator·컴파일·성능은 검증하지 않았다.
+IMPL-610의 WindowsCodexModelSelectionTests.swift에는 포함/제외 집계, privacy/wire, 전체/빈 선택,
+선택 목록의 독립 페이지, 여러 모델의 세션 참조 의미, 구형 선택/잘못된 형식, 요청 상한,
+오래된/범위 밖 선택 거절 합성 fixture8개를 작성했다. 전부 미실행이다.
 
 ## API 참고
 

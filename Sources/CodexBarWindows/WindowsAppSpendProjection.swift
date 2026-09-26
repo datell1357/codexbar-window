@@ -16,6 +16,7 @@ enum WindowsAppSpendProjection {
         var codexModel: CodexModelSelection?
         var codexGranularity: String?
         var codexMetric: String?
+        var codexCatalogPage: Int?
         var isValid: Bool {
             (1...WindowsSpendHistoryPolicy.scanDays).contains(self.days) && self.page >= 0 && self.page <= 100000 &&
                 ["providers", "models", "projects", "sessions"].contains(self.section) &&
@@ -26,7 +27,9 @@ enum WindowsAppSpendProjection {
                 (self.codexModel?.isValid ?? true) &&
                 (self.codexGranularity.map { ["daily", "weekly", "monthly"].contains($0) } ?? true) &&
                 (self.codexMetric.map { ["tokens", "cost", "sessionReferences"].contains($0) } ?? true) &&
-                (self.codexModelsPage != nil || (self.codexModel == nil && self.codexGranularity == nil && self.codexMetric == nil))
+                (self.codexCatalogPage.map { (0...100000).contains($0) } ?? true) &&
+                (self.codexModelsPage != nil || (self.codexModel == nil && self.codexGranularity == nil
+                    && self.codexMetric == nil && self.codexCatalogPage == nil))
         }
     }
     struct DetailQuery: Codable, Sendable {
@@ -238,7 +241,8 @@ enum WindowsAppSpendProjection {
             codexModels.map { Self.codexModels($0, page: page, hidePersonalInfo: hidePersonalInfo,
                 stale: snapshot.stale, calendar: calendar, text: { text($0, limit: $1) },
                 selectionRevision: codexModelsRevision, selection: query.codexModel,
-                granularity: query.codexGranularity ?? "daily", metric: query.codexMetric ?? "tokens") }
+                granularity: query.codexGranularity ?? "daily", metric: query.codexMetric ?? "tokens",
+                catalogPage: query.codexCatalogPage ?? 0) }
         }
         let totalCost = group.map { ($0.hasPartialCost ? "~" : "") + cost($0.totalCost, $0.currencyCode) } ?? "Unknown"
         let totalTokens = group.map { ($0.hasPartialTokens ? "~" : "") + tokens($0.totalTokens) } ?? "Unknown"

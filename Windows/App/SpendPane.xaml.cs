@@ -17,6 +17,7 @@ public sealed partial class SpendPane : UserControl
     private int epoch;
     private int page;
     private int codexModelsPage;
+    private int codexCatalogPage;
     private CodexModelSelection? codexModel;
     private int selectedCodexPoint;
     private string? codexSelectionNotice;
@@ -67,6 +68,7 @@ public sealed partial class SpendPane : UserControl
             selectedDay = 0;
             page = 0;
             codexModelsPage = 0;
+            codexCatalogPage = 0;
             codexModel = null;
         }
         finally { applying = false; }
@@ -98,6 +100,9 @@ public sealed partial class SpendPane : UserControl
         CodexModelsRows.ItemsSource = null;
         CodexModelsContext.Text = CodexModelsCurrentRange.Text = CodexModelsPreviousRange.Text = CodexModelsPosition.Text = "";
         PreviousCodexModelsButton.IsEnabled = NextCodexModelsButton.IsEnabled = false;
+        CodexModelChoices.ItemsSource = null;
+        CodexCatalogPosition.Text = "";
+        PreviousCodexCatalogButton.IsEnabled = NextCodexCatalogButton.IsEnabled = false;
         CodexTimelineCanvas.Children.Clear();
         CodexModelScope.Text = CodexTimelineContext.Text = CodexTimelineDetail.Text = CodexTimelinePosition.Text = "";
         PreviousCodexPointButton.IsEnabled = NextCodexPointButton.IsEnabled = AllCodexModelsButton.IsEnabled = false;
@@ -131,6 +136,7 @@ public sealed partial class SpendPane : UserControl
                 if (result.Status == "codexModelChanged") {
                     codexModel = null;
                     codexModelsPage = 0;
+                    codexCatalogPage = 0;
                     selectedCodexPoint = 0;
                     codexSelectionNotice = "The collection or privacy settings changed. The previous model filter was cleared; select a model again.";
                     pending = true;
@@ -152,8 +158,8 @@ public sealed partial class SpendPane : UserControl
             if (value.CodexModels is { } models && query.CodexModelsPage is { } requestedPage
                 && models.Page != Math.Min(requestedPage, models.PageCount - 1))
                 throw new IOException("Codex model page differs from the requested view.");
-            if (value.CodexModels is { } modelView && (modelView.SelectedIndex != query.CodexModel?.Index
-                || (query.CodexModel is not null && modelView.SelectionRevision != query.CodexModel.Revision)
+            if (value.CodexModels is { } modelView && (!CodexModelSelection.Matches(modelView.ModelSelection, query.CodexModel)
+                || modelView.CatalogPage != Math.Min(query.CodexCatalogPage ?? 0, modelView.CatalogPageCount - 1)
                 || modelView.Granularity != (query.CodexGranularity ?? "daily")
                 || modelView.Metric != (query.CodexMetric ?? "tokens")))
                 throw new IOException("Codex model selection or timeline differs from the requested view.");
@@ -182,7 +188,8 @@ public sealed partial class SpendPane : UserControl
         CodexModelsToggle.IsOn ? codexModelsPage : null,
         CodexModelsToggle.IsOn ? codexModel : null,
         CodexModelsToggle.IsOn ? (CodexGranularityPicker.SelectedItem as ComboBoxItem)?.Tag as string ?? "daily" : null,
-        CodexModelsToggle.IsOn ? (CodexMetricPicker.SelectedItem as ComboBoxItem)?.Tag as string ?? "tokens" : null);
+        CodexModelsToggle.IsOn ? (CodexMetricPicker.SelectedItem as ComboBoxItem)?.Tag as string ?? "tokens" : null,
+        CodexModelsToggle.IsOn ? codexCatalogPage : null);
 
     private void Apply(SpendPage value)
     {
@@ -195,6 +202,8 @@ public sealed partial class SpendPane : UserControl
             || !oldModels.Rows.SequenceEqual(newModels.Rows);
         var codexTimelineChanged = current?.CodexModels is not { } oldTimeline || value.CodexModels is not { } newTimeline
             || oldTimeline.Metric != newTimeline.Metric || !oldTimeline.Timeline.SequenceEqual(newTimeline.Timeline);
+        var choicesChanged = current?.CodexModels is not { } oldChoices || value.CodexModels is not { } newChoices
+            || !oldChoices.Choices.SequenceEqual(newChoices.Choices);
         var detailRowsChanged = current?.Detail is not { } previousDetail || value.Detail is not { } nextDetail
             || !previousDetail.Rows.SequenceEqual(nextDetail.Rows);
         var detailChartChanged = current?.Detail is not { } previousChart || value.Detail is not { } nextChart
@@ -238,7 +247,13 @@ public sealed partial class SpendPane : UserControl
             PreviousCodexModelsButton.IsEnabled = models.Page > 0;
             NextCodexModelsButton.IsEnabled = models.Page + 1 < models.PageCount;
             CodexModelScope.Text = models.SelectedLabel;
-            AllCodexModelsButton.IsEnabled = models.SelectedIndex is not null;
+            AllCodexModelsButton.IsEnabled = models.ModelSelection is not null;
+            if (choicesChanged) CodexModelChoices.ItemsSource = models.Choices;
+            codexCatalogPage = models.CatalogPage;
+            CodexCatalogPosition.Text = models.CatalogTotal == 0 ? "No model choices"
+                : $"Choices {models.CatalogPage + 1} / {models.CatalogPageCount} · {models.CatalogTotal} models";
+            PreviousCodexCatalogButton.IsEnabled = models.CatalogPage > 0;
+            NextCodexCatalogButton.IsEnabled = models.CatalogPage + 1 < models.CatalogPageCount;
             CodexTimelineContext.Text = (codexSelectionNotice is null ? "" : codexSelectionNotice + "\n") + models.TimelineContext;
             if (codexTimelineChanged) DrawCodexTimeline();
             selectedCodexPoint = Math.Clamp(selectedCodexPoint, 0, Math.Max(0, models.Timeline.Length - 1));
@@ -293,7 +308,8 @@ public sealed partial class SpendPane : UserControl
         if (kind is not ("preview" or "copyText" or "copyImage" or "saveImage" or "copyJSON" or "saveJSON")) return;
         var capturedEpoch = epoch;
         var query = Query() with { Days = captured.Days, Currency = captured.Currency, Detail = null,
-            ComparePeriods = false, CodexModelsPage = null, CodexModel = null, CodexGranularity = null, CodexMetric = null };
+            ComparePeriods = false, CodexModelsPage = null, CodexModel = null, CodexGranularity = null,
+            CodexMetric = null, CodexCatalogPage = null };
         var action = new SpendExportAction(kind, captured.SelectionRevision);
         exporting = true;
         UpdateExportActions();
@@ -351,7 +367,7 @@ public sealed partial class SpendPane : UserControl
     {
         if (current?.CodexModels is not { } models || sender is not Button { Tag: int index }
             || !models.Rows.Any(row => row.SelectionIndex == index)) return;
-        codexModel = new CodexModelSelection(index, models.SelectionRevision);
+        codexModel = new CodexModelSelection([index], models.SelectionRevision);
         codexModelsPage = selectedCodexPoint = 0;
         codexSelectionNotice = null;
         Reload(false);
@@ -362,6 +378,39 @@ public sealed partial class SpendPane : UserControl
         codexModelsPage = selectedCodexPoint = 0;
         codexSelectionNotice = null;
         Reload(false);
+    }
+    private void ClearAllCodexModels(object sender, RoutedEventArgs args)
+    {
+        if (current?.CodexModels is not { } models) return;
+        codexModel = new CodexModelSelection([], models.SelectionRevision);
+        codexModelsPage = selectedCodexPoint = 0;
+        codexSelectionNotice = null;
+        Reload(false);
+    }
+    private void ToggleCodexModel(object sender, RoutedEventArgs args)
+    {
+        if (current?.CodexModels is not { } models || sender is not Button { Tag: int index }
+            || !models.Choices.Any(choice => choice.Index == index)) return;
+        var mode = codexModel?.Mode ?? "exclude";
+        var indices = codexModel?.Indices.ToHashSet() ?? new HashSet<int>();
+        if (!indices.Remove(index)) indices.Add(index);
+        if (indices.Count > 256) {
+            codexSelectionNotice = "A custom model selection can contain up to 256 included or excluded entries. Use All models to reset it.";
+            CodexTimelineContext.Text = codexSelectionNotice + "\n" + models.TimelineContext;
+            return;
+        }
+        codexModel = mode == "exclude" && indices.Count == 0 ? null
+            : new CodexModelSelection(indices.Order().ToArray(), models.SelectionRevision, mode);
+        codexModelsPage = selectedCodexPoint = 0;
+        codexSelectionNotice = null;
+        Reload(false);
+    }
+    private void PreviousCodexCatalogPage(object sender, RoutedEventArgs args)
+    { if (codexCatalogPage > 0) { codexCatalogPage--; Reload(false); } }
+    private void NextCodexCatalogPage(object sender, RoutedEventArgs args)
+    {
+        if (current?.CodexModels is { } models && codexCatalogPage + 1 < models.CatalogPageCount)
+        { codexCatalogPage++; Reload(false); }
     }
     private void CodexTimelineChanged(object sender, SelectionChangedEventArgs args)
     {
@@ -474,7 +523,7 @@ public sealed partial class SpendPane : UserControl
         page = 0;
         codexModelsPage = 0;
         if (ReferenceEquals(sender, PeriodPicker) || ReferenceEquals(sender, ChartPicker)) selectedDayKey = null;
-        if (ReferenceEquals(sender, PeriodPicker)) { codexModel = null; selectedCodexPoint = 0; codexSelectionNotice = null; }
+        if (ReferenceEquals(sender, PeriodPicker)) { codexModel = null; codexCatalogPage = 0; selectedCodexPoint = 0; codexSelectionNotice = null; }
         SaveView();
         Reload();
     }
@@ -489,6 +538,7 @@ public sealed partial class SpendPane : UserControl
         if (applying || request is null) return;
         codexModelsPage = 0;
         codexModel = null;
+        codexCatalogPage = 0;
         selectedCodexPoint = 0;
         codexSelectionNotice = null;
         Reload();
@@ -513,6 +563,7 @@ public sealed partial class SpendPane : UserControl
         if (applying || request is null) return;
         var choice = CurrencyPicker.SelectedItem as string;
         currency = choice == AutomaticCurrency ? null : choice;
+        codexCatalogPage = 0;
         codexModel = null;
         selectedCodexPoint = 0;
         codexSelectionNotice = null;

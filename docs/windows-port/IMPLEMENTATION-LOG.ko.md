@@ -5869,3 +5869,14 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - **남은 범위:** 다중 모델 조합·모델 분석 export, effort 비용·세션 참조 탐색, 전체 설정/계정/인증, 창 위치/스크롤, managed payload/lockfile·W10·W15·StartupTask 및 전체 W01~W16/G0~G6. Windows 컴파일·WinUI 배치/그래프·키보드/Narrator·성능·정확도는 검증하지 않았다.
 - 상태: CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·성능·앱·실계정·원격 Windows·CI 미실행.
 - IMPL-608은63c51f7b6으로 origin/main 푸시 확인. 이번 단위도 별도 커밋·푸시한다. guidelines/COMMITS.md가 없어 기존 커밋 규칙을 적용했다. 자동화 변경 없음.
+
+## IMPL-610: 여러 모델의 포함·제외와 독립 선택 목록
+
+- Choose models 목록에서 여러 모델을 포함하거나 전체 목록에서 일부를 제외하는 WinUI 동작을 작성했다. All models와 No models를 구분하고 명시적인 빈 선택을 전체로 되돌리지 않는다. 기존 단일 모델 Focus도 유지한다.
+- 선택 목록과 필터 결과 표를 각각40행 단위로 페이지 처리한다. 현재 필터로 숨겨진 모델도 선택 목록에서 추가할 수 있고 익명 Model N과 행 번호는 전체 목록 기준으로 유지한다.
+- 요청은 정렬된 고유 행 번호, include/exclude 및 기존 수집/view/model-order HMAC revision을 사용한다. 최대256개 예외, 음수/중복/범위 밖/잘못된 mode/오래된 revision을 거절하며 원본 모델 ID는 전송하지 않는다. 기존 단일 index 요청을 받아들이되 index와 indices 동시 입력은 거절한다.
+- 같은 선택 집합으로 모델 표와 일/주/월 타임라인을 집계한다. 여러 모델의 session refs는 모델별 고유 참조를 더하는 의미이며 전체 고유 세션 수로 바꾸지 않는다. catalog 이동은 결과 표의 페이지를 바꾸지 않는다. 기존 Share Stats/비용 JSON은 catalog/필터 옵션을 제거한 전체 기간·통화 출력이다.
+- 합성 fixture8개 작성: 포함/제외, 익명화/전송, 전체와 빈 선택, 독립 페이지, 다중 모델 참조, legacy/잘못된 형식, 요청 상한, stale/범위 밖 선택. 모두 미실행이다.
+- **남은 범위:** 모델 분석 CSV 등 export, effort 비용·세션 참조 탐색, 전체 설정/계정/인증, 창 위치/스크롤, managed payload/lockfile·W10·W15·StartupTask 및 전체 W01~W16/G0~G6. Windows 컴파일·UI/키보드/Narrator·성능·집계 정확도는 검증하지 않았다.
+- 상태: CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·성능·앱·실계정·원격 Windows·CI 미실행.
+- IMPL-609는47fdcdbb9로 origin/main 푸시 확인. 이번 단위도 별도 커밋·푸시한다. guidelines/COMMITS.md가 없어 기존 커밋 규칙을 적용했다. 자동화 변경 없음.
