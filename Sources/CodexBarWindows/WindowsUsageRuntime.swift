@@ -786,6 +786,7 @@ public actor WindowsUsageRuntime {
     public enum ShareStatsCopyResult: Sendable {
         case costHistory(WindowsSpendHistorySnapshot)
         case json(Data, filename: String, copy: Bool, notice: String?)
+        case csv(Data, filename: String, copy: Bool)
         case image(Data, filename: String)
         case clipboardImage(png: Data, dib: Data)
         case preview(png: Data, dib: Data, filename: String, text: String)
@@ -2783,8 +2784,7 @@ public actor WindowsUsageRuntime {
         if request.method == "spend" || request.method == "spendAction" {
             guard request.mutation == nil, let query = request.spendQuery, query.isValid else { return reply("invalidRequest") }
             if request.method == "spendAction" {
-                guard let action = request.spendAction, action.isValid, query.currency != nil,
-                      query.detail == nil, query.comparePeriods != true, query.codexModelsPage == nil else {
+                guard let action = request.spendAction, action.accepts(query) else {
                     return reply("invalidRequest")
                 }
             }
@@ -2816,8 +2816,14 @@ public actor WindowsUsageRuntime {
             } ?? ""
             guard WindowsAppSpendProjection.acceptsCodexModel(query.codexModel, analysis: view.codexModels,
                 revision: modelsRevision) else { return reply("codexModelChanged") }
+            let modelExportRevision = view.codexModels.map { _ in
+                WindowsAppSpendSelection.codexExportRevision(modelsRevision: modelsRevision, query: query,
+                    key: self.nativeAppSpendSelectionKey)
+            } ?? ""
             if let action = request.spendAction, let currency = query.currency {
-                guard action.expectedRevision == revision else { return reply("spendChanged") }
+                guard action.expectedRevision == (action.isCodexCSV ? modelExportRevision : revision) else {
+                    return reply("spendChanged")
+                }
                 guard let publisher = self.nativeSpendActionPublisher else { return reply("actionUnavailable") }
                 let valid = self.nativeSpendExportValidity.capture()
                 let rates = view.conversionRates
@@ -2826,9 +2832,16 @@ public actor WindowsUsageRuntime {
                         && WindowsUsagePresentationSettings.load().hidePersonalInfo == privacy
                         && CurrencyExchange.shared.conversionRatesSnapshot() == rates
                 }
-                let artifact = WindowsAppSpendExport.make(snapshot: display, currency: currency, action: action.kind,
-                    hidePersonalInfo: privacy, hiddenSourceIDs: settings.hiddenSourceIDs.sorted(),
-                    calendar: settings.bucketCalendar)
+                let artifact: ShareStatsCopyResult
+                if action.isCodexCSV {
+                    artifact = WindowsCodexModelCSVExporter.make(analysis: view.codexModels, query: query,
+                        selectionRevision: modelsRevision, stale: display.stale, hidePersonalInfo: privacy,
+                        calendar: settings.bucketCalendar, copy: action.kind == "copyModelsCSV")
+                } else {
+                    artifact = WindowsAppSpendExport.make(snapshot: display, currency: currency, action: action.kind,
+                        hidePersonalInfo: privacy, hiddenSourceIDs: settings.hiddenSourceIDs.sorted(),
+                        calendar: settings.bucketCalendar)
+                }
                 guard isCurrent() else { return reply("spendChanged") }
                 let delivery = WindowsAppSpendExport.Delivery(requestID: request.requestID,
                     hidePersonalInfo: privacy, result: artifact, isCurrent: isCurrent)
@@ -2855,7 +2868,7 @@ public actor WindowsUsageRuntime {
             result.spend = WindowsAppSpendProjection.make(snapshot: display,
                 query: query, hidePersonalInfo: privacy, calendar: settings.bucketCalendar,
                 selectionRevision: revision, hourlySnapshot: hourly, comparisonSnapshots: view.comparisons,
-                codexModels: view.codexModels, codexModelsRevision: modelsRevision)
+                codexModels: view.codexModels, codexModelsRevision: modelsRevision, codexExportRevision: modelExportRevision)
             return result
         }
         guard request.spendQuery == nil else { return reply("invalidRequest") }

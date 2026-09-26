@@ -7,10 +7,15 @@ enum WindowsAppSpendExport {
     struct Action: Codable, Sendable {
         let kind: String
         let expectedRevision: String
+        var isCodexCSV: Bool { self.kind == "copyModelsCSV" || self.kind == "saveModelsCSV" }
         var isValid: Bool {
-            ["preview", "copyText", "copyImage", "saveImage", "copyJSON", "saveJSON"].contains(self.kind)
+            (["preview", "copyText", "copyImage", "saveImage", "copyJSON", "saveJSON"].contains(self.kind) || self.isCodexCSV)
                 && self.expectedRevision.utf8.count == 64
                 && self.expectedRevision.utf8.allSatisfy { (48...57).contains($0) || (97...102).contains($0) }
+        }
+        func accepts(_ query: WindowsAppSpendProjection.Query) -> Bool {
+            self.isValid && query.isValid && query.currency != nil && query.detail == nil
+                && query.comparePeriods != true && (self.isCodexCSV ? query.codexModelsPage != nil : query.codexModelsPage == nil)
         }
     }
     struct Delivery: Sendable {

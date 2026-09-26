@@ -1347,6 +1347,27 @@ public final class WindowsTrayHost: @unchecked Sendable {
                 PostMessageW(window, Self.wakeMessage, 0, 0)
                 if let error { self.showMessage(error, caption: "Cost JSON export") }
             }
+        case let .csv(data, filename, copy):
+            guard !self.quitInvoked, isCurrent(),
+                  request.privacy == WindowsUsagePresentationSettings.load().hidePersonalInfo else { return }
+            if copy {
+                guard let text = String(data: data, encoding: .utf8), text.utf16.count <= 65536 else {
+                    self.showMessage("The model CSV is too large for copying. Use Save model CSV.", caption: "Model CSV export")
+                    return
+                }
+                if let error = WindowsClipboard.write(text, owner: window, isCurrent: isCurrent) {
+                    self.showMessage(error, caption: "Model CSV export")
+                }
+                return
+            }
+            self.remoteEditorOpen = true
+            let error = WindowsSpendJSONSaveDialog.saveCSV(data, filename: filename, owner: window,
+                hidePersonalInfo: request.privacy, isCurrent: isCurrent)
+            self.remoteEditorOpen = false
+            if !self.quitInvoked {
+                PostMessageW(window, Self.wakeMessage, 0, 0)
+                if let error { self.showMessage(error, caption: "Model CSV export") }
+            }
         case let .image(data, filename):
             self.remoteEditorOpen = true
             let error = WindowsShareStatsExporter.savePNG(data, filename: filename, owner: window,

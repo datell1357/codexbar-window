@@ -39,6 +39,7 @@ extension WindowsAppSpendProjection {
         var catalogPageCount: Int = 1
         var catalogTotal: Int = 0
         var choices: [CodexModelChoice] = []
+        var exportRevision: String = ""
     }
 
     /// Shares the enclosing response's text budget; IDs, account labels and raw sessions stay local.
@@ -47,7 +48,7 @@ extension WindowsAppSpendProjection {
                             text: (String, Int) -> String,
                             selectionRevision: String = "", selection: CodexModelSelection? = nil,
                             granularity: String = "daily", metric: String = "tokens",
-                            catalogPage requestedCatalogPage: Int = 0) -> CodexModelsPage {
+                            catalogPage requestedCatalogPage: Int = 0, exportRevision: String = "") -> CodexModelsPage {
         let collected = value.collectionComplete && !stale
         let currentTokensComplete = collected && value.current.tokensComplete
         let previousTokensComplete = collected && value.previous.tokensComplete
@@ -209,7 +210,8 @@ extension WindowsAppSpendProjection {
             granularity: granularity, metric: metric,
             timelineContext: text("Current-period timeline for \(selectionValid ? selectedLabel : "an unavailable selection"). Weeks start Monday in \(calendar.timeZone.identifier). Edge weeks/months are clipped to the selected period. Session refs deduplicate within each model and interval; adding intervals can count the same session again. ~ marks incomplete known data; Unknown is not zero. Cost bars use the selected currency. The coverage and total summary above describes all included native Codex models.", 1536),
             timeline: timeline, modelSelection: selectionValid ? selection : nil,
-            catalogPage: catalogPage, catalogPageCount: catalogPages, catalogTotal: allKeys.count, choices: choices)
+            catalogPage: catalogPage, catalogPageCount: catalogPages, catalogTotal: allKeys.count, choices: choices,
+            exportRevision: exportRevision)
     }
 }
 #endif

@@ -75,7 +75,7 @@
   상태가 바뀌면 이전 모델 선택을 해제하고 재선택 안내를 제공한다. 원본 모델 ID는 선택 요청에
   넣지 않으며 익명 Model N은 전체 모델 목록의 번호를 유지한다.
   모델 필터는 모델 표/타임라인에 적용한다. 상위 비용 및 coverage 요약은 전체 범위를 유지한다.
-  선택과 timeline 옵션은 현재 창에서만 유지한다. 모델 분석 CSV 등의 출력은 남아 있다.
+  선택과 timeline 옵션은 현재 창에서만 유지한다. 선택 범위 CSV는 IMPL-611에서 연결했다.
   기존 Share Stats/비용 JSON은 기간·통화 전체를 내보내며 이 모델 필터를 적용하지 않는다.
 - IMPL-610은 Choose models 목록에서 여러 모델을 포함하거나 전체에서 일부를 제외하는 선택을
   연결했다. All models와 No models를 구분하며 선택 없음은 빈 표/타임라인으로 표시한다.
@@ -83,6 +83,21 @@
   추가할 수 있고 익명 Model N의 번호는 전체 목록 기준이다. include/exclude 예외는 최대256개다.
   정렬된 행 번호와 revision만 요청에 넣으며 오래된/중복/범위 밖 선택은 거절한다.
   모델 표와 일/주/월 타임라인에 같은 선택을 적용하고 기존 Share Stats/비용 JSON 범위는 유지한다.
+- IMPL-611은 Copy model CSV / Save model CSV를 Windows 클립보드와 저장 대화상자에 연결했다.
+  결과 표의 현재 페이지와 관계없이 선택 모델 전체의 현재/이전 기간, 토큰 구성, 기록된 tier/effort,
+  증감 상태 및 현재 선택한 metric의 일/주/월 타임라인을 출력한다. 소스의 추가 읽기는 없다.
+  Windows CSV schema_version 1은 지표별 행 형식이다. record_kind/model/dimension/metric으로
+  구분하고 value_status는 complete/partial/unknown, collection_status는 complete/partial/stale이다.
+  날짜는 UTC 시작 포함/끝 제외 시각이며 원래 bucket 시간대를 별도 열에 넣는다.
+  비교의 숫자는 백분율이 아닌 변화 비율이고 new/ended/unchanged/unavailable은 comparison_state로 구분한다.
+  모델·구성·tier·effort·timeline 행에는 중복되는 사용량이 있으므로 모두 더한 값을 총계로 쓰지 않는다.
+  소스 coverage는 선택한 모델만의 coverage를 뜻하지 않는다.
+  PII 숨김 시 Model N 및 Custom effort를 사용하고 원본 계정·소스·세션 ID/경로는 내보내지 않는다.
+  UTF-8/CRLF CSV이며 외부 텍스트의 따옴표/개행/수식 접두어를 escape한다.
+  16 MiB/100000행/셀16 KiB 한도를 초과하면 전체 출력을 거절하며 조용히 자르지 않는다.
+  clipboard는65,536 UTF-16 code units를 넘으면 저장을 안내한다.
+  원본 Mac CSV와 동일한 schema는 아니며, 세부 priced/unpriced coverage·raw aliases·세션 ID와
+  share 비율 등의 풍부한 분석 필드는 추가 집계와 계약이 남아 있다. WIN-057 전체 완료가 아니다.
 
 ## 프로세스와 통신 규약
 
@@ -109,7 +124,8 @@ WinUI 프로세스는 공급자에 직접 접속하거나 두 번째 백엔드�
    snapshot은 2초 간격으로 요청한다. 설정 쓰기는 네 키의 고정 순서 boolean SHA-256
    revision을 대조한다. 이는 오래된 화면의 저장을 감지하는 낙관적 대조이며, 트레이와
    별도 스레드에서 발생하는 모든 설정 쓰기의 원자적 직렬화를 보장하지 않는다.
-   `spend`는 bounded query(days/currency/section/chart/page/detail/comparePeriods/codexModelsPage)를 받아 일반 snapshot과
+   `spend`는 bounded query(days/currency/section/chart/page/detail/comparePeriods/codexModelsPage 및
+   codexModel/codexGranularity/codexMetric/codexCatalogPage)를 받아 일반 snapshot과
    별도의 응답으로 보낸다. controller await 전후 collection/generation/publication/settings를
    대조하고, PII·문자열 예산을 적용한 표·차트만 전송한다. 내부 source/account 키는
    전송하지 않는다. 통화 그룹이 사라지면 다른 통화로 자동 합산하지 않는다.
@@ -128,12 +144,14 @@ WinUI 프로세스는 공급자에 직접 접속하거나 두 번째 백엔드�
    결과만 사용한다. 별도 FX fetch 없이 rate table을 한 번 캡처하며 시간별 상세에도 같은
    table을 전달한다. 누락/비정상 환율은 기존 원본 통화 그룹으로 유지한다.
    비교의 최대4행도 spend의 공유128 KiB 문자열/1 MiB 응답 예산 안에 포함한다.
-   `spendAction`은 허용된 6개 동작과 현재 view revision만 추가로 받는다. revision은
-   환율표에도 묶인다. 생성된 PNG/DIB/JSON bytes·저장 경로·HWND는 pipe로 전송하지 않는다.
+   `spendAction`은 공유/JSON6개와 모델 CSV2개 동작 및 현재 출력 revision을 추가로 받는다.
+   모델 CSV revision은 기존 수집/view/model-order revision에 포함·제외 선택/간격/metric도 묶으며
+   표/선택 목록 페이지에는 의존하지 않는다. 기존 revision은 환율표에도 묶인다.
+   생성된 PNG/DIB/JSON/CSV bytes·저장 경로·HWND는 pipe로 전송하지 않는다.
    backend 내부 단일 UI mailbox가 트레이 UI 스레드의 미리보기/클립보드/저장 대화상자에
    전달하고, 실행 직전과 대화상자 동안 수집 무효화·설정·PII·환율 변화를 대조한다.
    진행 중인 native action이나 pending action이 있으면 중복 접수를 거절하며 modal loop
-   재진입도 막는다. 응답 유실 시 자동 재전송하지 않는다. JSON/이미지 산출물은16 MiB,
+   재진입도 막는다. 응답 유실 시 자동 재전송하지 않는다. JSON/이미지/CSV 산출물은16 MiB,
    clipboard text는65,536 UTF-16 code units로 제한한다. 저장 취소를 성공으로 보고하지 않는다.
    view 설정은 `windowsNativeAppViewV1` Data key의 최대4 KiB JSON이다. 저장 직전
    raw data SHA-256 revision을 대조하고 read/compare/write를 같은 프로세스 잠금으로
@@ -259,6 +277,10 @@ IMPL-609는 WindowsCodexTimelineTests.swift에 모델 범위/환산·구간별 s
 IMPL-610의 WindowsCodexModelSelectionTests.swift에는 포함/제외 집계, privacy/wire, 전체/빈 선택,
 선택 목록의 독립 페이지, 여러 모델의 세션 참조 의미, 구형 선택/잘못된 형식, 요청 상한,
 오래된/범위 밖 선택 거절 합성 fixture8개를 작성했다. 전부 미실행이다.
+IMPL-611의 WindowsCodexModelCSVTests.swift에는 페이지 밖 선택 전체, all/none/exclude, privacy,
+미가격/누락/partial, stale/증감, 달력/metric, CSV escape, 출력/clipboard 상한, export revision,
+action/query/전송 경계 합성 fixture10개를 작성했다. 모두 미실행이며 실제 CSV 파일/표 계산 앱,
+WinUI 버튼/클립보드/저장 대화상자·경쟁 조건·컴파일·성능은 검증하지 않았다.
 
 ## API 참고
 

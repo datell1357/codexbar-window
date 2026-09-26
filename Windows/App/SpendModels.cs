@@ -43,7 +43,8 @@ internal sealed record CodexModelsPage([property: JsonRequired] string Context,
     [property: JsonRequired] string Metric, [property: JsonRequired] string TimelineContext,
     [property: JsonRequired] SpendPoint[] Timeline, CodexModelSelection? ModelSelection,
     [property: JsonRequired] int CatalogPage, [property: JsonRequired] int CatalogPageCount,
-    [property: JsonRequired] int CatalogTotal, [property: JsonRequired] CodexModelChoice[] Choices)
+    [property: JsonRequired] int CatalogTotal, [property: JsonRequired] CodexModelChoice[] Choices,
+    [property: JsonRequired] string ExportRevision)
 {
     public bool IsValid => Context is not null && CurrentRange is not null && PreviousRange is not null
         && Page >= 0 && Page < PageCount && TotalRows >= 0
@@ -55,6 +56,8 @@ internal sealed record CodexModelsPage([property: JsonRequired] string Context,
             && row.SelectionIndex is >= 0 and <= 1000000)
         && SelectionRevision is { Length: 64 }
         && SelectionRevision.All(value => value is >= '0' and <= '9' or >= 'a' and <= 'f')
+        && ExportRevision is { Length: 64 }
+        && ExportRevision.All(value => value is >= '0' and <= '9' or >= 'a' and <= 'f')
         && CatalogTotal is >= 0 and <= 1000001 && CatalogPage >= 0 && CatalogPage < CatalogPageCount
         && CatalogPageCount == Math.Max(1L, (CatalogTotal + 39L) / 40)
         && (ModelSelection is null || ModelSelection.IsValid && ModelSelection.Revision == SelectionRevision

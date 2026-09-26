@@ -114,7 +114,7 @@ public sealed partial class SpendPane : UserControl
         DetailRows.ItemsSource = null;
         DetailCanvas.Children.Clear();
         DetailTitle.Text = DetailContext.Text = DetailPointText.Text = DetailPointPosition.Text = DetailPagePosition.Text = "";
-        ShareActions.IsEnabled = JSONActions.IsEnabled = false;
+        ShareActions.IsEnabled = JSONActions.IsEnabled = CodexCSVActions.IsEnabled = false;
         ExportStatusText.Text = "";
     }
 
@@ -299,18 +299,29 @@ public sealed partial class SpendPane : UserControl
     {
         JSONActions.IsEnabled = !exporting && active && current?.Currency is not null;
         ShareActions.IsEnabled = JSONActions.IsEnabled && current is { Stale: false };
+        CodexCSVActions.IsEnabled = JSONActions.IsEnabled && current?.CodexModels is not null;
     }
 
     private async void ExportClicked(object sender, RoutedEventArgs args)
     {
         if (exporting || export is null || current is not { Currency: not null } captured
             || sender is not Button { Tag: string kind } || lifetime.IsCancellationRequested) return;
-        if (kind is not ("preview" or "copyText" or "copyImage" or "saveImage" or "copyJSON" or "saveJSON")) return;
+        if (kind is not ("preview" or "copyText" or "copyImage" or "saveImage" or "copyJSON" or "saveJSON"
+            or "copyModelsCSV" or "saveModelsCSV")) return;
+        var modelExport = kind is "copyModelsCSV" or "saveModelsCSV";
+        if (modelExport && captured.CodexModels is null) return;
         var capturedEpoch = epoch;
         var query = Query() with { Days = captured.Days, Currency = captured.Currency, Detail = null,
-            ComparePeriods = false, CodexModelsPage = null, CodexModel = null, CodexGranularity = null,
-            CodexMetric = null, CodexCatalogPage = null };
-        var action = new SpendExportAction(kind, captured.SelectionRevision);
+            ComparePeriods = false };
+        if (modelExport) {
+            var models = captured.CodexModels!;
+            query = query with { CodexModelsPage = 0, CodexCatalogPage = 0, CodexModel = models.ModelSelection,
+                CodexGranularity = models.Granularity, CodexMetric = models.Metric };
+        } else {
+            query = query with { CodexModelsPage = null, CodexModel = null, CodexGranularity = null,
+                CodexMetric = null, CodexCatalogPage = null };
+        }
+        var action = new SpendExportAction(kind, modelExport ? captured.CodexModels!.ExportRevision : captured.SelectionRevision);
         exporting = true;
         UpdateExportActions();
         ExportStatusText.Text = "Sending to the Windows share/export controls…";
@@ -323,10 +334,11 @@ public sealed partial class SpendPane : UserControl
                 "queued" => "Request queued. Follow any Windows preview or save dialog, then check the clipboard or chosen file.",
                 "actionBusy" => "Another share/export action is pending or open. Finish it before trying again.",
                 "spendChanged" => "Costs or settings changed. Reload costs before sharing or exporting.",
+                "codexModelChanged" => "The model collection changed. Reload costs and select the models again.",
                 "spendUnavailable" => "No current cost collection is available for this action.",
                 _ => "The share/export request was not accepted. Reload costs before trying again."
             };
-            if (response.Status is "spendChanged" or "spendUnavailable") pending = true;
+            if (response.Status is "spendChanged" or "spendUnavailable" or "codexModelChanged") pending = true;
         }
         catch (Exception error) when (error is IOException or OperationCanceledException or InvalidOperationException
             or System.Text.Json.JsonException or System.ComponentModel.Win32Exception or UnauthorizedAccessException)

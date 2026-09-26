@@ -5880,3 +5880,16 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - **남은 범위:** 모델 분석 CSV 등 export, effort 비용·세션 참조 탐색, 전체 설정/계정/인증, 창 위치/스크롤, managed payload/lockfile·W10·W15·StartupTask 및 전체 W01~W16/G0~G6. Windows 컴파일·UI/키보드/Narrator·성능·집계 정확도는 검증하지 않았다.
 - 상태: CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·성능·앱·실계정·원격 Windows·CI 미실행.
 - IMPL-609는47fdcdbb9로 origin/main 푸시 확인. 이번 단위도 별도 커밋·푸시한다. guidelines/COMMITS.md가 없어 기존 커밋 규칙을 적용했다. 자동화 변경 없음.
+
+## IMPL-611: 선택 모델 전체와 타임라인의 CSV 복사·저장
+
+- native Codex 모델 패널에 Copy model CSV / Save model CSV를 작성했다. 이미 캡처한 분석에서 현재/이전 기간의 선택 모델 전체를 출력하며 UI 결과/목록 페이지를 내보내기 범위로 사용하지 않는다. 현재 선택한 metric과 달력 간격의 합산 타임라인도 포함한다. 재수집·추가 파일 읽기는 없다.
+- Windows schema_version1의 지표별 CSV를 작성했다. scope/model/component/tier/effort/comparison/timeline 행을 구분하고 invariant 숫자·빈 unknown·complete/partial/unknown·collection stale·소스 coverage·기간 경계·시간대를 기록한다. 처리 tier와 기록된 effort는 기존 근거가 있는 값만 사용한다. 모델/구성/tier/effort/timeline은 겹치는 수치이므로 합산하면 안 된다는 설명을 넣는다.
+- new/ended/unchanged/unavailable과 실제 변화 비율을 구분한다. 일별 자료로 해결되지 않는 DST 경계나 이력 부족은 기존대로 비교를 보류한다. 세션 참조는 모델/공급원/구간별 의미를 유지하고 원본 세션 ID를 만들거나 공개하지 않는다.
+- 모델 출력 revision은 기존 collection/view/model-order HMAC에 include/exclude 선택·granularity·metric을 추가로 묶는다. display page에는 의존하지 않으며 CSV action만 모델 query를 허용한다. 기존 공유/JSON은 선택 기간·통화 전체 출력 계약을 유지한다.
+- CSV bytes는 pipe가 아닌 기존 backend UI mailbox로 전달한다. .csv 산출물과 파일 필터/확장자, 복사 상한, 저장 전후 개인정보/수집/설정/환율 재확인을 연결했다. queued는 접수이며 저장·복사 완료 응답이 아니다. 유실 요청을 자동 재전송하지 않는다.
+- PII 숨김 시 모델 번호/공개 계열과 Custom effort를 사용한다. 계정/소스/세션 원문과 경로는 CSV에 넣지 않는다. 텍스트는 redaction과 CSV quote/newline/formula-prefix escape를 적용하고 생성한 음수 비교 비율은 숫자로 유지한다. UTF-8/CRLF,16 MiB/100000행/셀16 KiB 상한을 적용하며 초과 시 조용히 자르지 않고 전체 출력을 거절한다. clipboard는65,536 UTF-16 code units다.
+- 합성 fixture10개 작성: 페이지 밖 선택 전체·all/none/exclude·privacy/custom·미가격/누락·stale/비교·metric/달력·CSV escape·출력/clipboard 상한·revision·action/query/전송 경계. 파일/UI/defaults/계정을 사용하지 않으며 모두 미실행이다.
+- **남은 범위:** effort 비용·세션 참조 탐색, 원본 분석/CSV의 priced/unpriced coverage·share·raw aliases·세션 ID 등 풍부한 필드, 전체 설정/계정/인증, 창 위치/스크롤, managed payload/lockfile·W10·W15·StartupTask 및 전체 W01~W16/G0~G6. Windows 컴파일·CSV 파일/표 계산 앱·UI/클립보드/대화상자·성능·정확도는 검증하지 않았다. WIN-057 전체 완료가 아니다.
+- 상태: CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·성능·앱·실계정·원격 Windows·CI 미실행.
+- IMPL-610은f8e691d57로 origin/main 푸시 확인. 이번 단위도 별도 커밋·푸시한다. guidelines/COMMITS.md가 없어 기존 커밋 규칙을 적용했다. 자동화 변경 없음.

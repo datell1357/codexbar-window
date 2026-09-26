@@ -104,7 +104,7 @@ enum WindowsAppSpendProjection {
                      hourlySnapshot: WindowsSpendDashboardController.Snapshot? = nil,
                      comparisonSnapshots: [WindowsSpendDashboardController.Snapshot] = [],
                      codexModels: WindowsCodexModelAnalysis.Snapshot? = nil,
-                     codexModelsRevision: String = "") -> Page {
+                     codexModelsRevision: String = "", codexExportRevision: String = "") -> Page {
         let model = snapshot.model
         // At most six JSON bytes per ASCII control byte; leave room for numeric/structural overhead.
         var remaining = 128 * 1024
@@ -242,7 +242,7 @@ enum WindowsAppSpendProjection {
                 stale: snapshot.stale, calendar: calendar, text: { text($0, limit: $1) },
                 selectionRevision: codexModelsRevision, selection: query.codexModel,
                 granularity: query.codexGranularity ?? "daily", metric: query.codexMetric ?? "tokens",
-                catalogPage: query.codexCatalogPage ?? 0) }
+                catalogPage: query.codexCatalogPage ?? 0, exportRevision: codexExportRevision) }
         }
         let totalCost = group.map { ($0.hasPartialCost ? "~" : "") + cost($0.totalCost, $0.currencyCode) } ?? "Unknown"
         let totalTokens = group.map { ($0.hasPartialTokens ? "~" : "") + tokens($0.totalTokens) } ?? "Unknown"

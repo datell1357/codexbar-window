@@ -101,6 +101,12 @@
                         </StackPanel>
                     </StackPanel>
                 </Expander>
+                <TextBlock Text="Model CSV contains all selected model rows and the selected timeline, including rows on other pages. Missing and incomplete values have explicit status columns. Hide personal info also applies to this export."
+                    TextWrapping="Wrap" />
+                <StackPanel x:Name="CodexCSVActions" Orientation="Horizontal" Spacing="8" IsEnabled="False">
+                    <Button Content="Copy model CSV" Tag="copyModelsCSV" Click="ExportClicked" />
+                    <Button Content="Save model CSV" Tag="saveModelsCSV" Click="ExportClicked" />
+                </StackPanel>
                 <TextBlock Text="Current-period model timeline" FontWeight="SemiBold" />
                 <StackPanel Orientation="Horizontal" Spacing="12">
                     <ComboBox x:Name="CodexGranularityPicker" Header="Interval" SelectedIndex="0" SelectionChanged="CodexTimelineChanged">
