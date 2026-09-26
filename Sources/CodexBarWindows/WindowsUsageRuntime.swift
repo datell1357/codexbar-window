@@ -2760,7 +2760,9 @@ public actor WindowsUsageRuntime {
             let collection = self.spendCollectionID
             let spendGeneration = self.spendGeneration
             let sequence = self.spendPublicationSequence
-            let projected = await controller.snapshot(days: query.days, now: captured.loadedAt ?? Date())
+            let view = await controller.appView(days: query.days, comparePeriods: query.comparePeriods == true,
+                                               now: captured.loadedAt ?? Date())
+            let projected = view.selected
             guard !self.shuttingDown, self.canPresentSpendSnapshot,
                   collection == self.spendCollectionID, spendGeneration == self.spendGeneration,
                   sequence == self.spendPublicationSequence, self.spendController === controller,
@@ -2780,7 +2782,8 @@ public actor WindowsUsageRuntime {
             var hourly: WindowsSpendDashboardController.Snapshot?
             if let detail = query.detail, detail.kind == "hourly", let raw = detail.day,
                let day = WindowsAppSpendProjection.selectedDay(raw, calendar: settings.bucketCalendar) {
-                hourly = await controller.snapshot(days: query.days, selectedDay: day, now: captured.loadedAt ?? Date())
+                hourly = await controller.snapshot(days: query.days, selectedDay: day, now: captured.loadedAt ?? Date(),
+                                                   conversionRates: view.conversionRates)
                 guard !self.shuttingDown, self.canPresentSpendSnapshot,
                       collection == self.spendCollectionID, spendGeneration == self.spendGeneration,
                       sequence == self.spendPublicationSequence, self.spendController === controller,
@@ -2791,7 +2794,7 @@ public actor WindowsUsageRuntime {
             var result = reply("ok")
             result.spend = WindowsAppSpendProjection.make(snapshot: display,
                 query: query, hidePersonalInfo: privacy, calendar: settings.bucketCalendar,
-                selectionRevision: revision, hourlySnapshot: hourly)
+                selectionRevision: revision, hourlySnapshot: hourly, comparisonSnapshots: view.comparisons)
             return result
         }
         guard request.spendQuery == nil else { return reply("invalidRequest") }

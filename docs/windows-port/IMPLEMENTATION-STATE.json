@@ -26,8 +26,8 @@
  "static_qa_status": "NOT_RUN_DURING_IMPLEMENTATION",
  "windows_runtime_status": "NOT_VALIDATED",
  "completion_claim": false,
- "latest_completed_slice": "IMPL-602",
- "next": "Continue full WinUI settings/accounts/provider actions and remaining spend interactions: period comparison, persisted window preferences and share/export. Managed deps/runtimeconfig payload checks and a reviewed dependency lock remain. W10 OS widgets, OpenCode Go device-local widget scope, Grok expanded history, W15 D03 and packaged StartupTask remain. All W01-W16/G0-G6 and Windows-only cleanup obligations remain; validation deferred.",
+ "latest_completed_slice": "IMPL-603",
+ "next": "Continue full WinUI settings/accounts/provider actions and remaining spend interactions: persisted window preferences, share/export and Codex model/effort/service-tier analytics with previous-period comparisons. Managed deps/runtimeconfig payload checks and a reviewed dependency lock remain. W10 OS widgets, OpenCode Go device-local widget scope, Grok expanded history, W15 D03 and packaged StartupTask remain. All W01-W16/G0-G6 and Windows-only cleanup obligations remain; validation deferred.",
  "inventory": {
   "baseline_entries": 2844,
   "provider_ids": 69,
@@ -49,7 +49,7 @@
   "widget_provider_choices": 17
  },
  "automation_action_this_revision": "Viewed existing codexbar-windows-30 automation card; response did not expose schedule/status details. No automation mutation.",
- "publication_action_this_revision": "IMPL-601 pushed to origin/main at 8eff87709. IMPL-602 follows as a separate implementation-only commit and push; report Git output.",
+ "publication_action_this_revision": "IMPL-602 pushed to origin/main at 71bb99d5f. IMPL-603 follows as a separate implementation-only commit and push; report Git output.",
  "historical_state_before_2026_09_12": {
   "phase": "IMPLEMENTING",
   "repository": "/Users/yeoreum/Documents/codexbar-window/fork",
@@ -4988,6 +4988,16 @@
    "workstream": "W04 W07 WinUI cost preferences and revision-bound source/currency editing",
    "status": "CODE_WRITTEN_UNVERIFIED",
    "validation": "NOT_RUN_BY_USER_INSTRUCTION"
+  },
+  {
+   "id": "IMPL-603",
+   "contracts": [
+    "WIN-026",
+    "WIN-070"
+   ],
+   "workstream": "W07 same-anchor rolling spend comparisons with one collection and FX snapshot",
+   "status": "CODE_WRITTEN_UNVERIFIED",
+   "validation": "NOT_RUN_BY_USER_INSTRUCTION"
   }
  ],
  "publication_policy": {
@@ -4998,8 +5008,8 @@
   "authorization": "User explicitly reaffirmed commit and push after every implementation on 2026-09-15."
  },
  "last_confirmed_code_publication": {
-  "through_slice": "IMPL-601",
-  "commit": "8eff87709",
+  "through_slice": "IMPL-602",
+  "commit": "71bb99d5f",
   "remote": "origin/main",
   "status": "PUSH_CONFIRMED",
   "validation": "NOT_RUN_BY_USER_INSTRUCTION"

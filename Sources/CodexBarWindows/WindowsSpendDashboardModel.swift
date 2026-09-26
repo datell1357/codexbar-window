@@ -313,7 +313,9 @@ struct WindowsSpendDashboardModel: Equatable, Sendable {
         preferredCurrencyCode: String = "auto",
         hiddenSourceIDs: Set<String> = [],
         hideNativeCodexWhenOpenCodexPresent: Bool = false,
-        selectedDay: Date? = nil) -> Self
+        selectedDay: Date? = nil,
+        conversionRates: [String: Double]? = nil,
+        includeDetails: Bool = true) -> Self
     {
         let days = max(1, min(WindowsSpendHistoryPolicy.scanDays, requestedDays))
         let calculationCalendar = Self.gregorianCalendar(timeZone: calendar.timeZone)
@@ -324,6 +326,8 @@ struct WindowsSpendDashboardModel: Equatable, Sendable {
             inputs,
             hiddenSourceIDs: hiddenSourceIDs,
             hideNativeCodexWhenOpenCodexPresent: hideNativeCodexWhenOpenCodexPresent)
+        // Use one captured table for the whole projection; comparison windows can supply the same table.
+        var rates = conversionRates
         var conversionCache: [String: Double?] = [:]
         let classifiedInputs = visibleInputs.compactMap { input -> ClassifiedInput? in
             guard let sourceCurrencyCode = Self.currencyCode(input.snapshot.currencyCode) else { return nil }
@@ -335,10 +339,10 @@ struct WindowsSpendDashboardModel: Equatable, Sendable {
             if let cached = conversionCache[cacheKey] {
                 conversion = cached
             } else {
-                let value = CurrencyExchange.shared.convert(
-                    amount: 1,
-                    from: sourceCurrencyCode,
-                    to: targetCurrencyCode)
+                if sourceCurrencyCode != targetCurrencyCode, rates == nil {
+                    rates = CurrencyExchange.shared.conversionRatesSnapshot()
+                }
+                let value = Self.currencyMultiplier(from: sourceCurrencyCode, to: targetCurrencyCode, rates: rates ?? [:])
                 conversionCache[cacheKey] = value
                 conversion = value
             }
@@ -357,17 +361,18 @@ struct WindowsSpendDashboardModel: Equatable, Sendable {
                     now: now,
                     calendar: calculationCalendar,
                     bounds: bounds,
-                    selectedDay: selectedDay.map { calculationCalendar.startOfDay(for: $0) })
+                    selectedDay: selectedDay.map { calculationCalendar.startOfDay(for: $0) },
+                    includeDetails: includeDetails)
             }
             .sorted { $0.currencyCode < $1.currencyCode }
         return Self(
             requestedDays: days,
             groups: groups,
             availableSources: availableSources,
-            tokenActivity: Self.tokenActivity(
+            tokenActivity: includeDetails ? Self.tokenActivity(
                 inputs: visibleInputs,
                 now: now,
-                calendar: calculationCalendar),
+                calendar: calculationCalendar) : [],
             selectedDay: selectedDay.map { calculationCalendar.startOfDay(for: $0) })
     }
 
@@ -387,6 +392,16 @@ struct WindowsSpendDashboardModel: Equatable, Sendable {
             filtered.removeAll { $0.sourceKind == .native && $0.provider == .codex }
         }
         return filtered
+    }
+
+    static func currencyMultiplier(from source: String, to target: String, rates: [String: Double]) -> Double? {
+        if source == target { return 1 }
+        let sourceRate = source == "USD" ? 1 : rates[source]
+        let targetRate = target == "USD" ? 1 : rates[target]
+        guard let sourceRate, let targetRate, sourceRate.isFinite, targetRate.isFinite,
+              sourceRate > 0, targetRate > 0 else { return nil }
+        let multiplier = targetRate / sourceRate
+        return multiplier.isFinite && multiplier > 0 ? multiplier : nil
     }
 
     private struct ClassifiedInput {
@@ -457,7 +472,7 @@ struct WindowsSpendDashboardModel: Equatable, Sendable {
         now: Date,
         calendar: Calendar,
         bounds: ClosedRange<Date>? = nil,
-        selectedDay: Date?) -> CurrencyGroup
+        selectedDay: Date?, includeDetails: Bool = true) -> CurrencyGroup
     {
         let bounds = bounds ?? Self.bounds(days: days, now: now, calendar: calendar)
         let summaries = inputs.map { classified in
@@ -470,6 +485,7 @@ struct WindowsSpendDashboardModel: Equatable, Sendable {
         let providers = Self.providerRows(summaries)
         let scopedSummaries = Self.summaries(summaries, matching: selectedDay)
         let modelSummaries = scopedSummaries.filter { summary in
+            guard includeDetails else { return false }
             let summaryModelHistory = Self.modelSummary(summaries: [summary])
             if summary.totalCost != nil {
                 return summaryModelHistory.completeness == .complete ||
@@ -484,7 +500,7 @@ struct WindowsSpendDashboardModel: Equatable, Sendable {
             modelSummary.completeness == .complete
             ? ModelHistoryCompleteness.complete
             : ModelHistoryCompleteness.incomplete
-        let dailyPoints = Self.dailyPoints(summaries: summaries)
+        let dailyPoints = includeDetails ? Self.dailyPoints(summaries: summaries) : []
         var tokenMix = CostUsageTokenMix()
         var coverage = CostUsageCoverageAccumulator()
         var metered: Double?
@@ -526,16 +542,16 @@ struct WindowsSpendDashboardModel: Equatable, Sendable {
         case (false, false): .unknown
         }
         let overflowCount = max(0, modelSummary.rows.count - CurrencyGroup.modelRowDisplayLimit)
-        let hourlyPoints = Self.hourlyPoints(
+        let hourlyPoints = includeDetails ? Self.hourlyPoints(
             summaries: summaries,
             selectedDay: selectedDay,
             bounds: bounds,
-            calendar: calendar)
+            calendar: calendar) : []
         return CurrencyGroup(
             currencyCode: currencyCode,
             providers: providers,
             models: modelSummary.rows,
-            projects: Self.projectRows(summaries: summaries, bounds: bounds, calendar: calendar),
+            projects: includeDetails ? Self.projectRows(summaries: summaries, bounds: bounds, calendar: calendar) : [],
             dailyPoints: dailyPoints,
             totalTokens: Self.knownIntSum(providers.map(\.totalTokens)),
             totalCost: Self.knownCostSum(providers.map(\.totalCost)),
@@ -546,7 +562,7 @@ struct WindowsSpendDashboardModel: Equatable, Sendable {
             coverageAccumulator: coverage,
             provenance: provenance,
             meteredCost: hasMeteredCostAmount ? metered : nil,
-            sessions: Self.sessionRows(summaries: summaries, bounds: bounds, calendar: calendar),
+            sessions: includeDetails ? Self.sessionRows(summaries: summaries, bounds: bounds, calendar: calendar) : [],
             overflowModelCount: overflowCount,
             selectedDay: selectedDay,
             hourlyPoints: hourlyPoints,

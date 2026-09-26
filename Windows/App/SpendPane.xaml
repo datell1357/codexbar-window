@@ -26,6 +26,29 @@
                 <StackPanel><TextBlock Text="Period tokens" /><TextBlock x:Name="TokensText" Text="Unknown" FontSize="28" /></StackPanel>
             </StackPanel>
             <TextBlock x:Name="ContextText" TextWrapping="Wrap" IsTextSelectionEnabled="True" />
+            <ToggleSwitch x:Name="CompareToggle" Header="Compare rolling periods" Toggled="ComparisonChanged" />
+            <StackPanel x:Name="ComparisonPanel" Visibility="Collapsed" Spacing="8">
+                <TextBlock Text="These periods overlap and share the collection date. Totals use the currently selected currency group and included sources."
+                    TextWrapping="Wrap" />
+                <ItemsControl x:Name="ComparisonRows">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate x:DataType="local:SpendComparisonRow">
+                            <Border BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="0,0,0,1" Padding="8,12">
+                                <StackPanel Spacing="4">
+                                    <TextBlock Text="{x:Bind Title}" FontWeight="SemiBold" />
+                                    <TextBlock Text="{x:Bind Range}" TextWrapping="Wrap" />
+                                    <StackPanel Orientation="Horizontal" Spacing="16">
+                                        <TextBlock Text="{x:Bind Cost}" /><TextBlock Text="{x:Bind Tokens}" /><TextBlock Text="tokens" />
+                                    </StackPanel>
+                                    <TextBlock Text="{x:Bind Coverage}" TextWrapping="Wrap" />
+                                    <TextBlock Text="{x:Bind Details}" TextWrapping="Wrap" IsTextSelectionEnabled="True" />
+                                    <Button Content="Show this period" Tag="{x:Bind Days}" Click="ShowComparisonPeriod" />
+                                </StackPanel>
+                            </Border>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </StackPanel>
             <ScrollViewer HorizontalScrollBarVisibility="Auto" HorizontalScrollMode="Enabled" VerticalScrollMode="Disabled">
                 <Canvas x:Name="ChartCanvas" Height="200" MinWidth="650" AutomationProperties.Name="Cost and token activity chart" />
             </ScrollViewer>

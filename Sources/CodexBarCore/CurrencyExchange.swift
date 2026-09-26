@@ -89,6 +89,13 @@ public final class CurrencyExchange: @unchecked Sendable {
         return self.rates[code]
     }
 
+    /// Capture one rate table for a multi-window projection without fetching or changing rates.
+    public func conversionRatesSnapshot() -> [String: Double] {
+        self.lock.lock()
+        defer { self.lock.unlock() }
+        return self.rates
+    }
+
     private func getLastFetchTime() -> Date? {
         self.lock.lock()
         defer { self.lock.unlock() }

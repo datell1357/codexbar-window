@@ -3,7 +3,11 @@ using System.Text.Json.Serialization;
 namespace CodexBar.App;
 
 internal sealed record SpendDetailQuery(string Kind, int? Index, string? Day, string Revision, int Page = 0);
-internal sealed record SpendQuery(int Days, string? Currency, string Section, string Chart, int Page, SpendDetailQuery? Detail = null);
+internal sealed record SpendQuery(int Days, string? Currency, string Section, string Chart, int Page,
+    SpendDetailQuery? Detail = null, bool ComparePeriods = false);
+public sealed record SpendComparisonRow([property: JsonRequired] int Days, [property: JsonRequired] string Title,
+    [property: JsonRequired] string Range, [property: JsonRequired] string Cost, [property: JsonRequired] string Tokens,
+    [property: JsonRequired] string Coverage, [property: JsonRequired] string Details);
 public sealed record SpendRow([property: JsonRequired] string Title, [property: JsonRequired] string Subtitle,
     [property: JsonRequired] string Cost, [property: JsonRequired] string Tokens, [property: JsonRequired] string Details,
     int? SelectionIndex = null)
@@ -27,7 +31,7 @@ internal sealed record SpendPage([property: JsonRequired] int Days, [property: J
     [property: JsonRequired] string TotalCost, [property: JsonRequired] string TotalTokens,
     [property: JsonRequired] string Context, [property: JsonRequired] bool Stale, [property: JsonRequired] bool Partial,
     [property: JsonRequired] bool Truncated, [property: JsonRequired] SpendRow[] Rows, [property: JsonRequired] SpendPoint[] Points,
-    [property: JsonRequired] string SelectionRevision, SpendDetailPage? Detail)
+    [property: JsonRequired] string SelectionRevision, SpendDetailPage? Detail, SpendComparisonRow[]? Comparisons)
 {
     public bool IsValid => Days is >= 1 and <= 365 && Page >= 0 && PageCount >= 1 && Page < PageCount && TotalRows >= 0
         && Currencies is { Length: <= 256 } && Currencies.All(code => code is { Length: 3 }
@@ -37,7 +41,11 @@ internal sealed record SpendPage([property: JsonRequired] int Days, [property: J
         && (Chart is "cost" or "tokens") && TotalCost is not null && TotalTokens is not null && Context is not null
         && SelectionRevision is { Length: 64 }
         && SelectionRevision.All(character => character is >= '0' and <= '9' or >= 'a' and <= 'f')
-        && ValidRows(Rows) && ValidPoints(Points) && (Detail is null || Detail.IsValid);
+        && ValidRows(Rows) && ValidPoints(Points) && (Detail is null || Detail.IsValid)
+        && (Comparisons is null || (Comparisons.Length == 4 && Comparisons.All(row => row is not null
+            && row.Title is not null && row.Range is not null && row.Cost is not null && row.Tokens is not null
+            && row.Coverage is not null && row.Details is not null)
+            && Comparisons.Select(row => row.Days).SequenceEqual(new[] { 7, 30, 90, 365 })));
 
     internal static bool ValidRows(SpendRow[]? rows) => rows is { Length: <= 40 } && rows.All(row =>
         row is not null && row.Title is not null && row.Subtitle is not null && row.Cost is not null

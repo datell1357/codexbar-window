@@ -140,11 +140,36 @@ actor WindowsSpendDashboardController {
     }
 
     /// A window's period selector projects the captured scan without changing collection or tray preferences.
-    func snapshot(days: Int, selectedDay: Date? = nil, now: Date) -> Snapshot {
+    func snapshot(days: Int, selectedDay: Date? = nil, now: Date, conversionRates: [String: Double]? = nil) -> Snapshot {
         var options = self.options
         options.days = max(1, min(WindowsSpendHistoryPolicy.scanDays, days))
         options.selectedDay = selectedDay
-        return self.makeSnapshot(options: options, now: now)
+        return self.makeSnapshot(options: options, now: now, conversionRates: conversionRates)
+    }
+
+    struct AppView: Sendable {
+        let selected: Snapshot
+        let comparisons: [Snapshot]
+        let conversionRates: [String: Double]
+    }
+
+    /// Build every requested window in one actor turn from one collection and exchange-rate capture.
+    /// No source load or option mutation occurs, and the end date is the captured collection date.
+    func appView(days: Int, comparePeriods: Bool, now: Date,
+                 conversionRates: [String: Double]? = nil) -> AppView {
+        let rates = conversionRates ?? CurrencyExchange.shared.conversionRatesSnapshot()
+        let periods = comparePeriods ? [7, 30, 90, WindowsSpendHistoryPolicy.scanDays] : []
+        var options = self.options
+        options.days = max(1, min(WindowsSpendHistoryPolicy.scanDays, days))
+        options.selectedDay = nil
+        let selected = self.makeSnapshot(options: options, now: now, conversionRates: rates)
+        let comparisons = periods.map { period -> Snapshot in
+            if period == selected.model.requestedDays { return selected }
+            var periodOptions = options
+            periodOptions.days = period
+            return self.makeSnapshot(options: periodOptions, now: now, conversionRates: rates, includeDetails: false)
+        }
+        return AppView(selected: selected, comparisons: comparisons, conversionRates: rates)
     }
 
     /// Project a day without changing the dashboard or sharing preferences.
@@ -154,7 +179,8 @@ actor WindowsSpendDashboardController {
         return self.makeSnapshot(options: options, now: now)
     }
 
-    private func makeSnapshot(options: Options, now: Date) -> Snapshot {
+    private func makeSnapshot(options: Options, now: Date, conversionRates: [String: Double]? = nil,
+                              includeDetails: Bool = true) -> Snapshot {
         let displayedInputs = (self.scan?.inputs ?? []) + self.retainedInputs.values.sorted { $0.id < $1.id }
         let model = WindowsSpendDashboardModel.build(inputs: displayedInputs,
             requestedDays: options.days, now: now,
@@ -162,9 +188,9 @@ actor WindowsSpendDashboardController {
             preferredCurrencyCode: options.preferredCurrencyCode,
             hiddenSourceIDs: options.hiddenSourceIDs,
             hideNativeCodexWhenOpenCodexPresent: options.hideNativeCodexWhenOpenCodexPresent,
-            selectedDay: options.selectedDay)
+            selectedDay: options.selectedDay, conversionRates: conversionRates, includeDetails: includeDetails)
         // Failed/refreshing data remains visible with stale status but is not offered for sharing.
-        let share = self.phase == .ready && self.retainedInputs.isEmpty
+        let share = includeDetails && self.phase == .ready && self.retainedInputs.isEmpty
             ? WindowsShareStatsBuilder.make(model: model, subscriptionNames: self.scan?.subscriptionNames ?? [:]) : nil
         let widgetPublication: WidgetCostPublication
         switch self.phase {

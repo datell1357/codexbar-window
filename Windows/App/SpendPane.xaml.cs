@@ -53,6 +53,8 @@ public sealed partial class SpendPane : UserControl
         CostText.Text = "Unknown";
         TokensText.Text = "Unknown";
         ContextText.Text = "";
+        ComparisonPanel.Visibility = Visibility.Collapsed;
+        ComparisonRows.ItemsSource = null;
         PreviousPageButton.IsEnabled = NextPageButton.IsEnabled = false;
         PagePosition.Text = "";
         StatusText.Text = "Waiting for current cost data…";
@@ -85,6 +87,8 @@ public sealed partial class SpendPane : UserControl
             }
             if (value.Days != query.Days || value.Chart != query.Chart || value.Section != query.Section)
                 throw new IOException("Spend response differs from the requested view.");
+            if ((value.Comparisons is not null) != query.ComparePeriods)
+                throw new IOException("Spend comparison response differs from the requested view.");
             if (query.Detail is { } selection && (value.SelectionRevision != selection.Revision
                 || value.Detail?.Kind != selection.Kind)) throw new IOException("Spend detail selection changed.");
             Apply(value);
@@ -106,13 +110,15 @@ public sealed partial class SpendPane : UserControl
     private SpendQuery Query() => new(
         int.Parse((PeriodPicker.SelectedItem as ComboBoxItem)?.Tag as string ?? "30"), currency,
         (SectionPicker.SelectedItem as ComboBoxItem)?.Tag as string ?? "providers",
-        (ChartPicker.SelectedItem as ComboBoxItem)?.Tag as string ?? "cost", page, detail);
+        (ChartPicker.SelectedItem as ComboBoxItem)?.Tag as string ?? "cost", page, detail, CompareToggle.IsOn);
 
     private void Apply(SpendPage value)
     {
         var selectedLabel = current?.Points.ElementAtOrDefault(selectedDay)?.Label;
         var chartChanged = current is null || current.Chart != value.Chart || !current.Points.SequenceEqual(value.Points);
         var rowsChanged = current is null || !current.Rows.SequenceEqual(value.Rows);
+        var comparisonsChanged = current?.Comparisons is not { } oldComparisons || value.Comparisons is not { } newComparisons
+            || !oldComparisons.SequenceEqual(newComparisons);
         var detailRowsChanged = current?.Detail is not { } previousDetail || value.Detail is not { } nextDetail
             || !previousDetail.Rows.SequenceEqual(nextDetail.Rows);
         var detailChartChanged = current?.Detail is not { } previousChart || value.Detail is not { } nextChart
@@ -134,6 +140,8 @@ public sealed partial class SpendPane : UserControl
         StatusText.Text = value.Stale ? "Stale collection" : value.Partial ? "Partial collection" : "Captured cost data";
         if (value.Truncated) StatusText.Text += " · Some display details were truncated";
         if (rowsChanged) BreakdownList.ItemsSource = value.Rows;
+        ComparisonPanel.Visibility = value.Comparisons is null ? Visibility.Collapsed : Visibility.Visible;
+        if (comparisonsChanged) ComparisonRows.ItemsSource = value.Comparisons;
         PagePosition.Text = value.TotalRows == 0 ? "No rows for this breakdown" : $"Page {value.Page + 1} / {value.PageCount} · {value.TotalRows} rows";
         PreviousPageButton.IsEnabled = value.Page > 0;
         NextPageButton.IsEnabled = value.Page + 1 < value.PageCount;
@@ -262,6 +270,17 @@ public sealed partial class SpendPane : UserControl
         if (applying || request is null) return;
         page = 0;
         Reload();
+    }
+    private void ComparisonChanged(object sender, RoutedEventArgs args)
+    {
+        if (applying || request is null) return;
+        Reload();
+    }
+    private void ShowComparisonPeriod(object sender, RoutedEventArgs args)
+    {
+        if (sender is not Button button || button.Tag is not int days) return;
+        var item = PeriodPicker.Items.OfType<ComboBoxItem>().FirstOrDefault(value => value.Tag as string == days.ToString());
+        if (item is not null) PeriodPicker.SelectedItem = item;
     }
     private void CurrencyChanged(object sender, SelectionChangedEventArgs args)
     {

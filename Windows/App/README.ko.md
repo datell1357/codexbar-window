@@ -17,6 +17,12 @@
   40행 페이지를 연결했다. 프로젝트 상세는 기간 내 일별 비용도 표시한다. 시간대 표시는
   UTC 오프셋으로 서머타임의 반복 시각을 구분하며, 누락된 시간과 확인된 0을 분리한다.
   모델·시간대 합계가 전체 청구액을 설명한다고 가정하지 않는다.
+- IMPL-603은 Compare rolling periods로 7/30/90/365일 비용·토큰·수집 범위를 함께 표시한다.
+  원본 비용 카드의 comparisonSummaries처럼 같은 수집 기준일에서 끝나는 겹치는 기간이다.
+  각 행에서 해당 기간의 차트로 이동한다. 확인된0과 unknown을 구분하고 날짜/공급원 coverage가
+  부족한 값에는 ~와 설명을 붙인다. 이는 인접한 이전 기간 대비 증감률이 아니다.
+  한 actor turn에서 동일 scan/환율표를 사용하며 추가 기간은 합계 중심으로 투영한다.
+  기간 비교 자체가 과거 데이터를 추가 수집하거나 트레이 설정을 변경하지 않는다.
 - Display settings는 PII 숨김, credits/extra 표시, 사용량 표시 방향, reset 시각 표시의
   네 키만 저장한다. 트레이와 같은 설정 저장소·렌더링 경로를 사용한다.
 - IMPL-602의 Cost settings는 비용 수집·Codex ledger·OpenCodeX logs·OpenCodeX가 있을 때
@@ -51,7 +57,7 @@ WinUI 프로세스는 공급자에 직접 접속하거나 두 번째 백엔드�
    snapshot은 2초 간격으로 요청한다. 설정 쓰기는 네 키의 고정 순서 boolean SHA-256
    revision을 대조한다. 이는 오래된 화면의 저장을 감지하는 낙관적 대조이며, 트레이와
    별도 스레드에서 발생하는 모든 설정 쓰기의 원자적 직렬화를 보장하지 않는다.
-   `spend`는 bounded query(days/currency/section/chart/page/detail)를 받아 일반 snapshot과
+   `spend`는 bounded query(days/currency/section/chart/page/detail/comparePeriods)를 받아 일반 snapshot과
    별도의 응답으로 보낸다. controller await 전후 collection/generation/publication/settings를
    대조하고, PII·문자열 예산을 적용한 표·차트만 전송한다. 내부 source/account 키는
    전송하지 않는다. 통화 그룹이 사라지면 다른 통화로 자동 합산하지 않는다.
@@ -66,6 +72,10 @@ WinUI 프로세스는 공급자에 직접 접속하거나 두 번째 백엔드�
    저장 응답은 설정 저장 여부이며 수집 완료를 의미하지 않는다. 기존 runtime이 이후
    재집계/환율 fetch/필요한 재수집을 처리한다. 실패·응답 유실은 현재 값을 다시 읽고 자동
    재전송하지 않는다. 앱의 표시 설정과 비용 설정 저장도 동시에 시작하지 않는다.
+   기간 비교는 같은 publication/generation·수집일·source catalog·통화·시간대·날짜 경계의
+   결과만 사용한다. 별도 FX fetch 없이 rate table을 한 번 캡처하며 시간별 상세에도 같은
+   table을 전달한다. 누락/비정상 환율은 기존 원본 통화 그룹으로 유지한다.
+   비교의 최대4행도 spend의 공유128 KiB 문자열/1 MiB 응답 예산 안에 포함한다.
 7. UI는 15초, Swift I/O는 30초의 대기를 제한한다. Swift는 취소한 overlapped 작업의
    완료를 기다린 뒤 buffer/event를 해제한다. 백엔드 종료를 감지하면 UI도 닫힌다.
 
@@ -127,7 +137,8 @@ PE import 검사는 .NET assembly reference, P/Invoke, 동적 LoadLibrary, XAML/
 
 ## 남은 앱 구현
 
-전체 설정 pane, 계정·인증·provider 편집, 기간 비교·share/export,
+전체 설정 pane, 계정·인증·provider 편집, Codex 모델/effort/service-tier 분석과 이전 기간 비교 UI,
+share/export, 창별 기간/비교/선택 상태 지속 저장,
 작업별 action/copy/open/login,
 레이아웃 편집, 전역 단축키·창 위치/스크롤 보존,
 전체 현지화, 키보드/Narrator/고대비·다중 모니터 QA가 남아 있다.
@@ -149,6 +160,10 @@ IMPL-602의 `WindowsAppSpendPreferencesTests.swift`에는 공급원 paging/PII,
 수집 미완료 상태의 일반 설정, 잘못된 catalog 거절, revision 변경, 미수집 공급원 설정 보존,
 허용된 설정 shape/통화, 큰 이름의 응답 상한, 요청 wire fixture 8개를 작성했다.
 모두 미실행이며 UserDefaults 저장·동시성·UI·환율 fetch의 실제 동작 증거가 아니다.
+IMPL-603의 `WindowsAppSpendComparisonTests.swift`에는 DST 날짜 경계, 누락/중복/통화,
+partial/stale/0, 다른 수집·source·기간 거절, 주입 환율/원본 통화 fallback, 요약 집계,
+추가 수집/공유 설정 변경 없음, wire/PII의 fixture 9개를 작성했다. 실행하지 않았다.
+기존 controller fixture의 필수 publisher 인수도 보완했다. 컴파일·성능·UI 검증은 보류했다.
 
 ## API 참고
 

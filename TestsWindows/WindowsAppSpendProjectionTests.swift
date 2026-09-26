@@ -58,7 +58,7 @@ struct WindowsAppSpendProjectionTests {
     @Test
     func `window period projection neither reloads sources nor changes controller options`() async {
         let counter = LoadCounter()
-        let controller = WindowsSpendDashboardController(loader: { _ in await counter.load() })
+        let controller = WindowsSpendDashboardController(loader: { _ in await counter.load() }, publisher: { _ in })
         await controller.refresh()
         let week = await controller.snapshot(days: 7, now: Self.day)
         let year = await controller.snapshot(days: 365, now: Self.day)

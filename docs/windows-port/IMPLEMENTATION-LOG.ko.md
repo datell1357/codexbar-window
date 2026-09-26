@@ -5782,3 +5782,15 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - **남은 범위:** 기간 비교·창별 선택 지속 저장·share/export, 전체 설정/계정/인증/작업 UI, managed payload/lockfile, W10 위젯·W15 Sync/Fleet·StartupTask와 전체 W01~W16/G0~G6.
 - 상태: CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·앱·실계정·원격 Windows·CI 미실행.
 - IMPL-601은 8eff87709로 origin/main 푸시 확인. 이번 단위도 별도 커밋·푸시한다. 자동화 변경 없음.
+
+## IMPL-603: 같은 수집일 기준의 비용 기간 비교
+
+- 원본 MenuCardView/InlineUsageDashboardContent의 comparisonSummaries는 같은 기준일에서 끝나는 7/30/90일 합계 표시다. 이 의미에 맞춰 WinUI에 7/30/90/365일 비교 표와 각 기간 차트로 이동하는 버튼을 작성했다. 인접한 이전 기간의 증감률로 해석하지 않는다.
+- controller의 appView는 한 actor turn에서 선택 기간과 비교 기간을 투영한다. collection·source·수집일이 같으며 추가 load나 shared options 쓰기가 없다. CurrencyExchange에서 불변 rate table을 한 번 캡처해 모든 비교와 후속 hourly 상세에 전달한다. 환율 누락/0/음수/비정상 비율은 원본 통화 그룹으로 남긴다.
+- 추가 비교 기간은 공급원 합계·coverage·accounting 의미를 유지하며 모델/프로젝트/세션/차트/히트맵을 만들지 않는 요약 투영을 사용한다. 선택된 기간은 이미 만든 전체 snapshot을 재사용한다. 성능 측정은 하지 않았다.
+- 전송 시 publication/generation·수집일·source catalog·통화·시간대·날짜 경계를 대조한다. 기간/환산 상태가 다르면 unknown으로 표시하며 확인된0은 유지한다. 전체 기간 coverage가 있는 공급원 수와 비용/토큰이 알려진 공급원 수, ~ subtotal·stale/partial 설명을 제공한다.
+- 비교4행은 기존 spend의128 KiB UTF-8/1 MiB 응답 예산을 공유한다. 원문 계정/source ID는 표시 데이터에 추가하지 않는다. UI는 비교 요청과 응답 형식을 대조하고 선택/연결/PII 변경 때 비교 표도 철회한다.
+- 합성 fixture 9개 작성: DST 기준일·누락/중복/통화·partial/stale·0/unknown·다른 capture/경계·주입 환율·요약 보존·재수집/옵션 불변·wire/PII. 기존 IMPL-600 controller fixture에 선언상 필수인 publisher 인수를 추가했다. 모두 미실행.
+- **남은 범위:** Codex 모델/effort/service-tier 분석과 이전 기간 증감 UI, 창별 선택 저장·share/export·전체 설정/계정/인증, managed payload/lockfile·W10·W15·StartupTask 및 전체 W01~W16/G0~G6.
+- 상태: CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·성능·앱·실계정·원격 Windows·CI 미실행.
+- IMPL-602는 71bb99d5f로 origin/main 푸시 확인. 이번 단위도 별도 커밋·푸시한다. 자동화 변경 없음.

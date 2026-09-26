@@ -1,5 +1,7 @@
 # Windows 전용 제품 작업 현황
 
+- IMPL-603: WinUI 동일 기준일의 7/30/90/365일 비용·토큰 비교와 기간 이동 작성. 동일 scan/환율표 batch, 추가 기간 합계 전용 투영, source/기간/통화 대조·partial/unknown/0·바이트 예산 보존. fixture 9개 미실행. 모델/effort/tier 이전 기간 비교 UI·선택 저장/share·전체 설정/계정·Windows 검증은 남음. CODE_WRITTEN_UNVERIFIED.
+
 - IMPL-602: WinUI Cost settings에 collection/ledger/OpenCodeX/중복 숨김·통화 환산·공급원 포함/제외와 40행 페이지 작성. 수집 전 일반 설정, HMAC catalog/PII binding, 없는 source preference 보존, backend 잠금 아래 compare/write·트레이 연결·불확실 저장 자동 재전송 금지. fixture 8개 미실행. 기간 비교/share·전체 설정/계정·Windows 검증은 남음. CODE_WRITTEN_UNVERIFIED.
 
 - IMPL-601: WinUI 날짜별 시간대 비용·프로젝트 일별 비용과 내부 모델·세션 내부 모델 40행 페이지 연결 작성. 수집/기간/통화/PII/행 순서를 HMAC으로 묶고 상세 요청·await 게시 순서 재대조, DST 오프셋·누락/0·combined byte budget 보존. 새 fixture 8개 및 기존 controller fixture 확장 모두 미실행. 기간 비교/source/환산/share·전체 설정/계정·Windows 검증은 남음. CODE_WRITTEN_UNVERIFIED.

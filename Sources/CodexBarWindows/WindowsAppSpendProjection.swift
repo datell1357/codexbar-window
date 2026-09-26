@@ -11,6 +11,7 @@ enum WindowsAppSpendProjection {
         var chart = "cost"
         var page = 0
         var detail: DetailQuery?
+        var comparePeriods: Bool?
         var isValid: Bool {
             (1...WindowsSpendHistoryPolicy.scanDays).contains(self.days) && self.page >= 0 && self.page <= 100000 &&
                 ["providers", "models", "projects", "sessions"].contains(self.section) &&
@@ -82,11 +83,13 @@ enum WindowsAppSpendProjection {
         let points: [Point]
         let selectionRevision: String
         var detail: DetailPage? = nil
+        var comparisons: [ComparisonRow]? = nil
     }
 
     static func make(snapshot: WindowsSpendDashboardController.Snapshot, query: Query,
                      hidePersonalInfo: Bool, calendar: Calendar, selectionRevision: String,
-                     hourlySnapshot: WindowsSpendDashboardController.Snapshot? = nil) -> Page {
+                     hourlySnapshot: WindowsSpendDashboardController.Snapshot? = nil,
+                     comparisonSnapshots: [WindowsSpendDashboardController.Snapshot] = []) -> Page {
         let model = snapshot.model
         // At most six JSON bytes per ASCII control byte; leave room for numeric/structural overhead.
         var remaining = 128 * 1024
@@ -214,6 +217,9 @@ enum WindowsAppSpendProjection {
         }
         let detail = Self.detail(snapshot: snapshot, query: query, hourlySnapshot: hourlySnapshot,
             hidePersonalInfo: hidePersonalInfo, calendar: calendar, revision: selectionRevision, text: { text($0, limit: $1) })
+        let comparisons = query.comparePeriods == true
+            ? Self.comparisons(snapshot: snapshot, periods: comparisonSnapshots, currency: group?.currencyCode,
+                calendar: calendar, text: { text($0, limit: $1) }) : nil
         let totalCost = group.map { ($0.hasPartialCost ? "~" : "") + cost($0.totalCost, $0.currencyCode) } ?? "Unknown"
         let totalTokens = group.map { ($0.hasPartialTokens ? "~" : "") + tokens($0.totalTokens) } ?? "Unknown"
         let costText = text(totalCost)
@@ -223,7 +229,8 @@ enum WindowsAppSpendProjection {
             totalCost: costText, totalTokens: tokenText, context: contextText, stale: snapshot.stale,
             partial: !snapshot.sourceFailures.isEmpty || snapshot.openCodexObservation == .unavailable
                 || group?.hasPartialCost == true || group?.hasPartialTokens == true,
-            truncated: truncated, rows: rows, points: points, selectionRevision: selectionRevision, detail: detail)
+            truncated: truncated, rows: rows, points: points, selectionRevision: selectionRevision, detail: detail,
+            comparisons: comparisons)
     }
 
     static func dayKey(_ day: Date, calendar: Calendar) -> String {
