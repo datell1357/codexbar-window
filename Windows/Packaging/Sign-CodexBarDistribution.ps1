@@ -13,6 +13,8 @@ $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'Read-CodexBarBuildProvenance.ps1')
 . (Join-Path $PSScriptRoot 'Read-CodexBarPEImports.ps1')
 . (Join-Path $PSScriptRoot 'Read-CodexBarSystemPolicy.ps1')
+. (Join-Path $PSScriptRoot 'Read-CodexBarAppPayload.ps1')
+. (Join-Path $PSScriptRoot 'Read-CodexBarDependencyScope.ps1')
 if ([Environment]::OSVersion.Platform -ne [PlatformID]::Win32NT) { throw 'Windows is required.' }
 $timestamp = $null
 if (-not [Uri]::TryCreate($TimestampServer, [UriKind]::Absolute, [ref] $timestamp) -or
@@ -52,6 +54,13 @@ foreach ($target in @($request.targets)) {
     $targets.Add([string] $target.path, $target)
 }
 $expectedTargets = Assert-CodexBarFirstPartyFiles @($inventory.files)
+$appContract = $null
+if ($null -ne $inventory.PSObject.Properties['appPayload']) {
+    $appContract = $inventory.appPayload
+    if ($null -eq $inventory.PSObject.Properties['appPackagesLockSHA256'] -or
+        [string] $inventory.appPackagesLockSHA256 -cnotmatch '^[0-9a-f]{64}$') { throw 'Missing Windows app dependency lock digest.' }
+}
+Assert-CodexBarAppPayloadFiles $appContract @($inventory.files) -CompareHashes
 if ($targets.Count -ne $expectedTargets) { throw 'Signing target count does not match the first-party contract.' }
 $prepared = [Collections.Generic.List[object]]::new()
 $seen = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
@@ -100,7 +109,7 @@ $heldFiles = [Collections.Generic.List[IO.FileStream]]::new()
 $finalDependencies = [Collections.Generic.List[object]]::new()
 $runtimeNames = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
 foreach ($file in $prepared) {
-    if ($file.entry.kind -eq 'runtime' -and [IO.Path]::GetFileName($file.relative) -eq $file.relative) {
+    if ($file.entry.kind -eq 'runtime') {
         $null = $runtimeNames.Add($file.relative)
     }
 }
@@ -129,14 +138,16 @@ try {
             $signer = $signature.SignerCertificate.Thumbprint
         }
         if ($file.entry.kind -in @('application', 'cli', 'runtime')) {
-            foreach ($import in @(Read-CodexBarPEImports $destination $expectedMachine)) {
+            foreach ($import in @(Read-CodexBarPEImports $destination $expectedMachine (Test-CodexBarManagedILInput $file.relative))) {
                 if ($finalDependencies.Count -ge 100000) { throw 'Final import graph exceeds its limit.' }
-                $resolution = if ($runtimeNames.Contains($import.name)) { 'included' }
+                $runtimePath = Get-CodexBarRuntimeImportPath $file.relative $import.name
+                $resolution = if ($runtimeNames.Contains($runtimePath)) { 'included' }
                     elseif ($systemLibraries.ContainsKey($import.name)) { 'declared_system' }
                     else { throw 'Signed output contains an unresolved imported DLL.' }
                 $finalDependencies.Add([pscustomobject] @{
                     importer = $file.entry.path; library = $import.name
                     kind = $import.kind; resolution = $resolution
+                    resolvedPath = $(if ($resolution -eq 'included') { $runtimePath.Replace('\', '/') } else { $null })
                 })
             }
         }
@@ -158,6 +169,16 @@ try {
         dependencyAnalysis = 'HELD_FINAL_FILES_STATIC_AND_RVA_DELAY_IMPORT_NAMES'
         dependencies = @($finalDependencies.ToArray()); systemPolicy = $sourcePolicy
         releaseApproved = $false
+    }
+    if ($null -ne $appContract) {
+        # Authenticode changes first-party EXE/DLL bytes. Preserve the contract with the final hashes.
+        $record.appPayload = [pscustomobject] @{
+            schemaVersion = 1
+            files = @($newFiles.ToArray() | Where-Object { $_.path.Replace('/', '\').StartsWith('App\', [StringComparison]::OrdinalIgnoreCase) })
+        }
+        Assert-CodexBarAppPayloadFiles $record.appPayload $newFiles.ToArray() -CompareHashes
+        $record.appPackagesLockSHA256 = $inventory.appPackagesLockSHA256
+        $record.appPayloadStatus = 'FINAL_SIGNED_BYTES_RECORDED'
     }
     $json = $record | ConvertTo-Json -Depth 8
     [IO.File]::WriteAllText((Join-Path $output 'distribution-inventory.json'), $json, [Text.UTF8Encoding]::new($false))

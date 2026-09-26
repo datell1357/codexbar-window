@@ -5733,3 +5733,16 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - **남은 범위:** App publish/receipt·App-local DLL closure·first-party 서명·설치 통합, Windows restore로 생성할 실제 lockfile, 전체 설정/계정/차트/action/현지화/접근성 및 W10/W15/packaged StartupTask·전체 W01~W16/G0~G6. `Windows/App/README.ko.md`에 배치 규약과 미구현 범위를 기록했다. 현재 코드는 배포 가능한 앱이나 원본 UI 기능 완성을 뜻하지 않는다.
 - 상태: CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 의존성 restore·빌드·테스트·lint·앱·실계정·원격 Windows·CI 미실행.
 - IMPL-597은 261cd6aaa로 origin/main 푸시 확인. 이번 단위도 별도 커밋·푸시한다. 자동화 변경 없음.
+
+## IMPL-599: WinUI publish·배포 조립·서명 연결
+
+- `Windows/App/Publish-CodexBarApp.ps1`에 명시적인 dotnet.exe, 검토된 lockfile, 라이선스 폴더, revision/version/architecture와 새 출력 경로를 받는 locked restore/self-contained publish 경로를 작성했다. 소스 밖 새 bin/obj/packages/publish만 사용하고 실패 출력은 보존한다. 실제 restore/publish는 실행하지 않았다.
+- 전체 App payload의 분류·크기·SHA-256과 lock digest, 선언 provenance를 local receipt에 기록하는 코드를 작성했다. 허용 경로/확장자, 필수 host/runtime/PRI/notice, 중복·누락·파일/폴더 충돌·바이트 총량을 제한한다. receipt는 attestation이나 라이선스 완전성 증거가 아니다.
+- 배포 manifest 생성기에 AppPublishDirectory/AppBuildReceipt를 추가했다. 실제 선택한 폴더의 상대 파일만 사용하고 revision/version/architecture·분류·바이트를 대조한다. 조립 후 held copy의 hash도 대조하며 App payload를 inventory에 보존한다.
+- PE reader에 CLR 헤더와 portable IL PE32 경로를 작성했다. App DLL에만 명시적으로 허용하며 ILONLY/32bit/native header/metadata signature/architecture를 구분한다. root native PE32+ 경로는 유지한다. assembly 로드나 실행 없이 metadata만 읽는 코드다.
+- root 백엔드/위젯 DLL과 App DLL의 import 경로를 분리했다. App 부족 파일을 root 검색 폴더에서 자동 보충하지 않고 포함 경로를 dependency record에 기록한다. static/delay import 이름의 계약이며 managed reference/PInvoke/dynamic load 검증은 아니다.
+- 공통 first-party 계약에 App/CodexBarApp.exe와 App/CodexBarApp.dll을 함께 추가했다. signing request/서명/installer/MSIX가 사용하는 계약이며 vendor 파일은 기존 서명을 유지한다. 서명 후 변경된 App 파일 크기/hash로 최종 payload를 다시 기록한다.
+- 합성 PowerShell fixture 작성: native/portable IL/x86-required/preferred/잘못된 CLR/다른 architecture/RVA delay import, App/root 분리, payload 누락/변조/추가/경로 이탈, 두 first-party 서명 대상. 실행하지 않았다.
+- **남은 범위:** 실제 packages.lock.json 생성/검토, managed deps/runtimeconfig 의미 대조, SDK publish 산출물/부트스트랩/PRI, clean Windows 설치/갱신/rollback/실행, 전체 WinUI 화면 및 W01~W16/G0~G6. 실제 빌드나 설치 파일을 생성한 것이 아니다.
+- 상태: CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·restore·서명·설치·앱·실계정·원격 Windows·CI 미실행.
+- IMPL-598은 cf6db0ab6으로 origin/main 푸시 확인. 이번 단위도 별도 커밋·푸시한다. 자동화 변경 없음.

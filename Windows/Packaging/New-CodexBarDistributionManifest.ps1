@@ -11,6 +11,8 @@ param(
     [string] $WidgetBackendBuildReceipt,
     [string] $WidgetHostEXE,
     [string] $WidgetHostBuildReceipt,
+    [string] $AppPublishDirectory,
+    [string] $AppBuildReceipt,
     [string] $SystemPolicyFile,
     [Parameter(Mandatory = $true)][string[]] $ResourceDirectories,
     [Parameter(Mandatory = $true)][string] $LicenseDirectory,
@@ -24,6 +26,8 @@ $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'Read-CodexBarWidgetPayload.ps1')
 . (Join-Path $PSScriptRoot 'Read-CodexBarSystemPolicy.ps1')
 . (Join-Path $PSScriptRoot 'Read-CodexBarBuildProvenance.ps1')
+. (Join-Path $PSScriptRoot 'Read-CodexBarAppPayload.ps1')
+. (Join-Path $PSScriptRoot 'Read-CodexBarDependencyScope.ps1')
 $provenance = Read-CodexBarBuildProvenance ([pscustomobject] @{
     repository = 'https://github.com/datell1357/codexbar-window'
     revision = $SourceRevision
@@ -41,6 +45,18 @@ $systemLibraries = Read-CodexBarSystemPolicy $systemPolicy $Architecture
 $entries = [Collections.Generic.List[object]]::new()
 $destinations = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
 $expectedMachine = if ($Architecture -eq 'x64') { 0x8664 } else { 0xAA64 }
+$appReceipt = $null
+if (-not [string]::IsNullOrWhiteSpace($AppPublishDirectory) -or -not [string]::IsNullOrWhiteSpace($AppBuildReceipt)) {
+    if ([string]::IsNullOrWhiteSpace($AppPublishDirectory) -or [string]::IsNullOrWhiteSpace($AppBuildReceipt)) {
+        throw 'Supply both the Windows app publish directory and its build receipt.'
+    }
+    $appRoot = Get-Item -LiteralPath $AppPublishDirectory -Force
+    if (-not $appRoot.PSIsContainer -or ($appRoot.Attributes -band [IO.FileAttributes]::ReparsePoint)) {
+        throw 'Windows app publish root must be a regular directory.'
+    }
+    $appReceipt = Read-CodexBarAppBuildReceipt $AppBuildReceipt $Architecture $provenance.revision $ProductVersion
+    $appPayloadFiles = Read-CodexBarAppPayload $appReceipt.payload
+}
 $widgetHostReceipt = $null
 $widgetHostPayloadFiles = $null
 if (-not [string]::IsNullOrWhiteSpace($WidgetHostEXE) -or -not [string]::IsNullOrWhiteSpace($WidgetHostBuildReceipt)) {
@@ -62,6 +78,19 @@ function Add-ManifestFile([string] $Source, [string] $Destination, [string] $Kin
     $file = Get-Item -LiteralPath $Source -Force
     if ($file.PSIsContainer -or ($file.Attributes -band [IO.FileAttributes]::ReparsePoint)) {
         throw 'Manifest inputs must be regular files.'
+    }
+    $relative = $Destination.Replace('/', '\')
+    if ($relative.StartsWith('App\', [StringComparison]::OrdinalIgnoreCase)) {
+        if ($null -eq $appReceipt -or -not $appPayloadFiles.ContainsKey($relative)) {
+            throw 'App/ is reserved for the explicitly selected Windows app publish payload.'
+        }
+        $expected = $appPayloadFiles[$relative]
+        $explicit = [IO.Path]::GetFullPath((Join-Path $appRoot.FullName $relative.Substring(4)))
+        if (-not [StringComparer]::OrdinalIgnoreCase.Equals($file.FullName, $explicit) -or
+            $Kind -cne $expected.kind -or $file.Length -ne $expected.bytes -or
+            (Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256).Hash -ine $expected.sha256) {
+            throw 'Windows app input differs from its explicit publish payload.'
+        }
     }
     # Apply this gate to every insertion path, including recursively discovered imports.
     if ([IO.Path]::GetFileName($Destination) -ieq 'CodexBarWidgetHost.exe') {
@@ -87,21 +116,7 @@ function Add-ManifestFile([string] $Source, [string] $Destination, [string] $Kin
     }
     if (-not $destinations.Add($Destination)) { throw 'Duplicate distribution destination.' }
     if ($Kind -in @('application', 'cli', 'runtime')) {
-        # Only PE signature and machine are inspected; imports and signatures need separate handling.
-        $stream = [IO.File]::Open($file.FullName, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::Read)
-        $reader = [IO.BinaryReader]::new($stream)
-        try {
-            if ($stream.Length -lt 64 -or $reader.ReadUInt16() -ne 0x5A4D) { throw 'Missing DOS header.' }
-            $stream.Position = 0x3C
-            $offset = $reader.ReadUInt32()
-            if ($offset -lt 64 -or $offset -gt 1048576 -or $offset -gt $stream.Length - 24) {
-                throw 'Unsupported PE header offset.'
-            }
-            $stream.Position = $offset
-            if ($reader.ReadUInt32() -ne 0x00004550 -or $reader.ReadUInt16() -ne $expectedMachine) {
-                throw 'PE signature or architecture does not match the requested distribution.'
-            }
-        } finally { $reader.Dispose() }
+        $null = Read-CodexBarPEImage $file.FullName $expectedMachine (Test-CodexBarManagedILInput $Destination)
     }
     $entries.Add([pscustomobject] @{ source = $file.FullName; destination = $Destination; kind = $Kind })
 }
@@ -156,6 +171,18 @@ if ($null -ne $widgetHostReceipt) {
         Add-ManifestFile $source $relative.Replace('\', '/') ([string] $entry.kind)
     }
 }
+if ($null -ne $appReceipt) {
+    foreach ($entry in $appReceipt.payload.files) {
+        $relative = ([string] $entry.path).Replace('/', '\')
+        $source = $appRoot.FullName
+        foreach ($component in $relative.Substring(4).Split([char] '\')) {
+            $source = Join-Path $source $component
+            $item = Get-Item -LiteralPath $source -Force
+            if ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) { throw 'Linked Windows app payload inputs are unsupported.' }
+        }
+        Add-ManifestFile $source $relative.Replace('\', '/') ([string] $entry.kind)
+    }
+}
 if ($RuntimeFiles.Count -eq 0 -or $ResourceDirectories.Count -eq 0) { throw 'Explicit runtime and resource inputs are required.' }
 if ([string]::IsNullOrWhiteSpace($WidgetBackendDLL) -and -not [string]::IsNullOrWhiteSpace($WidgetBackendBuildReceipt)) {
     throw 'Widget backend receipt was supplied without a backend DLL.'
@@ -179,7 +206,7 @@ $null = Assert-CodexBarFirstPartyFiles $entries.ToArray() 'destination'
 $dependencies = [Collections.Generic.List[object]]::new()
 $runtimeNames = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
 foreach ($file in $entries) {
-    if ($file.kind -eq 'runtime') { $null = $runtimeNames.Add($file.destination) }
+    if ($file.kind -eq 'runtime') { $null = $runtimeNames.Add($file.destination.Replace('/', '\')) }
 }
 if ($RuntimeSearchDirectories.Count -gt 32) { throw 'Too many runtime search directories.' }
 $searchRoots = [Collections.Generic.List[string]]::new()
@@ -201,13 +228,16 @@ while ($queue.Count -gt 0) {
     $file = $queue.Dequeue()
     if (-not $scanned.Add($file.destination)) { continue }
     if ($scanned.Count -gt 1024) { throw 'Imported image limit exceeded.' }
-    foreach ($import in @(Read-CodexBarPEImports $file.source)) {
+    foreach ($import in @(Read-CodexBarPEImports $file.source $expectedMachine (Test-CodexBarManagedILInput $file.destination))) {
         if ($dependencies.Count -ge 100000) { throw 'Dependency edge limit exceeded.' }
+        $runtimePath = Get-CodexBarRuntimeImportPath $file.destination $import.name
+        $isApp = $runtimePath.StartsWith('App\', [StringComparison]::OrdinalIgnoreCase)
         # First-party widget code cannot be supplied by search roots or declared as an OS DLL.
-        if ($import.name -ieq 'CodexBarWidgetBackend.dll' -and -not $runtimeNames.Contains($import.name)) {
+        if ($import.name -ieq 'CodexBarWidgetBackend.dll' -and -not $runtimeNames.Contains($runtimePath)) {
             throw 'An image imports the widget backend; supply WidgetBackendDLL and WidgetBackendBuildReceipt.'
         }
-        if (-not $runtimeNames.Contains($import.name) -and -not $systemLibraries.ContainsKey($import.name)) {
+        # Never fill an incomplete App publish with a DLL from a Swift/widget search root.
+        if (-not $isApp -and -not $runtimeNames.Contains($runtimePath) -and -not $systemLibraries.ContainsKey($import.name)) {
             if (-not $lookupCache.ContainsKey($import.name)) {
                 $candidates = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
                 foreach ($root in $searchRoots) {
@@ -238,8 +268,9 @@ while ($queue.Count -gt 0) {
             importer = $file.destination
             library = $import.name
             kind = $import.kind
-            resolution = $(if ($runtimeNames.Contains($import.name)) { 'included' }
+            resolution = $(if ($runtimeNames.Contains($runtimePath)) { 'included' }
                 elseif ($systemLibraries.ContainsKey($import.name)) { 'declared_system' } else { 'external_unclassified' })
+            resolvedPath = $(if ($runtimeNames.Contains($runtimePath)) { $runtimePath.Replace('\', '/') } else { $null })
         })
     }
 }
@@ -258,6 +289,11 @@ $manifest = [ordered] @{
     files = @($entries.ToArray() | Sort-Object destination)
 }
 if ($null -ne $widgetHostReceipt) { $manifest.widgetHostPayload = $widgetHostReceipt.payload }
+if ($null -ne $appReceipt) {
+    Assert-CodexBarAppPayloadFiles $appReceipt.payload $entries.ToArray() 'destination'
+    $manifest.appPayload = $appReceipt.payload
+    $manifest.appPackagesLockSHA256 = $appReceipt.packagesLockSHA256
+}
 $json = $manifest | ConvertTo-Json -Depth 6
 $bytes = [Text.UTF8Encoding]::new($false).GetBytes($json)
 if ($bytes.Length -gt 4194304) { throw 'Distribution input manifest exceeds the staging reader limit of 4 MiB.' }

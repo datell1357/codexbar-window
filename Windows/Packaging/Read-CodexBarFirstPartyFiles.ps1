@@ -16,6 +16,8 @@ function Test-CodexBarFirstPartyFile([string] $RelativePath, [string] $Kind) {
     if ($relative -ieq 'CodexBarCLI.exe') { return $Kind -eq 'cli' }
     if ($relative -ieq 'CodexBarWidgetBackend.dll') { return $Kind -eq 'runtime' }
     if ($relative -ieq 'CodexBarWidgetHost.exe') { return $Kind -eq 'application' }
+    if ($relative -ieq 'App\CodexBarApp.exe') { return $Kind -eq 'application' }
+    if ($relative -ieq 'App\CodexBarApp.dll') { return $Kind -eq 'runtime' }
     if ($Kind -ne 'resource') { return $false }
     if ([IO.Path]::GetFileName($relative) -ieq 'Set-CodexBarUserPath.ps1') { return $true }
     foreach ($name in Get-CodexBarLifecycleFileNames) {
@@ -32,8 +34,26 @@ function Assert-CodexBarFirstPartyFiles([object[]] $Files, [string] $PathPropert
     $pathScripts = 0
     $widgetBackends = 0
     $widgetHosts = 0
+    $appExecutables = 0
+    $appAssemblies = 0
+    $hasAppFiles = $false
     foreach ($file in $Files) {
         $relative = ([string] $file.$PathProperty).Replace('/', '\')
+        if ($relative.StartsWith('App\', [StringComparison]::OrdinalIgnoreCase)) { $hasAppFiles = $true }
+        if ([IO.Path]::GetFileName($relative) -ieq 'CodexBarApp.exe') {
+            if ($relative -ine 'App\CodexBarApp.exe' -or $file.kind -ne 'application' -or $appExecutables -ne 0) {
+                throw 'Windows app executable must be one App/CodexBarApp.exe first-party application.'
+            }
+            $appExecutables++
+            continue
+        }
+        if ([IO.Path]::GetFileName($relative) -ieq 'CodexBarApp.dll') {
+            if ($relative -ine 'App\CodexBarApp.dll' -or $file.kind -ne 'runtime' -or $appAssemblies -ne 0) {
+                throw 'Windows app assembly must be one App/CodexBarApp.dll first-party runtime.'
+            }
+            $appAssemblies++
+            continue
+        }
         if ([IO.Path]::GetFileName($relative) -ieq 'CodexBarWidgetHost.exe') {
             if ($relative -ine 'CodexBarWidgetHost.exe' -or [string] $file.kind -ne 'application' -or $widgetHosts -ne 0) {
                 throw 'Widget host must be one root first-party application.'
@@ -57,5 +77,8 @@ function Assert-CodexBarFirstPartyFiles([object[]] $Files, [string] $PathPropert
         throw 'Distribution must include app, CLI, one PATH resource and the complete tools contract.'
     }
     if ($widgetHosts -ne 0 -and $widgetBackends -ne 1) { throw 'Widget host requires its first-party backend DLL.' }
-    return ($expectedCount + $widgetBackends + $widgetHosts)
+    if ($hasAppFiles -and ($appExecutables -ne 1 -or $appAssemblies -ne 1)) {
+        throw 'Windows app payload requires both its first-party executable and assembly.'
+    }
+    return ($expectedCount + $widgetBackends + $widgetHosts + $appExecutables + $appAssemblies)
 }

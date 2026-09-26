@@ -1,5 +1,5 @@
-# Dot-sourced helper; reads PE32+ metadata without loading the image.
-function Read-CodexBarPEImports([string] $Path, [int] $ExpectedMachine = 0) {
+# Dot-sourced helper; reads image metadata without loading assemblies or executing code.
+function Read-CodexBarPEImage([string] $Path, [int] $ExpectedMachine = 0, [bool] $AllowManagedIL = $false) {
     $stream = [IO.File]::Open($Path, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::Read)
     $reader = [IO.BinaryReader]::new($stream)
     try {
@@ -16,16 +16,17 @@ function Read-CodexBarPEImports([string] $Path, [int] $ExpectedMachine = 0) {
         if ((Read-U16 0) -ne 0x5A4D) { throw 'Missing DOS signature.' }
         [long] $pe = Read-U32 0x3C
         if ($pe -lt 64 -or $pe -gt 1048576 -or (Read-U32 $pe) -ne 0x4550) { throw 'Invalid PE signature.' }
-        if ($ExpectedMachine -ne 0 -and (Read-U16 ($pe + 4)) -ne $ExpectedMachine) {
-            throw 'PE machine does not match the distribution architecture.'
-        }
+        $machine = Read-U16 ($pe + 4)
         $sectionCount = Read-U16 ($pe + 6)
         $optionalSize = Read-U16 ($pe + 20)
         $optional = $pe + 24
-        if ($sectionCount -lt 1 -or $sectionCount -gt 96 -or $optionalSize -lt 112 -or
-            (Read-U16 $optional) -ne 0x20B) { throw 'Only bounded PE32+ images are supported.' }
-        $directoryCount = Read-U32 ($optional + 108)
-        if ($directoryCount -gt 16 -or 112 + 8 * $directoryCount -gt $optionalSize) {
+        $magic = Read-U16 $optional
+        $directoryBase = if ($magic -eq 0x20B) { 112 } elseif ($magic -eq 0x10B -and $AllowManagedIL) { 96 }
+            else { throw 'Only PE32+ or explicitly permitted managed PE32 images are supported.' }
+        if ($sectionCount -lt 1 -or $sectionCount -gt 96 -or $optionalSize -lt $directoryBase -or
+            $optional + $optionalSize + 40 * $sectionCount -gt $stream.Length) { throw 'Invalid PE headers.' }
+        $directoryCount = Read-U32 ($optional + $directoryBase - 4)
+        if ($directoryCount -gt 16 -or $directoryBase + 8 * $directoryCount -gt $optionalSize) {
             throw 'Unsupported PE directory table.'
         }
         $headerSize = Read-U32 ($optional + 60)
@@ -39,6 +40,7 @@ function Read-CodexBarPEImports([string] $Path, [int] $ExpectedMachine = 0) {
             })
         }
         function Resolve-Rva([long] $Rva, [long] $Size) {
+            if ($Rva -le 0 -or $Size -le 0) { throw 'Invalid PE RVA or size.' }
             $matches = [Collections.Generic.List[long]]::new()
             if ($Rva -ge 0 -and $Rva + $Size -le $headerSize -and $Rva + $Size -le $stream.Length) {
                 $matches.Add($Rva)
@@ -52,6 +54,37 @@ function Read-CodexBarPEImports([string] $Path, [int] $ExpectedMachine = 0) {
             }
             if ($matches.Count -ne 1) { throw 'Unmapped or ambiguous PE RVA.' }
             return $matches[0]
+        }
+        $managed = $false
+        $portableIL = $false
+        if ($directoryCount -gt 14) {
+            $clrEntry = $optional + $directoryBase + 8 * 14
+            [long] $clrRva = Read-U32 $clrEntry
+            [long] $clrSize = Read-U32 ($clrEntry + 4)
+            if ($clrRva -ne 0 -or $clrSize -ne 0) {
+                if ($clrSize -lt 72 -or $clrSize -gt 4096) { throw 'Invalid CLR header size.' }
+                $clr = Resolve-Rva $clrRva $clrSize
+                $headerBytes = Read-U32 $clr
+                if ($headerBytes -lt 72 -or $headerBytes -gt $clrSize) { throw 'Truncated CLR header.' }
+                $metadataSize = Read-U32 ($clr + 12)
+                if ($metadataSize -lt 16 -or $metadataSize -gt 268435456) { throw 'Invalid CLR metadata size.' }
+                $metadata = Resolve-Rva (Read-U32 ($clr + 8)) $metadataSize
+                if ((Read-U32 $metadata) -ne 0x424A5342) { throw 'Invalid CLR metadata signature.' }
+                $flags = Read-U32 ($clr + 16)
+                $managed = $true
+                # CorHdr.h: ILONLY with no 32-bit requirement/preference, native entry point or native header.
+                # PE32 is never accepted merely because its filename ends in .dll.
+                $portableIL = $machine -eq 0x14C -and $magic -eq 0x10B -and
+                    ($flags -band 1) -ne 0 -and ($flags -band 0x20012) -eq 0 -and
+                    (Read-U32 ($clr + 40)) -eq 0 -and (Read-U32 ($clr + 44)) -eq 0 -and
+                    (Read-U32 ($clr + 48)) -eq 0 -and (Read-U32 ($clr + 52)) -eq 0 -and
+                    (Read-U32 ($clr + 56)) -eq 0 -and (Read-U32 ($clr + 60)) -eq 0 -and
+                    (Read-U32 ($clr + 64)) -eq 0 -and (Read-U32 ($clr + 68)) -eq 0
+            }
+        }
+        if ($magic -eq 0x10B -and -not $portableIL) { throw 'Native or 32-bit-specific PE32 is not supported.' }
+        if ($ExpectedMachine -ne 0 -and $machine -ne $ExpectedMachine -and -not ($AllowManagedIL -and $portableIL)) {
+            throw 'PE machine does not match the distribution architecture.'
         }
         function Read-DllName([long] $Rva) {
             $bytes = [Collections.Generic.List[byte]]::new()
@@ -72,7 +105,7 @@ function Read-CodexBarPEImports([string] $Path, [int] $ExpectedMachine = 0) {
         foreach ($directory in @(@{ index = 1; stride = 20; name = 12; kind = 'import' },
                                   @{ index = 13; stride = 32; name = 4; kind = 'delayImport' })) {
             if ($directoryCount -le $directory.index) { continue }
-            $entry = $optional + 112 + 8 * $directory.index
+            $entry = $optional + $directoryBase + 8 * $directory.index
             [long] $rva = Read-U32 $entry
             [long] $size = Read-U32 ($entry + 4)
             if ($rva -eq 0 -and $size -eq 0) { continue }
@@ -94,6 +127,13 @@ function Read-CodexBarPEImports([string] $Path, [int] $ExpectedMachine = 0) {
             }
             if (-not $terminated) { throw 'Import directory terminator missing or limit exceeded.' }
         }
-        return $imports.ToArray()
+        return [pscustomobject] @{
+            machine = $machine; managed = $managed; portableIL = $portableIL; imports = @($imports.ToArray())
+        }
     } finally { $reader.Dispose() }
+}
+
+function Read-CodexBarPEImports([string] $Path, [int] $ExpectedMachine = 0, [bool] $AllowManagedIL = $false) {
+    $image = Read-CodexBarPEImage $Path $ExpectedMachine $AllowManagedIL
+    return $image.imports
 }

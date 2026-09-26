@@ -66,17 +66,35 @@ x64/ARM64를 대상으로 한다. `Microsoft.WindowsAppSDK 2.2.0` 및
 self-contained 파일 배포를 요청한다. single-file publish와 trimming은 끈다.
 위젯 host의 SDK 파일과 UI의 SDK 파일은 폴더를 분리한다.
 
-**아직 배포 과정에 연결되지 않았다.** 기존 `Windows/Packaging` stager는 root DLL
-중심의 import closure와 first-party 서명 목록을 사용하므로 UI publish 폴더를 임의로
-추가하면 안 된다. 별도 구현 단위에서 다음을 연결해야 한다.
+**IMPL-599에서 publish·조립·서명 연결 코드를 작성했으나 실행하지 않았다.**
+`Publish-CodexBarApp.ps1`은 명시적인 dotnet.exe, 기존 lockfile, 검토된 라이선스
+폴더, revision/version/architecture와 새 출력 폴더를 입력받는다. 실제 호출하면
+locked restore와 self-contained publish를 수행하므로 현재 macOS 구현 단계에서는 실행하지 않는다.
 
 - Windows에서 의존성을 restore하여 실제 `packages.lock.json`을 생성·검토하고
-  이후 locked restore를 적용한다. 현재 lockfile은 없고 전이 의존성을 확인하지 않았다.
-- 기존 출력을 덮어쓰지 않는 아키텍처별 publish·receipt·payload manifest 작성.
-- App 하위의 managed/native DLL 분류, importer별 DLL 탐색 경로, 전체 publish payload의
-  hash/provenance, first-party EXE/DLL 서명, MSIX/portable 배치와 install/update/rollback.
-- self-contained WinUI의 runtime/PRI/bootstrap 동작, Windows x64/ARM64, 장시간 창
-  재연결·프로세스 종료·패키지 identity 상태의 실제 검증.
+  `-PackageLockFile`로 지정해야 한다. 현재 저장소에는 lockfile이 없고 전이 의존성을
+  확인하지 않았다. 스크립트는 전달받은 lockfile을 복사하여 locked mode로 사용한다.
+- output은 소스 프로젝트 밖의 새 디렉터리만 허용한다. publish/bin/obj/packages를 분리하고
+  실패 결과도 보존한다. `LicenseDirectory`에는 실제 의존성 라이선스와
+  `THIRD-PARTY-NOTICES.txt`가 필요하다. 내용의 법적 완전성을 자동 판정하지 않는다.
+- 결과는 `publish/`와 별도 `build-receipt.json`이다. receipt에는 전체 App 파일의
+  종류·크기·SHA-256, lock digest, 선언된 소스 revision/version이 들어간다.
+  로컬 파일 일치 기록이며 서명된 빌드 attestation은 아니다.
+- `New-CodexBarDistributionManifest.ps1`에 `-AppPublishDirectory`와
+  `-AppBuildReceipt`를 함께 전달한다. 기존 Swift runtime/resource/license 입력도
+  필요하다. App 파일을 RuntimeFiles나 ResourceDirectories로 중복 공급하지 않는다.
+- producer/조립/서명은 App 파일을 별도 payload로 다루고 실제 파일 바이트·분류·누락을
+  대조한다. App의 EXE와 `CodexBarApp.dll`을 first-party 서명 목록에 추가하며,
+  서명 후 변경된 크기/해시로 App payload를 재작성한다.
+- DLL 이름은 root 백엔드와 App 애플리케이션 디렉터리를 구분하여 해석한다. App에서 부족한
+  DLL을 Swift/widget 검색 폴더에서 자동 보충하지 않는다. 관리 DLL의 PE32는 CLR 헤더,
+  ILONLY, 32-bit/native 제약 등을 읽어 명시적으로 허용한 App DLL에만 수용한다.
+
+기존 portable 설치와 MSIX pack은 인벤토리의 하위 파일을 포함하는 경로를 사용한다.
+설치/갱신/rollback의 실제 동작, WinUI runtime/PRI/bootstrap, Windows x64/ARM64,
+장시간 재연결·프로세스 종료·패키지 identity는 아직 검증하지 않았다.
+PE import 검사는 .NET assembly reference, P/Invoke, 동적 LoadLibrary, XAML/PRI 로딩을
+증명하지 않는다. 실제 publish 결과와 deps/runtimeconfig에 대한 후속 대조 및 Windows 실행이 필요하다.
 
 ## 남은 앱 구현
 

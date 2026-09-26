@@ -1,5 +1,7 @@
 # Windows 전용 제품 작업 현황
 
+- IMPL-599: WinUI locked publish 스크립트·App payload/receipt와 기존 manifest/조립/서명 연결 작성. App/root DLL 경로 분리, App DLL의 CLR portable IL 수용, EXE/assembly first-party 서명 및 최종 hash 재기록, 합성 PowerShell fixture 작성. 전부 미실행. 실제 lockfile·managed deps/runtimeconfig 대조·전체 앱 UI·Windows 실행/배포 gate는 남음. CODE_WRITTEN_UNVERIFIED.
+
 - IMPL-598: Windows/App WinUI 3 프로젝트와 트레이 열기·기존 런타임 named-pipe 연결 작성. 사용량 목록/검색·비용 요약·표시 설정 4개, peer PID/SID/session·generation/request ID 대조·바이트 예산·연결 실패 시 stale 화면 철회·설정 자동 재전송 금지. 합성 fixture 11개 미실행. 전체 화면/현지화·restore lockfile·publish/서명/설치 통합은 남음. CODE_WRITTEN_UNVERIFIED.
 
 - IMPL-597: OpenAI/OpenRouter/xAI/Grok 응답의 비용·토큰 snapshot을 Windows spend에 연결. 실제 기간/coverage·metered provenance 보존, 잔액→비용 추론 차단, 비용 활성 시에만 OpenAI/OpenCode 365일 요청. 추가 fixture 4개(합계 13개) 미실행. 확장 local history·OpenCode 위젯·대형 표면/Windows 검증은 남음. CODE_WRITTEN_UNVERIFIED.

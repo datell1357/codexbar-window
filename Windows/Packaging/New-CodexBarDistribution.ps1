@@ -11,6 +11,8 @@ $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'Read-CodexBarSystemPolicy.ps1')
 . (Join-Path $PSScriptRoot 'Read-CodexBarBuildProvenance.ps1')
 . (Join-Path $PSScriptRoot 'Read-CodexBarWidgetPayload.ps1')
+. (Join-Path $PSScriptRoot 'Read-CodexBarAppPayload.ps1')
+. (Join-Path $PSScriptRoot 'Read-CodexBarDependencyScope.ps1')
 if ([Environment]::OSVersion.Platform -ne [PlatformID]::Win32NT) { throw 'Windows is required.' }
 $manifestFile = Get-Item -LiteralPath $InputManifest -Force
 if ($manifestFile.PSIsContainer -or $manifestFile.Length -gt 4194304) { throw 'Invalid input manifest.' }
@@ -22,6 +24,15 @@ $provenance = Read-CodexBarBuildProvenance $manifest.provenance
 $files = @($manifest.files)
 if ($files.Count -lt 4 -or $files.Count -gt 10000) { throw 'Invalid distribution file count.' }
 $null = Assert-CodexBarFirstPartyFiles $files 'destination'
+$appPayload = $null
+$appContract = $null
+if ($null -ne $manifest.PSObject.Properties['appPayload']) {
+    $appContract = $manifest.appPayload
+    $appPayload = Read-CodexBarAppPayload $appContract
+    if ($null -eq $manifest.PSObject.Properties['appPackagesLockSHA256'] -or
+        [string] $manifest.appPackagesLockSHA256 -cnotmatch '^[0-9a-f]{64}$') { throw 'Missing Windows app package lock digest.' }
+}
+Assert-CodexBarAppPayloadFiles $appContract $files 'destination'
 $widgetPayload = $null
 if ($null -ne $manifest.PSObject.Properties['widgetHostPayload']) {
     $widgetPayload = Read-CodexBarWidgetPayload $manifest.widgetHostPayload
@@ -80,19 +91,21 @@ if ($null -ne $manifest.PSObject.Properties['systemPolicy']) { $policy = $manife
 $systemLibraries = Read-CodexBarSystemPolicy $policy $manifest.architecture
 $includedDLLs = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
 foreach ($file in $prepared) {
-    if ($file.Kind -eq 'runtime' -and [IO.Path]::GetFileName($file.Destination) -eq $file.Destination) {
+    if ($file.Kind -eq 'runtime') {
         $null = $includedDLLs.Add($file.Destination)
     }
 }
 $missing = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
 $edgeCount = 0
+$expectedMachine = if ($manifest.architecture -eq 'x64') { 0x8664 } else { 0xAA64 }
 foreach ($file in $prepared) {
     if ($file.Kind -notin @('application', 'cli', 'runtime')) { continue }
-    foreach ($import in @(Read-CodexBarPEImports $file.Source)) {
+    foreach ($import in @(Read-CodexBarPEImports $file.Source $expectedMachine (Test-CodexBarManagedILInput $file.Destination))) {
         $edgeCount++
         if ($edgeCount -gt 100000) { throw 'Staging dependency edge limit exceeded.' }
-        if (-not $includedDLLs.Contains($import.name) -and -not $systemLibraries.ContainsKey($import.name)) {
-            $null = $missing.Add($import.name)
+        $runtimePath = Get-CodexBarRuntimeImportPath $file.Destination $import.name
+        if (-not $includedDLLs.Contains($runtimePath) -and -not $systemLibraries.ContainsKey($import.name)) {
+            $null = $missing.Add($runtimePath)
         }
     }
 }
@@ -125,9 +138,10 @@ try {
         $held = [IO.File]::Open($destination, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::Read)
         $heldFiles.Add($held)
         if ($file.Kind -in @('application', 'cli', 'runtime')) {
-            foreach ($import in @(Read-CodexBarPEImports $destination $expectedMachine)) {
+            foreach ($import in @(Read-CodexBarPEImports $destination $expectedMachine (Test-CodexBarManagedILInput $file.Destination))) {
                 if ($stagedDependencies.Count -ge 100000) { throw 'Staged dependency edge limit exceeded.' }
-                $resolution = if ($includedDLLs.Contains($import.name)) { 'included' }
+                $runtimePath = Get-CodexBarRuntimeImportPath $file.Destination $import.name
+                $resolution = if ($includedDLLs.Contains($runtimePath)) { 'included' }
                     elseif ($systemLibraries.ContainsKey($import.name)) { 'declared_system' }
                     else { throw 'A copied image has an unresolved dependency. Staging is incomplete.' }
                 $stagedDependencies.Add([pscustomobject] @{
@@ -135,6 +149,7 @@ try {
                     library = $import.name
                     kind = $import.kind
                     resolution = $resolution
+                    resolvedPath = $(if ($resolution -eq 'included') { $runtimePath.Replace('\', '/') } else { $null })
                 })
             }
         }
@@ -146,6 +161,12 @@ try {
             $expected = $widgetPayload[$file.Destination]
             if ($held.Length -ne $expected.bytes -or $digestText -cne $expected.sha256) {
                 throw 'Copied widget payload differs from the build receipt. Staging is incomplete.'
+            }
+        }
+        if ($null -ne $appPayload -and $appPayload.ContainsKey($file.Destination)) {
+            $expected = $appPayload[$file.Destination]
+            if ($held.Length -ne $expected.bytes -or $digestText -cne $expected.sha256) {
+                throw 'Copied Windows app payload differs from the publish receipt. Staging is incomplete.'
             }
         }
         $inventory.Add([pscustomobject] @{
@@ -167,6 +188,11 @@ try {
         files = @($inventory.ToArray())
     }
     if ($null -ne $widgetPayload) { $record.widgetHostPayloadStatus = 'COPIED_BYTES_MATCH_LOCAL_BUILD_RECORD' }
+    if ($null -ne $appContract) {
+        $record.appPayload = $appContract
+        $record.appPackagesLockSHA256 = $manifest.appPackagesLockSHA256
+        $record.appPayloadStatus = 'COPIED_BYTES_MATCH_LOCAL_BUILD_RECORD'
+    }
     $json = $record | ConvertTo-Json -Depth 6
     [IO.File]::WriteAllText((Join-Path $outputRoot 'distribution-inventory.json'), $json,
         [Text.UTF8Encoding]::new($false))

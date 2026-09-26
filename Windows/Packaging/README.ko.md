@@ -1,5 +1,40 @@
 # Windows 배포물 조립
 
+## WinUI App payload 연결 — IMPL-599
+
+구현 코드만 작성했으며 아래 스크립트는 실행하지 않았다. [앱 배포 지침](../App/README.ko.md)의
+publish 스크립트는 기존 lockfile과 명시적인 도구·라이선스 입력으로 새 출력 폴더를 만든다.
+실제 lockfile 생성·의존성 restore·서명·설치·Windows 실행 증거는 아직 없다.
+
+- 입력 생성기의 `AppPublishDirectory`/`AppBuildReceipt`를 함께 지정하면 전체 파일을
+  `App/`에 배치한다. receipt의 절대 경로를 사용하지 않고 명시한 디렉터리 아래에서
+  상대 경로를 해석한다. revision/version/architecture와 파일 크기·해시를 대조한다.
+- App payload 계약은 runtime/EXE/JSON/PRI 및 명시적 라이선스 notice를 요구한다.
+  누락·추가·분류 변경·대소문자 중복·경로 이탈·파일/디렉터리 충돌을 거절하도록 작성했다.
+  조립 후에는 held file 해시를 payload와 다시 대조한다.
+- `App/CodexBarApp.exe`와 `App/CodexBarApp.dll`이 함께 first-party 서명 대상이다.
+  서명 후 두 파일의 바이트가 바뀌므로 최종 App payload 해시도 재작성한다.
+  vendor DLL에는 기존 서명 정책을 유지한다.
+- import 해석은 App 또는 root 애플리케이션 디렉터리 + 명시적 system policy다.
+  같은 DLL 이름이 양쪽에 있어도 경로를 구분하여 기록한다. App 누락 DLL을 기존
+  root 검색 폴더에서 자동 선택하지 않는다. PATH/cwd/임의 하위 디렉터리를 검색하지 않는다.
+- 기존 native PE32+ 경로와 함께, App DLL에 한정한 CLR 헤더 기반 portable IL PE32
+  수용 경로를 작성했다. x86 native/32-bit required/32-bit preferred/native header와
+  architecture 불일치는 거절한다. 파일을 assembly로 로드하지 않는다.
+- 기존 설치·서명·MSIX 코드가 공유하는 first-party 계약에 앱 두 파일을 포함했다.
+  App 없는 기존 트레이 개발 배포는 계속 허용하지만 전체 제품 완료로 세지 않는다.
+
+`Tests/Test-AppPackagingContracts.ps1`에 synthetic PE32/PE32+/CLR/delay import,
+App/root 의존성 위치, payload 누락/변조/경로, first-party 서명 대상을 위한 회귀 fixture를
+작성했다. 실행하지 않았으며 바이너리를 로드하는 테스트도 아니다.
+
+이 경로는 native import 이름과 publish 파일 바이트의 조립 계약이다. .NET managed reference,
+P/Invoke/dynamic load, runtimeconfig/deps 의미, SDK 리소스 로딩, 라이선스 완전성이나 실제
+설치·실행을 입증하지 않는다. 아래 과거 root-only 설명은 App payload 이외의 경로에 적용된다.
+헤더 형식은 [Microsoft PE 규격](https://learn.microsoft.com/en-us/windows/win32/debug/pe-format)과
+[.NET CLR 헤더 정의](https://github.com/dotnet/runtime/blob/main/src/coreclr/inc/corhdr.h)를 참고했다.
+복원 정책은 [NuGet lockfile 문서](https://learn.microsoft.com/en-us/nuget/consume-packages/package-references-in-project-files#locking-dependencies)를 따른다.
+
 [사용량 이력 보존·복원](USAGE-HISTORY-RECOVERY.ko.md)은 provider별 JSON과 pace JSONL을 파일별 암호화하고 새 폴더 또는 기존 파일이 없는 현재 이력 위치로 복원하도록 작성했다. 비용 SQLite/credential/전체 제거 연동과 실제 동작은 여전히 미검증·미완료다.
 
 [로컬 설정 묶음 백업·복원](LOCAL-SETTINGS-RECOVERY.ko.md)은 config/Windows preferences/위젯 설정을 포함하며 새 폴더 복원과 명시적인 preferences 교체를 제공하도록 작성했다. 교체 전 백업 및 앱/복구 공유 잠금을 연결했으며 실제 실행과 전체 데이터 보존/제거 연동은 미완료다.
