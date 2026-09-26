@@ -194,6 +194,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
     private static let spendPeriods = [7, 14, 30, 90, 180, 365]
     private static let refreshCommand = UINT_PTR(0x7001)
     private static let quitCommand = UINT_PTR(0x7002)
+    private static let openAppCommand = UINT_PTR(0x704F)
     private static let usageBarsShowUsedCommand = UINT_PTR(0x7003)
     private static let resetTimesShowAbsoluteCommand = UINT_PTR(0x7004)
     private static let hidePersonalInfoCommand = UINT_PTR(0x7005)
@@ -331,6 +332,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
     private var tokenAccountResult: WindowsTokenAccountSelectionSaveResult?
 
     private let onRefresh: RefreshHandler
+    private let onOpenApp: @Sendable () -> Void
     private let onPowerChanged: PowerChangedHandler
     private let onMenuOpen: @Sendable () -> Void
     private let onPresentationSettingsChanged: PresentationSettingsChangedHandler
@@ -426,6 +428,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
     public init(
         onRefresh: @escaping RefreshHandler,
         onQuit: @escaping QuitHandler,
+        onOpenApp: @escaping @Sendable () -> Void = {},
         onPowerChanged: @escaping PowerChangedHandler = {},
         onMenuOpen: @escaping @Sendable () -> Void = {},
         onAgentSessionsSettingsChanged: @escaping @Sendable () -> Void = {},
@@ -530,6 +533,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
         self.onAgentSessionsRefresh = onAgentSessionsRefresh
         self.onAgentSessionFocus = onAgentSessionFocus
         self.onRefresh = onRefresh
+        self.onOpenApp = onOpenApp
         self.onQuit = onQuit
         self.onPowerChanged = onPowerChanged
         self.onMenuOpen = onMenuOpen
@@ -2674,6 +2678,9 @@ public final class WindowsTrayHost: @unchecked Sendable {
         self.appendLowPowerModeMenu(to: menu)
         _ = AppendMenuW(menu, UINT(MF_SEPARATOR), 0, nil)
         Self.serviceMenuText(WindowsStatusLocalization.text("Refresh")).withCString(encodedAs: UTF16.self) { _ = AppendMenuW(menu, UINT(MF_STRING), Self.refreshCommand, $0) }
+        Self.serviceMenuText(WindowsStatusLocalization.text("Open CodexBar")).withCString(encodedAs: UTF16.self) {
+            _ = AppendMenuW(menu, UINT(MF_STRING), Self.openAppCommand, $0)
+        }
         Self.serviceMenuText(WindowsStatusLocalization.text("Quit")).withCString(encodedAs: UTF16.self) { _ = AppendMenuW(menu, UINT(MF_STRING), Self.quitCommand, $0) }
         _ = SetForegroundWindow(hwnd)
         let retainedPoint = liveRefresh ? self.popupLiveAnchor : self.keyboardPopupAnchor
@@ -4110,6 +4117,7 @@ public final class WindowsTrayHost: @unchecked Sendable {
         case Self.spendPeriodCommandBase..<(Self.spendPeriodCommandBase + UINT_PTR(Self.spendPeriods.count)):
             self.changeSpendSetting(command: command)
         case Self.refreshCommand: self.onRefresh()
+        case Self.openAppCommand: self.onOpenApp()
         case Self.quitCommand: self.invokeQuit()
         case Self.usageBarsShowUsedCommand: self.togglePresentationSetting(forKey: "usageBarsShowUsed")
         case Self.resetTimesShowAbsoluteCommand: self.togglePresentationSetting(forKey: "resetTimesShowAbsolute")

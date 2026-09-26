@@ -1,0 +1,74 @@
+<Window x:Class="CodexBar.App.MainWindow"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:local="using:CodexBar.App"
+    Title="CodexBar">
+    <Grid>
+        <NavigationView x:Name="Navigation" IsBackButtonVisible="Collapsed" IsSettingsVisible="False"
+            PaneDisplayMode="Left" OpenPaneLength="210" SelectionChanged="Navigate">
+            <NavigationView.MenuItems>
+                <NavigationViewItem Content="Overview" Tag="overview" Icon="Home" IsSelected="True" />
+                <NavigationViewItem Content="Usage &amp; Spend" Tag="spend" Icon="Document" />
+                <NavigationViewItem Content="Display settings" Tag="settings" Icon="Setting" />
+            </NavigationView.MenuItems>
+            <Grid Padding="24" RowSpacing="16">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                </Grid.RowDefinitions>
+                <Grid ColumnSpacing="16">
+                    <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                    <StackPanel Spacing="4">
+                        <TextBlock Text="CodexBar" Style="{ThemeResource TitleTextBlockStyle}" />
+                        <TextBlock x:Name="StatusText" Text="Connecting to CodexBar…" TextWrapping="Wrap"
+                            AutomationProperties.LiveSetting="Polite" />
+                    </StackPanel>
+                    <Button x:Name="RefreshButton" Grid.Column="1" Content="Refresh" IsEnabled="False"
+                        Click="Refresh" AutomationProperties.Name="Refresh provider usage" />
+                </Grid>
+                <InfoBar x:Name="Notice" Grid.Row="1" IsOpen="False" IsClosable="False" Severity="Warning" />
+                <Grid Grid.Row="2">
+                    <Grid x:Name="OverviewPage" RowSpacing="12">
+                        <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="*" /></Grid.RowDefinitions>
+                        <TextBox x:Name="SearchBox" PlaceholderText="Find a provider" TextChanged="Search"
+                            AutomationProperties.Name="Find a provider" />
+                        <ListView x:Name="ProviderList" Grid.Row="1" SelectionMode="None"
+                            HorizontalContentAlignment="Stretch" AutomationProperties.Name="Provider usage">
+                            <ListView.ItemTemplate>
+                                <DataTemplate x:DataType="local:ProviderCard">
+                                    <StackPanel Padding="12" Spacing="8">
+                                        <TextBlock Text="{x:Bind Title}" Style="{ThemeResource SubtitleTextBlockStyle}" />
+                                        <TextBlock Text="{x:Bind Body}" TextWrapping="Wrap" IsTextSelectionEnabled="True" />
+                                    </StackPanel>
+                                </DataTemplate>
+                            </ListView.ItemTemplate>
+                        </ListView>
+                    </Grid>
+                    <ScrollViewer x:Name="SpendPage" Visibility="Collapsed">
+                        <StackPanel Spacing="16">
+                            <TextBlock Text="Usage &amp; Spend" Style="{ThemeResource SubtitleTextBlockStyle}" />
+                            <TextBlock x:Name="SpendText" Text="Waiting for usage data…" TextWrapping="Wrap"
+                                IsTextSelectionEnabled="True" />
+                        </StackPanel>
+                    </ScrollViewer>
+                    <ScrollViewer x:Name="SettingsPage" Visibility="Collapsed">
+                        <StackPanel x:Name="SettingsControls" Spacing="20" IsEnabled="False">
+                            <TextBlock Text="Display settings" Style="{ThemeResource SubtitleTextBlockStyle}" />
+                            <ToggleSwitch x:Name="PrivacyToggle" Header="Hide personal information"
+                                Tag="hidePersonalInfo" Toggled="SettingChanged" />
+                            <ToggleSwitch x:Name="OptionalToggle" Header="Show credits and extra usage"
+                                Tag="showOptionalCreditsAndExtraUsage" Toggled="SettingChanged" />
+                            <ToggleSwitch x:Name="UsedToggle" Header="Show usage as used"
+                                Tag="usageBarsShowUsed" Toggled="SettingChanged" />
+                            <ToggleSwitch x:Name="ResetToggle" Header="Show reset time as clock"
+                                Tag="resetTimesShowAbsolute" Toggled="SettingChanged" />
+                            <TextBlock Text="Changes also apply to the tray. Closing this window keeps CodexBar running."
+                                TextWrapping="Wrap" />
+                        </StackPanel>
+                    </ScrollViewer>
+                </Grid>
+            </Grid>
+        </NavigationView>
+    </Grid>
+</Window>

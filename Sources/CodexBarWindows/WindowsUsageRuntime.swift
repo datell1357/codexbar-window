@@ -2692,6 +2692,96 @@ public actor WindowsUsageRuntime {
         self.publishRenderEntries(settings: WindowsUsagePresentationSettings.load())
     }
 
+    /// Called only after the native UI transport authenticates the launched peer.
+    func nativeAppRequest(_ request: WindowsAppProtocol.Request, generation: UUID) async -> WindowsAppProtocol.Response {
+        func reply(_ status: String, snapshot: WindowsAppProtocol.Snapshot? = nil) -> WindowsAppProtocol.Response {
+            .init(protocolVersion: WindowsAppProtocol.version, requestID: request.requestID,
+                generation: generation, status: status, snapshot: snapshot)
+        }
+        guard !self.shuttingDown else { return reply("stopped") }
+        guard request.protocolVersion == WindowsAppProtocol.version else { return reply("unsupportedVersion") }
+        guard request.method == "hello" || request.generation == generation else { return reply("staleGeneration") }
+        switch request.method {
+        case "hello", "snapshot":
+            guard request.mutation == nil else { return reply("invalidRequest") }
+        case "refresh":
+            guard request.mutation == nil else { return reply("invalidRequest") }
+            Task { await self.refreshIncludingPluginDiscovery() }
+        case "setSetting":
+            guard let mutation = request.mutation, WindowsAppProtocol.Settings.keys.contains(mutation.key),
+                  let defaults = UserDefaults(suiteName: WindowsRefreshSettings.suiteName) else {
+                return reply("invalidRequest")
+            }
+            let current = WindowsAppProtocol.Settings(WindowsUsagePresentationSettings.load(from: defaults))
+            guard current.revision == mutation.expectedSettingsRevision else {
+                return reply("settingsChanged", snapshot: self.nativeAppSnapshot())
+            }
+            defaults.set(mutation.value, forKey: mutation.key)
+            let persisted = defaults.synchronize()
+            await self.presentationSettingsDidChange()
+            if mutation.key == "showOptionalCreditsAndExtraUsage" {
+                Task { await self.optionalUsageSettingsDidChange() }
+            }
+            guard persisted else { return reply("settingsSaveFailed", snapshot: self.nativeAppSnapshot()) }
+        default:
+            return reply("unknownMethod")
+        }
+        return reply("ok", snapshot: self.nativeAppSnapshot())
+    }
+
+    private func nativeAppSnapshot() -> WindowsAppProtocol.Snapshot {
+        let settings = WindowsUsagePresentationSettings.load()
+        let wireSettings = WindowsAppProtocol.Settings(settings)
+        var cards: [WindowsAppProtocol.Card] = []
+        var notices: [String] = []
+        var remainingRows = 1024
+        // JSON can expand each ASCII control byte to six bytes. Reserve ample framing/structure headroom.
+        var remainingTextBytes = 96 * 1024
+        var truncated = false
+        let now = Date()
+        let workDays = WindowsPredictivePaceWarningSettings.load().weeklyProgressWorkDays
+        func text(_ value: String, limit: Int = 512) -> String {
+            let bounded = WindowsAppProtocol.boundedText(
+                LogRedactor.redact(value).replacingOccurrences(of: "\0", with: ""),
+                maximumUTF8Bytes: min(limit, remainingTextBytes))
+            remainingTextBytes -= bounded.text.utf8.count
+            truncated = truncated || bounded.truncated
+            return bounded.text
+        }
+        for entry in self.renderEntries {
+            guard remainingRows > 0, remainingTextBytes > 0, cards.count < 256 else { truncated = true; break }
+            switch entry {
+            case let .presentation(original):
+                let presentation = WindowsUsagePresentation(instanceID: original.instanceID, provider: original.provider,
+                    title: original.title, privacyTitle: original.privacyTitle, result: original.result,
+                    snapshot: original.snapshot, hidePersonalInfo: settings.hidePersonalInfo,
+                    showOptionalUsage: settings.showOptionalCreditsAndExtraUsage,
+                    usageBarsShowUsed: settings.usageBarsShowUsed, resetTimesShowAbsolute: settings.resetTimesShowAbsolute)
+                let forecast = self.planHistoryForecastForPresentation(providerID: original.instanceID,
+                    now: now, workDays: workDays)
+                let rows = presentation.rows(now: now, sessionEquivalentForecast: forecast, forecastWorkDays: workDays)
+                let count = min(64, remainingRows)
+                let id = text(original.instanceID.rawValue)
+                let title = text(rows.first ?? "Provider")
+                let body = Array(rows.dropFirst().prefix(count)).map { text($0) }
+                truncated = truncated || rows.count > count + 1
+                remainingRows -= max(1, body.count)
+                cards.append(.init(id: id, title: title, rows: body))
+            case let .pluginDiscoveryFailures(count):
+                notices.append(text("Plugins unavailable: \(count)"))
+                remainingRows -= 1
+            case let .row(row):
+                notices.append(text(settings.hidePersonalInfo ? "Usage unavailable. Refresh to try again." : row))
+                remainingRows -= 1
+            }
+        }
+        let spend = self.spendSummaryText(hidePersonalInfo: settings.hidePersonalInfo)
+        let spendText = text(spend, limit: 16384)
+        return .init(providers: cards, notices: notices, spendSummary: spendText,
+            refreshing: self.refreshTask != nil, truncated: truncated, settings: wireSettings,
+            settingsRevision: wireSettings.revision)
+    }
+
     /// Applies the optional-usage setting change. Disabling only re-renders
     /// retained snapshots; enabling requests one refresh, coalesced behind an
     /// in-flight refresh when necessary.

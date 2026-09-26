@@ -5721,3 +5721,15 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - **남은 범위:** Grok의 비용 전용 확장 local history scan, OpenCode Go device-local 위젯 표현/ownership, WinUI 앱·위젯 OS 통합·Sync/Fleet·packaged startup와 전체 W01~W16/G0~G6. 공급자 fetch 성공이나 모든 source/account 조합의 동작을 입증한 것은 아니다.
 - 상태: CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·앱·실계정·원격 Windows·CI 미실행.
 - IMPL-596은 129dcda40으로 origin/main 푸시 확인. 이번 단위도 별도 커밋·푸시한다. 자동화 변경 없음.
+
+## IMPL-598: WinUI 3 앱과 기존 Windows 런타임 연결
+
+- `Windows/App`에 WinUI 3/.NET 10 프로젝트와 Overview 검색/사용량 목록, 기존 spend 요약, PII·optional usage·used/remaining·reset 시각의 표시 설정 4개를 작성했다. 트레이 “CodexBar 열기”에서 같은 실행 루트의 `App/CodexBarApp.exe`를 시작하고 재호출 시 기존 창 활성화를 요청한다.
+- UI는 별도 provider runtime을 만들지 않는다. 현재 트레이 actor의 presentation/비용/설정을 versioned JSON으로 전달하고, refresh 및 allowlist 설정 쓰기를 기존 runtime 경로에 연결한다. 설정은 현재 네 boolean revision을 비교하며, 별도 트레이 쓰기까지 원자적으로 직렬화하는 구현은 아니다.
+- UI가 current-user SID DACL·first-instance·remote-client 거절을 요청한 native named-pipe listener를 소유한다. 양측 native peer PID, Swift 측 retained child process handle·SID/session, UI 측 backend 경로/session/handle을 대조한다. 자식 handle 상속은 끄고 전달 환경변수를 제한한다. 실제 API 동작은 미검증이다.
+- 요청 4 KiB/응답 1 MiB, display text 96 KiB UTF-8, 행/카드 상한을 작성했다. Unicode grapheme 대신 scalar/UTF-8 바이트로 제한하고 JSON escape 여유를 남긴다. request UUID·generation 대조, 중복 요청 거절, 취소 후 overlapped I/O drain을 작성했다.
+- 화면은 연결 실패/불완전 응답 시 stale 데이터를 내리고 설정 저장 응답이 유실되면 자동 재전송하지 않는다. Hide PII 활성화 시 현재 화면을 즉시 비우고 새 snapshot으로 교체한다. 필수 JSON 필드·컬렉션 형태를 확인하는 소비자 코드도 포함한다.
+- 합성 protocol fixture 11개 작성: little-endian/zero/oversize framing, .NET wire 키, UUID/형태 오류, 설정 revision/allowlist, Unicode와 escape byte 예산, 응답 상한. 실행하지 않았다.
+- **남은 범위:** App publish/receipt·App-local DLL closure·first-party 서명·설치 통합, Windows restore로 생성할 실제 lockfile, 전체 설정/계정/차트/action/현지화/접근성 및 W10/W15/packaged StartupTask·전체 W01~W16/G0~G6. `Windows/App/README.ko.md`에 배치 규약과 미구현 범위를 기록했다. 현재 코드는 배포 가능한 앱이나 원본 UI 기능 완성을 뜻하지 않는다.
+- 상태: CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 의존성 restore·빌드·테스트·lint·앱·실계정·원격 Windows·CI 미실행.
+- IMPL-597은 261cd6aaa로 origin/main 푸시 확인. 이번 단위도 별도 커밋·푸시한다. 자동화 변경 없음.

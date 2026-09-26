@@ -50,6 +50,7 @@ private final class WindowsTrayApplication: @unchecked Sendable {
     private let windsurfBrowserImports = WindowsCursorBrowserImportTask()
     private let zedEditorImports = WindowsCursorBrowserImportTask()
     private let runtime: WindowsUsageRuntime
+    private let app: WindowsAppHost
     private let sessions: WindowsAgentSessionsRuntime
     private let remoteSessions: WindowsRemoteSessionsRuntime
     private let shutdownSignal = DispatchSemaphore(value: 0)
@@ -61,6 +62,10 @@ private final class WindowsTrayApplication: @unchecked Sendable {
             Task { await self.remoteSessions.refresh() }
         },
         onQuit: {},
+        onOpenApp: { [weak self] in
+            guard let self else { return }
+            Task { await self.app.open() }
+        },
         onPowerChanged: { [weak self] in
             guard let self else { return }
             Task { await self.runtime.notePowerChanged() }
@@ -632,7 +637,9 @@ private final class WindowsTrayApplication: @unchecked Sendable {
         })
 
     init() {
-        self.runtime = WindowsUsageRuntime()
+        let runtime = WindowsUsageRuntime()
+        self.runtime = runtime
+        self.app = WindowsAppHost(runtime: runtime)
         self.sessions = WindowsAgentSessionsRuntime()
         self.remoteSessions = WindowsRemoteSessionsRuntime()
     }
@@ -675,6 +682,7 @@ private final class WindowsTrayApplication: @unchecked Sendable {
             FileHandle.standardError.write(Data("CodexBar tray failed: \(error.localizedDescription)\n".utf8))
         }
         Task {
+            await self.app.shutdown()
             await withTaskGroup(of: Void.self) { group in
                 group.addTask { await self.sessions.shutdown() }
                 group.addTask { await self.remoteSessions.shutdown() }
