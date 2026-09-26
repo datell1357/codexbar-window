@@ -151,12 +151,14 @@ actor WindowsSpendDashboardController {
         let selected: Snapshot
         let comparisons: [Snapshot]
         let conversionRates: [String: Double]
+        let codexModels: WindowsCodexModelAnalysis.Snapshot?
     }
 
     /// Build every requested window in one actor turn from one collection and exchange-rate capture.
     /// No source load or option mutation occurs, and the end date is the captured collection date.
     func appView(days: Int, comparePeriods: Bool, now: Date,
-                 conversionRates: [String: Double]? = nil) -> AppView {
+                 conversionRates: [String: Double]? = nil, codexModels: Bool = false,
+                 currency: String? = nil) -> AppView {
         let rates = conversionRates ?? CurrencyExchange.shared.conversionRatesSnapshot()
         let periods = comparePeriods ? [7, 30, 90, WindowsSpendHistoryPolicy.scanDays] : []
         var options = self.options
@@ -169,7 +171,22 @@ actor WindowsSpendDashboardController {
             periodOptions.days = period
             return self.makeSnapshot(options: periodOptions, now: now, conversionRates: rates, includeDetails: false)
         }
-        return AppView(selected: selected, comparisons: comparisons, conversionRates: rates)
+        let analysis: WindowsCodexModelAnalysis.Snapshot?
+        if codexModels {
+            let displayed = (self.scan?.inputs ?? []) + self.retainedInputs.values.sorted { $0.id < $1.id }
+            let visible = WindowsSpendDashboardModel.visibleInputs(displayed,
+                hiddenSourceIDs: options.hiddenSourceIDs,
+                hideNativeCodexWhenOpenCodexPresent: options.hideNativeCodexWhenOpenCodexPresent)
+            let groups = selected.model.groups.prefix(256)
+            let code = currency.flatMap { code in groups.first { $0.currencyCode == code }?.currencyCode }
+                ?? (currency == nil ? groups.first?.currencyCode : nil)
+            analysis = WindowsCodexModelAnalysis.build(inputs: visible, days: options.days, now: now,
+                calendar: CostUsageBucketTimeZone.calendar(identifier: options.bucketTimeZoneIdentifier),
+                preferredCurrency: options.preferredCurrencyCode, currency: code, conversionRates: rates,
+                collectionComplete: selected.phase == .ready && !selected.stale && selected.failure == nil
+                    && selected.sourceFailures.isEmpty && !selected.continuingLocalDiscovery)
+        } else { analysis = nil }
+        return AppView(selected: selected, comparisons: comparisons, conversionRates: rates, codexModels: analysis)
     }
 
     /// Project a day without changing the dashboard or sharing preferences.

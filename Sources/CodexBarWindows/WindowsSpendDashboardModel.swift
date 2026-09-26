@@ -419,6 +419,8 @@ struct WindowsSpendDashboardModel: Equatable, Sendable {
         let coveredInterval: ClosedRange<Date>?
         let coveredDayCount: Int
         let hasInvalidCostHistory: Bool
+        var hasCompleteTokenHistory = false
+        var hasConsistentCostHistory = false
     }
 
     struct WindowEntry {
@@ -584,11 +586,14 @@ struct WindowsSpendDashboardModel: Equatable, Sendable {
                 totalCost: summary.totalCost,
                 coveredInterval: summary.coveredInterval,
                 coveredDayCount: summary.coveredDayCount,
-                hasInvalidCostHistory: summary.hasInvalidCostHistory)
+                hasInvalidCostHistory: summary.hasInvalidCostHistory,
+                hasCompleteTokenHistory: summary.hasCompleteTokenHistory,
+                hasConsistentCostHistory: summary.hasConsistentCostHistory)
         }
     }
 
-    private static func inputSummary(
+    /// Also used by Codex model analysis so date/coverage and authoritative subtotal rules stay shared.
+    static func inputSummary(
         input: ProviderInput,
         costMultiplier: Double,
         bounds: ClosedRange<Date>,
@@ -645,7 +650,9 @@ struct WindowsSpendDashboardModel: Equatable, Sendable {
             totalCost: totalCost,
             coveredInterval: coveredInterval,
             coveredDayCount: coveredDayCount,
-            hasInvalidCostHistory: invalidCostHistory)
+            hasInvalidCostHistory: invalidCostHistory,
+            hasCompleteTokenHistory: hasCompleteTokenHistory,
+            hasConsistentCostHistory: hasConsistentCostHistory)
     }
 
     private static func providerRows(_ summaries: [InputSummary]) -> [ProviderRow] {

@@ -16,6 +16,7 @@ public sealed partial class SpendPane : UserControl
     private SpendPage? current;
     private int epoch;
     private int page;
+    private int codexModelsPage;
     private int selectedDay;
     private int selectedDetailPoint;
     private SpendDetailQuery? detail;
@@ -62,6 +63,7 @@ public sealed partial class SpendPane : UserControl
             selectedDayKey = values.SelectedDay;
             selectedDay = 0;
             page = 0;
+            codexModelsPage = 0;
         }
         finally { applying = false; }
         Reload();
@@ -88,6 +90,10 @@ public sealed partial class SpendPane : UserControl
         ContextText.Text = "";
         ComparisonPanel.Visibility = Visibility.Collapsed;
         ComparisonRows.ItemsSource = null;
+        CodexModelsPanel.Visibility = Visibility.Collapsed;
+        CodexModelsRows.ItemsSource = null;
+        CodexModelsContext.Text = CodexModelsCurrentRange.Text = CodexModelsPreviousRange.Text = CodexModelsPosition.Text = "";
+        PreviousCodexModelsButton.IsEnabled = NextCodexModelsButton.IsEnabled = false;
         PreviousPageButton.IsEnabled = NextPageButton.IsEnabled = false;
         PagePosition.Text = "";
         StatusText.Text = "Waiting for current cost data…";
@@ -127,6 +133,11 @@ public sealed partial class SpendPane : UserControl
                 throw new IOException("Spend currency differs from the requested view.");
             if ((value.Comparisons is not null) != query.ComparePeriods)
                 throw new IOException("Spend comparison response differs from the requested view.");
+            if ((value.CodexModels is not null) != (query.CodexModelsPage is not null))
+                throw new IOException("Codex model response differs from the requested view.");
+            if (value.CodexModels is { } models && query.CodexModelsPage is { } requestedPage
+                && models.Page != Math.Min(requestedPage, models.PageCount - 1))
+                throw new IOException("Codex model page differs from the requested view.");
             if (query.Detail is { } selection && (value.SelectionRevision != selection.Revision
                 || value.Detail?.Kind != selection.Kind)) throw new IOException("Spend detail selection changed.");
             Apply(value);
@@ -148,7 +159,8 @@ public sealed partial class SpendPane : UserControl
     private SpendQuery Query() => new(
         int.Parse((PeriodPicker.SelectedItem as ComboBoxItem)?.Tag as string ?? "30"), currency,
         (SectionPicker.SelectedItem as ComboBoxItem)?.Tag as string ?? "providers",
-        (ChartPicker.SelectedItem as ComboBoxItem)?.Tag as string ?? "cost", page, detail, CompareToggle.IsOn);
+        (ChartPicker.SelectedItem as ComboBoxItem)?.Tag as string ?? "cost", page, detail, CompareToggle.IsOn,
+        CodexModelsToggle.IsOn ? codexModelsPage : null);
 
     private void Apply(SpendPage value)
     {
@@ -157,6 +169,8 @@ public sealed partial class SpendPane : UserControl
         var rowsChanged = current is null || !current.Rows.SequenceEqual(value.Rows);
         var comparisonsChanged = current?.Comparisons is not { } oldComparisons || value.Comparisons is not { } newComparisons
             || !oldComparisons.SequenceEqual(newComparisons);
+        var codexModelsChanged = current?.CodexModels is not { } oldModels || value.CodexModels is not { } newModels
+            || !oldModels.Rows.SequenceEqual(newModels.Rows);
         var detailRowsChanged = current?.Detail is not { } previousDetail || value.Detail is not { } nextDetail
             || !previousDetail.Rows.SequenceEqual(nextDetail.Rows);
         var detailChartChanged = current?.Detail is not { } previousChart || value.Detail is not { } nextChart
@@ -187,6 +201,19 @@ public sealed partial class SpendPane : UserControl
         if (rowsChanged) BreakdownList.ItemsSource = value.Rows;
         ComparisonPanel.Visibility = value.Comparisons is null ? Visibility.Collapsed : Visibility.Visible;
         if (comparisonsChanged) ComparisonRows.ItemsSource = value.Comparisons;
+        CodexModelsPanel.Visibility = value.CodexModels is null ? Visibility.Collapsed : Visibility.Visible;
+        if (codexModelsChanged) CodexModelsRows.ItemsSource = value.CodexModels?.Rows;
+        if (value.CodexModels is { } models)
+        {
+            codexModelsPage = models.Page;
+            CodexModelsContext.Text = models.Context;
+            CodexModelsCurrentRange.Text = models.CurrentRange;
+            CodexModelsPreviousRange.Text = models.PreviousRange;
+            CodexModelsPosition.Text = models.TotalRows == 0 ? "No model rows in these periods"
+                : $"Page {models.Page + 1} / {models.PageCount} · {models.TotalRows} models";
+            PreviousCodexModelsButton.IsEnabled = models.Page > 0;
+            NextCodexModelsButton.IsEnabled = models.Page + 1 < models.PageCount;
+        }
         PagePosition.Text = value.TotalRows == 0 ? "No rows for this breakdown" : $"Page {value.Page + 1} / {value.PageCount} · {value.TotalRows} rows";
         PreviousPageButton.IsEnabled = value.Page > 0;
         NextPageButton.IsEnabled = value.Page + 1 < value.PageCount;
@@ -235,7 +262,8 @@ public sealed partial class SpendPane : UserControl
             || sender is not Button { Tag: string kind } || lifetime.IsCancellationRequested) return;
         if (kind is not ("preview" or "copyText" or "copyImage" or "saveImage" or "copyJSON" or "saveJSON")) return;
         var capturedEpoch = epoch;
-        var query = Query() with { Days = captured.Days, Currency = captured.Currency, Detail = null, ComparePeriods = false };
+        var query = Query() with { Days = captured.Days, Currency = captured.Currency, Detail = null,
+            ComparePeriods = false, CodexModelsPage = null };
         var action = new SpendExportAction(kind, captured.SelectionRevision);
         exporting = true;
         UpdateExportActions();
@@ -373,6 +401,7 @@ public sealed partial class SpendPane : UserControl
     {
         if (applying || request is null) return;
         page = 0;
+        codexModelsPage = 0;
         if (ReferenceEquals(sender, PeriodPicker) || ReferenceEquals(sender, ChartPicker)) selectedDayKey = null;
         SaveView();
         Reload();
@@ -382,6 +411,21 @@ public sealed partial class SpendPane : UserControl
         if (applying || request is null) return;
         SaveView();
         Reload();
+    }
+    private void CodexModelsChanged(object sender, RoutedEventArgs args)
+    {
+        if (applying || request is null) return;
+        codexModelsPage = 0;
+        Reload();
+    }
+    private void PreviousCodexModelsPage(object sender, RoutedEventArgs args)
+    {
+        if (codexModelsPage > 0) { codexModelsPage--; Reload(false); }
+    }
+    private void NextCodexModelsPage(object sender, RoutedEventArgs args)
+    {
+        if (current?.CodexModels is { } models && codexModelsPage + 1 < models.PageCount)
+        { codexModelsPage++; Reload(false); }
     }
     private void ShowComparisonPeriod(object sender, RoutedEventArgs args)
     {
@@ -395,6 +439,7 @@ public sealed partial class SpendPane : UserControl
         var choice = CurrencyPicker.SelectedItem as string;
         currency = choice == AutomaticCurrency ? null : choice;
         page = 0;
+        codexModelsPage = 0;
         SaveView();
         Reload();
     }

@@ -5819,3 +5819,16 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - **남은 범위:** Codex 모델/effort/service-tier·이전 기간 비교 UI, 창 위치/스크롤 보존, 전체 설정/계정/인증, managed payload/lockfile·W10·W15·StartupTask 및 전체 W01~W16/G0~G6. WinUI 복원/닫기·debounce·동시 선택·persistence 실제 동작은 검증하지 않았다.
 - 상태: CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·성능·앱·실계정·원격 Windows·CI 미실행.
 - IMPL-604는 a072d39d5로 origin/main 푸시 확인. 이번 단위도 별도 커밋·푸시한다. 자동화 변경 없음.
+
+## IMPL-606: native Codex 모델·처리 tier와 이전 기간 비교
+
+- 원본 CodexModelsAnalyticsBuilder의 모델 canonical ID와 New/Ended/Unchanged/percent 비교 의미를 재사용했다. 현재 기간 바로 앞의 같은 경과시간을 이전 기간으로 잡고, 별도 수집 없이 이미 확보한 native Codex 일별 자료만 사용한다. effort는 현재 thread 설정을 과거 사용량에 덧붙이지 않는다.
+- 공급원 포함/숨김, OpenCodeX 존재 시 native 숨김, 통화 선택/환산을 적용한 뒤 같은 controller actor turn의 수집/환율표에서 집계한다. 다른 공급자와 OpenCodeX는 이 분석에 포함하지 않으며 상위 총계와 다른 범위임을 화면에 명시한다. 설정이나 공유 기간은 변경하지 않는다.
+- 모델별 양 기간의 비용·토큰·증감 상태와 기록된 standard/priority 비용·토큰, input/output/cache/reasoning 구성을 WinUI 패널에 연결했다. 40행 페이지로 과거에만 존재한 모델도 접근한다. 분석 query/page는 bounded이며 선택 기간의 공유/내보내기 요청에서는 분석을 제외한다.
+- source coverage와 원본 aggregate/daily/model 합계의 일관성을 충족할 때만 증감을 제공한다. 미가격·미수집·비어 있는 미확정 이력은0으로 채우지 않는다. 부분적으로 알려진 값에는 ~, 알려지지 않은 값에는 Unknown을 쓴다. 요청 수를 세션 참조 수로 바꾸지 않는다.
+- 중복 날짜는 합산하지 않고, 음수·overflow·비정상 비용은 확정 수치로 전달하지 않는다. DST가 이전 기간을 하루 중간에서 자르면 온전한 날짜만 표시하며 증감은 Unavailable로 유지한다. 하루 비교의 온전한 이전 bucket이 없는 경우도 빈 범위로 처리한다.
+- 새 모델 분석은 기존128 KiB 문자열/1 MiB 응답 예산을 공유한다. PII 숨김은 분석뿐 아니라 기본 모델 표·프로젝트/세션 상세의 비공개 모델 이름에도 적용했다. 공개 계열+Model N 또는 Model N을 사용하고 source/account/session 원문을 전달하지 않는다.
+- 합성 fixture12개 작성: 정상 증감·미가격/누락 tier·이력 부족·확정0/unknown·tier 불일치·중복/잘못된 날짜와 합계·overflow·DST·FX/통화/공급자 범위·stale·숨김/추가 load 없음·paging/PII/wire 상한. 기존 모델 상세 fixture도 privacy 계약에 맞춰 확장했다. 모두 미실행이다.
+- **남은 범위:** 역사적 effort 수집과 세션 참조 분석, 모델 필터·일/주/월 타임라인 및 해당 export 계약, 전체 설정/계정/인증, 창 위치/스크롤, managed payload/lockfile·W10·W15·StartupTask 및 전체 W01~W16/G0~G6. WIN-057 전체 완료가 아니다. 실제 Windows 컴파일·UI·수집 정확도·성능 검증이 필요하다.
+- 상태: CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·성능·앱·실계정·원격 Windows·CI 미실행.
+- IMPL-605는 3fefd1f3b로 origin/main 푸시 확인. 이번 단위도 별도 커밋·푸시한다. guidelines/COMMITS.md가 없어 기존 커밋 규칙을 적용했다. 자동화 변경 없음.

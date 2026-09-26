@@ -47,6 +47,17 @@
   저장하며, 현재 차트에 없는 날짜를 다른 날로 조용히 바꾸지 않는다.
   UI에는 저장 상태와 Retry save/Restore saved view를 제공한다. 불확실한 저장은 자동
   재전송하지 않으며, 명시적 재시도는 현재 revision을 읽고 다시 flush한다.
+- IMPL-606은 Codex model changes and service tiers 패널을 추가했다. 선택 통화·포함 공급원
+  중 native Codex만 집계하며, 같은 수집/환율표에서 현재 기간과 바로 앞의 같은 경과시간
+  기간을 비교한다. 40행씩 모든 모델의 비용/토큰, New/Ended/Unchanged/증감률,
+  기록된 standard/priority 비용·토큰과 토큰 구성을 표시한다. 다른 공급자와 OpenCodeX는
+  이 패널의 대상이 아니므로 상위 전체 비용과 범위가 다르다.
+  양 기간의 공급원·모델·합계가 완전할 때만 증감을 제공한다. 가격/이력이 없으면 unknown,
+  일부 알려진 값에는 ~를 표시한다. DST로 이전 기간이 하루 중간에서 시작하면 일별 자료로
+  경계를 추정하지 않고 온전한 날짜의 값만 표시하며 증감률은 보류한다. 별도 과거 수집은 없다.
+  PII 숨김은 분석·기본 모델 표·프로젝트/세션 모델 상세에 공개 모델 계열 또는 Model N을
+  사용한다. 분석 토글/페이지는 이번 창에서만 유지한다. effort 이력·세션 참조 수·모델 필터와
+  일/주/월 타임라인은 추가 구현 대상이며, WIN-057 전체 완료를 의미하지 않는다.
 
 ## 프로세스와 통신 규약
 
@@ -62,9 +73,9 @@ WinUI 프로세스는 공급자에 직접 접속하거나 두 번째 백엔드�
    pipe 이름이나 클라이언트가 보낸 문자열만으로 신뢰하지 않는다.
 4. JSON 앞에 4바이트 little-endian 길이를 붙인다. 요청은 최대 4 KiB, 응답은 최대
    1 MiB다. Overview 문자열은 96 KiB, spend의 상위 화면과 상세 화면을 합친 문자열은
-   128 KiB UTF-8 예산을 적용하고 초과 시 truncation을 표시한다. Overview에는 최대
+   128 KiB UTF-8 예산을 적용하고 초과 시 truncation을 표시한다. 모델 분석도 이 예산을 공유한다. Overview에는 최대
    256개 카드·1024개 행 예산과 카드당 64개 상세 행 제한이 있다. spend는 상위/상세
-   각각 최대 40행, 차트 각각 최대 365개 지점이다.
+   각각 최대 40행, 모델 분석도 최대 40행, 차트 각각 최대 365개 지점이다.
 5. 연결 첫 요청은 `hello`다. protocolVersion 1, requestID, backend generation을
    확인한다. 연결당 중복 requestID는 거절하고 4096개 뒤 재연결한다.
 6. 허용 메서드는 `hello`, `snapshot`, `refresh`, `setSetting`, `spend`,
@@ -73,7 +84,7 @@ WinUI 프로세스는 공급자에 직접 접속하거나 두 번째 백엔드�
    snapshot은 2초 간격으로 요청한다. 설정 쓰기는 네 키의 고정 순서 boolean SHA-256
    revision을 대조한다. 이는 오래된 화면의 저장을 감지하는 낙관적 대조이며, 트레이와
    별도 스레드에서 발생하는 모든 설정 쓰기의 원자적 직렬화를 보장하지 않는다.
-   `spend`는 bounded query(days/currency/section/chart/page/detail/comparePeriods)를 받아 일반 snapshot과
+   `spend`는 bounded query(days/currency/section/chart/page/detail/comparePeriods/codexModelsPage)를 받아 일반 snapshot과
    별도의 응답으로 보낸다. controller await 전후 collection/generation/publication/settings를
    대조하고, PII·문자열 예산을 적용한 표·차트만 전송한다. 내부 source/account 키는
    전송하지 않는다. 통화 그룹이 사라지면 다른 통화로 자동 합산하지 않는다.
@@ -169,7 +180,7 @@ PE import 검사는 .NET assembly reference, P/Invoke, 동적 LoadLibrary, XAML/
 
 ## 남은 앱 구현
 
-전체 설정 pane, 계정·인증·provider 편집, Codex 모델/effort/service-tier 분석과 이전 기간 비교 UI,
+전체 설정 pane, 계정·인증·provider 편집, Codex effort 이력·세션 참조 분석·모델 필터/일·주·월 타임라인,
 작업별 action/copy/open/login,
 레이아웃 편집, 전역 단축키·창 위치/스크롤 보존,
 전체 현지화, 키보드/Narrator/고대비·다중 모니터 QA가 남아 있다.
@@ -203,6 +214,11 @@ IMPL-605의 `WindowsAppViewPreferencesTests.swift`에는 기본값/무쓰기, �
 저장 round trip, 손상/과대/newer schema 보존, revision 충돌, flush 전후 실패와 재시도,
 readback 불일치, wire 경계, heatmap 날짜 키의 합성 fixture9개를 작성했다.
 실제 defaults·WinUI 재개/닫기·debounce/동시 선택·다중 인스턴스·강제 종료는 검증하지 않았다.
+IMPL-606의 `WindowsCodexModelAnalysisTests.swift`에는 인접 기간/증감, 미가격 모델,
+불완전/빈 이력, service-tier 누락/불일치, 중복 날짜·합계·날짜 오류, overflow, DST,
+주입 FX/통화 범위, stale, 공급원 숨김/재수집 없음, paging/PII/응답 예산의 합성 fixture12개를
+작성했다. 기존 상세 fixture는 비공개 모델 이름의 익명화와 PII off 동작을 추가했다.
+모두 미실행이다. 실제 수집 자료의 완전성, 컴파일, WinUI 배치·키보드·성능은 검증하지 않았다.
 
 ## API 참고
 

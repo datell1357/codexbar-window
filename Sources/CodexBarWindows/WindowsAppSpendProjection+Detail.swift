@@ -93,7 +93,8 @@ extension WindowsAppSpendProjection {
             } else {
                 let row = models[index]
                 let name = hidePersonalInfo ? ProviderDescriptorRegistry.descriptor(for: row.provider).metadata.displayName : row.providerName
-                rows.append(.init(title: text(row.modelName, 512), subtitle: text(name, 512),
+                rows.append(.init(title: text(Self.modelTitle(row.modelName, index: index, hidePersonalInfo: hidePersonalInfo), 512),
+                    subtitle: text(name, 512),
                     cost: text(cost(row.totalCost), 128), tokens: text(tokens(row.totalTokens), 128), details: text(mix(row.tokenMix), 1024)))
             }
         }

@@ -65,6 +65,50 @@
                     </ItemsControl.ItemTemplate>
                 </ItemsControl>
             </StackPanel>
+            <ToggleSwitch x:Name="CodexModelsToggle" Header="Codex model changes and service tiers" Toggled="CodexModelsChanged" />
+            <StackPanel x:Name="CodexModelsPanel" Visibility="Collapsed" Spacing="8">
+                <TextBlock x:Name="CodexModelsContext" TextWrapping="Wrap" IsTextSelectionEnabled="True" />
+                <TextBlock Text="Current period" FontWeight="SemiBold" />
+                <TextBlock x:Name="CodexModelsCurrentRange" TextWrapping="Wrap" />
+                <TextBlock Text="Previous period" FontWeight="SemiBold" />
+                <TextBlock x:Name="CodexModelsPreviousRange" TextWrapping="Wrap" />
+                <ItemsControl x:Name="CodexModelsRows">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate x:DataType="local:CodexModelRow">
+                            <Border BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="0,0,0,1" Padding="8,12">
+                                <StackPanel Spacing="6">
+                                    <TextBlock Text="{x:Bind Title}" FontWeight="SemiBold" TextWrapping="Wrap" />
+                                    <Grid ColumnSpacing="12" RowSpacing="8">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" /><ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="*" /><ColumnDefinition Width="*" />
+                                        </Grid.ColumnDefinitions>
+                                        <Grid.RowDefinitions>
+                                            <RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="Auto" />
+                                        </Grid.RowDefinitions>
+                                        <TextBlock Text="Metric" /><TextBlock Grid.Column="1" Text="Current" />
+                                        <TextBlock Grid.Column="2" Text="Previous" /><TextBlock Grid.Column="3" Text="Change" />
+                                        <TextBlock Grid.Row="1" Text="Tokens" />
+                                        <TextBlock Grid.Row="1" Grid.Column="1" Text="{x:Bind CurrentTokens}" TextWrapping="Wrap" />
+                                        <TextBlock Grid.Row="1" Grid.Column="2" Text="{x:Bind PreviousTokens}" TextWrapping="Wrap" />
+                                        <TextBlock Grid.Row="1" Grid.Column="3" Text="{x:Bind TokenChange}" TextWrapping="Wrap" />
+                                        <TextBlock Grid.Row="2" Text="Known cost" TextWrapping="Wrap" />
+                                        <TextBlock Grid.Row="2" Grid.Column="1" Text="{x:Bind CurrentCost}" TextWrapping="Wrap" />
+                                        <TextBlock Grid.Row="2" Grid.Column="2" Text="{x:Bind PreviousCost}" TextWrapping="Wrap" />
+                                        <TextBlock Grid.Row="2" Grid.Column="3" Text="{x:Bind CostChange}" TextWrapping="Wrap" />
+                                    </Grid>
+                                    <TextBlock Text="{x:Bind Details}" TextWrapping="Wrap" IsTextSelectionEnabled="True" />
+                                </StackPanel>
+                            </Border>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+                <StackPanel Orientation="Horizontal" Spacing="12">
+                    <Button x:Name="PreviousCodexModelsButton" Content="Previous model page" Click="PreviousCodexModelsPage" />
+                    <TextBlock x:Name="CodexModelsPosition" VerticalAlignment="Center" AutomationProperties.LiveSetting="Polite" />
+                    <Button x:Name="NextCodexModelsButton" Content="Next model page" Click="NextCodexModelsPage" />
+                </StackPanel>
+            </StackPanel>
             <ScrollViewer HorizontalScrollBarVisibility="Auto" HorizontalScrollMode="Enabled" VerticalScrollMode="Disabled">
                 <Canvas x:Name="ChartCanvas" Height="200" MinWidth="650" AutomationProperties.Name="Cost and token activity chart" />
             </ScrollViewer>

@@ -12,12 +12,14 @@ enum WindowsAppSpendProjection {
         var page = 0
         var detail: DetailQuery?
         var comparePeriods: Bool?
+        var codexModelsPage: Int?
         var isValid: Bool {
             (1...WindowsSpendHistoryPolicy.scanDays).contains(self.days) && self.page >= 0 && self.page <= 100000 &&
                 ["providers", "models", "projects", "sessions"].contains(self.section) &&
                 ["cost", "tokens"].contains(self.chart) &&
                 (self.currency == nil || (self.currency!.utf8.count == 3 && self.currency!.utf8.allSatisfy { (65...90).contains($0) })) &&
-                (self.detail?.isValid ?? true)
+                (self.detail?.isValid ?? true) &&
+                (self.codexModelsPage.map { (0...100000).contains($0) } ?? true)
         }
     }
     struct DetailQuery: Codable, Sendable {
@@ -84,12 +86,14 @@ enum WindowsAppSpendProjection {
         let selectionRevision: String
         var detail: DetailPage? = nil
         var comparisons: [ComparisonRow]? = nil
+        var codexModels: CodexModelsPage? = nil
     }
 
     static func make(snapshot: WindowsSpendDashboardController.Snapshot, query: Query,
                      hidePersonalInfo: Bool, calendar: Calendar, selectionRevision: String,
                      hourlySnapshot: WindowsSpendDashboardController.Snapshot? = nil,
-                     comparisonSnapshots: [WindowsSpendDashboardController.Snapshot] = []) -> Page {
+                     comparisonSnapshots: [WindowsSpendDashboardController.Snapshot] = [],
+                     codexModels: WindowsCodexModelAnalysis.Snapshot? = nil) -> Page {
         let model = snapshot.model
         // At most six JSON bytes per ASCII control byte; leave room for numeric/structural overhead.
         var remaining = 128 * 1024
@@ -162,7 +166,8 @@ enum WindowsAppSpendProjection {
                 switch query.section {
                 case "models":
                     let row = group.models[index]
-                    title = row.modelName; subtitle = provider(row.provider, row.providerName)
+                    title = Self.modelTitle(row.modelName, index: index, hidePersonalInfo: hidePersonalInfo)
+                    subtitle = provider(row.provider, row.providerName)
                     amount = row.totalCost; count = row.totalTokens; details = mix(row.tokenMix)
                 case "projects":
                     let row = group.projects[index]
@@ -221,6 +226,10 @@ enum WindowsAppSpendProjection {
         let comparisons = query.comparePeriods == true
             ? Self.comparisons(snapshot: snapshot, periods: comparisonSnapshots, currency: group?.currencyCode,
                 calendar: calendar, text: { text($0, limit: $1) }) : nil
+        let analysis = query.codexModelsPage.flatMap { page in
+            codexModels.map { Self.codexModels($0, page: page, hidePersonalInfo: hidePersonalInfo,
+                stale: snapshot.stale, calendar: calendar, text: { text($0, limit: $1) }) }
+        }
         let totalCost = group.map { ($0.hasPartialCost ? "~" : "") + cost($0.totalCost, $0.currencyCode) } ?? "Unknown"
         let totalTokens = group.map { ($0.hasPartialTokens ? "~" : "") + tokens($0.totalTokens) } ?? "Unknown"
         let costText = text(totalCost)
@@ -231,7 +240,13 @@ enum WindowsAppSpendProjection {
             partial: !snapshot.sourceFailures.isEmpty || snapshot.openCodexObservation == .unavailable
                 || group?.hasPartialCost == true || group?.hasPartialTokens == true,
             truncated: truncated, rows: rows, points: points, selectionRevision: selectionRevision, detail: detail,
-            comparisons: comparisons)
+            comparisons: comparisons, codexModels: analysis)
+    }
+
+    static func modelTitle(_ name: String, index: Int, hidePersonalInfo: Bool) -> String {
+        guard hidePersonalInfo else { return name }
+        return WindowsShareStatsSanitizer.modelName(name).map { "\($0) · Model \(index + 1)" }
+            ?? "Model \(index + 1)"
     }
 
     static func dayKey(_ day: Date, calendar: Calendar) -> String {

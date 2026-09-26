@@ -153,21 +153,22 @@ struct WindowsAppSpendDetailTests {
             let last = Self.page(query: Self.query(kind, page: 100000))
             #expect(first.rows.first?.selectionIndex == 0)
             #expect(first.detail?.rows.count == 40)
-            #expect(second.detail?.rows.first?.title == "example-model-40")
+            #expect(second.detail?.rows.first?.title == "Model 41")
             #expect(last.detail?.page == 2)
             #expect(last.detail?.rows.count == 5)
             #expect(last.detail?.totalRows == 85)
-            #expect(last.detail?.rows.last?.title == "example-model-84")
+            #expect(last.detail?.rows.last?.title == "Model 85")
             #expect(first.detail?.rows.first?.cost == "Unknown")
             #expect(first.detail?.rows.first?.details.contains("Input: 0") == true)
             let wire = String(decoding: try JSONEncoder().encode(first), as: UTF8.self)
-            for secret in ["private@example.invalid", "Private Alpha", "private-source", "private-session", "repository"] {
+            for secret in ["private@example.invalid", "Private Alpha", "private-source", "private-session", "repository", "example-model"] {
                 #expect(!wire.contains(secret))
             }
         }
         #expect(Self.page().detail?.context.contains("incomplete") == true)
         #expect(Self.page(query: Self.query("session")).detail?.context.contains("before the selected period") == true)
         #expect(Self.page(privacy: false).detail?.title == "Private Alpha")
+        #expect(Self.page(privacy: false).detail?.rows.first?.title == "example-model-0")
     }
 
     @Test

@@ -2784,7 +2784,9 @@ public actor WindowsUsageRuntime {
             guard request.mutation == nil, let query = request.spendQuery, query.isValid else { return reply("invalidRequest") }
             if request.method == "spendAction" {
                 guard let action = request.spendAction, action.isValid, query.currency != nil,
-                      query.detail == nil, query.comparePeriods != true else { return reply("invalidRequest") }
+                      query.detail == nil, query.comparePeriods != true, query.codexModelsPage == nil else {
+                    return reply("invalidRequest")
+                }
             }
             guard self.canPresentSpendSnapshot, let captured = self.spendSnapshot,
                   let controller = self.spendController, let settings = self.collectedSpendSettings,
@@ -2793,7 +2795,7 @@ public actor WindowsUsageRuntime {
             let spendGeneration = self.spendGeneration
             let sequence = self.spendPublicationSequence
             let view = await controller.appView(days: query.days, comparePeriods: query.comparePeriods == true,
-                                               now: captured.loadedAt ?? Date())
+                now: captured.loadedAt ?? Date(), codexModels: query.codexModelsPage != nil, currency: query.currency)
             let projected = view.selected
             guard !self.shuttingDown, self.canPresentSpendSnapshot,
                   collection == self.spendCollectionID, spendGeneration == self.spendGeneration,
@@ -2846,7 +2848,8 @@ public actor WindowsUsageRuntime {
             var result = reply("ok")
             result.spend = WindowsAppSpendProjection.make(snapshot: display,
                 query: query, hidePersonalInfo: privacy, calendar: settings.bucketCalendar,
-                selectionRevision: revision, hourlySnapshot: hourly, comparisonSnapshots: view.comparisons)
+                selectionRevision: revision, hourlySnapshot: hourly, comparisonSnapshots: view.comparisons,
+                codexModels: view.codexModels)
             return result
         }
         guard request.spendQuery == nil else { return reply("invalidRequest") }
