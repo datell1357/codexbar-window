@@ -8,6 +8,7 @@ struct WindowsSpendProviderProjection: Sendable, Equatable {
     private enum Payload: Sendable {
         case mistral(MistralUsageSnapshot)
         case openCodeGo(OpenCodeGoUsageSnapshot)
+        case native(CostUsageTokenSnapshot)
     }
 
     enum Failure: Error { case noLocalHistory }
@@ -20,7 +21,10 @@ struct WindowsSpendProviderProjection: Sendable, Equatable {
     private let payload: Payload
 
     static func supports(_ provider: UsageProvider) -> Bool {
-        provider == .mistral || provider == .opencodego
+        switch provider {
+        case .mistral, .opencodego, .openai, .openrouter, .xai, .grok: true
+        default: false
+        }
     }
 
     init?(provider: UsageProvider, usage: UsageSnapshot, confirmedQuotaAccountRevision: UUID? = nil) {
@@ -33,6 +37,18 @@ struct WindowsSpendProviderProjection: Sendable, Equatable {
         case .opencodego:
             guard let usage = usage.opencodegoUsage else { return nil }
             self.payload = .openCodeGo(usage)
+        case .openai:
+            guard let usage = usage.openAIAPIUsage else { return nil }
+            self.payload = .native(usage.toCostUsageTokenSnapshot())
+        case .openrouter, .grok:
+            // The provider owns the cost semantics. Grok contributes local tokens only;
+            // OpenRouter publishes its own metered history. Never derive spend from quota.
+            guard let cost = usage.costUsage else { return nil }
+            self.payload = .native(cost)
+        case .xai:
+            guard let cost = XAICostUsageMapping.tokenSnapshot(
+                from: usage, historyDays: WindowsSpendHistoryPolicy.scanDays) else { return nil }
+            self.payload = .native(cost)
         default:
             return nil
         }
@@ -63,6 +79,10 @@ struct WindowsSpendProviderProjection: Sendable, Equatable {
             // Web/API quota or a prepaid balance alone is not local token/cost history.
             guard !usage.daily.isEmpty else { throw Failure.noLocalHistory }
             return usage.toCostUsageTokenSnapshot(historyDays: days)
+        case let .native(snapshot):
+            // Preserve the observed window/coverage. Requesting a year from the spend UI
+            // cannot promote a provider's 30-day response into a complete year.
+            return snapshot
         }
     }
 

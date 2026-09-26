@@ -5218,7 +5218,9 @@ public actor WindowsUsageRuntime {
                 selectedTokenAccountExternalIdentifier: account?.externalIdentifier,
                 tokenAccountTokenUpdater: context.tokenUpdater(for: account),
                 providerManualTokenUpdater: context.manualTokenUpdater(),
-                costUsageHistoryDays: provider == .opencodego ? WindowsSpendHistoryPolicy.scanDays : 30,
+                costUsageHistoryDays: (provider == .opencodego || provider == .openai)
+                    && WindowsSpendSettings.load().enabledProviders(config: config).contains(provider)
+                    ? WindowsSpendHistoryPolicy.scanDays : 30,
                 persistsCLISessions: true,
                 persistentCLISessionIdleWindow: self.persistentCLISessionIdleWindow(
                     now: Date(),

@@ -116,6 +116,74 @@ struct WindowsSpendProviderProjectionTests {
     }
 
     @Test
+    func `openai admin billing reaches spend with its actual observation window`() async throws {
+        let billing = OpenAIAPIUsageSnapshot(daily: [.init(day: "2026-09-09",
+            startTime: Self.now.addingTimeInterval(-3600), endTime: Self.now, costUSD: 2,
+            requests: 3, inputTokens: 20, cachedInputTokens: 0, outputTokens: 5, totalTokens: 25,
+            lineItems: [], models: [])], updatedAt: Self.now, historyDays: 7, projectID: "fixture-project")
+        let projection = try #require(WindowsSpendProviderProjection(provider: .openai,
+            usage: billing.toUsageSnapshot()))
+        let scan = try await WindowsSpendSnapshotLoader.make(sources: [Self.source(.openai, projection: projection)],
+            allowPricingRefresh: false, capturedAt: Self.now)(365)
+        let result = try #require(scan.inputs.first?.snapshot)
+        #expect(result == billing.toCostUsageTokenSnapshot())
+        #expect(result.historyDays == 7)
+        #expect(result.costProvenance == .vendorMetered)
+        #expect(scan.widgetCosts.isEmpty)
+    }
+
+    @Test
+    func `openrouter preserves metered cost and partial coverage from its provider`() async throws {
+        let cost = CostUsageTokenSnapshot(sessionTokens: nil, sessionCostUSD: 2,
+            last30DaysTokens: nil, last30DaysCostUSD: 2, historyDays: 30,
+            historyCoverageIsEstablished: false, meteredCostUSD: 2, costProvenance: .vendorMetered,
+            daily: [], updatedAt: Self.now)
+        let projection = try #require(WindowsSpendProviderProjection(provider: .openrouter,
+            usage: .init(primary: nil, secondary: nil, costUsage: cost, updatedAt: Self.now)))
+        let scan = try await WindowsSpendSnapshotLoader.make(
+            sources: [Self.source(.openrouter, projection: projection)],
+            allowPricingRefresh: false, capturedAt: Self.now)(365)
+        #expect(scan.inputs.first?.snapshot == cost)
+        #expect(scan.inputs.first?.snapshot.historyCoverageIsEstablished == false)
+        #expect(scan.retentionEligibleSourceIDs.isEmpty)
+    }
+
+    @Test
+    func `grok local tokens stay tokens without invented dollar spend`() async throws {
+        let tokens = CostUsageTokenSnapshot(sessionTokens: 25, sessionCostUSD: nil,
+            last30DaysTokens: 25, last30DaysCostUSD: nil, historyDays: 30, daily: [], updatedAt: Self.now)
+        let projection = try #require(WindowsSpendProviderProjection(provider: .grok,
+            usage: .init(primary: nil, secondary: nil, costUsage: tokens, updatedAt: Self.now)))
+        let scan = try await WindowsSpendSnapshotLoader.make(sources: [Self.source(.grok, projection: projection)],
+            allowPricingRefresh: false, capturedAt: Self.now)(365)
+        let result = try #require(scan.inputs.first?.snapshot)
+        #expect(result.last30DaysTokens == 25)
+        #expect(result.last30DaysCostUSD == nil)
+        #expect(result.historyDays == 30)
+        #expect(scan.widgetCosts.isEmpty)
+    }
+
+    @Test
+    func `xai analytics keeps partial spend and a balance alone produces no projection`() async throws {
+        let chart = try ProviderDetailSection.Chart(kind: .bars, title: "Daily spend", unit: "USD",
+            points: [.init(label: "2026-09-09", value: 2)])
+        let detail = try ProviderDetailSection(title: "Billing", rows: [], chart: chart)
+        let usage = UsageSnapshot(primary: nil, secondary: nil, details: [detail],
+            updatedAt: Self.now, dataConfidence: .estimated)
+        let projection = try #require(WindowsSpendProviderProjection(provider: .xai, usage: usage))
+        let scan = try await WindowsSpendSnapshotLoader.make(sources: [Self.source(.xai, projection: projection)],
+            allowPricingRefresh: false, capturedAt: Self.now)(365)
+        let result = try #require(scan.inputs.first?.snapshot)
+        #expect(result.last30DaysCostUSD == 2)
+        #expect(result.historyDays == 30)
+        #expect(!result.historyCoverageIsEstablished)
+        let balanceOnly = UsageSnapshot(primary: nil, secondary: nil,
+            providerCost: .init(used: 99, limit: 0, currencyCode: "USD", period: "Balance", updatedAt: Self.now),
+            updatedAt: Self.now)
+        #expect(WindowsSpendProviderProjection(provider: .xai, usage: balanceOnly) == nil)
+    }
+
+    @Test
     func `mistral cost widget uses the captured quota revision and billing labels`() async throws {
         let revision = UUID()
         let projection = try #require(WindowsSpendProviderProjection(provider: .mistral,

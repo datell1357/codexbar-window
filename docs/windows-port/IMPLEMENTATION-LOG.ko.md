@@ -5711,3 +5711,13 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - **남은 범위:** OpenCode Go의 명시적인 device-local 위젯 표현/소유 범위, 다른 snapshot 기반 provider 비용, WinUI 앱·위젯 OS 통합·Sync/Fleet·packaged startup 및 전체 Windows 검증. 이 변경은 공급자 실계정 인증이나 실제 위젯 동작을 입증하지 않는다.
 - 상태: CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·앱·실계정·원격 Windows·CI 미실행.
 - IMPL-595는 d14f82bb6으로 origin/main 푸시 확인. 이번 단위도 별도 커밋·푸시한다. 자동화 설정 변경 없음.
+
+## IMPL-597: OpenAI/OpenRouter/xAI/Grok snapshot 비용 경로 연결
+
+- provider-response projection을 원본의 나머지 snapshot 기반 공급자 4개로 확장했다. OpenAI Admin usage converter, OpenRouter costUsage, xAI Management API daily-spend mapper, Grok local token snapshot을 Windows 비용 로더로 전달한다.
+- OpenAI/OpenCode Go의 비용 기능이 켜졌을 때만 provider fetch의 history 요청을 대시보드 scanDays(365)로 확장한다. 비용 기능이 꺼져 있으면 기존 30일 요청을 유지한다. 응답이 가진 실제 historyDays/coverage를 보존하므로 7일/30일 응답이 365일 전체 결과로 승격되지 않는다.
+- Grok의 로컬 토큰에 달러 금액을 만들지 않고 xAI의 선불 잔액을 사용 비용으로 변환하지 않는다. analytics/cost snapshot이 없으면 source 실패 경로로 전달한다. 4개 공급자는 원본 위젯 선택 대상이 아니므로 위젯 선택 범위를 임의로 늘리지 않는다.
+- 합성 fixture 4개 추가: OpenAI 실제 기간/청구 provenance, OpenRouter 부분 coverage·metered 값, Grok 토큰 전용, xAI partial analytics와 잔액 분리. 총 projection fixture 13개 모두 미실행.
+- **남은 범위:** Grok의 비용 전용 확장 local history scan, OpenCode Go device-local 위젯 표현/ownership, WinUI 앱·위젯 OS 통합·Sync/Fleet·packaged startup와 전체 W01~W16/G0~G6. 공급자 fetch 성공이나 모든 source/account 조합의 동작을 입증한 것은 아니다.
+- 상태: CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·앱·실계정·원격 Windows·CI 미실행.
+- IMPL-596은 129dcda40으로 origin/main 푸시 확인. 이번 단위도 별도 커밋·푸시한다. 자동화 변경 없음.
