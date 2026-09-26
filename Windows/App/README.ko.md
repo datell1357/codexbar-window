@@ -65,7 +65,8 @@
   Unknown/~ 및 증감 보류로 표시한다. 세션 ID/경로는 보고서별 번호로 치환해 내부에서만 쓰고
   화면/pipe에는 집계 숫자만 전달한다. PII 숨김은 사용자 정의 effort를 Custom으로 묶는다.
   최대12개 effort 라벨을 표시하며 그보다 많으면 추가 라벨 수를 알린다.
-  effort별 비용은 IMPL-612에서 연결했다. 세션 탐색 등은 남아 있으며 WIN-057 전체 완료가 아니다.
+  effort별 비용은 IMPL-612, 기간별 세션 참조 탐색은 IMPL-613에서 연결했다.
+  원본 세션 ID/실행 연결 등은 남아 있으며 WIN-057 전체 완료가 아니다.
 - IMPL-609는 Focus this model / All models로 모델 하나 또는 전체를 선택하고 현재 기간의
   일/주/월 토큰·비용·세션 참조 타임라인을 보는 기능을 연결했다. 주간은 수집 시간대의
   월요일 시작이며 조회 기간 가장자리의 주/월은 실제 포함 날짜로 잘라 표시한다.
@@ -106,6 +107,18 @@
   무료0과 가격 미확정은 구분하며 알려진 일부 비용에는 ~를 표시한다. 알려진 토큰/세션 정보는
   비용 근거 부족만으로 삭제하지 않는다. PII 숨김 시 사용자 정의 effort의 토큰과 비용을 Custom으로 합친다.
   CSV effort 행에 estimated_cost/priced_tokens/unpriced_tokens를 추가하며 기존 출력 한도를 유지한다.
+- IMPL-613은 모델 행의 Current sessions / Previous sessions에서 해당 기간의 세션 참조 목록을
+  열고, Session details에서 같은 세션에 기록된 모든 모델·effort·일별 토큰을 보는 기능을 연결했다.
+  목록의 수치는 선택 모델만, 상세의 수치는 같은 세션의 모든 모델을 포함한다. 두 화면 모두 선택
+  기간의 수치이며 세션의 전체 생애 사용량이 아니다. 목록과 상세 모델 행은 각각40개씩 페이지를 넘긴다.
+  상세에서 목록의 원래 페이지로 돌아갈 수 있고 일별 사용량은 막대 차트/tooltip/이전·다음으로 읽는다.
+  기존 보고서별 참조 번호와 공급원 위치만 내부에서 연결하며 새 세션 파일 읽기나 설정 저장은 없다.
+  세션 식별자가 없는 기록은 모델 총계에 남기고 목록에는 연결하지 않는다. 비용은 기존 날짜·모델
+  가격 대조 결과를 재사용한다. 구형·불완전·stale 자료는 Unknown/~로 표시하고 빈 날짜를 임의로0으로
+  채우지 않는다. PII 숨김은 전체 모델 목록의 Model N 번호와 Custom effort를 그대로 사용한다.
+  참조 순서·모델 소속도 HMAC revision에 묶어 수집이 바뀐 오래된 상세를 거절한다. pipe 요청은
+  모델/참조 행 번호·기간·페이지·revision만 사용한다. 원본 세션 ID/경로 및 CLI·에디터 실행 연결은 남아 있다.
+  Share Stats/JSON/모델 CSV는 이 탐색 상태를 제외한 기존 출력 범위를 유지한다.
 
 ## 프로세스와 통신 규약
 
@@ -133,7 +146,7 @@ WinUI 프로세스는 공급자에 직접 접속하거나 두 번째 백엔드�
    revision을 대조한다. 이는 오래된 화면의 저장을 감지하는 낙관적 대조이며, 트레이와
    별도 스레드에서 발생하는 모든 설정 쓰기의 원자적 직렬화를 보장하지 않는다.
    `spend`는 bounded query(days/currency/section/chart/page/detail/comparePeriods/codexModelsPage 및
-   codexModel/codexGranularity/codexMetric/codexCatalogPage)를 받아 일반 snapshot과
+   codexModel/codexGranularity/codexMetric/codexCatalogPage/codexSessions)를 받아 일반 snapshot과
    별도의 응답으로 보낸다. controller await 전후 collection/generation/publication/settings를
    대조하고, PII·문자열 예산을 적용한 표·차트만 전송한다. 내부 source/account 키는
    전송하지 않는다. 통화 그룹이 사라지면 다른 통화로 자동 합산하지 않는다.
@@ -231,7 +244,7 @@ PE import 검사는 .NET assembly reference, P/Invoke, 동적 LoadLibrary, XAML/
 
 ## 남은 앱 구현
 
-전체 설정 pane, 계정·인증·provider 편집, Codex 세션 참조 탐색·모델 단위의 세부 가격 coverage/share/alias export,
+전체 설정 pane, 계정·인증·provider 편집, Codex 원본 세션 ID·실행 연결 및 모델 단위의 세부 가격 coverage/share/alias export,
 작업별 action/copy/open/login,
 레이아웃 편집, 전역 단축키·창 위치/스크롤 보존,
 전체 현지화, 키보드/Narrator/고대비·다중 모니터 QA가 남아 있다.
@@ -293,6 +306,10 @@ IMPL-612의 WindowsCodexEffortPricingTests.swift에는 이벤트별 가격, 무�
 잘못된 분할/overflow, legacy decode, 비용 합계/환산, 불일치 시 토큰 보존, 부분 가격,
 구형 소스/Custom privacy, stale/bounded evidence, 환율 누락 합성 fixture10개를 작성했다.
 모두 미실행이다. parser hash는 쓰기 모드로 생성했으며 check 모드·빌드·UI 검증은 실행하지 않았다.
+IMPL-613의 WindowsCodexSessionNavigationTests.swift에는 공급원/기간별 참조 분리, 같은 세션의 다른
+모델·일별 사용량, 식별자 누락, 목록/상세 독립 페이지, privacy/wire, legacy/stale 가격,
+참조 순서·모델 소속 revision과 오래된 선택 거절, query/내보내기 경계 합성 fixture8개를 작성했다.
+모두 미실행이다. WinUI 이동/돌아가기/스크롤/막대 차트·컴파일·실자료·성능은 검증하지 않았다.
 
 ## API 참고
 

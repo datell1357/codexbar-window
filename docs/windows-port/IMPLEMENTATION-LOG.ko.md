@@ -5906,3 +5906,15 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - **남은 범위:** 세션 참조 탐색, 모델 단위 priced/unpriced coverage·share·raw aliases·세션 ID 등 원본 분석/CSV의 풍부한 필드, 전체 설정/계정/인증, 창 위치/스크롤, managed payload/lockfile·W10·W15·StartupTask 및 전체 W01~W16/G0~G6. 큰 이력의 cap/추가 페이지와 Windows 컴파일·실자료·UI/CSV·성능 검증도 남는다. WIN-057 전체 완료가 아니다.
 - 상태: CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·성능·앱·실계정·원격 Windows·CI 미실행. hash는 생성만 하고 check 모드는 실행하지 않았다.
 - IMPL-611은ac9d316a7로 origin/main 푸시 확인. 이번 단위도 별도 커밋·푸시한다. guidelines/COMMITS.md가 없어 기존 커밋 규칙을 적용했다. 자동화 변경 없음.
+
+## IMPL-613: 모델별 현재·이전 기간 세션 참조 탐색과 상세
+
+- 모델 행의 Current sessions / Previous sessions에서 그 모델의 보고서별 세션 참조 목록을 연다. 같은 번호가 여러 공급원에 있어도 별도로 취급하며 현재·이전 기간을 분리한다. 세션 식별자가 없는 이벤트는 모델 토큰 집계에 남기고 목록에는 연결하지 않는다. 새 수집·파일 읽기·설정 저장은 추가하지 않는다.
+- 목록은 선택 모델의 사용량을, 상세는 같은 기간·세션에 기록된 모든 모델과 effort별 토큰·알려진 비용을 표시한다. 세션의 전체 생애 사용량이나 기간 밖 모델로 확대하지 않는다. 상세의 일별 토큰은 막대 차트/tooltip/이전·다음으로 읽는다. 목록과 상세 모델 행은 각각40개씩 독립 페이지이며 목록으로 돌아가면 원래 참조의 페이지를 연다.
+- 기존 날짜·모델 단위 가격 대조 결과를 이벤트 행 번호별로도 보존해 동일한 비용/환산 근거를 세션에 연결한다. 토큰 비율로 비용을 나누지 않는다. 구형 가격·부분 수집·stale·누락은 Unknown/~ 및 불완전 문맥으로 표시하고, 근거 없는 빈 날짜를0으로 만들지 않는다.
+- 모델 선택 revision에 보고서별 참조 순서와 모델 소속을 길이·개수 구분으로 묶었다. 오래된 수집/선택, 범위 밖 참조, 일반 상세와 동시 지정, 모델 패널 없는 요청은 거절한다. WinUI는 거절 시 상세를 해제하고 다시 선택하도록 안내한다. 요청은 모델/참조 행 번호·기간·페이지·revision만 포함한다.
+- PII 숨김은 전체 목록의 Model N과 Custom effort를 유지한다. 원본 세션 ID/경로·공급원 키는 새 pipe 데이터에 넣지 않는다. Share Stats/JSON/모델 CSV는 세션 탐색 상태를 제외한 기존 출력 범위를 유지한다. 기존 문자열/응답/요청/집계 상한도 유지한다.
+- 합성 fixture8개 작성: 공급원/기간별 참조 분리, 여러 모델·일별 토큰, 식별자 누락, 목록/상세 독립 페이지, privacy/wire, legacy/stale 가격, 참조 순서·모델 소속 revision/오래된 선택 거절, query/내보내기 경계. 전부 미실행이다.
+- **남은 범위:** 원본 세션 ID·CLI/에디터 실행 연결, 모델 단위 priced/unpriced coverage·share·raw aliases 등 원본 분석/CSV의 풍부한 필드, 전체 설정/계정/인증, 창 위치/스크롤, managed payload/lockfile·W10·W15·StartupTask 및 전체 W01~W16/G0~G6. 큰 이력의 cap/추가 페이지와 Windows 컴파일·실자료·UI·성능 검증도 남는다. WIN-057 전체 완료가 아니다.
+- 상태: CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·성능·앱·실계정·원격 Windows·CI 미실행. Windows 구현만 바꿨으며 parser hash 재생성은 필요하지 않았다.
+- IMPL-612는5b2bae4b4로 origin/main 푸시 확인. 이번 단위도 별도 커밋·푸시한다. guidelines/COMMITS.md가 없어 기존 커밋 규칙을 적용했다. 자동화 변경 없음.

@@ -14,7 +14,7 @@ enum WindowsAppSpendExport {
                 && self.expectedRevision.utf8.allSatisfy { (48...57).contains($0) || (97...102).contains($0) }
         }
         func accepts(_ query: WindowsAppSpendProjection.Query) -> Bool {
-            self.isValid && query.isValid && query.currency != nil && query.detail == nil
+            self.isValid && query.isValid && query.currency != nil && query.detail == nil && query.codexSessions == nil
                 && query.comparePeriods != true && (self.isCodexCSV ? query.codexModelsPage != nil : query.codexModelsPage == nil)
         }
     }

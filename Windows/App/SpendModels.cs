@@ -3,6 +3,7 @@ using System.Text.Json.Serialization;
 namespace CodexBar.App;
 
 internal sealed record SpendDetailQuery(string Kind, int? Index, string? Day, string Revision, int Page = 0);
+internal sealed record CodexSessionQuery(int ModelIndex, string Period, string Revision, int? ReferenceIndex = null, int Page = 0);
 internal sealed record CodexModelSelection(int[] Indices, string Revision, string Mode = "include")
 {
     [JsonIgnore] public bool IsValid => Indices is { Length: <= 256 } && Indices.All(index => index is >= 0 and <= 1000000)
@@ -18,7 +19,7 @@ internal sealed record CodexModelSelection(int[] Indices, string Revision, strin
 internal sealed record SpendQuery(int Days, string? Currency, string Section, string Chart, int Page,
     SpendDetailQuery? Detail = null, bool ComparePeriods = false, int? CodexModelsPage = null,
     CodexModelSelection? CodexModel = null, string? CodexGranularity = null, string? CodexMetric = null,
-    int? CodexCatalogPage = null);
+    int? CodexCatalogPage = null, CodexSessionQuery? CodexSessions = null);
 internal sealed record SpendExportAction(string Kind, string ExpectedRevision);
 public sealed record SpendComparisonRow([property: JsonRequired] int Days, [property: JsonRequired] string Title,
     [property: JsonRequired] string Range, [property: JsonRequired] string Cost, [property: JsonRequired] string Tokens,
@@ -89,7 +90,8 @@ internal sealed record SpendDetailPage([property: JsonRequired] string Kind, [pr
     [property: JsonRequired] string Context, [property: JsonRequired] int Page, [property: JsonRequired] int PageCount,
     [property: JsonRequired] int TotalRows, [property: JsonRequired] SpendRow[] Rows, [property: JsonRequired] SpendPoint[] Points)
 {
-    public bool IsValid => (Kind is "project" or "session" or "hourly") && Title is not null && Context is not null
+    public bool IsValid => (Kind is "project" or "session" or "hourly" or "codexSessions" or "codexSession")
+        && Title is not null && Context is not null
         && Page >= 0 && PageCount > Page && TotalRows >= 0 && SpendPage.ValidRows(Rows) && SpendPage.ValidPoints(Points);
 }
 internal sealed record SpendPage([property: JsonRequired] int Days, [property: JsonRequired] string[] Currencies,

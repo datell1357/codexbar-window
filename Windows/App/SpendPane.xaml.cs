@@ -24,6 +24,8 @@ public sealed partial class SpendPane : UserControl
     private int selectedDay;
     private int selectedDetailPoint;
     private SpendDetailQuery? detail;
+    private CodexSessionQuery? codexSessions;
+    private bool revealDetail;
     private string? detailCurrency;
     private bool applying;
     private bool loading;
@@ -85,7 +87,7 @@ public sealed partial class SpendPane : UserControl
     internal void Invalidate(bool clearDetail = true)
     {
         epoch++;
-        if (clearDetail) { detail = null; detailCurrency = null; selectedDetailPoint = 0; }
+        if (clearDetail) { detail = null; codexSessions = null; detailCurrency = null; selectedDetailPoint = 0; revealDetail = false; }
         current = null;
         BreakdownList.ItemsSource = null;
         ChartCanvas.Children.Clear();
@@ -111,6 +113,7 @@ public sealed partial class SpendPane : UserControl
         StatusText.Text = "Waiting for current cost data…";
         HourlyButton.IsEnabled = false;
         DetailPanel.Visibility = Visibility.Collapsed;
+        BackCodexSessionsButton.Visibility = Visibility.Collapsed;
         DetailRows.ItemsSource = null;
         DetailCanvas.Children.Clear();
         DetailTitle.Text = DetailContext.Text = DetailPointText.Text = DetailPointPosition.Text = DetailPagePosition.Text = "";
@@ -126,7 +129,7 @@ public sealed partial class SpendPane : UserControl
         pending = false;
         var capturedEpoch = epoch;
         var query = Query();
-        if (detail is not null) query = query with { Currency = detailCurrency };
+        if (detail is not null || codexSessions is not null) query = query with { Currency = detailCurrency };
         try
         {
             var result = await request(query, lifetime);
@@ -135,10 +138,16 @@ public sealed partial class SpendPane : UserControl
             {
                 if (result.Status == "codexModelChanged") {
                     codexModel = null;
+                    codexSessions = null;
                     codexModelsPage = 0;
                     codexCatalogPage = 0;
                     selectedCodexPoint = 0;
                     codexSelectionNotice = "The collection or privacy settings changed. The previous model filter was cleared; select a model again.";
+                    pending = true;
+                }
+                if (result.Status == "codexSessionChanged") {
+                    codexSessions = null;
+                    codexSelectionNotice = "The collection or session references changed. Open the model's current or previous sessions again.";
                     pending = true;
                 }
                 Invalidate();
@@ -165,6 +174,13 @@ public sealed partial class SpendPane : UserControl
                 throw new IOException("Codex model selection or timeline differs from the requested view.");
             if (query.Detail is { } selection && (value.SelectionRevision != selection.Revision
                 || value.Detail?.Kind != selection.Kind)) throw new IOException("Spend detail selection changed.");
+            if (query.CodexSessions is { } sessions) {
+                var child = value.Detail;
+                if (child is null || value.CodexModels?.SelectionRevision != sessions.Revision
+                    || child.Kind != (sessions.ReferenceIndex is null ? "codexSessions" : "codexSession")
+                    || child.Page != Math.Min(sessions.Page, child.PageCount - 1))
+                    throw new IOException("Codex session selection changed.");
+            }
             Apply(value);
         }
         catch (Exception error) when (error is IOException or OperationCanceledException or InvalidOperationException
@@ -189,7 +205,8 @@ public sealed partial class SpendPane : UserControl
         CodexModelsToggle.IsOn ? codexModel : null,
         CodexModelsToggle.IsOn ? (CodexGranularityPicker.SelectedItem as ComboBoxItem)?.Tag as string ?? "daily" : null,
         CodexModelsToggle.IsOn ? (CodexMetricPicker.SelectedItem as ComboBoxItem)?.Tag as string ?? "tokens" : null,
-        CodexModelsToggle.IsOn ? codexCatalogPage : null);
+        CodexModelsToggle.IsOn ? codexCatalogPage : null,
+        CodexModelsToggle.IsOn ? codexSessions : null);
 
     private void Apply(SpendPage value)
     {
@@ -207,7 +224,7 @@ public sealed partial class SpendPane : UserControl
         var detailRowsChanged = current?.Detail is not { } previousDetail || value.Detail is not { } nextDetail
             || !previousDetail.Rows.SequenceEqual(nextDetail.Rows);
         var detailChartChanged = current?.Detail is not { } previousChart || value.Detail is not { } nextChart
-            || !previousChart.Points.SequenceEqual(nextChart.Points);
+            || previousChart.Kind != nextChart.Kind || !previousChart.Points.SequenceEqual(nextChart.Points);
         current = value;
         UpdateExportActions();
         page = value.Page;
@@ -268,14 +285,21 @@ public sealed partial class SpendPane : UserControl
             : Math.Clamp(selectedDay, 0, Math.Max(0, value.Points.Length - 1));
         ShowDay();
         DetailPanel.Visibility = value.Detail is null ? Visibility.Collapsed : Visibility.Visible;
+        BackCodexSessionsButton.Visibility = value.Detail?.Kind == "codexSession" ? Visibility.Visible : Visibility.Collapsed;
         if (value.Detail is { } child)
         {
             if (detail is not null) detail = detail with { Page = child.Page };
+            if (codexSessions is not null) codexSessions = codexSessions with { Page = child.Page };
             DetailTitle.Text = child.Title;
             DetailContext.Text = child.Context;
+            if (revealDetail) {
+                revealDetail = false;
+                DispatcherQueue.TryEnqueue(() => { if (active && current?.Detail is not null) DetailPanel.StartBringIntoView(); });
+            }
             if (detailRowsChanged) DetailRows.ItemsSource = child.Rows;
             if (detailChartChanged) DrawDetailChart();
-            DetailPagePosition.Text = child.TotalRows == 0 ? "No model or source rows available"
+            DetailPagePosition.Text = child.TotalRows == 0
+                ? child.Kind == "codexSessions" ? "No linked session references in this period" : "No model or source rows available"
                 : $"Page {child.Page + 1} / {child.PageCount} · {child.TotalRows} rows";
             PreviousDetailButton.IsEnabled = child.Page > 0;
             NextDetailButton.IsEnabled = child.Page + 1 < child.PageCount;
@@ -312,7 +336,7 @@ public sealed partial class SpendPane : UserControl
         if (modelExport && captured.CodexModels is null) return;
         var capturedEpoch = epoch;
         var query = Query() with { Days = captured.Days, Currency = captured.Currency, Detail = null,
-            ComparePeriods = false };
+            ComparePeriods = false, CodexSessions = null };
         if (modelExport) {
             var models = captured.CodexModels!;
             query = query with { CodexModelsPage = 0, CodexCatalogPage = 0, CodexModel = models.ModelSelection,
@@ -355,7 +379,8 @@ public sealed partial class SpendPane : UserControl
     }
 
     private void DrawDetailChart() =>
-        Draw(DetailCanvas, current?.Detail?.Points ?? [], false, index => { selectedDetailPoint = index; ShowDetailPoint(); });
+        Draw(DetailCanvas, current?.Detail?.Points ?? [], false,
+            index => { selectedDetailPoint = index; ShowDetailPoint(); });
 
     private void DrawCodexTimeline() =>
         Draw(CodexTimelineCanvas, current?.CodexModels?.Timeline ?? [], false, index => { selectedCodexPoint = index; ShowCodexPoint(); });
@@ -380,12 +405,14 @@ public sealed partial class SpendPane : UserControl
         if (current?.CodexModels is not { } models || sender is not Button { Tag: int index }
             || !models.Rows.Any(row => row.SelectionIndex == index)) return;
         codexModel = new CodexModelSelection([index], models.SelectionRevision);
+        codexSessions = null;
         codexModelsPage = selectedCodexPoint = 0;
         codexSelectionNotice = null;
         Reload(false);
     }
     private void ClearCodexModel(object sender, RoutedEventArgs args)
     {
+        codexSessions = null;
         codexModel = null;
         codexModelsPage = selectedCodexPoint = 0;
         codexSelectionNotice = null;
@@ -395,6 +422,7 @@ public sealed partial class SpendPane : UserControl
     {
         if (current?.CodexModels is not { } models) return;
         codexModel = new CodexModelSelection([], models.SelectionRevision);
+        codexSessions = null;
         codexModelsPage = selectedCodexPoint = 0;
         codexSelectionNotice = null;
         Reload(false);
@@ -413,6 +441,7 @@ public sealed partial class SpendPane : UserControl
         }
         codexModel = mode == "exclude" && indices.Count == 0 ? null
             : new CodexModelSelection(indices.Order().ToArray(), models.SelectionRevision, mode);
+        codexSessions = null;
         codexModelsPage = selectedCodexPoint = 0;
         codexSelectionNotice = null;
         Reload(false);
@@ -483,15 +512,48 @@ public sealed partial class SpendPane : UserControl
     {
         if (current is null || current.Currency is null || sender is not Button button || button.Tag is not int index
             || current.Section is not ("projects" or "sessions")) return;
+        codexSessions = null;
         detail = new SpendDetailQuery(current.Section == "projects" ? "project" : "session", index, null, current.SelectionRevision);
         detailCurrency = current.Currency;
         selectedDetailPoint = 0;
+        revealDetail = true;
+        Reload(false);
+    }
+    private void OpenCurrentCodexSessions(object sender, RoutedEventArgs args) => OpenCodexSessions(sender, "current");
+    private void OpenPreviousCodexSessions(object sender, RoutedEventArgs args) => OpenCodexSessions(sender, "previous");
+    private void OpenCodexSessions(object sender, string period)
+    {
+        if (current?.Currency is null || current.CodexModels is not { } models
+            || sender is not Button { Tag: int index } || !models.Rows.Any(row => row.SelectionIndex == index)) return;
+        detail = null;
+        codexSessions = new CodexSessionQuery(index, period, models.SelectionRevision);
+        detailCurrency = current.Currency;
+        selectedDetailPoint = 0;
+        revealDetail = true;
+        Reload(false);
+    }
+    private void OpenCodexSession(object sender, RoutedEventArgs args)
+    {
+        if (codexSessions is not { } sessions || current?.Detail is not { Kind: "codexSessions" } child
+            || sender is not Button { Tag: int index } || !child.Rows.Any(row => row.SelectionIndex == index)) return;
+        codexSessions = sessions with { ReferenceIndex = index, Page = 0 };
+        selectedDetailPoint = 0;
+        revealDetail = true;
+        Reload(false);
+    }
+    private void BackToCodexSessions(object sender, RoutedEventArgs args)
+    {
+        if (codexSessions is not { ReferenceIndex: not null } sessions) return;
+        codexSessions = sessions with { ReferenceIndex = null, Page = sessions.ReferenceIndex.Value / 40 };
+        selectedDetailPoint = 0;
+        revealDetail = true;
         Reload(false);
     }
     private void ShowHourly(object sender, RoutedEventArgs args)
     {
         if (current?.Chart != "cost" || current.Currency is null
             || current.Points.ElementAtOrDefault(selectedDay)?.DayKey is not { } day) return;
+        codexSessions = null;
         detail = new SpendDetailQuery("hourly", null, day, current.SelectionRevision);
         detailCurrency = current.Currency;
         selectedDetailPoint = 0;
@@ -506,12 +568,22 @@ public sealed partial class SpendPane : UserControl
     }
     private void PreviousDetailPage(object sender, RoutedEventArgs args)
     {
+        if (codexSessions is { Page: > 0 } sessions) {
+            codexSessions = sessions with { Page = sessions.Page - 1 };
+            Reload(false);
+            return;
+        }
         if (detail is null || detail.Page == 0) return;
         detail = detail with { Page = detail.Page - 1 };
         Reload(false);
     }
     private void NextDetailPage(object sender, RoutedEventArgs args)
     {
+        if (codexSessions is { } sessions && current?.Detail is { } modelChild && modelChild.Page + 1 < modelChild.PageCount) {
+            codexSessions = sessions with { Page = modelChild.Page + 1 };
+            Reload(false);
+            return;
+        }
         if (detail is null || current?.Detail is not { } child || child.Page + 1 >= child.PageCount) return;
         detail = detail with { Page = child.Page + 1 };
         Reload(false);

@@ -25,10 +25,14 @@ enum WindowsCodexEffortPricing {
         let day: String
         let model: String
     }
+    struct Result {
+        var byDay: [String: [String: [String: Value]]] = [:]
+        var rows: [Int: Value] = [:]
+    }
     /// Called only after activity token totals and bounds have passed the enclosing report reconciliation.
     static func build(daily: [CostUsageDailyReport.Entry], evidence: CodexModelActivityEvidence,
-                      since: String, until: String, multiplier: Double) -> [String: [String: [String: Value]]] {
-        guard multiplier.isFinite, multiplier > 0 else { return [:] }
+                      since: String, until: String, multiplier: Double) -> Result {
+        guard multiplier.isFinite, multiplier > 0 else { return Result() }
         var expected: [Key: WindowsCodexModelAnalysis.Amount] = [:]
         for day in daily where day.date >= since && day.date <= until {
             for model in day.modelBreakdowns ?? [] {
@@ -51,12 +55,12 @@ enum WindowsCodexEffortPricing {
                   WindowsSpendDashboardModel.costsMatch(known, total) else { continue }
             matched.insert(key)
         }
-        var result: [String: [String: [String: Value]]] = [:]
-        for row in evidence.rows where row.day >= since && row.day <= until && row.tokens > 0 {
+        var result = Result()
+        for (index, row) in evidence.rows.enumerated() where row.day >= since && row.day <= until && row.tokens > 0 {
             let model = CodexModelsAnalyticsBuilder().canonicalID(row.model)
             let key = Key(day: row.day, model: model)
             let effort = WindowsCodexActivityAnalysis.effort(row.effort)
-            var value = result[row.day]?[model]?[effort] ?? Value()
+            var value = Value()
             if Self.valid(row), !invalid.contains(key), matched.contains(key) || actual[key] == nil {
                 value.pricedTokens.add(row.pricedTokens)
                 value.unpricedTokens.add(row.unpricedTokens)
@@ -71,7 +75,8 @@ enum WindowsCodexEffortPricing {
                 value.pricedTokens.add(nil)
                 value.unpricedTokens.add(nil)
             }
-            result[row.day, default: [:]][model, default: [:]][effort] = value
+            result.rows[index] = value
+            result.byDay[row.day, default: [:]][model, default: [:]][effort, default: .init()].merge(value)
         }
         return result
     }

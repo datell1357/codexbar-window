@@ -17,6 +17,7 @@ enum WindowsAppSpendProjection {
         var codexGranularity: String?
         var codexMetric: String?
         var codexCatalogPage: Int?
+        var codexSessions: CodexSessionQuery?
         var isValid: Bool {
             (1...WindowsSpendHistoryPolicy.scanDays).contains(self.days) && self.page >= 0 && self.page <= 100000 &&
                 ["providers", "models", "projects", "sessions"].contains(self.section) &&
@@ -28,8 +29,9 @@ enum WindowsAppSpendProjection {
                 (self.codexGranularity.map { ["daily", "weekly", "monthly"].contains($0) } ?? true) &&
                 (self.codexMetric.map { ["tokens", "cost", "sessionReferences"].contains($0) } ?? true) &&
                 (self.codexCatalogPage.map { (0...100000).contains($0) } ?? true) &&
+                (self.codexSessions?.isValid ?? true) && (self.codexSessions == nil || self.detail == nil) &&
                 (self.codexModelsPage != nil || (self.codexModel == nil && self.codexGranularity == nil
-                    && self.codexMetric == nil && self.codexCatalogPage == nil))
+                    && self.codexMetric == nil && self.codexCatalogPage == nil && self.codexSessions == nil))
         }
     }
     struct DetailQuery: Codable, Sendable {
@@ -232,8 +234,14 @@ enum WindowsAppSpendProjection {
                     value: known, level: 0, row: 0, column: offset, dayKey: Self.dayKey(day, calendar: bucketCalendar)))
             }
         }
-        let detail = Self.detail(snapshot: snapshot, query: query, hourlySnapshot: hourlySnapshot,
-            hidePersonalInfo: hidePersonalInfo, calendar: calendar, revision: selectionRevision, text: { text($0, limit: $1) })
+        let detail: DetailPage?
+        if let sessions = query.codexSessions, let codexModels {
+            detail = Self.codexSessionsDetail(codexModels, query: sessions, revision: codexModelsRevision,
+                stale: snapshot.stale, hidePersonalInfo: hidePersonalInfo, calendar: calendar, text: { text($0, limit: $1) })
+        } else {
+            detail = Self.detail(snapshot: snapshot, query: query, hourlySnapshot: hourlySnapshot,
+                hidePersonalInfo: hidePersonalInfo, calendar: calendar, revision: selectionRevision, text: { text($0, limit: $1) })
+        }
         let comparisons = query.comparePeriods == true
             ? Self.comparisons(snapshot: snapshot, periods: comparisonSnapshots, currency: group?.currencyCode,
                 calendar: calendar, text: { text($0, limit: $1) }) : nil

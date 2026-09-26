@@ -137,6 +137,10 @@
                                 <StackPanel Spacing="6">
                                     <TextBlock Text="{x:Bind Title}" FontWeight="SemiBold" TextWrapping="Wrap" />
                                     <Button Content="Focus this model" Tag="{x:Bind SelectionIndex}" Click="FocusCodexModel" />
+                                    <StackPanel Orientation="Horizontal" Spacing="8">
+                                        <Button Content="Current sessions" Tag="{x:Bind SelectionIndex}" Click="OpenCurrentCodexSessions" />
+                                        <Button Content="Previous sessions" Tag="{x:Bind SelectionIndex}" Click="OpenPreviousCodexSessions" />
+                                    </StackPanel>
                                     <Grid ColumnSpacing="12" RowSpacing="8">
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="*" /><ColumnDefinition Width="*" />
@@ -210,6 +214,7 @@
                 <StackPanel Orientation="Horizontal" Spacing="12">
                     <TextBlock x:Name="DetailTitle" Style="{ThemeResource SubtitleTextBlockStyle}" TextWrapping="Wrap" />
                     <Button Content="Close details" Click="CloseDetail" />
+                    <Button x:Name="BackCodexSessionsButton" Content="Back to session references" Click="BackToCodexSessions" Visibility="Collapsed" />
                 </StackPanel>
                 <TextBlock x:Name="DetailContext" TextWrapping="Wrap" IsTextSelectionEnabled="True" />
                 <ScrollViewer HorizontalScrollBarVisibility="Auto" HorizontalScrollMode="Enabled" VerticalScrollMode="Disabled">
@@ -232,6 +237,8 @@
                                         <TextBlock Text="{x:Bind Cost}" /><TextBlock Text="{x:Bind Tokens}" /><TextBlock Text="tokens" />
                                     </StackPanel>
                                     <TextBlock Text="{x:Bind Details}" TextWrapping="Wrap" IsTextSelectionEnabled="True" />
+                                    <Button Content="Session details" Tag="{x:Bind SelectionIndex}" Click="OpenCodexSession"
+                                        Visibility="{x:Bind DetailVisibility}" />
                                 </StackPanel>
                             </Border>
                         </DataTemplate>

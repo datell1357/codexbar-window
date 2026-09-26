@@ -2816,6 +2816,8 @@ public actor WindowsUsageRuntime {
             } ?? ""
             guard WindowsAppSpendProjection.acceptsCodexModel(query.codexModel, analysis: view.codexModels,
                 revision: modelsRevision) else { return reply("codexModelChanged") }
+            guard WindowsAppSpendProjection.acceptsCodexSessions(query.codexSessions, analysis: view.codexModels,
+                revision: modelsRevision) else { return reply("codexSessionChanged") }
             let modelExportRevision = view.codexModels.map { _ in
                 WindowsAppSpendSelection.codexExportRevision(modelsRevision: modelsRevision, query: query,
                     key: self.nativeAppSpendSelectionKey)

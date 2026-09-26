@@ -18,6 +18,11 @@ enum WindowsCodexActivityAnalysis {
         var models: [String: Model] = [:]
         var complete = false
         var byDay: [String: [String: Model]] = [:]
+        var sessions: [Reference: Session] = [:]
+    }
+    struct Session: Sendable {
+        var models: [String: Model] = [:]
+        var byDay: [String: [String: Model]] = [:]
     }
     private struct Key: Hashable {
         let day: String
@@ -91,7 +96,7 @@ enum WindowsCodexActivityAnalysis {
             result.complete = result.complete && evidence.rowsComplete
             let prices = WindowsCodexEffortPricing.build(daily: input.snapshot.daily, evidence: evidence,
                 since: start, until: end, multiplier: costMultipliers.map { $0.indices.contains(source) ? $0[source] : .nan } ?? 1)
-            for (day, models) in prices {
+            for (day, models) in prices.byDay {
                 for (model, efforts) in models {
                     for (effort, price) in efforts {
                         sourceModels[model, default: .init()].effortPricing[effort, default: .init()].merge(price)
@@ -113,6 +118,25 @@ enum WindowsCodexActivityAnalysis {
                 result.models[model] = value
             }
             if !valid { return Period() } // Cross-source overflow invalidates the whole aggregation.
+            for (index, row) in evidence.rows.enumerated() where row.day >= start && row.day <= end && row.tokens > 0 {
+                guard let reference = row.sessionReference else { continue }
+                let key = Reference(source: source, number: reference)
+                let model = CodexModelsAnalyticsBuilder().canonicalID(row.model)
+                let effort = Self.effort(row.effort)
+                var session = result.sessions[key] ?? Session()
+                var totals = session.models[model] ?? Model()
+                var daily = session.byDay[row.day]?[model] ?? Model()
+                guard Self.add(row.tokens, key: effort, to: &totals.effortTokens),
+                      Self.add(row.tokens, key: effort, to: &daily.effortTokens) else { return Period() }
+                if let pricing = prices.rows[index] {
+                    totals.effortPricing[effort, default: .init()].merge(pricing)
+                    daily.effortPricing[effort, default: .init()].merge(pricing)
+                }
+                totals.sessions.insert(key); daily.sessions.insert(key)
+                session.models[model] = totals
+                session.byDay[row.day, default: [:]][model] = daily
+                result.sessions[key] = session
+            }
             for (day, models) in sourceDays {
                 for (model, incoming) in models {
                     var value = result.byDay[day]?[model] ?? Model()

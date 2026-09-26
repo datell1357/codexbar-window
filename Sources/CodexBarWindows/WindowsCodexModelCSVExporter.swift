@@ -36,7 +36,7 @@ enum WindowsCodexModelCSVExporter {
                             selectionRevision: String, stale: Bool, hidePersonalInfo: Bool, calendar: Calendar,
                             maximumBytes: Int = Self.maximumBytes) throws -> Data {
         guard query.isValid, query.codexModelsPage != nil, query.currency == analysis.currency,
-              let currency = analysis.currency, query.detail == nil, query.comparePeriods != true,
+              let currency = analysis.currency, query.detail == nil, query.codexSessions == nil, query.comparePeriods != true,
               calendar.date(byAdding: .day, value: -query.days, to: analysis.current.interval.end) == analysis.current.interval.start,
               WindowsAppSpendProjection.acceptsCodexModel(query.codexModel, analysis: analysis, revision: selectionRevision)
         else { throw Failure.unavailable }
