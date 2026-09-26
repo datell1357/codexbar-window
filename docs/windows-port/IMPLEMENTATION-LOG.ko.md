@@ -5856,3 +5856,16 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - **남은 범위:** 모델 필터·일/주/월 타임라인, effort 비용 배분·세션 참조 탐색·관련 export 계약, 전체 설정/계정/인증, 창 위치/스크롤, managed payload/lockfile·W10·W15·StartupTask 및 전체 W01~W16/G0~G6. 큰 이력의 cap 해제/추가 페이지 및 실제 Windows 성능·UI·집계 검증도 남는다.
 - 상태: CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·성능·앱·실계정·원격 Windows·CI 미실행. parser hash는 write 생성만 수행한다.
 - IMPL-607은 adbd5fc0e로 origin/main 푸시 확인. 이번 단위도 별도 커밋·푸시한다. guidelines/COMMITS.md가 없어 기존 커밋 규칙을 적용했다. 자동화 변경 없음.
+
+## IMPL-609: 모델 선택과 일·주·월 타임라인
+
+- native Codex 모델 표에 Focus this model / All models를 연결했다. 모델 하나 또는 전체의 표와 현재 기간 타임라인을 선택한다. query는 원본 ID 대신 행 번호와 별도 HMAC revision을 사용하며, 기존 view revision에 전체 모델 순서를 묶는다. 수집/기간/통화/PII 또는 모델 목록이 바뀌면 오래된 선택을 거절하고 UI에서 해제·재선택 안내를 제공한다.
+- 기존 actor turn의 모델 집계에서 일별 합계와 일별 세션 참조를 같이 보관한다. 추가 소스 읽기 없이 일/주/월의 토큰·비용·세션 참조 그래프로 투영하고 기간 시작/끝의 주·월을 실제 포함 날짜로 자른다. 주간은 선택 시간대의 월요일 시작이며 DST의23/25시간을 달력으로 처리한다.
+- 세션 참조는 모델·공급원·구간 안에서 합집합을 사용한다. 일별 숫자를 더해 주/월 참조 수로 바꾸지 않는다. 다른 모델/구간에서 같은 세션을 다시 셀 수 있다는 의미를 UI에 표시한다. 비용에는 이미 확보한 같은 환율을 적용한다.
+- 원본 합계가 불완전하거나 모델 행/이벤트 근거가 맞지 않으면 unknown/~를 유지한다. 같은 수집에서 확인된 빈 날짜만0으로 표시한다. 현재 기간의 전체 모델 coverage/합계는 상단 요약에 유지하며 선택 모델 범위를 별도 표시한다.
+- WinUI에 간격/metric 선택, 막대·tooltip, 이전/다음 구간, 현재 구간 수치를 연결했다. 익명 Model N은 전체 목록의 번호를 유지하고, 선택·간격·metric은 현재 창에서만 보관한다. 최대365포인트와 기존128 KiB 문자열/1 MiB 응답 예산을 공유한다.
+- 기존 Share Stats/비용 JSON 요청은 모델 선택과 timeline 옵션을 비우도록 변경했다. 이 출력은 선택 기간·통화 전체이며 새 모델 필터의 내보내기가 아니다. 모델 분석 CSV 등의 별도 출력 계약은 남긴다.
+- 합성 fixture8개 작성: 모델/환산/빈 날, 주·월 세션 중복, 월요일/DST/월 경계, 부분·미가격·누락, HMAC/model 순서, 익명화/오래된 선택, query 경계,365일/stale. 기존 모델 wire fixture에도 revision/timeline을 추가했다. 전부 미실행이다.
+- **남은 범위:** 다중 모델 조합·모델 분석 export, effort 비용·세션 참조 탐색, 전체 설정/계정/인증, 창 위치/스크롤, managed payload/lockfile·W10·W15·StartupTask 및 전체 W01~W16/G0~G6. Windows 컴파일·WinUI 배치/그래프·키보드/Narrator·성능·정확도는 검증하지 않았다.
+- 상태: CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·성능·앱·실계정·원격 Windows·CI 미실행.
+- IMPL-608은63c51f7b6으로 origin/main 푸시 확인. 이번 단위도 별도 커밋·푸시한다. guidelines/COMMITS.md가 없어 기존 커밋 규칙을 적용했다. 자동화 변경 없음.

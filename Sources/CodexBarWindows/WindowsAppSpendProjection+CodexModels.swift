@@ -12,6 +12,7 @@ extension WindowsAppSpendProjection {
         let previousCost: String
         let costChange: String
         let details: String
+        var selectionIndex: Int = 0
     }
     struct CodexModelsPage: Codable, Sendable {
         let context: String
@@ -21,20 +22,37 @@ extension WindowsAppSpendProjection {
         let pageCount: Int
         let totalRows: Int
         let rows: [CodexModelRow]
+        var selectionRevision: String = ""
+        var selectedIndex: Int? = nil
+        var selectedLabel: String = "All models"
+        var granularity: String = "daily"
+        var metric: String = "tokens"
+        var timelineContext: String = ""
+        var timeline: [Point] = []
     }
 
     /// Shares the enclosing response's text budget; IDs, account labels and raw sessions stay local.
     static func codexModels(_ value: WindowsCodexModelAnalysis.Snapshot, page requestedPage: Int,
                             hidePersonalInfo: Bool, stale: Bool, calendar: Calendar,
-                            text: (String, Int) -> String) -> CodexModelsPage {
+                            text: (String, Int) -> String,
+                            selectionRevision: String = "", selection: CodexModelSelection? = nil,
+                            granularity: String = "daily", metric: String = "tokens") -> CodexModelsPage {
         let collected = value.collectionComplete && !stale
         let currentTokensComplete = collected && value.current.tokensComplete
         let previousTokensComplete = collected && value.previous.tokensComplete
         let currentCostComplete = collected && value.current.costComplete
         let previousCostComplete = collected && value.previous.costComplete
-        let keys = Set(value.current.models.keys).union(value.previous.models.keys).sorted()
+        let allKeys = value.modelKeys
+        let selectionValid = Self.acceptsCodexModel(selection, analysis: value, revision: selectionRevision)
+        let selectedKey = selection.flatMap { allKeys.indices.contains($0.index) ? allKeys[$0.index] : nil }
+        let keys = !selectionValid ? [] : selectedKey.map { [$0] } ?? allKeys
         let pages = max(1, (keys.count + 39) / 40)
         let page = min(max(0, requestedPage), pages - 1)
+        let selectedLabel = selection.flatMap { selected in
+            selectedKey.map { Self.modelTitle($0, index: selected.index, hidePersonalInfo: hidePersonalInfo) }
+        } ?? "All models"
+        let timeline = selectionValid ? Self.codexTimeline(value, model: selectedKey, granularity: granularity,
+            metric: metric, stale: stale, calendar: calendar, text: text) : []
         func tokens(_ count: Int?, complete: Bool) -> String {
             guard let count, count >= 0 else { return "Unknown" }
             return (complete ? "" : "~") + count.formatted()
@@ -100,6 +118,7 @@ extension WindowsAppSpendProjection {
         var rows: [CodexModelRow] = []
         for index in (page * 40)..<min(keys.count, page * 40 + 40) {
             let key = keys[index]
+            let originalIndex = selection?.index ?? index
             let current = value.current.models[key]
             let previous = value.previous.models[key]
             // Absence is a zero only when every included source has complete model coverage.
@@ -107,7 +126,7 @@ extension WindowsAppSpendProjection {
             let pt = previous?.tokens.value ?? (previous == nil && previousTokensComplete ? 0 : nil)
             let cc = current?.cost.value ?? (current == nil && currentCostComplete ? 0 : nil)
             let pc = previous?.cost.value ?? (previous == nil && previousCostComplete ? 0 : nil)
-            let label = Self.modelTitle(key, index: index, hidePersonalInfo: hidePersonalInfo)
+            let label = Self.modelTitle(key, index: originalIndex, hidePersonalInfo: hidePersonalInfo)
             func component(_ count: WindowsCodexModelAnalysis.Count?) -> String {
                 tokens(count?.value, complete: currentTokensComplete && count?.complete == true)
             }
@@ -130,7 +149,7 @@ extension WindowsAppSpendProjection {
                 currentCost: text(cost(cc, complete: currentCostComplete), 128),
                 previousCost: text(cost(pc, complete: previousCostComplete), 128),
                 costChange: text(change(cc, pc, complete: currentCostComplete && previousCostComplete), 128),
-                details: text(details, 3072)))
+                details: text(details, 3072), selectionIndex: originalIndex))
         }
         var context = [
             "Native Codex models only, within the selected currency and included sources. Other providers and OpenCodeX are excluded.",
@@ -148,6 +167,7 @@ extension WindowsAppSpendProjection {
             "Legacy or bounded event evidence may be unavailable. Effort and session refs require agreement with the same daily model totals. Detailed session navigation and effort cost allocation are not included."
         ]
         if value.sourceCount == 0 { context.append("No included native Codex source is available for this currency.") }
+        if !selectionValid { context.append("The model selection changed. Select a model from the current collection.") }
         if !collected { context.append("Collection is stale or incomplete; period changes are unavailable.") }
         if !value.current.boundaryAligned || !value.previous.boundaryAligned {
             context.append("A time-zone offset change cuts through a daily bucket. Only whole-day subtotals are shown; period changes are unavailable.")
@@ -162,7 +182,12 @@ extension WindowsAppSpendProjection {
         }
         return .init(context: text(context.joined(separator: "\n"), 4096),
             currentRange: text(range(value.current.interval), 256), previousRange: text(range(value.previous.interval), 256),
-            page: page, pageCount: pages, totalRows: keys.count, rows: rows)
+            page: page, pageCount: pages, totalRows: keys.count, rows: rows,
+            selectionRevision: selectionRevision, selectedIndex: selectionValid ? selection?.index : nil,
+            selectedLabel: text(selectionValid ? selectedLabel : "Selection changed", 512),
+            granularity: granularity, metric: metric,
+            timelineContext: text("Current-period timeline for \(selectionValid ? selectedLabel : "an unavailable selection"). Weeks start Monday in \(calendar.timeZone.identifier). Edge weeks/months are clipped to the selected period. Session refs deduplicate within each model and interval; adding intervals can count the same session again. ~ marks incomplete known data; Unknown is not zero. Cost bars use the selected currency. The coverage and total summary above describes all included native Codex models.", 1536),
+            timeline: timeline)
     }
 }
 #endif

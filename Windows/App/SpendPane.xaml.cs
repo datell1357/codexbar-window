@@ -17,6 +17,9 @@ public sealed partial class SpendPane : UserControl
     private int epoch;
     private int page;
     private int codexModelsPage;
+    private CodexModelSelection? codexModel;
+    private int selectedCodexPoint;
+    private string? codexSelectionNotice;
     private int selectedDay;
     private int selectedDetailPoint;
     private SpendDetailQuery? detail;
@@ -32,7 +35,7 @@ public sealed partial class SpendPane : UserControl
     public SpendPane()
     {
         InitializeComponent();
-        ActualThemeChanged += (_, _) => { DrawChart(); DrawDetailChart(); };
+        ActualThemeChanged += (_, _) => { DrawChart(); DrawDetailChart(); DrawCodexTimeline(); };
     }
 
     internal void Configure(Func<SpendQuery, CancellationToken, Task<AppResponse>> request,
@@ -64,6 +67,7 @@ public sealed partial class SpendPane : UserControl
             selectedDay = 0;
             page = 0;
             codexModelsPage = 0;
+            codexModel = null;
         }
         finally { applying = false; }
         Reload();
@@ -94,6 +98,9 @@ public sealed partial class SpendPane : UserControl
         CodexModelsRows.ItemsSource = null;
         CodexModelsContext.Text = CodexModelsCurrentRange.Text = CodexModelsPreviousRange.Text = CodexModelsPosition.Text = "";
         PreviousCodexModelsButton.IsEnabled = NextCodexModelsButton.IsEnabled = false;
+        CodexTimelineCanvas.Children.Clear();
+        CodexModelScope.Text = CodexTimelineContext.Text = CodexTimelineDetail.Text = CodexTimelinePosition.Text = "";
+        PreviousCodexPointButton.IsEnabled = NextCodexPointButton.IsEnabled = AllCodexModelsButton.IsEnabled = false;
         PreviousPageButton.IsEnabled = NextPageButton.IsEnabled = false;
         PagePosition.Text = "";
         StatusText.Text = "Waiting for current cost data…";
@@ -121,6 +128,13 @@ public sealed partial class SpendPane : UserControl
             if (lifetime.IsCancellationRequested || capturedEpoch != epoch) return;
             if (result.Status != "ok" || result.Spend is not { } value)
             {
+                if (result.Status == "codexModelChanged") {
+                    codexModel = null;
+                    codexModelsPage = 0;
+                    selectedCodexPoint = 0;
+                    codexSelectionNotice = "The collection or privacy settings changed. The previous model filter was cleared; select a model again.";
+                    pending = true;
+                }
                 Invalidate();
                 StatusText.Text = result.Status == "spendUnavailable"
                     ? "Cost data is unavailable. Enable cost collection from the tray, then refresh."
@@ -138,6 +152,11 @@ public sealed partial class SpendPane : UserControl
             if (value.CodexModels is { } models && query.CodexModelsPage is { } requestedPage
                 && models.Page != Math.Min(requestedPage, models.PageCount - 1))
                 throw new IOException("Codex model page differs from the requested view.");
+            if (value.CodexModels is { } modelView && (modelView.SelectedIndex != query.CodexModel?.Index
+                || (query.CodexModel is not null && modelView.SelectionRevision != query.CodexModel.Revision)
+                || modelView.Granularity != (query.CodexGranularity ?? "daily")
+                || modelView.Metric != (query.CodexMetric ?? "tokens")))
+                throw new IOException("Codex model selection or timeline differs from the requested view.");
             if (query.Detail is { } selection && (value.SelectionRevision != selection.Revision
                 || value.Detail?.Kind != selection.Kind)) throw new IOException("Spend detail selection changed.");
             Apply(value);
@@ -160,7 +179,10 @@ public sealed partial class SpendPane : UserControl
         int.Parse((PeriodPicker.SelectedItem as ComboBoxItem)?.Tag as string ?? "30"), currency,
         (SectionPicker.SelectedItem as ComboBoxItem)?.Tag as string ?? "providers",
         (ChartPicker.SelectedItem as ComboBoxItem)?.Tag as string ?? "cost", page, detail, CompareToggle.IsOn,
-        CodexModelsToggle.IsOn ? codexModelsPage : null);
+        CodexModelsToggle.IsOn ? codexModelsPage : null,
+        CodexModelsToggle.IsOn ? codexModel : null,
+        CodexModelsToggle.IsOn ? (CodexGranularityPicker.SelectedItem as ComboBoxItem)?.Tag as string ?? "daily" : null,
+        CodexModelsToggle.IsOn ? (CodexMetricPicker.SelectedItem as ComboBoxItem)?.Tag as string ?? "tokens" : null);
 
     private void Apply(SpendPage value)
     {
@@ -171,6 +193,8 @@ public sealed partial class SpendPane : UserControl
             || !oldComparisons.SequenceEqual(newComparisons);
         var codexModelsChanged = current?.CodexModels is not { } oldModels || value.CodexModels is not { } newModels
             || !oldModels.Rows.SequenceEqual(newModels.Rows);
+        var codexTimelineChanged = current?.CodexModels is not { } oldTimeline || value.CodexModels is not { } newTimeline
+            || oldTimeline.Metric != newTimeline.Metric || !oldTimeline.Timeline.SequenceEqual(newTimeline.Timeline);
         var detailRowsChanged = current?.Detail is not { } previousDetail || value.Detail is not { } nextDetail
             || !previousDetail.Rows.SequenceEqual(nextDetail.Rows);
         var detailChartChanged = current?.Detail is not { } previousChart || value.Detail is not { } nextChart
@@ -213,6 +237,12 @@ public sealed partial class SpendPane : UserControl
                 : $"Page {models.Page + 1} / {models.PageCount} · {models.TotalRows} models";
             PreviousCodexModelsButton.IsEnabled = models.Page > 0;
             NextCodexModelsButton.IsEnabled = models.Page + 1 < models.PageCount;
+            CodexModelScope.Text = models.SelectedLabel;
+            AllCodexModelsButton.IsEnabled = models.SelectedIndex is not null;
+            CodexTimelineContext.Text = (codexSelectionNotice is null ? "" : codexSelectionNotice + "\n") + models.TimelineContext;
+            if (codexTimelineChanged) DrawCodexTimeline();
+            selectedCodexPoint = Math.Clamp(selectedCodexPoint, 0, Math.Max(0, models.Timeline.Length - 1));
+            ShowCodexPoint();
         }
         PagePosition.Text = value.TotalRows == 0 ? "No rows for this breakdown" : $"Page {value.Page + 1} / {value.PageCount} · {value.TotalRows} rows";
         PreviousPageButton.IsEnabled = value.Page > 0;
@@ -263,7 +293,7 @@ public sealed partial class SpendPane : UserControl
         if (kind is not ("preview" or "copyText" or "copyImage" or "saveImage" or "copyJSON" or "saveJSON")) return;
         var capturedEpoch = epoch;
         var query = Query() with { Days = captured.Days, Currency = captured.Currency, Detail = null,
-            ComparePeriods = false, CodexModelsPage = null };
+            ComparePeriods = false, CodexModelsPage = null, CodexModel = null, CodexGranularity = null, CodexMetric = null };
         var action = new SpendExportAction(kind, captured.SelectionRevision);
         exporting = true;
         UpdateExportActions();
@@ -298,6 +328,47 @@ public sealed partial class SpendPane : UserControl
 
     private void DrawDetailChart() =>
         Draw(DetailCanvas, current?.Detail?.Points ?? [], false, index => { selectedDetailPoint = index; ShowDetailPoint(); });
+
+    private void DrawCodexTimeline() =>
+        Draw(CodexTimelineCanvas, current?.CodexModels?.Timeline ?? [], false, index => { selectedCodexPoint = index; ShowCodexPoint(); });
+    private void ShowCodexPoint()
+    {
+        var points = current?.CodexModels?.Timeline ?? [];
+        var point = points.ElementAtOrDefault(selectedCodexPoint);
+        CodexTimelineDetail.Text = point?.Detail ?? "No model timeline is available.";
+        CodexTimelinePosition.Text = point is null ? "" : $"{selectedCodexPoint + 1} / {points.Length}";
+        PreviousCodexPointButton.IsEnabled = selectedCodexPoint > 0;
+        NextCodexPointButton.IsEnabled = selectedCodexPoint + 1 < points.Length;
+    }
+    private void PreviousCodexPoint(object sender, RoutedEventArgs args)
+    { selectedCodexPoint = Math.Max(0, selectedCodexPoint - 1); ShowCodexPoint(); }
+    private void NextCodexPoint(object sender, RoutedEventArgs args)
+    {
+        selectedCodexPoint = Math.Min(Math.Max(0, (current?.CodexModels?.Timeline.Length ?? 0) - 1), selectedCodexPoint + 1);
+        ShowCodexPoint();
+    }
+    private void FocusCodexModel(object sender, RoutedEventArgs args)
+    {
+        if (current?.CodexModels is not { } models || sender is not Button { Tag: int index }
+            || !models.Rows.Any(row => row.SelectionIndex == index)) return;
+        codexModel = new CodexModelSelection(index, models.SelectionRevision);
+        codexModelsPage = selectedCodexPoint = 0;
+        codexSelectionNotice = null;
+        Reload(false);
+    }
+    private void ClearCodexModel(object sender, RoutedEventArgs args)
+    {
+        codexModel = null;
+        codexModelsPage = selectedCodexPoint = 0;
+        codexSelectionNotice = null;
+        Reload(false);
+    }
+    private void CodexTimelineChanged(object sender, SelectionChangedEventArgs args)
+    {
+        if (applying || request is null) return;
+        selectedCodexPoint = 0;
+        Reload(false);
+    }
 
     private void Draw(Canvas canvas, SpendPoint[] points, bool tokens, Action<int> select)
     {
@@ -403,6 +474,7 @@ public sealed partial class SpendPane : UserControl
         page = 0;
         codexModelsPage = 0;
         if (ReferenceEquals(sender, PeriodPicker) || ReferenceEquals(sender, ChartPicker)) selectedDayKey = null;
+        if (ReferenceEquals(sender, PeriodPicker)) { codexModel = null; selectedCodexPoint = 0; codexSelectionNotice = null; }
         SaveView();
         Reload();
     }
@@ -416,6 +488,9 @@ public sealed partial class SpendPane : UserControl
     {
         if (applying || request is null) return;
         codexModelsPage = 0;
+        codexModel = null;
+        selectedCodexPoint = 0;
+        codexSelectionNotice = null;
         Reload();
     }
     private void PreviousCodexModelsPage(object sender, RoutedEventArgs args)
@@ -438,6 +513,9 @@ public sealed partial class SpendPane : UserControl
         if (applying || request is null) return;
         var choice = CurrencyPicker.SelectedItem as string;
         currency = choice == AutomaticCurrency ? null : choice;
+        codexModel = null;
+        selectedCodexPoint = 0;
+        codexSelectionNotice = null;
         page = 0;
         codexModelsPage = 0;
         SaveView();

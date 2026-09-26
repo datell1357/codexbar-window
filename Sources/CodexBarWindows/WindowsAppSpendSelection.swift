@@ -8,6 +8,16 @@ import Crypto
 
 /// Process-keyed view binding. Raw ownership IDs stay inside the MAC input, never in native UI JSON.
 enum WindowsAppSpendSelection {
+    static func codexModelsRevision(analysis: WindowsCodexModelAnalysis.Snapshot, viewRevision: String,
+                                    key: SymmetricKey) -> String {
+        var mac = HMAC<SHA256>(key: key)
+        for value in ["codex-model-selection-v1", viewRevision] + analysis.modelKeys {
+            let bytes = Data(value.utf8)
+            mac.update(data: Data("\(bytes.count):".utf8))
+            mac.update(data: bytes)
+        }
+        return mac.finalize().map { String(format: "%02x", $0) }.joined()
+    }
     static func revision(snapshot: WindowsSpendDashboardController.Snapshot, query: WindowsAppSpendProjection.Query,
                          context: String, hidePersonalInfo: Bool, key: SymmetricKey,
                          conversionRates: [String: Double]? = nil) -> String {

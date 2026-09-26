@@ -54,7 +54,7 @@ struct WindowsCodexModelAnalysisTests {
     private static func page(_ value: Analysis.Snapshot, page: Int = 0, privacy: Bool = false,
                              stale: Bool = false, calendar: Calendar = Self.calendar) -> Projection.CodexModelsPage {
         Projection.codexModels(value, page: page, hidePersonalInfo: privacy, stale: stale,
-            calendar: calendar, text: { value, _ in value })
+            calendar: calendar, text: { value, _ in value }, selectionRevision: String(repeating: "b", count: 64))
     }
 
     @Test
@@ -269,7 +269,8 @@ struct WindowsCodexModelAnalysisTests {
             openCodexObservation: .disabled, sourceFailures: [])
         let query = Projection.Query(days: 365, currency: "USD", section: "models", comparePeriods: true, codexModelsPage: 0)
         let page = Projection.make(snapshot: snapshot, query: query, hidePersonalInfo: true, calendar: Self.calendar,
-            selectionRevision: String(repeating: "a", count: 64), comparisonSnapshots: [], codexModels: analysis)
+            selectionRevision: String(repeating: "a", count: 64), comparisonSnapshots: [], codexModels: analysis,
+            codexModelsRevision: String(repeating: "b", count: 64))
         var response = WindowsAppProtocol.Response(protocolVersion: 1, requestID: UUID(), generation: UUID(), status: "ok", snapshot: nil)
         response.spend = page
         let bytes = try WindowsAppProtocol.response(response)
@@ -278,9 +279,12 @@ struct WindowsCodexModelAnalysisTests {
         #expect(!wire.contains("private-model") && !wire.contains("private-source") && !wire.contains("private@example"))
         let decoded = try JSONDecoder().decode(WindowsAppProtocol.Response.self, from: bytes)
         #expect(decoded.spend?.codexModels?.totalRows == 85)
+        #expect(decoded.spend?.codexModels?.selectionRevision.count == 64)
+        #expect(decoded.spend?.codexModels?.timeline.count == 365)
         #expect(decoded.spend?.rows.first?.title == "Model 1")
         let publicPage = Projection.make(snapshot: snapshot, query: query, hidePersonalInfo: false, calendar: Self.calendar,
-            selectionRevision: String(repeating: "a", count: 64), codexModels: analysis)
+            selectionRevision: String(repeating: "a", count: 64), codexModels: analysis,
+            codexModelsRevision: String(repeating: "b", count: 64))
         #expect(publicPage.truncated)
         #expect(try JSONEncoder().encode(publicPage).count < WindowsAppProtocol.maximumResponseBytes)
         #expect(Projection.Query(codexModelsPage: 100000).isValid)

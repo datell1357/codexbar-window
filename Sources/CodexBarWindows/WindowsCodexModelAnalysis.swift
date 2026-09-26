@@ -77,6 +77,7 @@ enum WindowsCodexModelAnalysis {
         let cost: Amount
         let boundaryAligned: Bool
         let activity: WindowsCodexActivityAnalysis.Period
+        let dailyModels: [Date: [String: Totals]]
     }
     struct Snapshot: Sendable {
         let currency: String?
@@ -84,6 +85,7 @@ enum WindowsCodexModelAnalysis {
         let current: Period
         let previous: Period
         let collectionComplete: Bool
+        var modelKeys: [String] { Set(self.current.models.keys).union(self.previous.models.keys).sorted() }
     }
 
     static func build(inputs: [WindowsSpendDashboardModel.ProviderInput], days: Int, now: Date,
@@ -121,12 +123,13 @@ enum WindowsCodexModelAnalysis {
             : calendar.date(byAdding: .day, value: 1, to: calendar.startOfDay(for: interval.start)) ?? interval.end
         guard firstDay <= lastDay else {
             return Period(interval: interval, fullSources: 0, tokensComplete: false, costComplete: false,
-                models: [:], tokens: Count(), cost: Amount(), boundaryAligned: aligned, activity: .init())
+                models: [:], tokens: Count(), cost: Amount(), boundaryAligned: aligned, activity: .init(), dailyModels: [:])
         }
         var fullSources = 0
         var tokensComplete = aligned && !sources.isEmpty
         var costComplete = tokensComplete
         var models: [String: Totals] = [:]
+        var dailyModels: [Date: [String: Totals]] = [:]
         var totalTokens = Count(), totalCost = Amount()
         for (input, multiplier) in sources {
             let summary = WindowsSpendDashboardModel.inputSummary(input: input, costMultiplier: multiplier,
@@ -160,6 +163,9 @@ enum WindowsCodexModelAnalysis {
                     var value = models[name] ?? Totals()
                     value.add(row, multiplier: multiplier)
                     models[name] = value
+                    var dailyValue = dailyModels[day]?[name] ?? Totals()
+                    dailyValue.add(row, multiplier: multiplier)
+                    dailyModels[day, default: [:]][name] = dailyValue
                     dayTokens.add(row.totalTokens)
                     dayCost.add(row.costUSD.map { $0 * multiplier })
                     sourceTokens.add(row.totalTokens)
@@ -187,7 +193,8 @@ enum WindowsCodexModelAnalysis {
         return Period(interval: interval, fullSources: fullSources,
             tokensComplete: tokensComplete && totalTokens.complete, costComplete: costComplete && totalCost.complete,
             models: models, tokens: totalTokens, cost: totalCost, boundaryAligned: aligned,
-            activity: WindowsCodexActivityAnalysis.build(inputs: sources.map { $0.0 }, interval: interval, calendar: calendar))
+            activity: WindowsCodexActivityAnalysis.build(inputs: sources.map { $0.0 }, interval: interval, calendar: calendar),
+            dailyModels: dailyModels)
     }
 
     private static func match(_ lhs: Double?, _ rhs: Double?) -> Bool {

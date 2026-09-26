@@ -72,12 +72,40 @@
                 <TextBlock x:Name="CodexModelsCurrentRange" TextWrapping="Wrap" />
                 <TextBlock Text="Previous period" FontWeight="SemiBold" />
                 <TextBlock x:Name="CodexModelsPreviousRange" TextWrapping="Wrap" />
+                <StackPanel Orientation="Horizontal" Spacing="12">
+                    <Button x:Name="AllCodexModelsButton" Content="All models" Click="ClearCodexModel" />
+                    <TextBlock x:Name="CodexModelScope" TextWrapping="Wrap" VerticalAlignment="Center" />
+                </StackPanel>
+                <TextBlock Text="Current-period model timeline" FontWeight="SemiBold" />
+                <StackPanel Orientation="Horizontal" Spacing="12">
+                    <ComboBox x:Name="CodexGranularityPicker" Header="Interval" SelectedIndex="0" SelectionChanged="CodexTimelineChanged">
+                        <ComboBoxItem Content="Daily" Tag="daily" />
+                        <ComboBoxItem Content="Weekly" Tag="weekly" />
+                        <ComboBoxItem Content="Monthly" Tag="monthly" />
+                    </ComboBox>
+                    <ComboBox x:Name="CodexMetricPicker" Header="Timeline metric" SelectedIndex="0" SelectionChanged="CodexTimelineChanged">
+                        <ComboBoxItem Content="Tokens" Tag="tokens" />
+                        <ComboBoxItem Content="Known cost" Tag="cost" />
+                        <ComboBoxItem Content="Session references" Tag="sessionReferences" />
+                    </ComboBox>
+                </StackPanel>
+                <TextBlock x:Name="CodexTimelineContext" TextWrapping="Wrap" IsTextSelectionEnabled="True" />
+                <ScrollViewer HorizontalScrollBarVisibility="Auto" HorizontalScrollMode="Enabled" VerticalScrollMode="Disabled">
+                    <Canvas x:Name="CodexTimelineCanvas" Height="200" AutomationProperties.Name="Codex model timeline" />
+                </ScrollViewer>
+                <TextBlock x:Name="CodexTimelineDetail" TextWrapping="Wrap" IsTextSelectionEnabled="True" AutomationProperties.LiveSetting="Polite" />
+                <StackPanel Orientation="Horizontal" Spacing="12">
+                    <Button x:Name="PreviousCodexPointButton" Content="Previous interval" Click="PreviousCodexPoint" />
+                    <TextBlock x:Name="CodexTimelinePosition" VerticalAlignment="Center" />
+                    <Button x:Name="NextCodexPointButton" Content="Next interval" Click="NextCodexPoint" />
+                </StackPanel>
                 <ItemsControl x:Name="CodexModelsRows">
                     <ItemsControl.ItemTemplate>
                         <DataTemplate x:DataType="local:CodexModelRow">
                             <Border BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="0,0,0,1" Padding="8,12">
                                 <StackPanel Spacing="6">
                                     <TextBlock Text="{x:Bind Title}" FontWeight="SemiBold" TextWrapping="Wrap" />
+                                    <Button Content="Focus this model" Tag="{x:Bind SelectionIndex}" Click="FocusCodexModel" />
                                     <Grid ColumnSpacing="12" RowSpacing="8">
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="*" /><ColumnDefinition Width="*" />

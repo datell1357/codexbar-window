@@ -16,6 +16,7 @@ enum WindowsCodexActivityAnalysis {
     struct Period: Sendable {
         var models: [String: Model] = [:]
         var complete = false
+        var byDay: [String: [String: Model]] = [:]
     }
     private struct Key: Hashable {
         let day: String
@@ -40,6 +41,7 @@ enum WindowsCodexActivityAnalysis {
             var expected: [Key: Int] = [:]
             var actual: [Key: Int] = [:]
             var sourceModels: [String: Model] = [:]
+            var sourceDays: [String: [String: Model]] = [:]
             var seenDays: Set<String> = []
             var valid = true
             var modelVisits = 0
@@ -77,6 +79,11 @@ enum WindowsCodexActivityAnalysis {
                 if let reference = row.sessionReference { value.sessions.insert(.init(source: source, number: reference)) }
                 else { value.sessionsComplete = false }
                 sourceModels[model] = value
+                var dayValue = sourceDays[row.day]?[model] ?? Model()
+                guard Self.add(row.tokens, key: effort, to: &dayValue.effortTokens) else { valid = false; break }
+                if let reference = row.sessionReference { dayValue.sessions.insert(.init(source: source, number: reference)) }
+                else { dayValue.sessionsComplete = false }
+                sourceDays[row.day, default: [:]][model] = dayValue
             }
             // No partial allocation to effort or sessions when event totals contradict the day/model report.
             guard valid, actual == expected else { result.complete = false; continue }
@@ -92,6 +99,17 @@ enum WindowsCodexActivityAnalysis {
                 result.models[model] = value
             }
             if !valid { return Period() } // Cross-source overflow invalidates the whole aggregation.
+            for (day, models) in sourceDays {
+                for (model, incoming) in models {
+                    var value = result.byDay[day]?[model] ?? Model()
+                    for (effort, tokens) in incoming.effortTokens {
+                        if !Self.add(tokens, key: effort, to: &value.effortTokens) { return Period() }
+                    }
+                    value.sessions.formUnion(incoming.sessions)
+                    value.sessionsComplete = value.sessionsComplete && incoming.sessionsComplete
+                    result.byDay[day, default: [:]][model] = value
+                }
+            }
         }
         return result
     }

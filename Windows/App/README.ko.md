@@ -65,7 +65,18 @@
   Unknown/~ 및 증감 보류로 표시한다. 세션 ID/경로는 보고서별 번호로 치환해 내부에서만 쓰고
   화면/pipe에는 집계 숫자만 전달한다. PII 숨김은 사용자 정의 effort를 Custom으로 묶는다.
   최대12개 effort 라벨을 표시하며 그보다 많으면 추가 라벨 수를 알린다.
-  effort별 비용·세션 탐색·모델 필터·일/주/월 타임라인은 남아 있으며 WIN-057 전체 완료가 아니다.
+  effort별 비용·세션 탐색 등은 남아 있으며 WIN-057 전체 완료가 아니다.
+- IMPL-609는 Focus this model / All models로 모델 하나 또는 전체를 선택하고 현재 기간의
+  일/주/월 토큰·비용·세션 참조 타임라인을 보는 기능을 연결했다. 주간은 수집 시간대의
+  월요일 시작이며 조회 기간 가장자리의 주/월은 실제 포함 날짜로 잘라 표시한다.
+  세션 참조는 모델·공급원·구간 안에서 중복을 제거한다. 여러 구간을 합하면 같은 세션이
+  반복될 수 있다. 막대 클릭/tooltip과 이전·다음 구간 버튼으로 숫자를 읽는다.
+  모델 선택은 수집/기간/통화/개인정보 상태와 모델 순서에 묶인 revision 및 행 번호로 전달한다.
+  상태가 바뀌면 이전 모델 선택을 해제하고 재선택 안내를 제공한다. 원본 모델 ID는 선택 요청에
+  넣지 않으며 익명 Model N은 전체 모델 목록의 번호를 유지한다.
+  모델 필터는 모델 표/타임라인에 적용한다. 상위 비용 및 coverage 요약은 전체 범위를 유지한다.
+  선택과 timeline 옵션은 현재 창에서만 유지한다. 다중 모델 조합·모델 분석 CSV 등은 남아 있다.
+  기존 Share Stats/비용 JSON은 기간·통화 전체를 내보내며 이 모델 필터를 적용하지 않는다.
 
 ## 프로세스와 통신 규약
 
@@ -188,7 +199,7 @@ PE import 검사는 .NET assembly reference, P/Invoke, 동적 LoadLibrary, XAML/
 
 ## 남은 앱 구현
 
-전체 설정 pane, 계정·인증·provider 편집, Codex effort 비용·세션 참조 탐색·모델 필터/일·주·월 타임라인,
+전체 설정 pane, 계정·인증·provider 편집, Codex effort 비용·세션 참조 탐색·다중 모델 선택/모델 분석 export,
 작업별 action/copy/open/login,
 레이아웃 편집, 전역 단축키·창 위치/스크롤 보존,
 전체 현지화, 키보드/Narrator/고대비·다중 모니터 QA가 남아 있다.
@@ -235,6 +246,10 @@ sidecar migration/rollback 합성 fixture12개를 작성했다. 컴파일·테�
 IMPL-608의 WindowsCodexActivityTests.swift에는 세션 중복/익명 번호·legacy/none·집계 상한/overflow·
 공개 JSON 제외/내부 보고서 보존·다른 자료 병합·기간별 집계·합계/날짜/누락 경계·privacy/stale
 합성 fixture8개를 작성했다. 모두 미실행이며 실제 Windows 화면·성능·정확도를 검증하지 않았다.
+IMPL-609는 WindowsCodexTimelineTests.swift에 모델 범위/환산·구간별 session 중복·월요일/DST/월 경계·
+누락/부분/미가격·선택 revision·익명화/오래된 선택 거절·wire 경계·365일/stale 합성 fixture8개를 작성했다.
+기존 모델 분석 wire fixture도 timeline과 별도 selection revision을 포함하도록 확장했다.
+전부 미실행이며 WinUI 그래프·클릭·키보드/Narrator·컴파일·성능은 검증하지 않았다.
 
 ## API 참고
 

@@ -2810,6 +2810,12 @@ public actor WindowsUsageRuntime {
             let revision = WindowsAppSpendSelection.revision(snapshot: display, query: query,
                 context: context, hidePersonalInfo: privacy, key: self.nativeAppSpendSelectionKey,
                 conversionRates: view.conversionRates)
+            let modelsRevision = view.codexModels.map {
+                WindowsAppSpendSelection.codexModelsRevision(analysis: $0, viewRevision: revision,
+                    key: self.nativeAppSpendSelectionKey)
+            } ?? ""
+            guard WindowsAppSpendProjection.acceptsCodexModel(query.codexModel, analysis: view.codexModels,
+                revision: modelsRevision) else { return reply("codexModelChanged") }
             if let action = request.spendAction, let currency = query.currency {
                 guard action.expectedRevision == revision else { return reply("spendChanged") }
                 guard let publisher = self.nativeSpendActionPublisher else { return reply("actionUnavailable") }
@@ -2849,7 +2855,7 @@ public actor WindowsUsageRuntime {
             result.spend = WindowsAppSpendProjection.make(snapshot: display,
                 query: query, hidePersonalInfo: privacy, calendar: settings.bucketCalendar,
                 selectionRevision: revision, hourlySnapshot: hourly, comparisonSnapshots: view.comparisons,
-                codexModels: view.codexModels)
+                codexModels: view.codexModels, codexModelsRevision: modelsRevision)
             return result
         }
         guard request.spendQuery == nil else { return reply("invalidRequest") }

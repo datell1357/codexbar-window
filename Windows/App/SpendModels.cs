@@ -3,8 +3,10 @@ using System.Text.Json.Serialization;
 namespace CodexBar.App;
 
 internal sealed record SpendDetailQuery(string Kind, int? Index, string? Day, string Revision, int Page = 0);
+internal sealed record CodexModelSelection(int Index, string Revision);
 internal sealed record SpendQuery(int Days, string? Currency, string Section, string Chart, int Page,
-    SpendDetailQuery? Detail = null, bool ComparePeriods = false, int? CodexModelsPage = null);
+    SpendDetailQuery? Detail = null, bool ComparePeriods = false, int? CodexModelsPage = null,
+    CodexModelSelection? CodexModel = null, string? CodexGranularity = null, string? CodexMetric = null);
 internal sealed record SpendExportAction(string Kind, string ExpectedRevision);
 public sealed record SpendComparisonRow([property: JsonRequired] int Days, [property: JsonRequired] string Title,
     [property: JsonRequired] string Range, [property: JsonRequired] string Cost, [property: JsonRequired] string Tokens,
@@ -13,11 +15,15 @@ public sealed record CodexModelRow([property: JsonRequired] string Title,
     [property: JsonRequired] string CurrentTokens, [property: JsonRequired] string PreviousTokens,
     [property: JsonRequired] string TokenChange, [property: JsonRequired] string CurrentCost,
     [property: JsonRequired] string PreviousCost, [property: JsonRequired] string CostChange,
-    [property: JsonRequired] string Details);
+    [property: JsonRequired] string Details, [property: JsonRequired] int SelectionIndex);
 internal sealed record CodexModelsPage([property: JsonRequired] string Context,
     [property: JsonRequired] string CurrentRange, [property: JsonRequired] string PreviousRange,
     [property: JsonRequired] int Page, [property: JsonRequired] int PageCount,
-    [property: JsonRequired] int TotalRows, [property: JsonRequired] CodexModelRow[] Rows)
+    [property: JsonRequired] int TotalRows, [property: JsonRequired] CodexModelRow[] Rows,
+    [property: JsonRequired] string SelectionRevision, int? SelectedIndex,
+    [property: JsonRequired] string SelectedLabel, [property: JsonRequired] string Granularity,
+    [property: JsonRequired] string Metric, [property: JsonRequired] string TimelineContext,
+    [property: JsonRequired] SpendPoint[] Timeline)
 {
     public bool IsValid => Context is not null && CurrentRange is not null && PreviousRange is not null
         && Page >= 0 && Page < PageCount && TotalRows >= 0
@@ -25,7 +31,15 @@ internal sealed record CodexModelsPage([property: JsonRequired] string Context,
         && Rows is { Length: <= 40 } && Rows.Length == Math.Min(40L, TotalRows - Page * 40L)
         && Rows.All(row => row is not null && row.Title is not null && row.CurrentTokens is not null
             && row.PreviousTokens is not null && row.TokenChange is not null && row.CurrentCost is not null
-            && row.PreviousCost is not null && row.CostChange is not null && row.Details is not null);
+            && row.PreviousCost is not null && row.CostChange is not null && row.Details is not null
+            && row.SelectionIndex is >= 0 and <= 1000000)
+        && SelectionRevision is { Length: 64 }
+        && SelectionRevision.All(value => value is >= '0' and <= '9' or >= 'a' and <= 'f')
+        && (SelectedIndex is null || (SelectedIndex is >= 0 and <= 1000000 && TotalRows == 1))
+        && Rows.Select((row, index) => row.SelectionIndex == (SelectedIndex ?? Page * 40 + index)).All(value => value)
+        && SelectedLabel is not null && TimelineContext is not null
+        && (Granularity is "daily" or "weekly" or "monthly")
+        && (Metric is "tokens" or "cost" or "sessionReferences") && SpendPage.ValidPoints(Timeline);
 }
 public sealed record SpendRow([property: JsonRequired] string Title, [property: JsonRequired] string Subtitle,
     [property: JsonRequired] string Cost, [property: JsonRequired] string Tokens, [property: JsonRequired] string Details,

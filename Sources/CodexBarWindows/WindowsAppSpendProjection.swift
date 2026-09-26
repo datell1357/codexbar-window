@@ -13,13 +13,20 @@ enum WindowsAppSpendProjection {
         var detail: DetailQuery?
         var comparePeriods: Bool?
         var codexModelsPage: Int?
+        var codexModel: CodexModelSelection?
+        var codexGranularity: String?
+        var codexMetric: String?
         var isValid: Bool {
             (1...WindowsSpendHistoryPolicy.scanDays).contains(self.days) && self.page >= 0 && self.page <= 100000 &&
                 ["providers", "models", "projects", "sessions"].contains(self.section) &&
                 ["cost", "tokens"].contains(self.chart) &&
                 (self.currency == nil || (self.currency!.utf8.count == 3 && self.currency!.utf8.allSatisfy { (65...90).contains($0) })) &&
                 (self.detail?.isValid ?? true) &&
-                (self.codexModelsPage.map { (0...100000).contains($0) } ?? true)
+                (self.codexModelsPage.map { (0...100000).contains($0) } ?? true) &&
+                (self.codexModel?.isValid ?? true) &&
+                (self.codexGranularity.map { ["daily", "weekly", "monthly"].contains($0) } ?? true) &&
+                (self.codexMetric.map { ["tokens", "cost", "sessionReferences"].contains($0) } ?? true) &&
+                (self.codexModelsPage != nil || (self.codexModel == nil && self.codexGranularity == nil && self.codexMetric == nil))
         }
     }
     struct DetailQuery: Codable, Sendable {
@@ -93,7 +100,8 @@ enum WindowsAppSpendProjection {
                      hidePersonalInfo: Bool, calendar: Calendar, selectionRevision: String,
                      hourlySnapshot: WindowsSpendDashboardController.Snapshot? = nil,
                      comparisonSnapshots: [WindowsSpendDashboardController.Snapshot] = [],
-                     codexModels: WindowsCodexModelAnalysis.Snapshot? = nil) -> Page {
+                     codexModels: WindowsCodexModelAnalysis.Snapshot? = nil,
+                     codexModelsRevision: String = "") -> Page {
         let model = snapshot.model
         // At most six JSON bytes per ASCII control byte; leave room for numeric/structural overhead.
         var remaining = 128 * 1024
@@ -228,7 +236,9 @@ enum WindowsAppSpendProjection {
                 calendar: calendar, text: { text($0, limit: $1) }) : nil
         let analysis = query.codexModelsPage.flatMap { page in
             codexModels.map { Self.codexModels($0, page: page, hidePersonalInfo: hidePersonalInfo,
-                stale: snapshot.stale, calendar: calendar, text: { text($0, limit: $1) }) }
+                stale: snapshot.stale, calendar: calendar, text: { text($0, limit: $1) },
+                selectionRevision: codexModelsRevision, selection: query.codexModel,
+                granularity: query.codexGranularity ?? "daily", metric: query.codexMetric ?? "tokens") }
         }
         let totalCost = group.map { ($0.hasPartialCost ? "~" : "") + cost($0.totalCost, $0.currencyCode) } ?? "Unknown"
         let totalTokens = group.map { ($0.hasPartialTokens ? "~" : "") + tokens($0.totalTokens) } ?? "Unknown"
