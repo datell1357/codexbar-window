@@ -25,7 +25,11 @@ public sealed partial class MainWindow : Window
             Notice.Message = "The running CodexBar tray connects this window to your usage and settings.";
             Notice.IsOpen = true;
         }
-        else { _ = PollAsync(); }
+        else
+        {
+            SpendView.Configure((query, token) => channel.SendAsync("spend", null, token, query), lifetime.Token);
+            _ = PollAsync();
+        }
     }
 
     private async Task PollAsync()
@@ -36,6 +40,8 @@ public sealed partial class MainWindow : Window
             {
                 if (channel!.BackendExited) { Close(); return; }
                 if (!saving) await SendAsync("snapshot");
+                if (!saving && snapshot is not null && SpendPage.Visibility == Visibility.Visible)
+                    await SpendView.RefreshAsync();
                 await Task.Delay(TimeSpan.FromSeconds(2), lifetime.Token);
             }
             catch (OperationCanceledException) when (lifetime.IsCancellationRequested) { return; }
@@ -95,11 +101,12 @@ public sealed partial class MainWindow : Window
         SettingsControls.IsEnabled = false;
         snapshot = null;
         ProviderList.ItemsSource = null;
-        SpendText.Text = "Waiting for current usage data…";
+        SpendView.Invalidate();
     }
 
     private void Apply(AppSnapshot value)
     {
+        if (snapshot?.Settings.HidePersonalInfo != value.Settings.HidePersonalInfo) SpendView.Invalidate();
         snapshot = value;
         applying = true;
         try
@@ -110,7 +117,6 @@ public sealed partial class MainWindow : Window
             ResetToggle.IsOn = value.Settings.ResetTimesShowAbsolute;
         }
         finally { applying = false; }
-        SpendText.Text = value.SpendSummary;
         StatusText.Text = value.Refreshing ? "Updating usage…" :
             value.Providers.Length == 0 ? "No usage available. Enable providers from the tray." : "Connected to CodexBar";
         RefreshButton.IsEnabled = !value.Refreshing && !saving;
@@ -132,12 +138,12 @@ public sealed partial class MainWindow : Window
     {
         if (applying || saving || snapshot is null || sender is not ToggleSwitch toggle || toggle.Tag is not string key) return;
         saving = true;
+        SpendView.Invalidate();
         SettingsControls.IsEnabled = false;
         RefreshButton.IsEnabled = false;
         if (key == "hidePersonalInfo" && toggle.IsOn)
         {
             ProviderList.ItemsSource = null;
-            SpendText.Text = "Updating display settings…";
         }
         try { await SendAsync("setSetting", new SettingMutation(key, toggle.IsOn, snapshot.SettingsRevision)); }
         finally
@@ -166,6 +172,7 @@ public sealed partial class MainWindow : Window
         var tag = (args.SelectedItem as NavigationViewItem)?.Tag as string ?? "overview";
         OverviewPage.Visibility = tag == "overview" ? Visibility.Visible : Visibility.Collapsed;
         SpendPage.Visibility = tag == "spend" ? Visibility.Visible : Visibility.Collapsed;
+        SpendView.SetActive(tag == "spend");
         SettingsPage.Visibility = tag == "settings" ? Visibility.Visible : Visibility.Collapsed;
     }
 }

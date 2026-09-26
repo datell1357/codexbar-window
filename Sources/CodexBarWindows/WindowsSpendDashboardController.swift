@@ -139,6 +139,13 @@ actor WindowsSpendDashboardController {
         self.makeSnapshot(options: self.options, now: now)
     }
 
+    /// A window's period selector projects the captured scan without changing collection or tray preferences.
+    func snapshot(days: Int, now: Date) -> Snapshot {
+        var options = self.options
+        options.days = max(1, min(WindowsSpendHistoryPolicy.scanDays, days))
+        return self.makeSnapshot(options: options, now: now)
+    }
+
     /// Project a day without changing the dashboard or sharing preferences.
     func snapshot(forDay day: Date, now: Date) -> Snapshot {
         var options = self.options

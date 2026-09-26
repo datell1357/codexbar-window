@@ -45,13 +45,9 @@
                             </ListView.ItemTemplate>
                         </ListView>
                     </Grid>
-                    <ScrollViewer x:Name="SpendPage" Visibility="Collapsed">
-                        <StackPanel Spacing="16">
-                            <TextBlock Text="Usage &amp; Spend" Style="{ThemeResource SubtitleTextBlockStyle}" />
-                            <TextBlock x:Name="SpendText" Text="Waiting for usage data…" TextWrapping="Wrap"
-                                IsTextSelectionEnabled="True" />
-                        </StackPanel>
-                    </ScrollViewer>
+                    <Grid x:Name="SpendPage" Visibility="Collapsed">
+                        <local:SpendPane x:Name="SpendView" />
+                    </Grid>
                     <ScrollViewer x:Name="SettingsPage" Visibility="Collapsed">
                         <StackPanel x:Name="SettingsControls" Spacing="20" IsEnabled="False">
                             <TextBlock Text="Display settings" Style="{ThemeResource SubtitleTextBlockStyle}" />

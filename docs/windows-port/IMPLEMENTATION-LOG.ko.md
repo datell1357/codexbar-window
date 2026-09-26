@@ -5746,3 +5746,15 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - **남은 범위:** 실제 packages.lock.json 생성/검토, managed deps/runtimeconfig 의미 대조, SDK publish 산출물/부트스트랩/PRI, clean Windows 설치/갱신/rollback/실행, 전체 WinUI 화면 및 W01~W16/G0~G6. 실제 빌드나 설치 파일을 생성한 것이 아니다.
 - 상태: CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·restore·서명·설치·앱·실계정·원격 Windows·CI 미실행.
 - IMPL-598은 cf6db0ab6으로 origin/main 푸시 확인. 이번 단위도 별도 커밋·푸시한다. 자동화 변경 없음.
+
+## IMPL-600: WinUI 비용 차트·히트맵·분석 목록
+
+- WinUI SpendPane에 7/30/90/수집된 전체(최대365일)·통화 그룹 선택, 일별 비용 차트, 기존 token activity 의미를 재사용한 365일 히트맵, 공급자/모델/프로젝트/세션 40행 페이지를 작성했다. click/hover와 이전/다음 날 버튼으로 세부 수치를 읽고 불변 데이터의 차트/목록은 재생성하지 않는다.
+- read-only spend query와 display DTO를 WindowsAppProtocol/C# 소비자에 추가했다. 비용 응답은 일반 snapshot과 분리해 각각 1 MiB 상한을 유지한다. source/account ID·raw 경로는 DTO에서 제외하고 display text 전체에 96 KiB UTF-8 예산을 적용한다.
+- controller에 창별 기간 projection을 추가했다. 현재 scan을 재집계하며 loader를 재실행하거나 트레이 설정을 덮어쓰지 않는다. 현재 창의 기간 선택은 아직 지속 저장하지 않는다.
+- runtime은 controller await 전후 collection ID/generation/publication sequence/controller identity/설정을 대조한다. collection 변경 응답은 거절하며 개인정보 설정은 최종 projection 직전에 다시 읽는다. UI는 선택 epoch로 늦은 응답을 버리고 연결/개인정보 변경 시 이전 화면을 내린다.
+- 통화 그룹별 합계, 부분 비용/토큰, coverage·metered/estimated·수집 시각·stale/partial 안내를 전달한다. missing daily sample을0으로 채우지 않고 heatmap의 미수집/unknown/확인된0을 구분한다. PII 모드에서는 공급자 별칭/프로젝트명/세션 표시를 일반 이름으로 바꾼다.
+- 합성 fixture 9개 작성: 기간 projection 시 추가 fetch/공유 설정 변경 없음, query 허용 범위, 통화 분리/사라진 통화, 0과 missing, PII 전송 전 제거, 모든 분석행 paging, heatmap 상태, stale/partial, 큰 Unicode 문자열 응답 상한. 실행하지 않았다.
+- **남은 범위:** 기간 비교·시간별 상세·프로젝트/세션 내 모델 drilldown·source 숨김·환산 설정·share/export와 전체 설정/계정 UI. managed deps/runtimeconfig·실제 lockfile·위젯/Sync/Fleet/packaged startup·전체 W01~W16/G0~G6도 남는다. 사용자 화면 동작을 확인한 것은 아니다.
+- 상태: CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·앱·실계정·원격 Windows·CI 미실행.
+- IMPL-599는 9dfd72309로 origin/main 푸시 확인. 이번 단위도 별도 커밋·푸시한다. 자동화 변경 없음.

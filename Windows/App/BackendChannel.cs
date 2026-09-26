@@ -23,9 +23,10 @@ internal sealed record AppSnapshot([property: JsonRequired] ProviderCard[] Provi
 internal sealed record SettingMutation(string Key, bool Value, string ExpectedSettingsRevision);
 internal sealed record AppResponse([property: JsonRequired] int ProtocolVersion,
     [property: JsonRequired] Guid RequestID, [property: JsonRequired] Guid Generation,
-    [property: JsonRequired] string Status, AppSnapshot? Snapshot, [property: JsonRequired] ulong Activation);
+    [property: JsonRequired] string Status, AppSnapshot? Snapshot, [property: JsonRequired] ulong Activation,
+    SpendPage? Spend);
 internal sealed record AppRequest(int ProtocolVersion, Guid RequestID, Guid? Generation, string Method,
-    SettingMutation? Mutation);
+    SettingMutation? Mutation, SpendQuery? SpendQuery);
 
 /// This process listens; the existing Swift runtime connects. The direction does not confer authority:
 /// both sides check the native peer PID, and this server admits only the current Windows user.
@@ -82,7 +83,8 @@ internal sealed class BackendChannel : IDisposable
         }
     }
 
-    public async Task<AppResponse> SendAsync(string method, SettingMutation? mutation, CancellationToken cancellation)
+    public async Task<AppResponse> SendAsync(string method, SettingMutation? mutation, CancellationToken cancellation,
+        SpendQuery? spendQuery = null)
     {
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellation, lifetime.Token);
         timeout.CancelAfter(TimeSpan.FromSeconds(15));
@@ -97,13 +99,13 @@ internal sealed class BackendChannel : IDisposable
                 if (!GetNamedPipeClientProcessId(pipe.SafePipeHandle, out var peer)
                     || peer != backend.Id || backend.HasExited)
                     throw new IOException("Invalid backend peer.");
-                var hello = await ExchangeAsync("hello", null, token);
+                var hello = await ExchangeAsync("hello", null, token, null);
                 if (hello.Status != "ok" || hello.Generation == Guid.Empty)
                     throw new IOException("Handshake rejected.");
                 generation = hello.Generation;
                 if (method == "snapshot") return hello;
             }
-            return await ExchangeAsync(method, mutation, token);
+            return await ExchangeAsync(method, mutation, token, spendQuery);
         }
         catch
         {
@@ -116,10 +118,11 @@ internal sealed class BackendChannel : IDisposable
         finally { serial.Release(); }
     }
 
-    private async Task<AppResponse> ExchangeAsync(string method, SettingMutation? mutation, CancellationToken token)
+    private async Task<AppResponse> ExchangeAsync(string method, SettingMutation? mutation, CancellationToken token,
+        SpendQuery? spendQuery)
     {
         var id = Guid.NewGuid();
-        var payload = JsonSerializer.SerializeToUtf8Bytes(new AppRequest(1, id, generation, method, mutation), json);
+        var payload = JsonSerializer.SerializeToUtf8Bytes(new AppRequest(1, id, generation, method, mutation, spendQuery), json);
         if (payload.Length is 0 or > MaximumRequestBytes) throw new IOException("Request too large.");
         var header = new byte[4];
         BinaryPrimitives.WriteInt32LittleEndian(header, payload.Length);
@@ -137,8 +140,9 @@ internal sealed class BackendChannel : IDisposable
             || string.IsNullOrEmpty(response.Status)
             || (generation is not null && response.Generation != generation))
             throw new IOException("Response does not match the request.");
-        if (response.Status == "ok" && response.Snapshot is null)
+        if (response.Status == "ok" && (method == "spend" ? response.Spend is null : response.Snapshot is null))
             throw new IOException("Missing snapshot.");
+        if (response.Spend is { } spend && !spend.IsValid) throw new IOException("Invalid spend page.");
         if (response.Snapshot is { } snapshot && (snapshot.Providers is null || snapshot.Providers.Length > 256
             || snapshot.Notices is null || snapshot.Notices.Length > 1024 || snapshot.Notices.Any(row => row is null)
             || snapshot.SpendSummary is null || snapshot.Settings is null

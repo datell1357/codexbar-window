@@ -20,6 +20,7 @@ enum WindowsAppProtocol {
         let generation: UUID?
         let method: String
         let mutation: Mutation?
+        var spendQuery: WindowsAppSpendProjection.Query? = nil
     }
     struct Mutation: Codable, Sendable {
         let key: String
@@ -33,6 +34,7 @@ enum WindowsAppProtocol {
         let status: String
         var snapshot: Snapshot?
         var activation: UInt64 = 0
+        var spend: WindowsAppSpendProjection.Page? = nil
     }
     struct Settings: Codable, Sendable, Equatable {
         var hidePersonalInfo: Bool

@@ -2701,6 +2701,28 @@ public actor WindowsUsageRuntime {
         guard !self.shuttingDown else { return reply("stopped") }
         guard request.protocolVersion == WindowsAppProtocol.version else { return reply("unsupportedVersion") }
         guard request.method == "hello" || request.generation == generation else { return reply("staleGeneration") }
+        if request.method == "spend" {
+            guard request.mutation == nil, let query = request.spendQuery, query.isValid else { return reply("invalidRequest") }
+            guard self.canPresentSpendSnapshot, let captured = self.spendSnapshot,
+                  let controller = self.spendController, let settings = self.collectedSpendSettings,
+                  WindowsSpendSettings.load() == settings else { return reply("spendUnavailable") }
+            let collection = self.spendCollectionID
+            let spendGeneration = self.spendGeneration
+            let sequence = self.spendPublicationSequence
+            let projected = await controller.snapshot(days: query.days, now: captured.loadedAt ?? Date())
+            guard !self.shuttingDown, self.canPresentSpendSnapshot,
+                  collection == self.spendCollectionID, spendGeneration == self.spendGeneration,
+                  sequence == self.spendPublicationSequence, self.spendController === controller,
+                  self.collectedSpendSettings == settings, WindowsSpendSettings.load() == settings else {
+                return reply("spendChanged")
+            }
+            var result = reply("ok")
+            result.spend = WindowsAppSpendProjection.make(snapshot: captured.stale ? projected.refreshing() : projected,
+                query: query, hidePersonalInfo: WindowsUsagePresentationSettings.load().hidePersonalInfo,
+                calendar: settings.bucketCalendar)
+            return result
+        }
+        guard request.spendQuery == nil else { return reply("invalidRequest") }
         switch request.method {
         case "hello", "snapshot":
             guard request.mutation == nil else { return reply("invalidRequest") }

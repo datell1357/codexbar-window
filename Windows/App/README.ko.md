@@ -9,8 +9,10 @@
 - 트레이의 “CodexBar 열기”가 앱 창을 연다. 이미 실행 중이면 다음 응답의 activation 값으로
   기존 창의 활성화를 요청한다. 창을 닫으면 트레이는 계속 실행한다.
 - Overview는 기존 provider presentation의 사용량 행과 검색을 제공한다.
-- Usage & Spend는 기존 런타임 비용 요약을 표시한다. 기간 선택·차트·모델/프로젝트/세션
-  탐색은 아직 이 화면에 연결되지 않았다.
+- Usage & Spend는 IMPL-600에서 기간(7/30/90/수집된 전체, 최대 365일)·통화 그룹 선택,
+  일별 비용 차트, 365일 토큰 활동 히트맵, 공급자/모델/프로젝트/세션별 40행 페이지를
+  연결했다. 차트 click/hover와 이전·다음 날 버튼으로 날짜별 수치·누락 상태를 읽는다.
+  새 데이터 수집 없이 기존 scan을 재집계한다. 이 창의 기간 선택은 현재 저장하지 않는다.
 - Display settings는 PII 숨김, credits/extra 표시, 사용량 표시 방향, reset 시각 표시의
   네 키만 저장한다. 트레이와 같은 설정 저장소·렌더링 경로를 사용한다.
 - 연결 실패 시 이전 데이터를 내리고 컨트롤을 잠근다. 저장 응답이 유실된 변경은 자동
@@ -33,10 +35,14 @@ WinUI 프로세스는 공급자에 직접 접속하거나 두 번째 백엔드�
    최대 256개 카드·1024개 행 예산과 카드당 64개 상세 행 제한이 있다.
 5. 연결 첫 요청은 `hello`다. protocolVersion 1, requestID, backend generation을
    확인한다. 연결당 중복 requestID는 거절하고 4096개 뒤 재연결한다.
-6. 허용 메서드는 `hello`, `snapshot`, `refresh`, `setSetting`이다.
+6. 허용 메서드는 `hello`, `snapshot`, `refresh`, `setSetting`, `spend`이다.
    snapshot은 2초 간격으로 요청한다. 설정 쓰기는 네 키의 고정 순서 boolean SHA-256
    revision을 대조한다. 이는 오래된 화면의 저장을 감지하는 낙관적 대조이며, 트레이와
    별도 스레드에서 발생하는 모든 설정 쓰기의 원자적 직렬화를 보장하지 않는다.
+   `spend`는 bounded query(days/currency/section/chart/page)를 받아 일반 snapshot과
+   별도의 응답으로 보낸다. controller await 전후 collection/generation/publication/settings를
+   대조하고, PII·문자열 예산을 적용한 표·차트만 전송한다. 내부 source/account 키는
+   전송하지 않는다. 통화 그룹이 사라지면 다른 통화로 자동 합산하지 않는다.
 7. UI는 15초, Swift I/O는 30초의 대기를 제한한다. Swift는 취소한 overlapped 작업의
    완료를 기다린 뒤 buffer/event를 해제한다. 백엔드 종료를 감지하면 UI도 닫힌다.
 
@@ -98,8 +104,9 @@ PE import 검사는 .NET assembly reference, P/Invoke, 동적 LoadLibrary, XAML/
 
 ## 남은 앱 구현
 
-전체 설정 pane, 계정·인증·provider 편집, 차트/heatmap·기간/모델/프로젝트/세션 탐색,
-작업별 action/copy/open/login, 레이아웃 편집, 전역 단축키·창 위치/스크롤 보존,
+전체 설정 pane, 계정·인증·provider 편집, 기간 비교·시간별 상세·프로젝트/세션 내부 모델
+drilldown·source 숨김·통화 환산 설정·share/export, 작업별 action/copy/open/login,
+레이아웃 편집, 전역 단축키·창 위치/스크롤 보존,
 전체 현지화, 키보드/Narrator/고대비·다중 모니터 QA가 남아 있다.
 현재 UI 문구는 영어이며, 트레이의 열기 항목만 기존 en/ko 사전에 연결했다.
 `WIN-007/010/012/013/015/026`은 부분 구현 상태로 유지한다.
@@ -107,6 +114,9 @@ PE import 검사는 .NET assembly reference, P/Invoke, 동적 LoadLibrary, XAML/
 `TestsWindows/WindowsAppProtocolTests.swift`에는 framing, JSON 키와 필수 필드,
 설정 revision/allowlist, Unicode/escape byte 예산의 합성 fixture 11개를 작성했다.
 실행하지 않았으며, native pipe·WinUI·실계정 기능의 동작 증거가 아니다.
+IMPL-600의 `TestsWindows/WindowsAppSpendProjectionTests.swift`에는 query 경계·통화 분리,
+0/누락·PII·paging·heatmap·stale/partial·응답 바이트 예산의 fixture 9개를 추가했다.
+이 테스트와 UI 실행도 미실행이다. 비용 collection 활성화는 현재 트레이에서 설정한다.
 
 ## API 참고
 
@@ -114,3 +124,4 @@ PE import 검사는 .NET assembly reference, P/Invoke, 동적 LoadLibrary, XAML/
 - [GetNamedPipeServerProcessId](https://learn.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-getnamedpipeserverprocessid)
 - [Windows App SDK self-contained 배포 문서](https://github.com/MicrosoftDocs/windows-dev-docs/blob/docs/hub/apps/package-and-deploy/self-contained-deploy/deploy-self-contained-apps.md)
 - [Windows App SDK 공식 릴리스](https://github.com/microsoft/WindowsAppSDK/releases)
+- [Windows 앱 색상과 테마](https://learn.microsoft.com/en-us/windows/apps/design/signature-experiences/color)
