@@ -114,6 +114,8 @@ public sealed partial class SpendPane : UserControl
         HourlyButton.IsEnabled = false;
         DetailPanel.Visibility = Visibility.Collapsed;
         BackCodexSessionsButton.Visibility = Visibility.Collapsed;
+        DetailSessionActions.Visibility = Visibility.Collapsed;
+        SessionActionStatusText.Text = "";
         DetailRows.ItemsSource = null;
         DetailCanvas.Children.Clear();
         DetailTitle.Text = DetailContext.Text = DetailPointText.Text = DetailPointPosition.Text = DetailPagePosition.Text = "";
@@ -286,6 +288,7 @@ public sealed partial class SpendPane : UserControl
         ShowDay();
         DetailPanel.Visibility = value.Detail is null ? Visibility.Collapsed : Visibility.Visible;
         BackCodexSessionsButton.Visibility = value.Detail?.Kind == "codexSession" ? Visibility.Visible : Visibility.Collapsed;
+        DetailSessionActions.Visibility = value.Detail?.SessionActions is null ? Visibility.Collapsed : Visibility.Visible;
         if (value.Detail is { } child)
         {
             if (detail is not null) detail = detail with { Page = child.Page };
@@ -324,6 +327,16 @@ public sealed partial class SpendPane : UserControl
         JSONActions.IsEnabled = !exporting && active && current?.Currency is not null;
         ShareActions.IsEnabled = JSONActions.IsEnabled && current is { Stale: false };
         CodexCSVActions.IsEnabled = JSONActions.IsEnabled && current?.CodexModels is not null;
+        var sessions = current?.Detail?.SessionActions;
+        CopyCodexSessionIDButton.IsEnabled = JSONActions.IsEnabled && sessions?.CanCopyID == true;
+        CopyCodexResumeButton.IsEnabled = JSONActions.IsEnabled && sessions?.CanCopyResume == true;
+        FocusCodexSessionButton.IsEnabled = JSONActions.IsEnabled && sessions?.CanFocus == true;
+    }
+
+    private void SetActionStatus(string message)
+    {
+        ExportStatusText.Text = message;
+        SessionActionStatusText.Text = message;
     }
 
     private async void ExportClicked(object sender, RoutedEventArgs args)
@@ -331,13 +344,15 @@ public sealed partial class SpendPane : UserControl
         if (exporting || export is null || current is not { Currency: not null } captured
             || sender is not Button { Tag: string kind } || lifetime.IsCancellationRequested) return;
         if (kind is not ("preview" or "copyText" or "copyImage" or "saveImage" or "copyJSON" or "saveJSON"
-            or "copyModelsCSV" or "saveModelsCSV")) return;
+            or "copyModelsCSV" or "saveModelsCSV" or "copyCodexSessionID" or "copyCodexResume" or "focusCodexSession")) return;
         var modelExport = kind is "copyModelsCSV" or "saveModelsCSV";
-        if (modelExport && captured.CodexModels is null) return;
+        var sessionAction = kind is "copyCodexSessionID" or "copyCodexResume" or "focusCodexSession";
+        if ((modelExport || sessionAction) && captured.CodexModels is null) return;
+        if (sessionAction && (codexSessions?.ReferenceIndex is null || captured.Detail?.Kind != "codexSession")) return;
         var capturedEpoch = epoch;
         var query = Query() with { Days = captured.Days, Currency = captured.Currency, Detail = null,
-            ComparePeriods = false, CodexSessions = null };
-        if (modelExport) {
+            ComparePeriods = false, CodexSessions = sessionAction ? codexSessions : null };
+        if (modelExport || sessionAction) {
             var models = captured.CodexModels!;
             query = query with { CodexModelsPage = 0, CodexCatalogPage = 0, CodexModel = models.ModelSelection,
                 CodexGranularity = models.Granularity, CodexMetric = models.Metric };
@@ -345,30 +360,40 @@ public sealed partial class SpendPane : UserControl
             query = query with { CodexModelsPage = null, CodexModel = null, CodexGranularity = null,
                 CodexMetric = null, CodexCatalogPage = null };
         }
-        var action = new SpendExportAction(kind, modelExport ? captured.CodexModels!.ExportRevision : captured.SelectionRevision);
+        var action = new SpendExportAction(kind, sessionAction ? captured.CodexModels!.SelectionRevision
+            : modelExport ? captured.CodexModels!.ExportRevision : captured.SelectionRevision);
         exporting = true;
         UpdateExportActions();
-        ExportStatusText.Text = "Sending to the Windows share/export controls…";
+        SetActionStatus(sessionAction ? "Requesting the selected session action…" : "Sending to the Windows share/export controls…");
         try
         {
             var response = await export(query, action, lifetime);
             if (lifetime.IsCancellationRequested || capturedEpoch != epoch) return;
-            ExportStatusText.Text = response.Status switch
+            SetActionStatus(response.Status switch
             {
-                "queued" => "Request queued. Follow any Windows preview or save dialog, then check the clipboard or chosen file.",
+                "queued" => sessionAction ? "Copy requested. Check the Windows clipboard; the command was not executed."
+                    : "Request queued. Follow any Windows preview or save dialog, then check the clipboard or chosen file.",
                 "actionBusy" => "Another share/export action is pending or open. Finish it before trying again.",
                 "spendChanged" => "Costs or settings changed. Reload costs before sharing or exporting.",
                 "codexModelChanged" => "The model collection changed. Reload costs and select the models again.",
+                "codexSessionChanged" => "The session selection changed. Open the session detail again.",
+                "sessionActionUnavailable" => "This action needs a current report and a recorded session ID. Copying is disabled while personal information is hidden.",
+                "sessionDiscoveryDisabled" => "Enable local CLI sessions from the tray before focusing a session.",
+                "sessionDiscoveryIncomplete" => "The running-session list is incomplete or unavailable. Refresh local CLI sessions from the tray.",
+                "sessionNotMatched" => "No unique running Codex process explicitly resuming this session was found. Recent files and matching folders are not used as substitutes.",
+                "sessionFocused" => "The session window was activated.",
+                "sessionApplicationActivated" => "The application window was activated. Its exact terminal tab was not selected.",
+                "sessionFocusFailed" => "The window could not be activated. The process, window, or foreground permission may have changed.",
                 "spendUnavailable" => "No current cost collection is available for this action.",
                 _ => "The share/export request was not accepted. Reload costs before trying again."
-            };
-            if (response.Status is "spendChanged" or "spendUnavailable" or "codexModelChanged") pending = true;
+            });
+            if (response.Status is "spendChanged" or "spendUnavailable" or "codexModelChanged" or "codexSessionChanged") pending = true;
         }
         catch (Exception error) when (error is IOException or OperationCanceledException or InvalidOperationException
             or System.Text.Json.JsonException or System.ComponentModel.Win32Exception or UnauthorizedAccessException)
         {
             if (lifetime.IsCancellationRequested || capturedEpoch != epoch) return;
-            ExportStatusText.Text = "The connection was interrupted. The action may already have started. Check the clipboard or Windows dialog before retrying; it was not sent again.";
+            SetActionStatus("The connection was interrupted. The action may already have started. Check the clipboard, active window or Windows dialog before retrying; it was not sent again.");
         }
         finally
         {

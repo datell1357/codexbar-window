@@ -24,7 +24,7 @@ enum WindowsAppSpendSelection {
     static func codexModelsRevision(analysis: WindowsCodexModelAnalysis.Snapshot, viewRevision: String,
                                     key: SymmetricKey) -> String {
         var mac = HMAC<SHA256>(key: key)
-        for value in ["codex-model-selection-v2", viewRevision, String(analysis.modelKeys.count)] + analysis.modelKeys {
+        for value in ["codex-model-selection-v3", viewRevision, String(analysis.modelKeys.count)] + analysis.modelKeys {
             let bytes = Data(value.utf8)
             mac.update(data: Data("\(bytes.count):".utf8))
             mac.update(data: bytes)
@@ -35,7 +35,9 @@ enum WindowsAppSpendSelection {
                 $0.source == $1.source ? $0.number < $1.number : $0.source < $1.source
             }) {
                 let models = period.activity.sessions[reference]?.models.keys.sorted() ?? []
-                let values = ["session", name, String(reference.source), String(reference.number), String(models.count)] + models
+                let identity = period.activity.sessions[reference]?.sessionID ?? ""
+                let values = ["session", name, String(reference.source), String(reference.number), identity,
+                              String(models.count)] + models
                 for value in values {
                     let bytes = Data(value.utf8)
                     mac.update(data: Data("\(bytes.count):".utf8))

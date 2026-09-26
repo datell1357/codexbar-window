@@ -31,9 +31,10 @@ public enum SessionWindowFocuser {
     /// Native window activation only. No simulated keys, process injection, or permission bypass.
     /// An ancestor window is reported as application-only activation, not exact terminal-tab focus.
     @discardableResult
-    public static func focus(_ session: AgentSession, promptForAccessibility: Bool = false) -> SessionFocusResult {
+    public static func focus(_ session: AgentSession, promptForAccessibility: Bool = false,
+                             isCurrent: @Sendable () -> Bool = { true }) -> SessionFocusResult {
         _ = promptForAccessibility
-        guard !Task.isCancelled else { return .failed }
+        guard !Task.isCancelled, isCurrent() else { return .failed }
         guard let pid = session.pid, pid > 0,
               let expectedTicks = self.creationTicks(from: session.id, pid: UInt32(pid)),
               let owner = try? ProcessOwnerIdentity.current(),
@@ -83,9 +84,9 @@ public enum SessionWindowFocuser {
             var currentOwner: DWORD = 0
             _ = GetWindowThreadProcessId(candidate.1, &currentOwner)
             guard currentOwner == process.pid, WaitForSingleObject(root, 0) == WAIT_TIMEOUT else { return .failed }
-            guard !Task.isCancelled else { return .failed }
+            guard !Task.isCancelled, isCurrent() else { return .failed }
             if IsIconic(candidate.1) != 0 { _ = ShowWindowAsync(candidate.1, SW_RESTORE) }
-            guard !Task.isCancelled, SetForegroundWindow(candidate.1) != 0 else { return .failed }
+            guard !Task.isCancelled, isCurrent(), SetForegroundWindow(candidate.1) != 0 else { return .failed }
             return process.pid == UInt32(pid) ? .focused : .activatedApplicationOnly
         }
         return .failed

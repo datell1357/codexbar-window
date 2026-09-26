@@ -46,6 +46,8 @@ public actor WindowsAgentSessionsRuntime {
     private var focusTask: Task<SessionFocusResult, Never>?
     private var queuedRefresh = false
     private var sessions: [AgentSession] = []
+    private var explicitSessionIDs: [String: String] = [:]
+    private var completeScan = false
     private var fresh = false
     private var message: String?
 
@@ -102,6 +104,8 @@ public actor WindowsAgentSessionsRuntime {
         self.message = nil
         // This callback also changes the native-directory opt-in. Drop prior enrichment immediately.
         self.sessions = []
+        self.explicitSessionIDs = [:]
+        self.completeScan = false
         self.fresh = false
         self.reconcileSchedule()
         self.publish()
@@ -128,6 +132,8 @@ public actor WindowsAgentSessionsRuntime {
         self.scanTask?.cancel()
         self.focusTask?.cancel()
         self.sessions = []
+        self.explicitSessionIDs = [:]
+        self.completeScan = false
         self.fresh = false
         self.message = "Refreshing sessions with an empty title cache…"
         self.publish()
@@ -173,6 +179,8 @@ public actor WindowsAgentSessionsRuntime {
             switch result.status {
             case .complete, .partial:
                 self.sessions = result.sessions
+                self.explicitSessionIDs = result.explicitSessionIDs
+                if case .complete = result.status { self.completeScan = true } else { self.completeScan = false }
                 self.fresh = true
                 self.message = result.message
                 if let diagnostics = result.diagnostics {
@@ -211,23 +219,25 @@ public actor WindowsAgentSessionsRuntime {
         }
     }
 
-    public func focus(_ request: WindowsSessionFocusRequest) async {
-        guard self.running, self.enabled, request.generation == self.generation else { return }
-        guard self.focusTask == nil else { return }
+    @discardableResult
+    public func focus(_ request: WindowsSessionFocusRequest,
+                      isCurrent: @escaping @Sendable () -> Bool = { true }) async -> SessionFocusResult {
+        guard self.running, self.enabled, request.generation == self.generation, isCurrent() else { return .failed }
+        guard self.focusTask == nil else { return .failed }
         guard self.fresh, let session = self.sessions.first(where: { $0.id == request.sessionID }) else {
             self.message = "This session is no longer available. Refresh the session list."
             self.publish()
-            return
+            return .failed
         }
         let currentGeneration = self.generation
         let task = Task.detached(priority: .userInitiated) {
-            guard !Task.isCancelled else { return SessionFocusResult.failed }
-            return SessionWindowFocuser.focus(session)
+            guard !Task.isCancelled, isCurrent() else { return SessionFocusResult.failed }
+            return SessionWindowFocuser.focus(session, isCurrent: isCurrent)
         }
         self.focusTask = task
         let result = await task.value
         self.focusTask = nil
-        guard self.running, self.enabled, self.generation == currentGeneration, !Task.isCancelled else { return }
+        guard self.running, self.enabled, self.generation == currentGeneration, !Task.isCancelled, isCurrent() else { return .failed }
         switch result {
         case .focused:
             self.message = "Session window activated."
@@ -237,6 +247,28 @@ public actor WindowsAgentSessionsRuntime {
             self.message = "Could not activate this session. Its process, window, or foreground permission changed."
         }
         self.publish()
+        return result
+    }
+
+    /// Uses the already-enabled discovery service; never starts a scan or launches a new session.
+    func focusCodexSession(_ sessionID: String, isCurrent: @escaping @Sendable () -> Bool) async -> String {
+        guard self.running, self.enabled,
+              self.defaults.object(forKey: "agentSessionsEnabled") as? Bool == true else { return "sessionDiscoveryDisabled" }
+        guard self.scanTask == nil, self.focusTask == nil else { return "actionBusy" }
+        guard self.fresh, self.completeScan else { return "sessionDiscoveryIncomplete" }
+        guard isCurrent() else { return "spendChanged" }
+        guard let session = WindowsCodexSessionActions.matchingProcess(sessionID: sessionID,
+            sessions: self.sessions, explicitSessionIDs: self.explicitSessionIDs) else { return "sessionNotMatched" }
+        let stillEnabled: @Sendable () -> Bool = {
+            isCurrent() && (UserDefaults(suiteName: WindowsRefreshSettings.suiteName)?
+                .object(forKey: "agentSessionsEnabled") as? Bool) == true
+        }
+        let result = await self.focus(.init(sessionID: session.id, generation: self.generation), isCurrent: stillEnabled)
+        switch result {
+        case .focused: return "sessionFocused"
+        case .activatedApplicationOnly: return "sessionApplicationActivated"
+        case .failed: return "sessionFocusFailed"
+        }
     }
 
     public func shutdown() async {
@@ -258,6 +290,8 @@ public actor WindowsAgentSessionsRuntime {
         scan?.cancel()
         focus?.cancel()
         self.sessions = []
+        self.explicitSessionIDs = [:]
+        self.completeScan = false
         self.message = nil
         self.fresh = false
         self.publisher(.disabled)

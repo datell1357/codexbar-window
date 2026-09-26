@@ -33,6 +33,15 @@ extension WindowsAppSpendProjection {
         }
     }
 
+    static func selectedCodexSession(_ analysis: WindowsCodexModelAnalysis.Snapshot,
+                                     query: CodexSessionQuery, revision: String) -> WindowsCodexActivityAnalysis.Session? {
+        guard Self.acceptsCodexSessions(query, analysis: analysis, revision: revision),
+              let selected = query.referenceIndex else { return nil }
+        let period = query.period == "current" ? analysis.current : analysis.previous
+        let refs = Self.codexSessionReferences(period, model: analysis.modelKeys[query.modelIndex])
+        return period.activity.sessions[refs[selected]]
+    }
+
     static func codexSessionsDetail(_ analysis: WindowsCodexModelAnalysis.Snapshot, query: CodexSessionQuery,
                                    revision: String, stale: Bool, hidePersonalInfo: Bool, calendar: Calendar,
                                    text: (String, Int) -> String) -> DetailPage? {
@@ -127,11 +136,19 @@ extension WindowsAppSpendProjection {
         if !complete || period.activity.models[key]?.sessionsComplete == false {
             context.append("The session list or its usage evidence is incomplete. Unlisted activity is not a confirmed zero.")
         }
+        if let selected {
+            if hidePersonalInfo { context.append("Session identity is hidden; copying its ID or resume command is disabled.") }
+            else if let id = selected.sessionID { context.append("Session ID: " + id) }
+            else { context.append("Original session identity is unavailable in this report.") }
+            context.append("Focus requires local CLI sessions to be enabled and one running Codex process explicitly resuming this ID. A recent file or matching folder alone cannot identify a running session.")
+            context.append("Copy resume command copies text only. Run it in the original Codex account/profile and workspace; it does not reproduce those settings.")
+        }
         let title = query.referenceIndex.map { "\(prefix) session reference \($0 + 1) · \(label)" }
             ?? "\(prefix) session references · \(label)"
         return .init(kind: selected == nil ? "codexSessions" : "codexSession",
             title: text(title, 512), context: text(context.joined(separator: "\n"), 4096),
-            page: page, pageCount: pageCount, totalRows: totalRows, rows: rows, points: points)
+            page: page, pageCount: pageCount, totalRows: totalRows, rows: rows, points: points,
+            sessionActions: selected.map { WindowsCodexSessionActions.availability($0, stale: stale, hidePersonalInfo: hidePersonalInfo) })
     }
 }
 #endif

@@ -63,10 +63,11 @@
   Unrecorded로 표시하며 명시적 none과 구분한다. 서버 적용 effort를 증명하는 수치는 아니다.
   이벤트 집계와 일별 모델 합계가 맞는 경우만 사용하며, 구형 자료·한도 초과·누락·stale은
   Unknown/~ 및 증감 보류로 표시한다. 세션 ID/경로는 보고서별 번호로 치환해 내부에서만 쓰고
-  화면/pipe에는 집계 숫자만 전달한다. PII 숨김은 사용자 정의 effort를 Custom으로 묶는다.
+  모델 집계 화면/pipe에는 집계 숫자를 전달한다. IMPL-614부터 세션 상세에서 PII 표시가
+  허용된 경우 기록된 원본 ID를 표시한다. PII 숨김은 사용자 정의 effort를 Custom으로 묶는다.
   최대12개 effort 라벨을 표시하며 그보다 많으면 추가 라벨 수를 알린다.
   effort별 비용은 IMPL-612, 기간별 세션 참조 탐색은 IMPL-613에서 연결했다.
-  원본 세션 ID/실행 연결 등은 남아 있으며 WIN-057 전체 완료가 아니다.
+  원본 세션 ID·복사·일부 실행 창 연결은 IMPL-614에서 추가했다. WIN-057 전체 완료가 아니다.
 - IMPL-609는 Focus this model / All models로 모델 하나 또는 전체를 선택하고 현재 기간의
   일/주/월 토큰·비용·세션 참조 타임라인을 보는 기능을 연결했다. 주간은 수집 시간대의
   월요일 시작이며 조회 기간 가장자리의 주/월은 실제 포함 날짜로 잘라 표시한다.
@@ -97,7 +98,7 @@
   UTF-8/CRLF CSV이며 외부 텍스트의 따옴표/개행/수식 접두어를 escape한다.
   16 MiB/100000행/셀16 KiB 한도를 초과하면 전체 출력을 거절하며 조용히 자르지 않는다.
   clipboard는65,536 UTF-16 code units를 넘으면 저장을 안내한다.
-  원본 Mac CSV와 동일한 schema는 아니며, 세부 priced/unpriced coverage·raw aliases·세션 ID와
+  원본 Mac CSV와 동일한 schema는 아니며, 세부 priced/unpriced coverage·raw aliases와
   share 비율 등의 풍부한 분석 필드는 추가 집계와 계약이 남아 있다. WIN-057 전체 완료가 아니다.
 - IMPL-612는 현재/이전 기간의 기록된 effort별 비용과 가격 적용/미가격 토큰 수를 연결했다.
   보고서의 기존 이벤트 가격 resolver를 같은 catalog/priority/custom-pricing 값으로 호출한다.
@@ -117,8 +118,23 @@
   가격 대조 결과를 재사용한다. 구형·불완전·stale 자료는 Unknown/~로 표시하고 빈 날짜를 임의로0으로
   채우지 않는다. PII 숨김은 전체 모델 목록의 Model N 번호와 Custom effort를 그대로 사용한다.
   참조 순서·모델 소속도 HMAC revision에 묶어 수집이 바뀐 오래된 상세를 거절한다. pipe 요청은
-  모델/참조 행 번호·기간·페이지·revision만 사용한다. 원본 세션 ID/경로 및 CLI·에디터 실행 연결은 남아 있다.
+  모델/참조 행 번호·기간·페이지·revision만 사용한다. 원본 세션 ID와 실행 창 연결은 아래 IMPL-614를 따른다.
   Share Stats/JSON/모델 CSV는 이 탐색 상태를 제외한 기존 출력 범위를 유지한다.
+- IMPL-614는 보고서 내부에 참조 번호→원본 세션 ID의 optional 표를 보존한다. 최대4096개/ID512 bytes이며
+  같은 UUID의 대소문자를 통일한다. 구형 표 누락·잘못된 ID·중복 참조/ID는 연결을 제공하지 않고
+  기존 토큰·비용은 유지한다. 공용 daily-report JSON과 공개 AgentSession DTO에는 이 표를 넣지 않는다.
+  모델 선택 revision에 원본 ID도 묶어 참조 번호가 같아도 대상이 바뀌면 이전 동작을 거절한다.
+  상세에서 Copy session ID / Copy resume command / Focus running session window를 제공한다.
+  ID·명령 복사는 PII 표시가 허용된 경우만 가능하며 resume 명령은 UUID로만 만든다. 명령을 실행하거나
+  계정/profile/cwd를 추정하지 않으므로 원래 계정·작업 폴더에서 사용해야 한다. stale 자료의 동작은 막는다.
+  Focus는 이미 켜진 local CLI sessions의 완료된 검색 목록에서 같은 UUID를 명시적으로 resume한
+  Codex 프로세스가 하나일 때 기존 PID/생성시각/소유자/창 재확인 경로를 사용한다. 새 검색/프로세스 실행,
+  최근 파일·폴더명 기반 매칭은 하지 않는다. 검색 꺼짐·진행 중·부분 목록·중복/누락을 별도 안내한다.
+  앱 창만 활성화했으면 정확한 터미널 탭으로 이동했다고 표시하지 않는다. 최초 생성 세션,
+  editor별 정확한 탭과 계정/profile/cwd를 포함한 직접 재실행은 아직 추가 구현이 필요하다.
+  PII 표시가 허용된 모델 CSV에는 session_id_association 행의 dimension에 ID, value에 연결 표시1을
+  넣는다. 사용량에 더할 숫자가 아니며 같은 모델/기간의 ID를 공급원 전체에서 중복 제거한다.
+  PII 숨김 시 이 행을 제외하고, 구형 ID를 복원하거나 만들어 내지 않는다. 문자열 escape와 출력 상한은 유지한다.
 
 ## 프로세스와 통신 규약
 
@@ -165,7 +181,10 @@ WinUI 프로세스는 공급자에 직접 접속하거나 두 번째 백엔드�
    결과만 사용한다. 별도 FX fetch 없이 rate table을 한 번 캡처하며 시간별 상세에도 같은
    table을 전달한다. 누락/비정상 환율은 기존 원본 통화 그룹으로 유지한다.
    비교의 최대4행도 spend의 공유128 KiB 문자열/1 MiB 응답 예산 안에 포함한다.
-   `spendAction`은 공유/JSON6개와 모델 CSV2개 동작 및 현재 출력 revision을 추가로 받는다.
+   `spendAction`은 공유/JSON6개, 모델 CSV2개, 세션3개 동작 및 현재 출력/선택 revision을 추가로 받는다.
+   세션 동작은 model/reference 행 번호와 원본 ID까지 묶인 모델 revision을 대조한다. 복사는 기존
+   native mailbox, 창 이동은 기존 local-session runtime으로 보낸다. 실행 직전 수집/PII/환율 및
+   세션 검색 활성 상태를 다시 확인한다. 명령문·원본 ID·PID를 동작 요청으로 받지 않는다.
    모델 CSV revision은 기존 수집/view/model-order revision에 포함·제외 선택/간격/metric도 묶으며
    표/선택 목록 페이지에는 의존하지 않는다. 기존 revision은 환율표에도 묶인다.
    생성된 PNG/DIB/JSON/CSV bytes·저장 경로·HWND는 pipe로 전송하지 않는다.
@@ -244,7 +263,8 @@ PE import 검사는 .NET assembly reference, P/Invoke, 동적 LoadLibrary, XAML/
 
 ## 남은 앱 구현
 
-전체 설정 pane, 계정·인증·provider 편집, Codex 원본 세션 ID·실행 연결 및 모델 단위의 세부 가격 coverage/share/alias export,
+전체 설정 pane, 계정·인증·provider 편집, 최초 생성 세션·정확한 terminal/editor 탭·직접 재실행 연결과
+모델 단위의 세부 가격 coverage/share/alias export,
 작업별 action/copy/open/login,
 레이아웃 편집, 전역 단축키·창 위치/스크롤 보존,
 전체 현지화, 키보드/Narrator/고대비·다중 모니터 QA가 남아 있다.
@@ -310,6 +330,11 @@ IMPL-613의 WindowsCodexSessionNavigationTests.swift에는 공급원/기간별 �
 모델·일별 사용량, 식별자 누락, 목록/상세 독립 페이지, privacy/wire, legacy/stale 가격,
 참조 순서·모델 소속 revision과 오래된 선택 거절, query/내보내기 경계 합성 fixture8개를 작성했다.
 모두 미실행이다. WinUI 이동/돌아가기/스크롤/막대 차트·컴파일·실자료·성능은 검증하지 않았다.
+IMPL-614의 WindowsCodexSessionActionsTests.swift에는 내부 ID 표/구형 호환, 모호·잘못된 표의 연결
+철회와 토큰 보존, 공급원/기간 격리, PII 표시·복사 차단, UUID 명령, ID 변경 revision, 유일한
+명시 resume 프로세스 매칭, prompt의 resume 단어가 ID를 바꾸지 않는 경우, CSV privacy/escape,
+동작 요청 경계 합성 fixture11개를 작성했다. 기존 activity fixture도 행/내부 표/공용 JSON의 경계에
+맞춰 갱신했다. 전부 미실행이다. 실제 프로세스·창 이동·클립보드·resume 실행·컴파일은 검증하지 않았다.
 
 ## API 참고
 

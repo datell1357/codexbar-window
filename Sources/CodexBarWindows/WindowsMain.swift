@@ -650,6 +650,10 @@ private final class WindowsTrayApplication: @unchecked Sendable {
             await runtime.setNativeAppSpendActionPublisher { [weak host] delivery in
                 host?.postNativeAppSpendAction(delivery) ?? false
             }
+            await runtime.setNativeCodexSessionFocus { [weak sessions] id, isCurrent in
+                guard let sessions else { return "sessionActionUnavailable" }
+                return await sessions.focusCodexSession(id, isCurrent: isCurrent)
+            }
             await runtime.prepareWidgetActivation()
             await remoteSessions.setPublisher { [weak host] snapshot in
                 host?.postRemoteSessions(snapshot)

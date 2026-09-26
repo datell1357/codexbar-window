@@ -8,13 +8,20 @@ enum WindowsAppSpendExport {
         let kind: String
         let expectedRevision: String
         var isCodexCSV: Bool { self.kind == "copyModelsCSV" || self.kind == "saveModelsCSV" }
+        var isCodexSession: Bool { ["copyCodexSessionID", "copyCodexResume", "focusCodexSession"].contains(self.kind) }
         var isValid: Bool {
-            (["preview", "copyText", "copyImage", "saveImage", "copyJSON", "saveJSON"].contains(self.kind) || self.isCodexCSV)
+            (["preview", "copyText", "copyImage", "saveImage", "copyJSON", "saveJSON"].contains(self.kind)
+                || self.isCodexCSV || self.isCodexSession)
                 && self.expectedRevision.utf8.count == 64
                 && self.expectedRevision.utf8.allSatisfy { (48...57).contains($0) || (97...102).contains($0) }
         }
         func accepts(_ query: WindowsAppSpendProjection.Query) -> Bool {
-            self.isValid && query.isValid && query.currency != nil && query.detail == nil && query.codexSessions == nil
+            if self.isCodexSession {
+                return self.isValid && query.isValid && query.currency != nil && query.detail == nil
+                    && query.comparePeriods != true && query.codexModelsPage != nil
+                    && query.codexSessions?.referenceIndex != nil
+            }
+            return self.isValid && query.isValid && query.currency != nil && query.detail == nil && query.codexSessions == nil
                 && query.comparePeriods != true && (self.isCodexCSV ? query.codexModelsPage != nil : query.codexModelsPage == nil)
         }
     }

@@ -43,20 +43,24 @@ struct WindowsSessionLaunchHints: Sendable {
         var requestedSessionID: String?
         var index = 0
         var skippedSubcommand = false
+        var codexExec = false
         var isFork = false
         var allowsNewSession = provider == .codex || provider == .claude
         while index < arguments.count {
             let token = arguments[index]
             if token == "--" { break }
             if provider == .codex, ["resume", "fork"].contains(token) { allowsNewSession = false }
-            if provider == .codex, !isFork, token == "resume", index + 1 < arguments.count,
+            if provider == .codex, !isFork, !skippedSubcommand || codexExec,
+               token == "resume", index + 1 < arguments.count,
                let id = UUID(uuidString: arguments[index + 1]) {
                 requestedSessionID = id.uuidString.lowercased()
+                codexExec = false
                 skippedSubcommand = true; index += 2; continue
             }
             if provider == .claude, ["--continue", "-c", "--fork-session"].contains(token) { return .empty }
             if provider == .codex, token == "fork" { requestedSessionID = nil; isFork = true }
             if provider == .codex, !skippedSubcommand, ["exec", "resume", "fork"].contains(token) {
+                codexExec = token == "exec"
                 skippedSubcommand = true; index += 1; continue
             }
             if !token.hasPrefix("-") {

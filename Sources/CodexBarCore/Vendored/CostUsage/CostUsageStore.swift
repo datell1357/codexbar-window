@@ -80,6 +80,7 @@ actor CostUsageStore {
         parserHash: CodexParserHash.value)
     static let cacheGeneration = "sqlite:\(CostUsageStore.schemaVersion)"
     static let compatiblePredecessorParserHashes: Set<String> = [
+        "d1e8a14e0226cccd", // Optional internal session identities preserve rows/checkpoints and legacy reference reports.
         "01c995aae18025bc", // Optional report effort pricing preserves native rows/checkpoints and legacy unknown costs.
         "ab8df053cd25eb7b", // Bounded report activity metadata keeps existing effort rows and checkpoints compatible.
         "c4fa7db2cf54bc41", // Recorded effort adds optional fields; bounded context-version migration reparses rows.

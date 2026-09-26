@@ -59,7 +59,7 @@ struct WindowsCodexActivityTests {
     }
 
     @Test
-    func `report local references deduplicate sessions across files without exposing identities`() throws {
+    func `report local references deduplicate sessions while identities stay in a separate internal table`() throws {
         var builder = Builder(range: Self.range)
         for session in ["private-session", "private-session", "another-private-session"] {
             builder.add(Self.usage([Self.row()], session: session), reconciled: .init(rows: [Self.row()], unresolvedGroups: []))
@@ -68,7 +68,8 @@ struct WindowsCodexActivityTests {
         #expect(value.rowsComplete && value.rows.count == 2)
         #expect(Set(value.rows.compactMap(\.sessionReference)).count == 2)
         #expect(value.rows.reduce(0) { $0 + $1.tokens } == 300)
-        let json = String(decoding: try JSONEncoder().encode(value), as: UTF8.self)
+        #expect(Set(value.resolvedSessionIdentities.values) == ["private-session", "another-private-session"])
+        let json = String(decoding: try JSONEncoder().encode(value.rows), as: UTF8.self)
         #expect(!json.contains("private-session") && !json.contains("rollout_path"))
     }
 

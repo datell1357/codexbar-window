@@ -5918,3 +5918,17 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - **남은 범위:** 원본 세션 ID·CLI/에디터 실행 연결, 모델 단위 priced/unpriced coverage·share·raw aliases 등 원본 분석/CSV의 풍부한 필드, 전체 설정/계정/인증, 창 위치/스크롤, managed payload/lockfile·W10·W15·StartupTask 및 전체 W01~W16/G0~G6. 큰 이력의 cap/추가 페이지와 Windows 컴파일·실자료·UI·성능 검증도 남는다. WIN-057 전체 완료가 아니다.
 - 상태: CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·성능·앱·실계정·원격 Windows·CI 미실행. Windows 구현만 바꿨으며 parser hash 재생성은 필요하지 않았다.
 - IMPL-612는5b2bae4b4로 origin/main 푸시 확인. 이번 단위도 별도 커밋·푸시한다. guidelines/COMMITS.md가 없어 기존 커밋 규칙을 적용했다. 자동화 변경 없음.
+
+## IMPL-614: 원본 세션 ID·복사·실행 중인 Codex 창 연결
+
+- 비용 보고서의 기존 canonical event 순회에서 참조 번호와 원본 세션 ID를 optional 내부 표로 연결한다. 최대4096개·ID512 bytes, UUID 대소문자 통일, 사용한 참조만 보존한다. 구형 표 누락·중복 참조/ID·범위 밖/제어문자 ID는 원본 연결을 철회하되 기존 토큰·비용 집계는 보존한다. 공용 daily-report JSON과 AgentSession DTO에는 새 식별자를 넣지 않는다.
+- Windows 모델·기간·공급원별 세션 상세에 원본 ID를 연결하고 모델 revision에도 ID를 포함한다. 요청은 행 번호·기간·revision을 사용하며 원문 ID/명령/PID를 받지 않는다. 개인정보 숨김 시 상세의 ID를 숨기고 ID/명령 복사를 비활성화한다. stale 자료의 세션 동작도 막는다.
+- WinUI에 Copy session ID / Copy resume command / Focus running session window를 연결했다. 재개 명령은 UUID-only codex resume 문자열이며 기존 native clipboard queue로 보낸다. 명령을 자동 실행하지 않으며 계정/profile/cwd는 추정하지 않는다. 복사 접수 응답을 복사 완료로 표시하지 않는다.
+- 이미 활성화된 local CLI session scanner가 인식한 명시 resume UUID를 프로세스 생명주기 키별 내부 map으로 전달한다. Focus는 완료된 최신 목록에서 유일한 Codex CLI 일치가 있을 때 기존 PID 생성시각·소유자·프로세스/창 생존 확인을 거친다. 부분/실패/진행 중 목록·꺼진 검색·복수 일치는 거절한다. 활성화 직전 수집/설정/PII/환율/검색 활성 상태를 재확인하고 앱 창 활성화와 정확한 창 focus 결과를 구분한다. 새 수집·프로세스 시작·키보드 자동 입력은 추가하지 않는다.
+- CLI의 첫 resume/exec resume 이후 prompt에 다시 나오는 resume UUID가 원래 대상을 바꾸지 않도록 parser 조건을 좁혔다. 최근 transcript/cwd만으로 실행 프로세스를 추정하지 않는다. 최초 생성 세션·정확한 terminal/editor 탭·계정/profile/cwd 복원을 포함하는 직접 실행은 남아 있다.
+- 모델 CSV의 개인정보 표시 모드에 session_id_association 행을 추가했다. dimension=ID, value=연결 표시1이며 사용량이 아니다. 모델/기간별로 공급원에 걸친 같은 ID를 중복 제거하고 누락은 unknown, 불완전 목록은 partial로 표시한다. PII 숨김은 연결 행을 제외하며 기존 문자열 escape/파일·행·셀 상한을 유지한다.
+- 합성 fixture11개 작성: builder ID/dedup, 구형/internal/public codec, 중복·비정상·상한 표와 토큰 보존, 기간/공급원 분리, privacy/wire, UUID-only 명령/stale, ID 변경 revision, 유일한 명시 프로세스 매칭, resume prompt 경계, CSV association/privacy/escape, action/request 경계. 기존 activity fixture는 숫자 행과 내부 ID 표의 경계에 맞춰 갱신했다. 전부 미실행이다.
+- 파서 hash는 쓰기 모드로619f13f23d9a5b31 생성. 직전d1e8a14e0226cccd를 compatible predecessor에 추가해 기존 이벤트/체크포인트/retained report를 보존한다. 이전 보고서는 ID 표가 없어도 읽으며 새 보고서 생성 시 연결이 채워진다.
+- **남은 범위:** 모델 단위 priced/unpriced coverage·share·raw aliases, 전체 설정/계정/인증, 최초 생성 세션·정확한 terminal/editor 탭·직접 실행, 창 위치/스크롤, managed payload/lockfile·W10·W15·StartupTask 및 전체 W01~W16/G0~G6. 큰 이력 cap/추가 페이지와 실제 Windows 컴파일·클립보드·창 활성화·성능 검증도 남는다. WIN-041/057 전체 완료가 아니다.
+- 상태: CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·앱·실계정·원격 Windows·CI 미실행. hash는 쓰기 생성만 하고 check 모드는 실행하지 않았다.
+- IMPL-613은0425f28ea로 origin/main 푸시 확인. 이번 단위도 별도 커밋·푸시한다. guidelines/COMMITS.md가 없어 기존 커밋 규칙을 적용했다. 자동화 변경 없음.

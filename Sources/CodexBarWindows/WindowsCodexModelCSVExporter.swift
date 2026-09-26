@@ -70,7 +70,8 @@ enum WindowsCodexModelCSVExporter {
             + "Model, component, tier, effort and timeline records overlap and must not be added together. "
             + "Costs are local estimates, not bills; currency conversion may use cached or approximate rates. "
             + "Session references deduplicate per model/source/interval, not across models or intervals. "
-            + "Effort is recorded context, not proof of server-applied effort. Effort costs require event/day/model reconciliation; raw session navigation is unavailable. "
+            + "Effort is recorded context, not proof of server-applied effort. Effort costs require event/day/model reconciliation. "
+            + "Session ID associations use identity in dimension and value 1 as a presence marker, never additive usage. Hidden personal information omits these rows. Legacy/missing identities are not reconstructed. "
             + "Text is redacted and spreadsheet formula prefixes are escaped. This Windows schema differs from the original Mac CSV."
         for (name, period) in [("current", analysis.current), ("previous", analysis.previous)] {
             try record("scope", period: name, value: period, notes: scopeNotes)
@@ -89,6 +90,21 @@ enum WindowsCodexModelCSVExporter {
                     number: cost.map { String($0) }, complete: costComplete)
                 try record("model", period: name, value: period, index: index, metric: "session_references",
                     number: sessions.0.map(String.init), complete: sessions.1)
+                if !hidePersonalInfo {
+                    let references = period.activity.models[key]?.sessions ?? []
+                    let ids = Set(references.compactMap { period.activity.sessions[$0]?.sessionID }).sorted()
+                    let completeIDs = activityComplete && period.activity.models[key]?.sessionsComplete == true
+                        && references.allSatisfy { period.activity.sessions[$0]?.sessionID != nil }
+                    if ids.isEmpty {
+                        try record("session", period: name, value: period, index: index, metric: "session_id_association",
+                            notes: "No recorded identity association is available; this is not proof of no sessions.")
+                    }
+                    for id in ids {
+                        try record("session", period: name, value: period, index: index, dimension: id,
+                            metric: "session_id_association", number: "1", complete: completeIDs,
+                            notes: "Recorded identity in this period; deduplicated across included sources. Value 1 marks association, not usage.")
+                    }
+                }
                 let components: [(String, WindowsCodexModelAnalysis.Count?)] = [
                     ("input_tokens", totals?.input), ("output_tokens", totals?.output),
                     ("cache_read_tokens", totals?.cached), ("cache_creation_tokens", totals?.cacheCreation),

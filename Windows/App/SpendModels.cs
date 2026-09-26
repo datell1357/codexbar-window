@@ -86,13 +86,17 @@ public sealed record SpendRow([property: JsonRequired] string Title, [property: 
 public sealed record SpendPoint([property: JsonRequired] string Label, [property: JsonRequired] string Detail,
     double? Value, [property: JsonRequired] int Level, [property: JsonRequired] int Row, [property: JsonRequired] int Column,
     string? DayKey = null);
+internal sealed record CodexSessionAvailability([property: JsonRequired] bool CanCopyID,
+    [property: JsonRequired] bool CanCopyResume, [property: JsonRequired] bool CanFocus);
 internal sealed record SpendDetailPage([property: JsonRequired] string Kind, [property: JsonRequired] string Title,
     [property: JsonRequired] string Context, [property: JsonRequired] int Page, [property: JsonRequired] int PageCount,
-    [property: JsonRequired] int TotalRows, [property: JsonRequired] SpendRow[] Rows, [property: JsonRequired] SpendPoint[] Points)
+    [property: JsonRequired] int TotalRows, [property: JsonRequired] SpendRow[] Rows, [property: JsonRequired] SpendPoint[] Points,
+    CodexSessionAvailability? SessionActions = null)
 {
     public bool IsValid => (Kind is "project" or "session" or "hourly" or "codexSessions" or "codexSession")
         && Title is not null && Context is not null
-        && Page >= 0 && PageCount > Page && TotalRows >= 0 && SpendPage.ValidRows(Rows) && SpendPage.ValidPoints(Points);
+        && Page >= 0 && PageCount > Page && TotalRows >= 0 && SpendPage.ValidRows(Rows) && SpendPage.ValidPoints(Points)
+        && (SessionActions is null || Kind == "codexSession");
 }
 internal sealed record SpendPage([property: JsonRequired] int Days, [property: JsonRequired] string[] Currencies,
     string? Currency, [property: JsonRequired] string Section, [property: JsonRequired] string Chart,

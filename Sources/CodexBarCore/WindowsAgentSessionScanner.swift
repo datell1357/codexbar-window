@@ -9,6 +9,8 @@ public struct WindowsSessionScanOutcome: Sendable {
     public let status: Status
     public let sessions: [AgentSession]
     public let message: String?
+    /// Exact UUIDs from recognized CLI resume arguments. Not a public/serialized session field.
+    public var explicitSessionIDs: [String: String] = [:]
     public var diagnostics: WindowsSessionDiagnostics? {
         switch self.status {
         case .complete: WindowsSessionDiagnostics(sessions: self.sessions, partial: false)
@@ -125,7 +127,8 @@ public enum WindowsAgentSessionScanner {
             partialMessage = [partialMessage, notice].compactMap { $0 }.joined(separator: " ")
         }
         guard !Task.isCancelled else { return .init(status: .cancelled, sessions: [], message: nil) }
-        return .init(status: partialMessage == nil ? .complete : .partial, sessions: correlated.sessions, message: partialMessage)
+        return .init(status: partialMessage == nil ? .complete : .partial, sessions: correlated.sessions,
+            message: partialMessage, explicitSessionIDs: requestedIDs)
     }
 
     private static func identity(

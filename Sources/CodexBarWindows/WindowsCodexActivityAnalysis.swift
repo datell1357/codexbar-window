@@ -23,6 +23,7 @@ enum WindowsCodexActivityAnalysis {
     struct Session: Sendable {
         var models: [String: Model] = [:]
         var byDay: [String: [String: Model]] = [:]
+        var sessionID: String? = nil
     }
     private struct Key: Hashable {
         let day: String
@@ -118,12 +119,14 @@ enum WindowsCodexActivityAnalysis {
                 result.models[model] = value
             }
             if !valid { return Period() } // Cross-source overflow invalidates the whole aggregation.
+            let identities = evidence.resolvedSessionIdentities
             for (index, row) in evidence.rows.enumerated() where row.day >= start && row.day <= end && row.tokens > 0 {
                 guard let reference = row.sessionReference else { continue }
                 let key = Reference(source: source, number: reference)
                 let model = CodexModelsAnalyticsBuilder().canonicalID(row.model)
                 let effort = Self.effort(row.effort)
                 var session = result.sessions[key] ?? Session()
+                session.sessionID = identities[reference]
                 var totals = session.models[model] ?? Model()
                 var daily = session.byDay[row.day]?[model] ?? Model()
                 guard Self.add(row.tokens, key: effort, to: &totals.effortTokens),

@@ -31,10 +31,14 @@ public actor WindowsUsageRuntime {
     private var widgetInvalidationSubscribers: [UUID: AsyncStream<UUID>.Continuation] = [:]
     private let nativeSpendExportValidity = WindowsSnapshotValidity()
     private var nativeSpendActionPublisher: (@Sendable (WindowsAppSpendExport.Delivery) -> Bool)?
+    private var nativeCodexSessionFocus: (@Sendable (String, @escaping @Sendable () -> Bool) async -> String)?
     private let nativeAppViewPreferences = WindowsAppViewPreferences.Store()
 
     func setNativeAppSpendActionPublisher(_ publisher: @escaping @Sendable (WindowsAppSpendExport.Delivery) -> Bool) {
         self.nativeSpendActionPublisher = publisher
+    }
+    func setNativeCodexSessionFocus(_ handler: @escaping @Sendable (String, @escaping @Sendable () -> Bool) async -> String) {
+        self.nativeCodexSessionFocus = handler
     }
 
     public struct WidgetInvalidationSubscription: Sendable {
@@ -2823,10 +2827,10 @@ public actor WindowsUsageRuntime {
                     key: self.nativeAppSpendSelectionKey)
             } ?? ""
             if let action = request.spendAction, let currency = query.currency {
-                guard action.expectedRevision == (action.isCodexCSV ? modelExportRevision : revision) else {
+                let expected = action.isCodexSession ? modelsRevision : action.isCodexCSV ? modelExportRevision : revision
+                guard action.expectedRevision == expected else {
                     return reply("spendChanged")
                 }
-                guard let publisher = self.nativeSpendActionPublisher else { return reply("actionUnavailable") }
                 let valid = self.nativeSpendExportValidity.capture()
                 let rates = view.conversionRates
                 let isCurrent: @Sendable () -> Bool = {
@@ -2835,7 +2839,20 @@ public actor WindowsUsageRuntime {
                         && CurrencyExchange.shared.conversionRatesSnapshot() == rates
                 }
                 let artifact: ShareStatsCopyResult
-                if action.isCodexCSV {
+                if action.isCodexSession {
+                    guard !display.stale, let analysis = view.codexModels, let selection = query.codexSessions,
+                          let session = WindowsAppSpendProjection.selectedCodexSession(analysis, query: selection,
+                            revision: modelsRevision) else { return reply("codexSessionChanged") }
+                    if action.kind == "focusCodexSession" {
+                        guard let focus = self.nativeCodexSessionFocus, let id = session.sessionID,
+                              WindowsCodexSessionActions.availability(session, stale: display.stale,
+                                hidePersonalInfo: privacy).canFocus, isCurrent() else { return reply("sessionActionUnavailable") }
+                        return reply(await focus(id, isCurrent))
+                    }
+                    guard let text = WindowsCodexSessionActions.clipboard(kind: action.kind, session: session,
+                        stale: display.stale, hidePersonalInfo: privacy) else { return reply("sessionActionUnavailable") }
+                    artifact = .ready(text)
+                } else if action.isCodexCSV {
                     artifact = WindowsCodexModelCSVExporter.make(analysis: view.codexModels, query: query,
                         selectionRevision: modelsRevision, stale: display.stale, hidePersonalInfo: privacy,
                         calendar: settings.bucketCalendar, copy: action.kind == "copyModelsCSV")
@@ -2844,6 +2861,7 @@ public actor WindowsUsageRuntime {
                         hidePersonalInfo: privacy, hiddenSourceIDs: settings.hiddenSourceIDs.sorted(),
                         calendar: settings.bucketCalendar)
                 }
+                guard let publisher = self.nativeSpendActionPublisher else { return reply("actionUnavailable") }
                 guard isCurrent() else { return reply("spendChanged") }
                 let delivery = WindowsAppSpendExport.Delivery(requestID: request.requestID,
                     hidePersonalInfo: privacy, result: artifact, isCurrent: isCurrent)

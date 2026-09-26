@@ -77,6 +77,7 @@ enum WindowsAppSpendProjection {
         let totalRows: Int
         let rows: [Row]
         let points: [Point]
+        var sessionActions: WindowsCodexSessionActions.Availability? = nil
     }
     struct Page: Codable, Sendable {
         let days: Int

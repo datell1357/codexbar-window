@@ -193,7 +193,7 @@ extension WindowsAppSpendProjection {
             "~ marks incomplete known data. Unknown is not zero; changes require complete model totals in both periods.",
             "Service tiers require recorded standard/priority totals. Effort shows tokens attributed to a recorded rollout context, not verified server settings; Unrecorded differs from none.",
             "Session refs count distinct local sessions per model and source across the period. One session can occur under several models; these are not request counts.",
-            "Legacy or bounded event evidence may be unavailable. Effort costs require event pricing to agree with the same daily model cost; no allocation by token share. Current/previous session references open period-scoped model, effort and daily details; original session IDs and app launch links are not included."
+            "Legacy or bounded event evidence may be unavailable. Effort costs require event pricing to agree with the same daily model cost; no allocation by token share. Current/previous session references open period-scoped details. Recorded IDs support explicit copy/resume-command and running-window focus actions; legacy identities may be unavailable."
         ]
         if value.sourceCount == 0 { context.append("No included native Codex source is available for this currency.") }
         if !selectionValid { context.append("The model selection changed. Select a model from the current collection.") }

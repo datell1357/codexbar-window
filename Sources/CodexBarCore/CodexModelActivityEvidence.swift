@@ -1,8 +1,15 @@
 import Foundation
 
-/// Local report evidence only. References are report-local numbers, never session IDs or paths.
+/// Local report evidence only. Rows use report-local numbers; the optional identity table stays internal.
 /// CostUsageDailyReport deliberately omits this payload from its public JSON representation.
 public struct CodexModelActivityEvidence: Codable, Equatable, Sendable {
+    public struct SessionIdentity: Codable, Equatable, Sendable {
+        public let reference: Int
+        public let sessionID: String
+        public init(reference: Int, sessionID: String) {
+            self.reference = reference; self.sessionID = sessionID
+        }
+    }
     public struct Row: Codable, Equatable, Sendable {
         public let day: String
         public let model: String
@@ -32,13 +39,40 @@ public struct CodexModelActivityEvidence: Codable, Equatable, Sendable {
     public let untilDay: String
     public let rowsComplete: Bool
     public let rows: [Row]
+    /// Missing in legacy reports. Never included in the public daily-report JSON.
+    public let sessionIdentities: [SessionIdentity]?
 
-    public init(timeZoneIdentifier: String, sinceDay: String, untilDay: String, rowsComplete: Bool, rows: [Row]) {
+    public init(timeZoneIdentifier: String, sinceDay: String, untilDay: String, rowsComplete: Bool, rows: [Row],
+                sessionIdentities: [SessionIdentity]? = nil) {
         self.version = 1
         self.timeZoneIdentifier = timeZoneIdentifier
         self.sinceDay = sinceDay
         self.untilDay = untilDay
         self.rowsComplete = rowsComplete
         self.rows = rows
+        self.sessionIdentities = sessionIdentities
+    }
+
+    public static func normalizedSessionID(_ raw: String?) -> String? {
+        guard let raw, raw.utf8.count <= 512 else { return nil }
+        let value = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !value.isEmpty, !value.unicodeScalars.contains(where: {
+            CharacterSet.controlCharacters.contains($0) || CharacterSet.illegalCharacters.contains($0)
+        }) else { return nil }
+        return UUID(uuidString: value)?.uuidString.lowercased() ?? value
+    }
+
+    /// Ambiguous or malformed identity metadata must not affect valid token/cost evidence.
+    public var resolvedSessionIdentities: [Int: String] {
+        guard let entries = self.sessionIdentities, entries.count <= 4096 else { return [:] }
+        var result: [Int: String] = [:]
+        var seen: Set<String> = []
+        for entry in entries {
+            guard (0..<4096).contains(entry.reference),
+                  let id = Self.normalizedSessionID(entry.sessionID),
+                  result[entry.reference] == nil, seen.insert(id).inserted else { return [:] }
+            result[entry.reference] = id
+        }
+        return result
     }
 }

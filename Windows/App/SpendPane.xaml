@@ -217,6 +217,12 @@
                     <Button x:Name="BackCodexSessionsButton" Content="Back to session references" Click="BackToCodexSessions" Visibility="Collapsed" />
                 </StackPanel>
                 <TextBlock x:Name="DetailContext" TextWrapping="Wrap" IsTextSelectionEnabled="True" />
+                <StackPanel x:Name="DetailSessionActions" Spacing="8" Visibility="Collapsed">
+                    <Button x:Name="CopyCodexSessionIDButton" Content="Copy session ID" Tag="copyCodexSessionID" Click="ExportClicked" />
+                    <Button x:Name="CopyCodexResumeButton" Content="Copy resume command" Tag="copyCodexResume" Click="ExportClicked" />
+                    <Button x:Name="FocusCodexSessionButton" Content="Focus running session window" Tag="focusCodexSession" Click="ExportClicked" />
+                    <TextBlock x:Name="SessionActionStatusText" TextWrapping="Wrap" AutomationProperties.LiveSetting="Polite" />
+                </StackPanel>
                 <ScrollViewer HorizontalScrollBarVisibility="Auto" HorizontalScrollMode="Enabled" VerticalScrollMode="Disabled">
                     <Canvas x:Name="DetailCanvas" Height="200" MinWidth="650" AutomationProperties.Name="Selected cost detail chart" />
                 </ScrollViewer>

@@ -48,8 +48,7 @@ struct CostUsageCodexActivityBuilder {
             self.includes($0.day) && OpenCodexRouteDispatcher.countsTowardCodexSubscription(modelName: $0.model)
         }) { self.complete = false }
         var reference: Int?
-        if let session = usage.sessionId?.trimmingCharacters(in: .whitespacesAndNewlines),
-           !session.isEmpty, session.utf8.count <= 512 {
+        if let session = CodexModelActivityEvidence.normalizedSessionID(usage.sessionId) {
             if let known = self.sessions[session] { reference = known }
             else {
                 reference = self.sessions.count
@@ -107,8 +106,13 @@ struct CostUsageCodexActivityBuilder {
             if $0.effort != $1.effort { return ($0.effort ?? "") < ($1.effort ?? "") }
             return ($0.sessionReference ?? -1) < ($1.sessionReference ?? -1)
         }
+        let used = Set(rows.compactMap(\.sessionReference))
+        let identities = self.sessions.compactMap { id, reference in
+            used.contains(reference) ? CodexModelActivityEvidence.SessionIdentity(reference: reference, sessionID: id) : nil
+        }.sorted { $0.reference < $1.reference }
         return .init(timeZoneIdentifier: self.range.calendar.timeZone.identifier,
-            sinceDay: self.range.sinceKey, untilDay: self.range.untilKey, rowsComplete: self.complete, rows: rows)
+            sinceDay: self.range.sinceKey, untilDay: self.range.untilKey, rowsComplete: self.complete, rows: rows,
+            sessionIdentities: identities)
     }
 
     private func includes(_ day: String) -> Bool {
