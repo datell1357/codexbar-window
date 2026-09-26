@@ -14,14 +14,18 @@ struct WindowsSpendProviderProjection: Sendable, Equatable {
 
     let provider: UsageProvider
     let revision = UUID()
+    /// Only Mistral billing and quota from the same authenticated response may share this revision.
+    /// OpenCode Go daily rows are device-local and cannot prove the quota account's ownership.
+    let confirmedQuotaAccountRevision: UUID?
     private let payload: Payload
 
     static func supports(_ provider: UsageProvider) -> Bool {
         provider == .mistral || provider == .opencodego
     }
 
-    init?(provider: UsageProvider, usage: UsageSnapshot) {
+    init?(provider: UsageProvider, usage: UsageSnapshot, confirmedQuotaAccountRevision: UUID? = nil) {
         self.provider = provider
+        self.confirmedQuotaAccountRevision = provider == .mistral ? confirmedQuotaAccountRevision : nil
         switch provider {
         case .mistral:
             guard let usage = usage.mistralUsage else { return nil }
@@ -32,6 +36,21 @@ struct WindowsSpendProviderProjection: Sendable, Equatable {
         default:
             return nil
         }
+    }
+
+    /// Mirrors the explicit session selection used by MistralWebFetchStrategy. No cookie is retained.
+    /// Automatic imports need their own winning-credential evidence before they can use this path.
+    static func mistralWidgetOwner(settings: MistralProviderSettings?, strategy: ProviderFetchKind?) -> String? {
+        guard strategy == .web, let settings, settings.cookieSource == .manual,
+              let header = CookieHeaderNormalizer.normalize(settings.manualCookieHeader),
+              CookieHeaderNormalizer.pairs(from: header).contains(where: {
+                  $0.name.hasPrefix("ory_session_") && !$0.value.isEmpty
+              }) else { return nil }
+        return "mistral-session:" + CookieHeaderCache.credentialFingerprint(header)
+    }
+
+    func confirmsWidgetRevision(_ revision: UUID, provider: UsageProvider) -> Bool {
+        provider == .mistral && self.provider == provider && self.confirmedQuotaAccountRevision == revision
     }
 
     func snapshot(historyDays: Int) throws -> CostUsageTokenSnapshot {

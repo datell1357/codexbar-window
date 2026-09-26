@@ -5701,3 +5701,13 @@ API 참고: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-c
 - **남은 범위:** Mistral의 확인된 quota owner와 비용 위젯 연결, OpenCode Go 로컬 이력의 account/device scope 구분 및 위젯 연결, 다른 snapshot 기반 비용 provider, WinUI 앱·위젯 OS 통합·Sync/Fleet·packaged startup와 W01~W16/G0~G6.
 - 상태: CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·앱·실계정·원격 Windows·CI 미실행.
 - 직전 IMPL-594는 533501e5a이며 이번 단위는 별도 커밋·푸시한다. 기존 30분 자동화 카드를 조회했으나 도구 응답에 실행 상태/일정의 상세값이 없어 활성 상태를 새로 확정하지 않았다.
+
+## IMPL-596: Mistral 현재 응답의 위젯 비용·quota 결합
+
+- Mistral의 성공한 web fetch에 사용된 명시적 manual session을 정규화·지문으로 구분하는 widget owner adapter를 추가했다. 원문 cookie는 owner나 위젯 데이터에 보관하지 않으며 auto mode·다른 strategy·session cookie 부재는 확인된 owner로 승격하지 않는다.
+- 해당 성공 응답을 quota 관측으로 기록한 뒤 projection에 그 revision을 묶고, 비용 loader→cost-only widget 및 quota widget 결합 경계에서 provider/revision을 대조한다. runtime 최종 게시의 config/generation/projection 대조는 그대로 적용한다.
+- OpenCode Go의 daily는 device-local 추정치이므로 전달된 quota revision을 폐기한다. 웹 quota overlay와 같은 응답 안에 있다는 사실만으로 서버 계정 소유의 비용이라고 게시하지 않는다. Windows 비용 대시보드 조회는 IMPL-595 경로로 계속 제공한다.
+- 합성 fixture 4개 추가: manual/web/session 조건과 원문 비노출·cookie 교체, Mistral revision/통화/최신 청구일 표시, 다른 revision에서 widget만 철회, OpenCode 로컬 데이터의 account revision 오귀속 차단. 실행하지 않았다.
+- **남은 범위:** OpenCode Go의 명시적인 device-local 위젯 표현/소유 범위, 다른 snapshot 기반 provider 비용, WinUI 앱·위젯 OS 통합·Sync/Fleet·packaged startup 및 전체 Windows 검증. 이 변경은 공급자 실계정 인증이나 실제 위젯 동작을 입증하지 않는다.
+- 상태: CODE_WRITTEN_UNVERIFIED / NOT_RUN_BY_USER_INSTRUCTION. 빌드·테스트·lint·앱·실계정·원격 Windows·CI 미실행.
+- IMPL-595는 d14f82bb6으로 origin/main 푸시 확인. 이번 단위도 별도 커밋·푸시한다. 자동화 설정 변경 없음.

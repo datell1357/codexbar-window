@@ -99,5 +99,68 @@ struct WindowsSpendProviderProjectionTests {
         #expect(Self.source(.mistral, projection: first) != Self.source(.mistral, projection: next))
         #expect(!Self.source(.mistral, projection: first).supportsRetainedCollection)
     }
+
+    @Test
+    func `mistral widget ownership requires the explicit winning web session`() throws {
+        let settings = MistralProviderSettings(cookieSource: .manual,
+            manualCookieHeader: "ory_session_fixture=synthetic-a; csrftoken=synthetic-csrf")
+        let owner = try #require(WindowsSpendProviderProjection.mistralWidgetOwner(settings: settings, strategy: .web))
+        #expect(!owner.contains("synthetic-a"))
+        #expect(WindowsSpendProviderProjection.mistralWidgetOwner(settings: settings, strategy: .apiToken) == nil)
+        #expect(WindowsSpendProviderProjection.mistralWidgetOwner(settings: .init(cookieSource: .auto,
+            manualCookieHeader: settings.manualCookieHeader), strategy: .web) == nil)
+        #expect(WindowsSpendProviderProjection.mistralWidgetOwner(settings: .init(cookieSource: .manual,
+            manualCookieHeader: "csrftoken=synthetic-csrf"), strategy: .web) == nil)
+        #expect(WindowsSpendProviderProjection.mistralWidgetOwner(settings: .init(cookieSource: .manual,
+            manualCookieHeader: "ory_session_fixture=synthetic-b"), strategy: .web) != owner)
+    }
+
+    @Test
+    func `mistral cost widget uses the captured quota revision and billing labels`() async throws {
+        let revision = UUID()
+        let projection = try #require(WindowsSpendProviderProjection(provider: .mistral,
+            usage: Self.mistral(), confirmedQuotaAccountRevision: revision))
+        var source = Self.source(.mistral, projection: projection)
+        source.widgetAccountRevision = revision
+        let scan = try await WindowsSpendSnapshotLoader.make(sources: [source],
+            allowPricingRefresh: false, capturedAt: Self.now)(30)
+        let cost = try #require(scan.widgetCosts.first?.cost)
+        #expect(cost.accountRevision == revision)
+        #expect(cost.summary.currencyCode == "EUR")
+        #expect(cost.summary.sessionLabel == "Latest billing day")
+        #expect(scan.widgetCostFailures.isEmpty)
+    }
+
+    @Test
+    func `a different quota revision withdraws the widget while preserving the billing result`() async throws {
+        let projection = try #require(WindowsSpendProviderProjection(provider: .mistral,
+            usage: Self.mistral(), confirmedQuotaAccountRevision: UUID()))
+        var source = Self.source(.mistral, projection: projection)
+        source.widgetAccountRevision = UUID()
+        let scan = try await WindowsSpendSnapshotLoader.make(sources: [source],
+            allowPricingRefresh: false, capturedAt: Self.now)(30)
+        #expect(scan.inputs.count == 1)
+        #expect(scan.sourceFailures.isEmpty)
+        #expect(scan.widgetCosts.isEmpty)
+        #expect(scan.widgetCostFailures.first?.accountIdentityUnconfirmed == true)
+    }
+
+    @Test
+    func `a supplied quota revision cannot turn local opencode estimates into account owned costs`() async throws {
+        let revision = UUID()
+        let entry = CostUsageDailyReport.Entry(date: "2026-09-09", inputTokens: 20,
+            outputTokens: 5, totalTokens: 25, costUSD: 2, modelsUsed: nil, modelBreakdowns: nil)
+        let projection = try #require(WindowsSpendProviderProjection(provider: .opencodego,
+            usage: Self.openCodeGo(daily: [entry]), confirmedQuotaAccountRevision: revision))
+        #expect(projection.confirmedQuotaAccountRevision == nil)
+        #expect(!projection.confirmsWidgetRevision(revision, provider: .opencodego))
+        var source = Self.source(.opencodego, projection: projection)
+        source.widgetAccountRevision = revision
+        let scan = try await WindowsSpendSnapshotLoader.make(sources: [source],
+            allowPricingRefresh: false, capturedAt: Self.now)(30)
+        #expect(scan.inputs.count == 1)
+        #expect(scan.widgetCosts.isEmpty)
+        #expect(scan.widgetCostFailures.first?.accountIdentityUnconfirmed == true)
+    }
 }
 #endif

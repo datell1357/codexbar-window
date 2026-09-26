@@ -188,6 +188,12 @@ struct WindowsSpendSnapshotLoader {
                     if let revision = source.widgetAccountRevision,
                        WindowsWidgetConfiguration.selectableProviders.contains(source.provider) {
                         do {
+                            if WindowsSpendProviderProjection.supports(source.provider) {
+                                guard source.providerProjection?.confirmsWidgetRevision(
+                                    revision, provider: source.provider) == true else {
+                                    throw WindowsWidgetCostAdapter.Failure.scopeChanged
+                                }
+                            }
                             if source.provider == .codex {
                                 guard source.verifyCodexOwner, let expected = source.expectedCodexAuthFingerprint,
                                       capturedFingerprint == expected else { throw Failure.codexOwnerChanged }

@@ -549,16 +549,25 @@ public actor WindowsUsageRuntime {
         } catch { return false }
     }
 
-    /// Join only a captured Codex credential scope, never provider identity or display labels alone.
+    /// Join a captured Codex credential scope or the exact Mistral response's confirmed quota revision.
     private func widgetCostForQuota(provider: UsageProvider, quotaRevision: UUID) -> WindowsWidgetSnapshotBuilder.TokenCost? {
-        guard provider == .codex,
-              let fingerprint = self.widgetQuotaObservations[provider]?.codexAuthFingerprint else { return nil }
         let revisions = self.widgetCostAccountRevisions()
         guard let revision = revisions[provider],
               case let .available(costs, _) = self.widgetCostResult(expectedAccountRevisions: revisions) else { return nil }
         let owners = self.widgetCostOwners.values.filter { $0.source.provider == provider && $0.revision == revision }
-        guard owners.count == 1, let owner = owners.first, owner.source.verifyCodexOwner,
-              CodexAuthFingerprint.normalize(owner.source.expectedCodexAuthFingerprint) == fingerprint else { return nil }
+        guard owners.count == 1, let owner = owners.first else { return nil }
+        switch provider {
+        case .codex:
+            guard let fingerprint = self.widgetQuotaObservations[provider]?.codexAuthFingerprint,
+                  owner.source.verifyCodexOwner,
+                  CodexAuthFingerprint.normalize(owner.source.expectedCodexAuthFingerprint) == fingerprint else { return nil }
+        case .mistral:
+            guard let projection = self.spendProviderProjections[provider],
+                  owner.source.providerProjection == projection, revision == quotaRevision,
+                  projection.confirmsWidgetRevision(quotaRevision, provider: provider) else { return nil }
+        default:
+            return nil
+        }
         let matching = costs.filter { $0.provider == provider && $0.cost.accountRevision == revision }
         guard matching.count == 1, let cost = matching.first?.cost else { return nil }
         // Only this ownership-confirmed join translates the cost revision into the quota observation's revision.
@@ -604,6 +613,13 @@ public actor WindowsUsageRuntime {
             var source = original
             guard counts[source.provider] == 1 else { return source }
             switch source.provider {
+            case .mistral:
+                guard let projection = source.providerProjection,
+                      let revision = projection.confirmedQuotaAccountRevision,
+                      projection.confirmsWidgetRevision(revision, provider: source.provider) else { return source }
+                next[source.id] = (source, revision)
+                source.widgetAccountRevision = revision
+                return source
             case .codex:
                 guard source.verifyCodexOwner, source.expectedCodexAuthFingerprint != nil else { return source }
             case .cursor:
@@ -620,8 +636,7 @@ public actor WindowsUsageRuntime {
                 else { return source }
                 source.expectedWidgetScopeFingerprint = expected
             default:
-                // Snapshot-projected Mistral/OpenCode Go costs still require an explicit
-                // widget ownership adapter. Local OpenCode rows do not prove server-account
+                // Local OpenCode rows do not prove server-account
                 // ownership merely because a quota overlay shares their usage response.
                 return source
             }
@@ -5227,13 +5242,11 @@ public actor WindowsUsageRuntime {
                 let presentation = WindowsUsagePresentation(instanceID: provider.instanceID, provider: provider, title: title, privacyTitle: metadata.displayName, result: result, snapshot: labeledUsage, hidePersonalInfo: presentationSettings.hidePersonalInfo, showOptionalUsage: presentationSettings.showOptionalCreditsAndExtraUsage, usageBarsShowUsed: presentationSettings.usageBarsShowUsed, resetTimesShowAbsolute: presentationSettings.resetTimesShowAbsolute)
                 self.presentations[provider.instanceID] = presentation
                 if !self.shuttingDown, !Task.isCancelled, widgetContext == self.widgetQuotaContext,
-                   WindowsSpendProviderProjection.supports(provider) {
-                    self.spendProviderProjections[provider] = WindowsSpendProviderProjection(
-                        provider: provider, usage: result.usage)
-                }
-                if !self.shuttingDown, !Task.isCancelled, widgetContext == self.widgetQuotaContext,
                    WindowsWidgetConfiguration.selectableProviders.contains(provider) {
-                    let owner = self.quotaAccountDiscriminator(provider: provider, snapshot: result.usage,
+                    let owner = provider == .mistral
+                        ? WindowsSpendProviderProjection.mistralWidgetOwner(settings: settings?.mistral,
+                            strategy: result.strategyKind)
+                        : self.quotaAccountDiscriminator(provider: provider, snapshot: result.usage,
                         codexVisibleAccount: codexVisibleAccount, tokenAccount: account, environment: env,
                         strategyKind: result.strategyKind, oauthHistoryOwnerIdentifier: result.claudeOAuthHistoryOwnerIdentifier,
                         oauthCredentialOwner: result.claudeOAuthCredentialOwner,
@@ -5241,6 +5254,12 @@ public actor WindowsUsageRuntime {
                         claudeAccountUUIDAfter: provider == .claude ? ClaudeAccountProfile.accountUuid(environment: env) : nil)
                     self.recordWidgetQuota(presentation: presentation, provider: provider, owner: owner,
                         codexAuthFingerprint: provider == .codex && account == nil ? codexVisibleAccount?.authFingerprint : nil)
+                }
+                if !self.shuttingDown, !Task.isCancelled, widgetContext == self.widgetQuotaContext,
+                   WindowsSpendProviderProjection.supports(provider) {
+                    self.spendProviderProjections[provider] = WindowsSpendProviderProjection(
+                        provider: provider, usage: result.usage,
+                        confirmedQuotaAccountRevision: self.widgetQuotaObservations[provider]?.observation.accountRevision)
                 }
                 if config.hooks?.enabled == true, !Task.isCancelled, !self.shuttingDown {
                     let owner = self.quotaAccountDiscriminator(provider: provider, snapshot: result.usage,
